@@ -1,0 +1,30 @@
+services:
+  supplier-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supplier
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    environment:
+      PORT: 8082
+      SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
+    ports:
+      - "8082:8082"
+
+volumes:
+  supplier-db-data:
