@@ -26,5 +26,13 @@ services:
     ports:
       - "8082:8082"
 
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - supplier-service
+    ports:
+      - "3000:80"
+
 volumes:
   supplier-db-data:
