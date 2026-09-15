@@ -153,7 +153,12 @@ function openDetail(id) {
   const s = state.suppliers.find((x) => x.id === id);
   if (!s) return;
 
+  const image = s.image_url
+    ? `<img class="detail-img" src="${escapeAttr(s.image_url)}" alt="${escapeAttr(s.name)}" />`
+    : `<div class="detail-img detail-img-placeholder">🏬</div>`;
+
   openModal(`
+    ${image}
     <h2 class="detail-title">${escapeHtml(s.name)}</h2>
     <span class="badge badge-type">${escapeHtml(s.type)}</span>
     <div class="detail-row"><strong>Location:</strong> ${escapeHtml(s.building)}${s.floor ? ", Floor " + escapeHtml(s.floor) : ""} — ${escapeHtml(s.location_description)}</div>

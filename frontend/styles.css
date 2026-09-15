@@ -246,6 +246,23 @@ button, input, select {
   color: var(--text-muted);
 }
 
+.detail-img {
+  width: 100%;
+  height: 180px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin: -4px 0 14px;
+  display: block;
+  background: var(--bg);
+}
+.detail-img-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: var(--text-muted);
+}
+
 .detail-title { margin: 0 0 4px; font-size: 1.3rem; }
 .detail-row { margin: 8px 0; font-size: 14px; }
 .detail-row strong { color: var(--text-muted); font-weight: 600; margin-right: 4px; }
