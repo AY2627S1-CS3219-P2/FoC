@@ -187,7 +187,12 @@ button, input, select {
 
 .supplier-card-img {
   height: 120px;
-  background: var(--bg) center/cover no-repeat;
+  width: 100%;
+  object-fit: cover;
+  display: block;
+  background: var(--bg);
+}
+.supplier-card-img-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;

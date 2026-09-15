@@ -103,8 +103,8 @@ function renderGrid(suppliers) {
 
 function supplierCardHtml(s) {
   const img = s.image_url
-    ? `<div class="supplier-card-img" style="background-image:url('${escapeAttr(s.image_url)}')"></div>`
-    : `<div class="supplier-card-img">🏬</div>`;
+    ? `<img class="supplier-card-img" src="${escapeAttr(s.image_url)}" alt="${escapeAttr(s.name)}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;supplier-card-img supplier-card-img-placeholder&quot;&gt;🏬&lt;/div&gt;'" />`
+    : `<div class="supplier-card-img supplier-card-img-placeholder">🏬</div>`;
   return `
     <div class="supplier-card" data-id="${escapeAttr(s.id)}">
       ${img}
