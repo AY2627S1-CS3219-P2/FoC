@@ -1,0 +1,3 @@
+# FoC
+
+@AGENTS.md

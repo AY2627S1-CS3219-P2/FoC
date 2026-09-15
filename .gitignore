@@ -13,3 +13,7 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Personal, per-developer agent instructions (not shared)
+CLAUDE.local.md
+**/CLAUDE.local.md
