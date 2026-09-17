@@ -1,0 +1,5 @@
+# Append-only log: five people add rows to the end of the same file, so
+# concurrent entries collide. Union merge keeps both sides instead of raising
+# a conflict. Entries carry their own timestamp, so interleaved ordering is
+# harmless. Do not apply this to files where line order matters.
+ai/usage-log.md merge=union
