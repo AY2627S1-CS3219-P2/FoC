@@ -15,7 +15,7 @@ exists.
 
 ## Owner
 
-TBD — one developer owns this folder (root §3); every decision flagged open
+Zi Yang — one developer owns this folder (root §3); every decision flagged open
 below is theirs, not an agent's.
 
 ## Boundaries
@@ -58,6 +58,37 @@ because it has one aggregate; identity may not.
 Root §8 makes `api/openapi.yaml` the contract; `supplier-service` predates it
 and has no `api/` directory yet. Adding one here is an interface decision: the
 owner writes the spec, an agent implements against it.
+
+## Database Decisions
+
+- Table Name: `users`
+- Fields:
+  - uid: UUID, PRIMARY KEY, unique, not null
+  - username: VARCHAR(128), unique, not null
+  - email: VARCHAR(255), unique, not null
+  - password: VARCHAR(255), not null
+  - phone_num: VARCHAR(20), not null
+  - date_created: TIMESTAMPTZ, not null
+  - last_login_date: TIMESTAMPTZ, NULL
+  - account_role: ENUM ('STUDENT' / 'ADMIN'), defaults to STUDENT
+  - account_status: ENUM ('ACTIVE' / 'SUSPENDED'), defaults to ACTIVE
+
+UID shall be generated using Go (UUID package), and date_created shall be generated 
+using Go as well (using time package in the SGT timezone).
+Passwords shall be stored securely using bcrypt in the Go implementation.
+Store the user model, interface defining database operations, and business logic 
+using the repository interface under `internal/user/`. 
+
+The repository interface should include these actions: Create, GetByID (get user by uuid), 
+GetByIdentifier (get user by username/email), and Update (update user's mutable fields, which
+should not include uid or email)
+Example repository method signatures:
+```Go
+    Create(ctx context.Context, u *User) error
+	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
+	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
+	Update(ctx context.Context, u *User) error
+```
 
 ## Local development
 
