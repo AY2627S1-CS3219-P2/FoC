@@ -1,0 +1,5 @@
+# Node toolchain artifacts. Kept in this folder rather than the root
+# .gitignore: frontend/ is the only folder with a package manager, and the root
+# file is shared (root AGENTS.md §3).
+node_modules/
+*.tsbuildinfo

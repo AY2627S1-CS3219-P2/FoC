@@ -1,90 +1,19 @@
-<!DOCTYPE html>
+<!doctype html>
+<!--
+  AI Assistance Disclosure:
+  Tool: Claude Code (model: Opus 5), date: 2026-09-17
+  Scope: Replaced the prototype's hand-written markup with the Vite entry
+    document; the UI it contained now lives in src/components/.
+  Author review: PENDING — <reviewer to complete>
+-->
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Friend on Campus (FoC)</title>
-  <link rel="stylesheet" href="styles.css" />
-</head>
-<body>
-  <header class="topbar">
-    <div class="brand">
-      <span class="brand-mark">FoC</span>
-      <span class="brand-name">Friend on Campus</span>
-    </div>
-    <nav class="nav" id="nav">
-      <button class="nav-link active" data-view="home">Home</button>
-      <button class="nav-link" data-view="suppliers">Suppliers</button>
-      <button class="nav-link disabled" disabled title="Coming soon">Users</button>
-      <button class="nav-link disabled" disabled title="Coming soon">Orders</button>
-      <button class="nav-link disabled" disabled title="Coming soon">Credits</button>
-    </nav>
-  </header>
-
-  <main id="app">
-    <!-- HOME VIEW -->
-    <section id="view-home" class="view">
-      <div class="hero">
-        <h1>Friend on Campus</h1>
-        <p class="hero-sub">A peer-to-peer campus errand platform.<br />Request an errand, or fulfil one for someone else.</p>
-      </div>
-
-      <div class="service-grid">
-        <button class="service-card active" data-view="suppliers">
-          <span class="service-icon">🏬</span>
-          <span class="service-title">Suppliers</span>
-          <span class="service-desc">Browse campus stores, facilities & pickup points</span>
-        </button>
-        <div class="service-card disabled">
-          <span class="service-icon">👤</span>
-          <span class="service-title">Users</span>
-          <span class="service-desc">Coming soon</span>
-        </div>
-        <div class="service-card disabled">
-          <span class="service-icon">📦</span>
-          <span class="service-title">Orders</span>
-          <span class="service-desc">Coming soon</span>
-        </div>
-        <div class="service-card disabled">
-          <span class="service-icon">💳</span>
-          <span class="service-title">Credits</span>
-          <span class="service-desc">Coming soon</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- SUPPLIERS VIEW -->
-    <section id="view-suppliers" class="view hidden">
-      <div class="toolbar">
-        <input type="search" id="search-input" placeholder="Search suppliers by name…" />
-        <select id="category-select">
-          <option value="">All categories</option>
-        </select>
-
-        <div class="toolbar-spacer"></div>
-
-        <label class="admin-toggle">
-          <input type="checkbox" id="admin-toggle" />
-          <span>Admin mode</span>
-        </label>
-        <button id="add-supplier-btn" class="btn btn-primary hidden">+ Add Supplier</button>
-      </div>
-
-      <div id="supplier-status" class="status hidden"></div>
-      <div id="supplier-grid" class="supplier-grid"></div>
-    </section>
-  </main>
-
-  <!-- DETAIL / EDIT MODAL -->
-  <div id="modal-overlay" class="modal-overlay hidden">
-    <div class="modal">
-      <button class="modal-close" id="modal-close">&times;</button>
-      <div id="modal-body"></div>
-    </div>
-  </div>
-
-  <div id="toast" class="toast hidden"></div>
-
-  <script src="app.js"></script>
-</body>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Friend on Campus (FoC)</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
 </html>

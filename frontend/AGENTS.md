@@ -8,16 +8,20 @@ balance covers one, who may see a record, what a status transition means —
 each belongs to the service owning that rule. The frontend renders what the
 services return and reports what they refuse.
 
-**The language, framework and build tooling are NOT CHOSEN** (root §2). Assume
-no React, Vue, Svelte, Angular, TypeScript, Vite, Next, Tailwind or package
-manager. **Ask the owner before writing anything framework-specific**, and do
-not settle the question by writing code — that is a human's (root §1). Until
-the team records an answer, the stack is open.
+**Stack: React + Vite, in TypeScript.** Recorded by Nigeltzy, the folder owner,
+on 2026-09-17; root §2's table carries the same row. This is the record root §1
+asks for — an agent may now write React/Vite/TS code in this folder.
+
+**What is still NOT chosen**, and still needs the owner before any code assumes
+it: state management beyond React's own hooks, a router, a component or CSS
+framework (no Tailwind, no MUI), a test runner, and a linter. Assume none of
+them exist. Adding one is a stack decision, not an implementation detail —
+ask, and record the answer here before building on it (root §1).
 
 ## Owner
 
-TBD — one developer owns this folder (root §3). Until it is assigned, treat
-stack and screen-flow decisions here as unowned and ask.
+Nigeltzy (root §3). Stack and screen-flow decisions here are theirs; an agent
+implements one they have recorded and stops (root §1).
 
 ## Boundaries
 
@@ -47,13 +51,32 @@ design went wrong. Temptations specific to this folder:
 
 ## Layout
 
-**Status: a D1 demo artifact exists, but not on this branch and not as a stack
-commitment.** A flat static page (`index.html`, `app.js`, `styles.css`) served
-by nginx (`nginx.conf`, `Dockerfile`), talking to `supplier-service` only, is
-on `origin/feat/supplier-service` (open PR #1); this folder currently holds
-only these instruction files. Do not treat that page as the architecture or
-grow features onto it without asking. Whatever framework is chosen, these
-rules apply:
+Feature-sliced. Each feature folder maps to one backend service, so `features/`
+grows alongside the services in the repo root.
+
+```
+src/
+├── features/
+│   ├── auth/          LoginPage + session types      [MOCK]
+│   ├── home/          landing view
+│   ├── suppliers/     view + components + suppliersApi.ts + types.ts
+│   ├── errands/       NewErrandView, MyErrandsView    [MOCK]
+│   ├── credits/       CreditsView                     [MOCK]
+│   └── profile/       ProfileView                     [MOCK]
+├── components/        shared only — AppShell, Modal, Toast, MockBadge, icons
+├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures)
+├── App.tsx            session gate, view switching, acting mode, balance
+├── views.ts           view names + the nav model, until a router is chosen
+└── main.tsx
+```
+
+Every feature folder maps to one backend service. `suppliers/` is the only one
+with a real service behind it.
+
+`index.html` is the Vite entry document; the D1 prototype it replaced
+(`app.js` plus hand-written markup) is in this branch's history. The
+`Dockerfile` builds with Node and serves the output from nginx via
+`nginx.conf`. These rules apply:
 
 - **One API client per backend service, in one dedicated directory**,
   generated from that service's `api/openapi.yaml` (root §8). Generated
@@ -66,6 +89,40 @@ rules apply:
   coupling is the goal). Shared UI primitives stay inside `frontend/`;
   nothing is shared with a backend service.
 
+## Mock services — read before touching them
+
+`user-service`, `order-service` and `credit-service` do not exist. So the
+frontend can be built and demoed, `auth/`, `errands/`, `credits/` and
+`profile/` talk to fixture modules in their own folders instead
+(`src/lib/mock.ts` has the full note).
+
+**Those shapes are not a contract.** They were invented here to have something
+to render. An API interface belongs to its service's owner (root §1), and a
+change reaching into another service needs that owner (root §3). So:
+
+- Nobody may treat a fixture's shape as the spec for their service.
+- When a real service lands, its owner's `api/openapi.yaml` wins and the
+  fixture module is **replaced**, not reconciled. Because components only ever
+  go through the feature's api module, that is a one-file change.
+- Every screen backed by a fixture renders `<MockBadge />`, so a graded demo
+  cannot show invented figures as live data. Do not remove those badges while
+  the data is still fixture data.
+- Do not grow a fixture into a rule. Eligibility, expiry, credit sufficiency
+  and state transitions belong to the services that own them; the fixtures
+  store and return, nothing more.
+
+**One exception, which is not a mock.** `ErrandStatus` in
+`features/errands/types.ts` transcribes the order-state set the team has
+already recorded in the milestone report glossary — OPEN, ACCEPTED, PICKED_UP, DELIVERED,
+COMPLETED, CANCELLED, EXPIRED, with CANCELLED and EXPIRED terminal. That is a
+recorded decision under root §1, so it is implemented rather than invented.
+Which transitions are permitted (F3.8) stays with order-service and is never
+enforced in this folder. Only the wire casing is still open.
+
+Two hard-coded lists are placeholders nobody owns yet, flagged for the team:
+campus delivery locations (`NewErrandView`) and the 100-credit initial
+allocation quoted on the login screen.
+
 ## Local development
 
 - **Port 3001**, which `compose.yaml` publishes onto nginx's :80 in the
@@ -73,21 +130,22 @@ rules apply:
   8081-8084 — so read them there rather than inventing or assuming one.
 - **Env vars:** one base-URL variable per backend service it talks to,
   following the repo's `<SERVICE>_BASE_URL` naming plus whatever prefix the
-  chosen framework demands (`VITE_`, `NEXT_PUBLIC_`, …). The prototype
-  instead reads a `window.SUPPLIER_API_BASE` global, defaulting to
+  chosen framework demands — here `VITE_`. Today that is
+  `VITE_SUPPLIER_BASE_URL`, resolved in `src/lib/config.ts` and defaulting to
   `http://localhost:8082`. Every variable goes into the root `.env.example`
-  with a placeholder (root §9).
-- **Commands:** none exist yet — there is no `Makefile` in the repo at all
-  (root §10), and adding a frontend build, lint or test target, a package
-  manager or a lockfile is a stack decision, so ask. The prototype runs via
-  Compose as the `frontend` service.
+  with a placeholder (root §9) and this folder's own.
+- **Commands:** `npm install`, then `npm run dev` (Vite on 3001),
+  `npm run build` (typecheck + production build) and `npm run preview`. There
+  is still no `Makefile` in the repo (root §10) and no lint or test target —
+  adding either means choosing a linter or test runner, which is a stack
+  decision, so ask. Under Compose this folder is the `frontend` service.
 
 ## Gotchas
 
 - **Nothing shipped to the browser is secret.** Not a build-time env var,
   not an inlined constant, not a "hidden" field. No `JWT_SECRET`, no
   database URL, no admin key ever appears in this folder.
-- **The prototype's "Admin mode" is not auth.** The checkbox makes `app.js`
+- **The "Admin mode" checkbox is not auth.** It makes `suppliersApi.ts`
   send `X-User-Role: ADMIN`, which `supplier-service` currently trusts
   verbatim as an interim measure (its `internal/middleware/auth.go`). Do not
   build real UI on that pattern or present it as access control.

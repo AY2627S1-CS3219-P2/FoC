@@ -1,0 +1,230 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5), date: 2026-09-17
+// Scope: Ported the prototype's supplier list, search, filter and admin CRUD
+//   flow (loadSuppliers, renderGrid, renderCategoryOptions) to React.
+// Author review: PENDING — <reviewer to complete>
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import * as supplierApi from "./suppliersApi";
+import type { Supplier, SupplierInput } from "./types";
+import { Modal } from "../../components/Modal";
+import { SupplierCard } from "./SupplierCard";
+import { SupplierDetail } from "./SupplierDetail";
+import { SupplierForm } from "./SupplierForm";
+import type { ToastMessage } from "../../components/Toast";
+
+interface SuppliersViewProps {
+  isAdmin: boolean;
+  onAdminChange: (isAdmin: boolean) => void;
+  onNotify: (message: ToastMessage) => void;
+}
+
+/** Which modal, if any, is open. Null means none. */
+type ModalState =
+  | { kind: "detail"; supplier: Supplier }
+  | { kind: "create" }
+  | { kind: "edit"; supplier: Supplier }
+  | null;
+
+export function SuppliersView({
+  isAdmin,
+  onAdminChange,
+  onNotify,
+}: SuppliersViewProps) {
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [modal, setModal] = useState<ModalState>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  /**
+   * The category dropdown is populated from the unfiltered listing and then
+   * held steady, so narrowing the results cannot remove the option you would
+   * need to widen them again. Same intent as the prototype's state.allCategories.
+   */
+  const [categories, setCategories] = useState<string[]>([]);
+  const categoriesLoaded = useRef(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const results = await supplierApi.listSuppliers({ search, category });
+      setSuppliers(results);
+      if (!categoriesLoaded.current && !search && !category) {
+        categoriesLoaded.current = true;
+        setCategories([...new Set(results.map((s) => s.type))].sort());
+      }
+    } catch (err) {
+      setSuppliers([]);
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }, [search, category]);
+
+  // Debounced so typing in the search box does not fire a request per keystroke.
+  useEffect(() => {
+    const timer = setTimeout(load, 300);
+    return () => clearTimeout(timer);
+  }, [load]);
+
+  const handleSubmit = async (input: SupplierInput) => {
+    setSubmitting(true);
+    try {
+      if (modal?.kind === "edit") {
+        await supplierApi.updateSupplier(modal.supplier.id, input);
+        onNotify({ text: "Supplier updated", kind: "success" });
+      } else {
+        await supplierApi.createSupplier(input);
+        onNotify({ text: "Supplier created", kind: "success" });
+      }
+      setModal(null);
+      await load();
+    } catch (err) {
+      onNotify({
+        text: err instanceof Error ? err.message : "Save failed",
+        kind: "error",
+      });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async (supplier: Supplier) => {
+    try {
+      await supplierApi.deleteSupplier(supplier.id);
+      onNotify({ text: "Supplier deleted", kind: "success" });
+      setModal(null);
+      await load();
+    } catch (err) {
+      onNotify({
+        text: err instanceof Error ? err.message : "Delete failed",
+        kind: "error",
+      });
+    }
+  };
+
+  return (
+    <section>
+      <div className="page-head">
+        <h1>Suppliers</h1>
+        <p className="page-sub">
+          Campus stores, facilities and pickup points an errand can point at.
+          This is the one screen backed by a real service.
+        </p>
+      </div>
+
+      <div className="controls">
+        <input
+          className="search-input"
+          type="search"
+          placeholder="Search by name…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          aria-label="Search suppliers by name"
+        />
+        <select
+          className="category-select"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          aria-label="Filter by category"
+        >
+          <option value="">All categories</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        {isAdmin && (
+          <button
+            className="btn btn-primary"
+            onClick={() => setModal({ kind: "create" })}
+          >
+            + Add supplier
+          </button>
+        )}
+      </div>
+
+      {/*
+        Interim development switch, NOT access control. It makes suppliersApi
+        send `X-User-Role: ADMIN`, which supplier-service currently trusts
+        verbatim. Anyone can send that header without this checkbox — see the
+        Gotchas in frontend/AGENTS.md. Remove it once real auth exists.
+      */}
+      <label
+        className="checkbox-row"
+        title="Development only — not real auth"
+        style={{ marginBottom: 18 }}
+      >
+        <input
+          type="checkbox"
+          checked={isAdmin}
+          onChange={(e) => onAdminChange(e.target.checked)}
+        />
+        <span className="balance-label">
+          Admin mode (development only — not access control)
+        </span>
+      </label>
+
+      {loading && <p className="status">Loading suppliers…</p>}
+
+      {error && !loading && (
+        <p className="status error">
+          Could not load suppliers: {error}
+          <br />
+          <span className="status-hint">
+            Check that supplier-service is running.
+          </span>
+        </p>
+      )}
+
+      {!loading && !error && suppliers.length === 0 && (
+        <p className="status">No suppliers match your search.</p>
+      )}
+
+      {!loading && !error && suppliers.length > 0 && (
+        <div className="supplier-grid">
+          {suppliers.map((s) => (
+            <SupplierCard
+              key={s.id}
+              supplier={s}
+              onSelect={(supplier) => setModal({ kind: "detail", supplier })}
+            />
+          ))}
+        </div>
+      )}
+
+      {modal && (
+        <Modal onClose={() => setModal(null)}>
+          {modal.kind === "detail" && (
+            <SupplierDetail
+              supplier={modal.supplier}
+              isAdmin={isAdmin}
+              onEdit={(supplier) => setModal({ kind: "edit", supplier })}
+              onDelete={handleDelete}
+            />
+          )}
+          {modal.kind === "create" && (
+            <SupplierForm
+              submitting={submitting}
+              onSubmit={handleSubmit}
+              onCancel={() => setModal(null)}
+            />
+          )}
+          {modal.kind === "edit" && (
+            <SupplierForm
+              existing={modal.supplier}
+              submitting={submitting}
+              onSubmit={handleSubmit}
+              onCancel={() => setModal(null)}
+            />
+          )}
+        </Modal>
+      )}
+    </section>
+  );
+}

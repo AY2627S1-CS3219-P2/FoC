@@ -85,7 +85,7 @@ trade-off rationale and it is the team's to write.
 | Tests | stdlib `testing` + `testify`; `testcontainers-go` for integration |
 | Containers | Docker + Docker Compose |
 | CI | GitHub Actions — agreed, but no workflow is committed yet |
-| Frontend | TBC — ask before assuming a framework |
+| Frontend | React + Vite, TypeScript (see `frontend/AGENTS.md`) |
 | Cloud | AWS (target and IaC tool not yet decided — do not scaffold either) |
 
 Do not add a dependency that isn't already in a `go.mod` without saying so
