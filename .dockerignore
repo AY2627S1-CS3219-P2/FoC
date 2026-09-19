@@ -1,0 +1,32 @@
+# Build contexts in compose.yaml are the repo ROOT (api-gateway, supplier-service),
+# so without this every `docker compose build` ships the whole working tree to the
+# daemon — frontend/node_modules alone is ~69 MB.
+#
+# frontend/.dockerignore covers only the `context: ./frontend` build; it does not
+# apply here.
+
+# Node toolchain artifacts
+node_modules/
+*.tsbuildinfo
+
+# Build output
+dist/
+build/
+out/
+
+# VCS and local tooling
+.git/
+.github/
+.claude/
+.codex/
+
+# Environment / secrets — never let a real .env reach an image layer
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db

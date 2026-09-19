@@ -1,0 +1,111 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5), date: 2026-09-19
+# Scope: Compose baseline — extends the supplier-service/frontend stack from
+#   PR #1 with Redis and the API Gateway, and closes the public ports that
+#   ai/decisions.md D-010 says must be internal.
+# Author review: PENDING — <reviewer to complete>
+
+# The trust zones from ai/decisions.md D-010 are enforced here by ONE thing:
+# whether a service has a `ports:` key. A published port is reachable from the
+# host; everything else is reachable only by name, from inside this network.
+#
+#   published   api-gateway 8080, frontend 3001
+#   internal    redis, supplier-db, and every service
+#
+# Services with no code yet (user-service, order-service, credit-service) are
+# deliberately absent — they have Dockerfiles but nothing to build, and listing
+# them would break `docker compose up`. Add each one as it lands.
+#
+# NOTE: building supplier-service requires PR #1 to be merged; its source is
+# not on main yet.
+
+services:
+  # ---- Revocation store (D-013, D-014) ------------------------------------
+  # AI-generated (edited by PENDING) — rewritten for D-024.
+  # user-service is the ONLY process that touches this; the gateway is not a
+  # Redis client at all. Nothing consumes it in this file yet because
+  # user-service has no code — it is here so the store exists when it lands.
+  # No `ports:` key, so nothing outside this network can reach it — which
+  # matters because write access is enough to un-revoke a logged-out token.
+  redis:
+    image: redis:7-alpine
+    # Append-only persistence: without it a restart empties the jti blocklist,
+    # silently un-revoking every token that was logged out before the restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- The only public entry point (D-010) --------------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    # No depends_on: the gateway is not a Redis client (D-024), and it fetches
+    # JWKS lazily rather than requiring user-service at boot (root AGENTS.md
+    # §5 — never assume startup order).
+    environment:
+      PORT: 8080
+      # user-service's public keys (D-023). While user-service is absent the
+      # gateway still starts; authenticated routes answer 503 until it appears.
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      # config.Load requires all four, so a missing one fails at boot rather
+      # than at the first request that needs it. Services that do not exist
+      # yet can still be named.
+      USER_BASE_URL: http://user-service:8081
+      SUPPLIER_BASE_URL: http://supplier-service:8082
+      ORDER_BASE_URL: http://order-service:8083
+      CREDIT_BASE_URL: http://credit-service:8084
+    ports:
+      - "8080:8080"
+
+  # ---- Supplier service and its own database (D-003) ----------------------
+  supplier-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supplier
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    environment:
+      PORT: 8082
+      SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
+    # TRANSITIONAL — D-010 says this must not be published. It still is because
+    # api-gateway/internal/proxy is an empty scaffold, so the frontend reaches
+    # supplier-service directly (VITE_SUPPLIER_BASE_URL). Delete these two
+    # lines in the same change that lands the proxy; until then the zones in
+    # the architecture diagram are not actually enforced for this service.
+    ports:
+      - "8082:8082"
+
+  # ---- Browser client ------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - api-gateway
+      - supplier-service
+    ports:
+      - "3001:80"
+
+volumes:
+  redis-data:
+  supplier-db-data:
