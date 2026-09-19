@@ -95,8 +95,9 @@ explicitly in your summary and explaining why the stdlib won't do.
 
 ```
 user-service/      order-service/      frontend/
-supplier-service/  credit-service/     ai/usage-log.md
+supplier-service/  credit-service/     api-gateway/
 data/              compose.yaml        .env.example
+ai/usage-log.md    ai/decisions.md
 ```
 
 One developer owns each folder. **Stay inside the folder the task names.** If a
@@ -114,6 +115,7 @@ state its own port but must not restate this table.
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
 | `frontend` | 3001, published by Compose onto nginx's :80 | — |
+| `api-gateway` | 8080 (provisional, D-018) | — (no SQL database; owns Redis on 6379 via `REDIS_URL`, D-017) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
