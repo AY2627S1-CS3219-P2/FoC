@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Process wiring for the gateway scaffold — config load, HTTP server,
 //   graceful shutdown, health endpoint. No routing, auth or proxying.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Edited by nigeltzy
 
 // Command api is the FoC API Gateway (D-010): the only publicly reachable
 // process in the system.

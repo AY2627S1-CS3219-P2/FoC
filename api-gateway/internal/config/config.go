@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Config plumbing for the gateway scaffold — reads env once, returns a
 //   struct. No auth, routing or Redis logic.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Edited by nigeltzy
 
 // Package config reads the gateway's environment once at startup and returns
 // an immutable Config. Nothing else in the service reads os.Getenv, and there
@@ -12,6 +12,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -26,11 +27,17 @@ type Config struct {
 	// RedisURL addresses the revocation store the gateway checks on every
 	// request (D-013).
 	//
-	// UNRESOLVED: which component owns this Redis is an open question in
-	// ai/decisions.md — D-013 has the gateway reading it while D-014 has
-	// user-service writing it, and root AGENTS.md §4.1 forbids two services
-	// sharing a datastore. The field is here so wiring compiles; nothing
-	// connects yet.
+	// AI-generated (edited by PENDING) — rewritten for D-020, AFTER the
+	// header above was signed off. Re-read this block before relying on that
+	// signature.
+	//
+	// SETTLED: D-020 supersedes D-017. user-service is the sole writer and
+	// this gateway only reads, so both processes hold this same URL.
+	//
+	// STILL OWED: that makes two services share one connection string, which
+	// root AGENTS.md §4.1 forbids. D-020 is recorded as needing a written
+	// carve-out for it, and nobody has written one. The field is here so
+	// wiring compiles; nothing connects yet.
 	RedisURL string
 
 	// JWTSecret verifies access-token signatures (D-011, D-013).
@@ -82,6 +89,9 @@ func Load() (Config, error) {
 			missing = append(missing, name)
 		}
 	}
+	// Sorted because Go randomises map iteration order: without this the
+	// error text varies run to run, which makes it untestable.
+	sort.Strings(missing)
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("config: required environment variables not set: %s", strings.Join(missing, ", "))
 	}

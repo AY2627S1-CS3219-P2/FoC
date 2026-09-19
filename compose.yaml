@@ -21,9 +21,11 @@
 
 services:
   # ---- Revocation store (D-013, D-014) ------------------------------------
-  # Owned exclusively by api-gateway (D-017). No `ports:` key, so nothing
-  # outside this network can reach it — which matters because write access is
-  # enough to un-revoke a logged-out token or lock out any user.
+  # AI-generated (edited by PENDING) — rewritten for D-020.
+  # Written by user-service, read by api-gateway (D-020, superseding D-017), so
+  # both hold this URL. No `ports:` key, so nothing outside this network can
+  # reach it — which matters because write access is enough to un-revoke a
+  # logged-out token or lock out any user.
   redis:
     image: redis:7-alpine
     # Append-only persistence: without it a restart empties the jti blocklist,

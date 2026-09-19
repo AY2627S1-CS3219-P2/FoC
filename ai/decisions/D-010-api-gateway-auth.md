@@ -105,8 +105,9 @@ repeated here.
 The D-014/D-017 clash that used to block implementation hardest is **resolved
 by D-020**: `user-service` writes Redis directly, as D-014 always drew it, so no
 gateway-side revocation API is needed. What D-020 leaves open is a written
-carve-out against root `AGENTS.md` §4.1 and D-003 — two services now touch one
-datastore, and the team owes that a rationale.
+carve-out against root `AGENTS.md` §4.1 — two services now share one
+datastore's connection string, and the team owes that a rationale. (D-003 is
+not in play; it covers PostgreSQL specifically.)
 
 Ports are settled only **provisionally** (D-018): gateway 8080, Redis 6379,
 chosen to get the stack running rather than decided.

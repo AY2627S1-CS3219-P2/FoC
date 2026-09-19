@@ -69,9 +69,10 @@ api/                  openapi.yaml — human-authored, empty today
 Module path `foc/api-gateway`. Port **8080**, provisional (D-018). It *reads*
 Redis on 6379; `user-service` is the sole writer (D-020, superseding D-017), so
 that connection string reaches both — unlike every Postgres URL in this repo,
-which stays with exactly one service. Root `AGENTS.md` §4.1 and D-003 say a
-datastore has one service touching it, and D-020 is marked as still owing a
-written carve-out for this. Env vars are in `.env.example`, and every one is
+which stays with exactly one service. Root `AGENTS.md` §4.1 forbids two
+services sharing a datastore's connection string, and D-020 is marked as still
+owing a written carve-out for this. (D-003 is not in play — it covers
+PostgreSQL specifically.) Env vars are in `.env.example`, and every one is
 required; the process exits with the list of what is missing rather than
 guessing.
 
