@@ -21,11 +21,12 @@
 
 services:
   # ---- Revocation store (D-013, D-014) ------------------------------------
-  # AI-generated (edited by PENDING) — rewritten for D-020.
-  # Written by user-service, read by api-gateway (D-020, superseding D-017), so
-  # both hold this URL. No `ports:` key, so nothing outside this network can
-  # reach it — which matters because write access is enough to un-revoke a
-  # logged-out token or lock out any user.
+  # AI-generated (edited by PENDING) — rewritten for D-024.
+  # user-service is the ONLY process that touches this; the gateway is not a
+  # Redis client at all. Nothing consumes it in this file yet because
+  # user-service has no code — it is here so the store exists when it lands.
+  # No `ports:` key, so nothing outside this network can reach it — which
+  # matters because write access is enough to un-revoke a logged-out token.
   redis:
     image: redis:7-alpine
     # Append-only persistence: without it a restart empties the jti blocklist,
@@ -44,18 +45,17 @@ services:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
-    depends_on:
-      redis:
-        condition: service_healthy
+    # No depends_on: the gateway is not a Redis client (D-024), and it fetches
+    # JWKS lazily rather than requiring user-service at boot (root AGENTS.md
+    # §5 — never assume startup order).
     environment:
       PORT: 8080
-      REDIS_URL: redis://redis:6379
-      # Never hardcoded. Comes from the gitignored .env; the process refuses to
-      # start if it is unset, rather than running with a default secret.
-      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
-      # config.Load requires all four. The gateway does not dial them yet —
-      # internal/proxy is still an empty scaffold — so the three services that
-      # do not exist can be named without breaking startup.
+      # user-service's public keys (D-023). While user-service is absent the
+      # gateway still starts; authenticated routes answer 503 until it appears.
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      # config.Load requires all four, so a missing one fails at boot rather
+      # than at the first request that needs it. Services that do not exist
+      # yet can still be named.
       USER_BASE_URL: http://user-service:8081
       SUPPLIER_BASE_URL: http://supplier-service:8082
       ORDER_BASE_URL: http://order-service:8083

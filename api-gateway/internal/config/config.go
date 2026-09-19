@@ -1,8 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
-// Scope: Config plumbing for the gateway scaffold — reads env once, returns a
-//   struct. No auth, routing or Redis logic.
-// Author review: Edited by nigeltzy
+// Scope: Config plumbing for the gateway — reads env once, returns a struct.
+//   Reworked for D-023 (RS256/JWKS replaces the symmetric secret) and D-024
+//   (the gateway is not a Redis client, so RedisURL is gone).
+// Author review: PENDING — <reviewer to complete>
 
 // Package config reads the gateway's environment once at startup and returns
 // an immutable Config. Nothing else in the service reads os.Getenv, and there
@@ -24,24 +25,13 @@ type Config struct {
 	// in the system (D-010).
 	Port string
 
-	// RedisURL addresses the revocation store the gateway checks on every
-	// request (D-013).
+	// JWKSURL is user-service's JSON Web Key Set endpoint, from which the
+	// gateway fetches the RSA public keys it verifies access tokens with
+	// (D-023).
 	//
-	// AI-generated (edited by PENDING) — rewritten for D-020, AFTER the
-	// header above was signed off. Re-read this block before relying on that
-	// signature.
-	//
-	// SETTLED: D-020 supersedes D-017. user-service is the sole writer and
-	// this gateway only reads, so both processes hold this same URL.
-	//
-	// STILL OWED: that makes two services share one connection string, which
-	// root AGENTS.md §4.1 forbids. D-020 is recorded as needing a written
-	// carve-out for it, and nobody has written one. The field is here so
-	// wiring compiles; nothing connects yet.
-	RedisURL string
-
-	// JWTSecret verifies access-token signatures (D-011, D-013).
-	JWTSecret string
+	// The gateway holds no private key and cannot mint a token, which is what
+	// keeps user-service the sole issuer (D-012).
+	JWKSURL string
 
 	// Downstream holds one base URL per callee, per root AGENTS.md §3.
 	Downstream Downstream
@@ -49,6 +39,10 @@ type Config struct {
 
 // Downstream is the set of services the gateway forwards to. One base URL per
 // callee, named <SERVICE>_BASE_URL (root AGENTS.md §3).
+//
+// This is the gateway's extension point: a new service means a field here, an
+// env var, and a prefix in the proxy's route table (D-027). Nothing else in
+// the gateway needs to know it exists.
 type Downstream struct {
 	User     string
 	Supplier string
@@ -58,13 +52,12 @@ type Downstream struct {
 
 // Load reads the environment and validates that every required variable is
 // present. It returns an error rather than falling back to a default: the
-// gateway's port is not yet allocated in root AGENTS.md §3 or D-008, so an
-// invented default would silently manufacture a decision nobody made.
+// gateway's port is provisional (D-018), and an invented default would
+// silently manufacture a decision nobody made.
 func Load() (Config, error) {
 	cfg := Config{
-		Port:      os.Getenv("PORT"),
-		RedisURL:  os.Getenv("REDIS_URL"),
-		JWTSecret: os.Getenv("JWT_SECRET"),
+		Port:    os.Getenv("PORT"),
+		JWKSURL: os.Getenv("JWKS_URL"),
 		Downstream: Downstream{
 			User:     os.Getenv("USER_BASE_URL"),
 			Supplier: os.Getenv("SUPPLIER_BASE_URL"),
@@ -75,8 +68,7 @@ func Load() (Config, error) {
 
 	required := map[string]string{
 		"PORT":              cfg.Port,
-		"REDIS_URL":         cfg.RedisURL,
-		"JWT_SECRET":        cfg.JWTSecret,
+		"JWKS_URL":          cfg.JWKSURL,
 		"USER_BASE_URL":     cfg.Downstream.User,
 		"SUPPLIER_BASE_URL": cfg.Downstream.Supplier,
 		"ORDER_BASE_URL":    cfg.Downstream.Order,

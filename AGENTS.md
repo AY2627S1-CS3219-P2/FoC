@@ -115,7 +115,7 @@ state its own port but must not restate this table.
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
 | `frontend` | 3001, published by Compose onto nginx's :80 | — |
-| `api-gateway` | 8080 (provisional, D-018) | — (no SQL database; **reads** Redis on 6379 via `REDIS_URL`, which `user-service` writes — D-020) |
+| `api-gateway` | 8080 (provisional, D-018) | — (no database of any kind: D-024 keeps it out of Redis entirely) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`

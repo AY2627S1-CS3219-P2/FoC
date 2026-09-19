@@ -1,15 +1,19 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
-// Scope: Process wiring for the gateway scaffold — config load, HTTP server,
-//   graceful shutdown, health endpoint. No routing, auth or proxying.
+// Scope: Process wiring — config load, verifier, router, HTTP server,
+//   graceful shutdown.
 // Author review: Edited by nigeltzy
+//
+// 2026-09-19: rewritten from the scaffold's health-only server to wire the
+// real router (D-027). Re-read before relying on the sign-off above.
 
 // Command api is the FoC API Gateway (D-010): the only publicly reachable
 // process in the system.
 //
-// SCAFFOLD ONLY. It starts, serves /healthz, and stops cleanly. It does not
-// verify tokens, check revocation or forward anything — see the doc.go in each
-// internal package for what blocks it.
+// It verifies an access token's RS256 signature against user-service's JWKS
+// (D-023), strips any claim headers the caller sent, injects its own, and
+// forwards over synchronous REST (D-013, D-022). It does not talk to Redis
+// and does not check revocation (D-024).
 package main
 
 import (
@@ -22,7 +26,9 @@ import (
 	"syscall"
 	"time"
 
+	"foc/api-gateway/internal/auth"
 	"foc/api-gateway/internal/config"
+	"foc/api-gateway/internal/httpapi"
 )
 
 func main() {
@@ -31,17 +37,22 @@ func main() {
 		log.Fatalf("api-gateway: %v", err)
 	}
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte(`{"status":"ok"}`))
-	})
+	// Keys are fetched lazily on first use, not here: the gateway must not
+	// assume user-service is already up (root AGENTS.md §5).
+	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
+
+	router, err := httpapi.NewRouter(cfg.Downstream, verifier)
+	if err != nil {
+		log.Fatalf("api-gateway: building router: %v", err)
+	}
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           mux,
+		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	// Serve in the background so the main goroutine can wait for a signal.
