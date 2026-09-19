@@ -33,11 +33,16 @@ Four things are recorded (D-010 – D-015) and several are not. The Open table i
 [`../ai/decisions.md`](../ai/decisions.md) is authoritative; the ones that block
 code here:
 
-1. **How `user-service` revokes.** D-017 gives this Redis to the gateway
-   exclusively, so `user-service` can no longer write the `jti` blocklist or
-   the `suspended:<uid>` key itself as D-014 draws it — it has to ask the
-   gateway. That inbound call is unspecced (D-005), and its shape decides
-   `internal/revocation`'s. *Reading* the store is unblocked.
+<!-- AI-generated (edited by PENDING) — items 1 and the Redis line under
+     Local development rewritten for D-020. -->
+1. **The Redis key spelling.** *Settled:* D-020 supersedes D-017 —
+   `user-service` is the sole writer and this gateway only reads, so no
+   inbound "please revoke" API is needed and `internal/revocation` is
+   unblocked in principle. *Unsettled:* the team diagram writes
+   `suspended:<uid>` while `user-service`'s own `AGENTS.md` writes
+   `suspended:uid:<uuid>` and pins the key's TTL to the access-token lifetime.
+   That document is on no branch yet, so it is not something to build against
+   (root §1). The two spellings need reconciling into one recorded answer.
 2. **The claim header names.** `supplier-service` reads `X-User-Role` today as
    a self-described interim stand-in. Whether the gateway adopts that name is
    the team's call, and changing `supplier-service` to match is its owner's.
@@ -61,10 +66,14 @@ api/                  openapi.yaml — human-authored, empty today
 
 ## Local development
 
-Module path `foc/api-gateway`. Port **8080**, provisional (D-018). It owns
-Redis on 6379 (D-017) — that connection string goes to no other service. Env
-vars are in `.env.example`, and every one is required; the process exits with
-the list of what is missing rather than guessing.
+Module path `foc/api-gateway`. Port **8080**, provisional (D-018). It *reads*
+Redis on 6379; `user-service` is the sole writer (D-020, superseding D-017), so
+that connection string reaches both — unlike every Postgres URL in this repo,
+which stays with exactly one service. Root `AGENTS.md` §4.1 and D-003 say a
+datastore has one service touching it, and D-020 is marked as still owing a
+written carve-out for this. Env vars are in `.env.example`, and every one is
+required; the process exits with the list of what is missing rather than
+guessing.
 
 ```bash
 go run ./cmd/api      # needs a filled .env
