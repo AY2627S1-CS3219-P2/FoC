@@ -72,6 +72,24 @@ Downstream services do not verify the JWT themselves; they read the headers the
 gateway set. This is only sound while those services are unreachable except
 through the gateway — the zone table above.
 
+**This assumption is now a citable row: D-022.** It rests on two legs, and both
+have to hold:
+
+1. **Strip, then inject.** The gateway discards any `X-User-ID` or
+   `X-User-Role` the client sent and replaces them with values read from the
+   *verified* JWT claims. Without the strip, a client sends
+   `X-User-Role: ADMIN` alongside an ordinary token and it passes straight
+   through the front door — no network access needed. This step is specified in
+   `user-service`'s own `AGENTS.md`, which is on no branch yet, so it is not
+   recorded (root `AGENTS.md` §1).
+2. **No direct route.** Nothing but the gateway can address a service. Today
+   this is false: `compose.yaml` publishes `supplier-service` on
+   `0.0.0.0:8082`, and `supplier-service/internal/middleware/auth.go` trusts
+   `X-User-Role` verbatim by its own admission.
+
+Exposed gateway routes limit *what* an outsider can reach; strip-and-inject
+limits *who they are* when they reach it. Neither substitutes for the other.
+
 ## 3. Refresh flow
 
 1. When the UI detects an expired access token, it sends the refresh token

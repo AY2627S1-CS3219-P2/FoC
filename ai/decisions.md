@@ -28,7 +28,12 @@ few lines, write it up in `ai/decisions/<id>-<slug>.md` and link it.
      Rows D-019..D-021 and the Superseded marks on D-011/D-017: AI-transcribed
      (Claude Code, Opus 5, 2026-09-19) from Nigeltzy's decisions in session,
      taken against Zi Yang's user-service AGENTS.md. Wording only — the
-     Rationale cells are deliberately blank and are the team's to write. -->
+     Rationale cells are deliberately blank and are the team's to write.
+
+     Row D-022: AI-transcribed (same session) from the existing prose in
+     ai/decisions/D-010-api-gateway-auth.md, which already stated the trust
+     assumption but not as a citable row. No new decision — it makes an
+     implicit one explicit so the team can point at it. -->
 | ID | Date | Decided by | Decision | Rationale | Status |
 | --- | --- | --- | --- | --- | --- |
 | D-001 | 2026-09-15 | team | Backend services are written in Go | | Accepted |
@@ -52,6 +57,7 @@ few lines, write it up in `ai/decisions/<id>-<slug>.md` and link it.
 | D-019 | 2026-09-19 | Nigeltzy | The `role` claim and the `users.account_role` column both take the values **`STUDENT`** or **`ADMIN`**. Supersedes the `USER`/`ADMIN` wording in D-011; every other part of D-011 stands | | Accepted |
 | D-020 | 2026-09-19 | Nigeltzy | **`user-service` is the sole writer to the Redis blocklist; the API Gateway is a reader only.** Supersedes D-017, which gave Redis to the gateway. This restores the D-014 model: on logout `user-service` pushes the AT's `jti` to Redis and then revokes the RT in PostgreSQL, and on suspension it writes `suspended:uid:<uuid>` and then sets `tokens_valid_after`. The gateway reads the blocklist to decide whether to reject, and rejects the request outright if it cannot reach Redis | | Accepted — **needs a written carve-out against root `AGENTS.md` §4.1**, which forbids two services sharing a datastore's connection string. (D-003 is not in play: it covers PostgreSQL specifically, and this is Redis) |
 | D-021 | 2026-09-19 | Nigeltzy | **Requester and courier are presentation semantics, not data.** They are not a second role axis, not a column and not a claim — the only stored and asserted roles are D-019's `STUDENT`/`ADMIN`. Closes the open question on a requester/courier toggle | | Accepted |
+| D-022 | 2026-09-19 | team (via D-010), stated explicitly by Nigeltzy | **Downstream services do not authenticate the API Gateway.** They accept `X-User-ID` and `X-User-Role` on trust, and that is sound only because of two things together: (a) the gateway **strips** any client-supplied copies of those headers and injects values derived from a JWT whose signature it has verified, so the values cannot be attacker-supplied; and (b) **no service is reachable except through the gateway**, so no attacker can address one directly. Security therefore rests on network isolation — if any service becomes publicly reachable, its access control is void, and it has no way to detect that. Transcribed from the prose in [D-010 detail](decisions/D-010-api-gateway-auth.md) ("only sound while those services are unreachable except through the gateway"), which stated this but never as a citable row | | Accepted — **two caveats.** The strip-and-inject step in (a) is specified only in a `user-service/AGENTS.md` that is on no branch, so it is not yet recorded (§1). The isolation in (b) is not true today: `compose.yaml` publishes `supplier-service` on `0.0.0.0:8082`, and D-009 leaves the AWS target undecided, so the "private VPC" it assumes has no decision or code behind it |
 
 ## Open — do not implement until these have a row above
 
