@@ -33,9 +33,10 @@ Redis sits outside the public zone. It is a separate datastore from the User
 DB, holding only revocation state — the `jti` blocklist and `suspended:<uid>`
 keys — and never credentials, refresh tokens or profile data.
 
-**D-020 supersedes D-017 on who touches it:** `user-service` is the sole
-**writer**, and the API Gateway is a **reader** only. (D-017 had given Redis to
-the gateway outright; that is no longer the decision.)
+**D-024 is the current position, and it supersedes both D-017 and D-020:**
+`user-service` is the **only** process that connects to Redis. The API Gateway
+is not a Redis client at all — not a writer, not a reader. (D-017 gave the store
+to the gateway; D-020 made the gateway a reader; D-024 removes it entirely.)
 
 ## Token shapes
 
@@ -63,10 +64,14 @@ the gateway outright; that is no longer the decision.)
 ## 2. Stateless request routing
 
 1. The UI attaches the access token to every subsequent request.
-2. The gateway verifies the JWT, checks Redis for revocation of its `jti`,
-   translates the claims into HTTP headers, and forwards the request over
-   synchronous REST to the downstream service (Order API, Credit API,
-   Supplier API, …).
+2. The gateway verifies the JWT's RS256 signature against the public key
+   (D-023) and checks `exp`, then translates the claims into HTTP headers and
+   forwards the request over synchronous REST to the downstream service (Order
+   API, Credit API, Supplier API, …).
+
+   **No revocation lookup happens here (D-024).** The diagram as drawn had the
+   gateway checking Redis at this step; it no longer does, and it does not ask
+   `user-service` either. Verification is entirely local to the gateway.
 
 Downstream services do not verify the JWT themselves; they read the headers the
 gateway set. This is only sound while those services are unreachable except
@@ -100,8 +105,11 @@ limits *who they are* when they reach it. Neither substitutes for the other.
 ## 4. Revocation
 
 **Logout.** `user-service` deletes the refresh token from the User DB and writes
-the access token's `jti` to a Redis blocklist. The AT stops working before its
-`exp`.
+the access token's `jti` to a Redis blocklist.
+
+> The diagram says the AT "stops working before its `exp`". Under **D-024** it
+> does not — nothing on the request path reads that blocklist. The AT remains
+> usable until `exp`; what the blocklist stops is the *refresh*. See D-025.
 
 **Suspension.** An admin suspends a user; `user-service` writes a
 `suspended:<uid>` key to Redis. The gateway then rejects any token whose `sub`
@@ -121,11 +129,18 @@ Listed in the **Open** table of [`../decisions.md`](../decisions.md) rather than
 repeated here.
 
 The D-014/D-017 clash that used to block implementation hardest is **resolved
-by D-020**: `user-service` writes Redis directly, as D-014 always drew it, so no
-gateway-side revocation API is needed. What D-020 leaves open is a written
-carve-out against root `AGENTS.md` §4.1 — two services now share one
-datastore's connection string, and the team owes that a rationale. (D-003 is
-not in play; it covers PostgreSQL specifically.)
+by D-024**, which takes the gateway out of Redis altogether. Exactly one service
+touches the datastore, so the root `AGENTS.md` §4.1 carve-out that D-020 owed
+is no longer needed.
+
+**What D-024 costs, recorded as D-025:** nothing reads the blocklist on the
+request path any more, so a logged-out or suspended access token keeps working
+until it expires — up to 15 minutes. Logout and suspension take effect at
+**refresh** time, where `user-service` checks the blocklist and
+`tokens_valid_after` and refuses to extend the session. The blocklist's job is
+therefore to stop a session being renewed, not to kill an access token
+mid-flight. Accepted for the prototype phase; to be revisited before any real
+deployment.
 
 Ports are settled only **provisionally** (D-018): gateway 8080, Redis 6379,
 chosen to get the stack running rather than decided.
