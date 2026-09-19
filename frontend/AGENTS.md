@@ -14,9 +14,16 @@ asks for — an agent may now write React/Vite/TS code in this folder.
 
 **What is still NOT chosen**, and still needs the owner before any code assumes
 it: state management beyond React's own hooks, a router, a component or CSS
-framework (no Tailwind, no MUI), a test runner, and a linter. Assume none of
-them exist. Adding one is a stack decision, not an implementation detail —
-ask, and record the answer here before building on it (root §1).
+framework (no Tailwind, no MUI), and a linter. Assume none of them exist.
+Adding one is a stack decision, not an implementation detail — ask, and record
+the answer here before building on it (root §1).
+
+**The test runner IS now chosen: `vitest`** (D-029, 2026-09-20, Nigeltzy). It
+shares Vite's config and transform, so there is no second build pipeline to
+keep in step. Tests live beside the code as `*.test.ts`. Only pure logic is
+covered today — validation rules and the OTP fixture's timing. There is no
+component testing library, so rendering is still unverified; adding one is a
+separate stack decision and still needs asking.
 
 ## Owner
 
@@ -150,10 +157,11 @@ allocation quoted on the login screen.
   because `api-gateway/internal/proxy` is still an empty scaffold; delete it
   the day the gateway forwards.
 - **Commands:** `npm install`, then `npm run dev` (Vite on 3001),
-  `npm run build` (typecheck + production build) and `npm run preview`. There
-  is still no `Makefile` in the repo (root §10) and no lint or test target —
-  adding either means choosing a linter or test runner, which is a stack
-  decision, so ask. Under Compose this folder is the `frontend` service.
+  `npm run build` (typecheck + production build), `npm run preview`, and
+  `npm test` (vitest, D-029) or `npm run test:watch`. There is still no
+  `Makefile` in the repo (root §10) and no lint target — adding one means
+  choosing a linter, which is a stack decision, so ask. Under Compose this
+  folder is the `frontend` service.
 
 ## Gotchas
 

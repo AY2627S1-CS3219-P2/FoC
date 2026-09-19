@@ -12,7 +12,11 @@ import { Toast, type ToastMessage } from "./components/Toast";
 import * as authApi from "./features/auth/authApi";
 import type { AuthResult } from "./features/auth/authApi";
 import { LoginPage } from "./features/auth/LoginPage";
-import type { ActingMode, Session } from "./features/auth/types";
+import type {
+  ActingMode,
+  PendingRegistration,
+  Session,
+} from "./features/auth/types";
 import { config } from "./lib/config";
 import { createTokenStore } from "./lib/tokens";
 import * as creditsApi from "./features/credits/creditsApi";
@@ -36,12 +40,21 @@ const authClient = usingGateway
   ? {
       logIn: authApi.logInViaGateway,
       signUp: authApi.signUpViaGateway,
+      // The gateway client reads the contact off the registration it already
+      // holds, so the argument is accepted and ignored to keep one signature.
+      verifyRegistration: (
+        pendingRegistration: PendingRegistration,
+        code: string,
+        _contact: string,
+      ) => authApi.verifyRegistrationViaGateway(pendingRegistration, code),
+      resendOtp: authApi.resendOtpViaGateway,
       logOut: authApi.logOutViaGateway,
     }
   : {
-      logIn: (email: string, _password: string) => authApi.logIn(email),
-      signUp: (email: string, name: string, _password: string) =>
-        authApi.signUp(email, name),
+      logIn: (identifier: string, _password: string) => authApi.logIn(identifier),
+      signUp: authApi.signUp,
+      verifyRegistration: authApi.verifyRegistration,
+      resendOtp: authApi.resendOtp,
       logOut: (_accessToken: string) => authApi.logOut(),
     };
 
@@ -107,6 +120,8 @@ export function App() {
         onAuthenticated={handleAuthenticated}
         logIn={authClient.logIn}
         signUp={authClient.signUp}
+        verifyRegistration={authClient.verifyRegistration}
+        resendOtp={authClient.resendOtp}
         isMock={!usingGateway}
       />
     );

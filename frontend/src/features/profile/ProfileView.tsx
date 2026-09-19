@@ -39,10 +39,36 @@ export function ProfileView({
             {session.initials}
           </span>
           <div>
-            <div style={{ fontSize: 17, fontWeight: 700 }}>{session.name}</div>
+            <div style={{ fontSize: 17, fontWeight: 700 }}>{session.username}</div>
             <div className="balance-label">{session.email}</div>
           </div>
         </div>
+
+        {/* F1.4.1 - the account identifier, registered email, username and
+            contact information are all viewable. F1.4.3 makes the identifier
+            and the email unchangeable, so they are shown as plain text. */}
+        <h2 className="section-label">Account</h2>
+        <dl className="detail-list">
+          <div>
+            <dt>Account ID</dt>
+            <dd>{session.userId || "—"}</dd>
+          </div>
+          <div>
+            <dt>Username</dt>
+            <dd>{session.username}</dd>
+          </div>
+          <div>
+            <dt>Contact</dt>
+            <dd>{session.contact || "Not set"}</dd>
+          </div>
+          <div>
+            <dt>Role</dt>
+            <dd>{session.role}</dd>
+          </div>
+        </dl>
+        <p className="balance-label">
+          Editing your username and contact details (F1.4.2) is not built yet.
+        </p>
 
         <h2 className="section-label">Acting as</h2>
         <div className="mode-toggle" style={{ display: "inline-flex" }}>

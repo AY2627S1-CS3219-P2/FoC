@@ -1,41 +1,48 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
-// Scope: Auth client. Keeps the existing fixture stand-in for user-service and
-//   adds a gateway-backed client implementing ai/decisions.md D-010..D-015.
+// Scope: Auth client — fixture and gateway implementations side by side.
+//   2026-09-20: login now takes an identifier (F1.2.1), registration returns a
+//   pending registration rather than a session (F1.1.2.7), and OTP verify and
+//   resend were added (F1.1.2.4-F1.1.2.6).
 // Author review: PENDING — <reviewer to complete>
 
 import { config } from "../../lib/config";
 import { NetworkError, send } from "../../lib/http";
 import { mockDelay } from "../../lib/mock";
 import type { TokenPair } from "../../lib/tokens";
-import type { Session } from "./types";
+import * as fixtureOtp from "./fixtureOtp";
+import type { AccountRole, PendingRegistration, Session } from "./types";
+import { validateOtp, validateRegistration } from "./validation";
 
 /**
  * Two clients live here, and App.tsx picks one at wiring time — deliberately
  * not a `useMock` flag passed into a single function, which would be the
  * control coupling root AGENTS.md §5 calls out.
  *
- *   - logIn / signUp / logOut / refreshAccessToken   fixtures. Active today.
- *   - logInViaGateway / ...                          the real flow. Inert
- *                                                    until the gateway runs.
+ *   - logIn / signUp / verifyRegistration / ...   fixtures. Active today.
+ *   - logInViaGateway / ...                       the real flow. Inert until
+ *                                                 the gateway serves auth.
  *
  * THE REQUEST AND RESPONSE SHAPES BELOW ARE NOT A CONTRACT.
  *
- * D-010..D-015 record the token *lifecycle* — who issues, who verifies, what
- * the claims are, where the refresh goes. They do NOT record the endpoint
- * paths or the JSON payloads, and ai/decisions.md lists that as open. Under
- * root AGENTS.md §1 an API interface belongs to user-service's owner, spec
- * first (§8). So the constants and decoders here are a placeholder with the
- * right *surface*, to be REPLACED by the generated client — not reconciled
- * with, and never cited as, user-service's spec.
+ * The gateway's public auth paths ARE now recorded (ai/decisions.md D-027), so
+ * ROUTES below is no longer guesswork for login, register, refresh and logout.
+ * The OTP endpoints are a different matter: the D1 backlog requires the
+ * behaviour (F1.1.2.3-F1.1.2.7) but no spec defines the calls, so those two
+ * paths remain placeholders with the right surface, to be REPLACED by the
+ * generated client once user-service's owner writes them.
  */
 
-/** UNRECORDED — placeholder paths. See the note above. */
+/** Recorded in D-027, except where marked. */
 const ROUTES = {
   login: "/auth/login",
   register: "/auth/register",
   refresh: "/auth/refresh",
   logout: "/auth/logout",
+  /** UNRECORDED — behaviour is required by F1.1.2.7, the call is not specced. */
+  verify: "/auth/register/verify",
+  /** UNRECORDED — behaviour is required by F1.1.2.4, the call is not specced. */
+  resend: "/auth/register/resend",
 } as const;
 
 export class AuthError extends Error {
@@ -45,42 +52,65 @@ export class AuthError extends Error {
   }
 }
 
+/**
+ * F1.2.4 — a suspended account must be told it is suspended, which is a
+ * different outcome from bad credentials (F1.2.3, a deliberately generic
+ * error). The caller renders these differently, so the distinction survives
+ * as a type rather than as string matching.
+ */
+export class SuspendedAccountError extends AuthError {
+  constructor(message = "This account is suspended. Contact an administrator.") {
+    super(message);
+    this.name = "SuspendedAccountError";
+  }
+}
+
 /** What a successful login yields: who you are, plus the pair from D-011. */
 export interface AuthResult {
   session: Session;
   tokens: TokenPair;
 }
 
-function initialsOf(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
+function initialsOf(value: string): string {
+  const cleaned = value.replace(/[^a-zA-Z0-9]+/g, " ").trim();
+  if (!cleaned) return "NU";
+  const parts = cleaned.split(/\s+/);
+  if (parts.length === 1) return parts[0]!.slice(0, 2).toUpperCase();
+  return parts
     .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
+    .map((part) => part[0]!.toUpperCase())
     .join("");
 }
 
-function nameFromEmail(email: string): string {
+function usernameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? "student";
-  return local
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((part) => part[0]!.toUpperCase() + part.slice(1))
-    .join(" ");
+  return local.replace(/[^a-zA-Z0-9]+/g, "") || "student";
 }
 
 // ---------------------------------------------------------------------------
 // Fixtures — active while user-service does not exist
 // ---------------------------------------------------------------------------
 
-function fixtureResult(email: string, name: string): AuthResult {
+function fixtureSession(
+  email: string,
+  username: string,
+  contact = "",
+  role: AccountRole = "STUDENT",
+): Session {
   return {
-    session: {
-      userId: "mock-user-1",
-      name,
-      initials: initialsOf(name) || "NU",
-      email,
-    },
+    userId: "mock-user-1",
+    username,
+    email,
+    contact,
+    // F1.5.1 — every newly registered account is a STUDENT.
+    role,
+    initials: initialsOf(username),
+  };
+}
+
+function fixtureResult(session: Session): AuthResult {
+  return {
+    session,
     tokens: {
       accessToken: "mock-access-token",
       refreshToken: "mock-refresh-token",
@@ -89,21 +119,64 @@ function fixtureResult(email: string, name: string): AuthResult {
 }
 
 /**
- * MOCK. Authenticates nothing. Accepts any NUS-looking email, ignores the
- * password entirely, and hands back a fixture session with obviously-fake
- * tokens so the shell has a user to render and the token plumbing has
- * something to carry. No credential is transmitted, stored or checked.
+ * MOCK. Authenticates nothing. Accepts any identifier, ignores the password
+ * entirely, and hands back a fixture session with obviously-fake tokens. No
+ * credential is transmitted, stored or checked.
+ *
+ * F1.2.1 — the identifier is a username OR an NUS email, so this takes
+ * whichever the user typed and does not insist on an email.
  */
-export async function logIn(email: string): Promise<AuthResult> {
-  if (!email.trim()) throw new AuthError("Enter your NUS email.");
-  return mockDelay(fixtureResult(email, nameFromEmail(email)));
+export async function logIn(identifier: string): Promise<AuthResult> {
+  const trimmed = identifier.trim();
+  if (!trimmed) throw new AuthError("Enter your username or NUS email.");
+
+  // A reserved identifier so the suspended-account path (F1.2.4) can actually
+  // be seen and styled before user-service exists.
+  if (trimmed.toLowerCase() === "suspended") {
+    throw new SuspendedAccountError();
+  }
+
+  const isEmail = trimmed.includes("@");
+  const email = isEmail ? trimmed : `${trimmed}@u.nus.edu`;
+  const username = isEmail ? usernameFromEmail(trimmed) : trimmed;
+  return mockDelay(fixtureResult(fixtureSession(email, username)));
 }
 
-/** MOCK. See logIn. */
-export async function signUp(email: string, name: string): Promise<AuthResult> {
-  if (!email.trim()) throw new AuthError("Enter your NUS email.");
-  if (!name.trim()) throw new AuthError("Enter your name.");
-  return mockDelay(fixtureResult(email, name));
+/**
+ * MOCK. F1.1.2.7 — this does NOT produce a session. It opens a registration
+ * and returns the pending state; only verifyRegistration completes it.
+ */
+export async function signUp(
+  email: string,
+  username: string,
+  password: string,
+  _contact: string,
+): Promise<PendingRegistration> {
+  const problem = validateRegistration({ email, username, password });
+  if (problem) throw new AuthError(problem);
+  return mockDelay(fixtureOtp.startRegistration(email.trim(), username.trim()));
+}
+
+/** MOCK. F1.1.2.7 — completes registration against the issued code. */
+export async function verifyRegistration(
+  pendingRegistration: PendingRegistration,
+  code: string,
+  contact: string,
+): Promise<AuthResult> {
+  const problem = validateOtp(code);
+  if (problem) throw new AuthError(problem);
+  const { username, email } = fixtureOtp.verify(
+    pendingRegistration.handle,
+    code,
+  );
+  return mockDelay(fixtureResult(fixtureSession(email, username, contact)));
+}
+
+/** MOCK. F1.1.2.4-F1.1.2.6 — replacement code, with the limits applied. */
+export async function resendOtp(
+  pendingRegistration: PendingRegistration,
+): Promise<PendingRegistration> {
+  return mockDelay(fixtureOtp.resend(pendingRegistration.handle));
 }
 
 /** MOCK. No token was ever real, so there is nothing to revoke. */
@@ -121,17 +194,31 @@ export async function refreshAccessToken(): Promise<string> {
 }
 
 // ---------------------------------------------------------------------------
-// Gateway-backed — inert until api-gateway runs and user-service exists
+// Gateway-backed — inert until api-gateway serves the auth routes
 // ---------------------------------------------------------------------------
 
 function decodeAuthError(body: unknown, status: number): AuthError {
   // Not assuming a shared error envelope (frontend/AGENTS.md, Gotchas):
   // supplier-service returns {"error": "..."}, and whether user-service and
   // the gateway match is their owners' decision. Read it if it is there.
-  if (body && typeof body === "object" && "error" in body) {
-    return new AuthError(String((body as { error: unknown }).error));
+  const message =
+    body && typeof body === "object" && "error" in body
+      ? String((body as { error: unknown }).error)
+      : null;
+
+  // F1.2.4 — suspension is a distinct outcome the UI must name. How
+  // user-service signals it is not recorded, so this reads the two signals it
+  // could plausibly send and falls back to the generic error otherwise.
+  const code =
+    body && typeof body === "object" && "code" in body
+      ? String((body as { code: unknown }).code).toUpperCase()
+      : "";
+  if (status === 403 || code.includes("SUSPEND")) {
+    return new SuspendedAccountError(message ?? undefined);
   }
-  if (status === 401) return new AuthError("Incorrect email or password.");
+  if (message) return new AuthError(message);
+  // F1.2.3 — a generic error for bad credentials, naming neither field.
+  if (status === 401) return new AuthError("Those details did not match.");
   return new AuthError(`Sign-in failed (${status}).`);
 }
 
@@ -153,69 +240,119 @@ function decodeAuthResult(body: unknown): AuthResult {
     unknown
   >;
   const email = String(profile["email"] ?? "");
-  const name = String(profile["name"] ?? nameFromEmail(email));
+  const username = String(profile["username"] ?? usernameFromEmail(email));
+  const role: AccountRole =
+    String(profile["role"] ?? "STUDENT").toUpperCase() === "ADMIN"
+      ? "ADMIN"
+      : "STUDENT";
 
   return {
     session: {
-      userId: String(profile["id"] ?? ""),
-      name,
-      initials: initialsOf(name) || "NU",
+      userId: String(profile["id"] ?? profile["uid"] ?? ""),
+      username,
       email,
+      contact: String(profile["contact"] ?? profile["phoneNum"] ?? ""),
+      role,
+      initials: initialsOf(username),
     },
     tokens: { accessToken, refreshToken },
   };
 }
 
-/** Step 1 of D-010: credentials go to the gateway, which forwards them on. */
-export async function logInViaGateway(
-  email: string,
-  password: string,
-): Promise<AuthResult> {
-  if (!email.trim()) throw new AuthError("Enter your NUS email.");
-  if (!password) throw new AuthError("Enter your password.");
+function decodePending(body: unknown, fallbackEmail: string): PendingRegistration {
+  const raw = (body ?? {}) as Record<string, unknown>;
+  const handle = raw["handle"] ?? raw["registrationId"];
+  if (typeof handle !== "string" || !handle) {
+    throw new AuthError("The server did not return a registration to verify.");
+  }
+  const expiresAt = Number(raw["expiresAt"]);
+  return {
+    handle,
+    email: String(raw["email"] ?? fallbackEmail),
+    // F1.1.2.5 — five minutes, unless the server says otherwise.
+    expiresAt: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 5 * 60_000,
+    resendsRemaining: Number(raw["resendsRemaining"] ?? 3),
+    blockedUntil:
+      raw["blockedUntil"] == null ? null : Number(raw["blockedUntil"]),
+  };
+}
 
-  let response;
+async function post(path: string, body: unknown) {
   try {
-    response = await send({
+    return await send({
       baseUrl: config.gatewayBaseUrl,
-      path: ROUTES.login,
+      path,
       method: "POST",
-      body: { email, password },
+      body,
     });
   } catch (err) {
     if (err instanceof NetworkError) throw new AuthError(err.message);
     throw err;
   }
+}
 
+/** D-027: credentials go to the gateway, which rewrites onto user-service. */
+export async function logInViaGateway(
+  identifier: string,
+  password: string,
+): Promise<AuthResult> {
+  if (!identifier.trim()) throw new AuthError("Enter your username or NUS email.");
+  if (!password) throw new AuthError("Enter your password.");
+
+  // F1.2.1 — one field, either kind of identifier. The server decides which.
+  const response = await post(ROUTES.login, {
+    identifier: identifier.trim(),
+    password,
+  });
   if (!response.ok) throw decodeAuthError(response.body, response.status);
   return decodeAuthResult(response.body);
 }
 
-/** Registration, which issues a session the same way login does (D-012). */
+/** F1.1 + F1.1.2.3 — opens a registration; the OTP step completes it. */
 export async function signUpViaGateway(
   email: string,
-  name: string,
+  username: string,
   password: string,
+  contact: string,
+): Promise<PendingRegistration> {
+  const problem = validateRegistration({ email, username, password });
+  if (problem) throw new AuthError(problem);
+
+  const response = await post(ROUTES.register, {
+    email: email.trim(),
+    username: username.trim(),
+    password,
+    contact: contact.trim(),
+  });
+  if (!response.ok) throw decodeAuthError(response.body, response.status);
+  return decodePending(response.body, email.trim());
+}
+
+/** F1.1.2.7 — registration completes only on the correct OTP. */
+export async function verifyRegistrationViaGateway(
+  pendingRegistration: PendingRegistration,
+  code: string,
 ): Promise<AuthResult> {
-  if (!email.trim()) throw new AuthError("Enter your NUS email.");
-  if (!name.trim()) throw new AuthError("Enter your name.");
-  if (!password) throw new AuthError("Choose a password.");
+  const problem = validateOtp(code);
+  if (problem) throw new AuthError(problem);
 
-  let response;
-  try {
-    response = await send({
-      baseUrl: config.gatewayBaseUrl,
-      path: ROUTES.register,
-      method: "POST",
-      body: { email, name, password },
-    });
-  } catch (err) {
-    if (err instanceof NetworkError) throw new AuthError(err.message);
-    throw err;
-  }
-
+  const response = await post(ROUTES.verify, {
+    handle: pendingRegistration.handle,
+    code: code.trim(),
+  });
   if (!response.ok) throw decodeAuthError(response.body, response.status);
   return decodeAuthResult(response.body);
+}
+
+/** F1.1.2.4 — a replacement code. The server applies the F1.1.2.6 limits. */
+export async function resendOtpViaGateway(
+  pendingRegistration: PendingRegistration,
+): Promise<PendingRegistration> {
+  const response = await post(ROUTES.resend, {
+    handle: pendingRegistration.handle,
+  });
+  if (!response.ok) throw decodeAuthError(response.body, response.status);
+  return decodePending(response.body, pendingRegistration.email);
 }
 
 /**
@@ -258,7 +395,7 @@ export async function logOutViaGateway(accessToken: string): Promise<void> {
     });
   } catch {
     // A failed logout call still clears the client. The server-side token
-    // stays live until it expires, which is the gateway's problem to surface,
-    // not a reason to keep the user signed in here.
+    // stays live until it expires (D-025a), which is not a reason to keep the
+    // user signed in here.
   }
 }

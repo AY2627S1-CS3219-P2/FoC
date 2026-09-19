@@ -104,7 +104,7 @@ export function AppShell({
         <header className="topbar">
           <span className="topbar-user">
             <span className="avatar">{session.initials}</span>
-            <span>{session.name}</span>
+            <span>{session.username}</span>
           </span>
 
           <span className="topbar-spacer" />
