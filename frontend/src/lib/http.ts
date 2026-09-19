@@ -39,6 +39,21 @@ export interface SendOptions {
   /** Serialised as JSON; the Content-Type header is set for you. */
   body?: unknown;
   headers?: Record<string, string>;
+  // AI-generated (edited by <name>).
+  /**
+   * The access token to attach, per ai/decisions.md D-011 ("the UI attaches
+   * the access token to subsequent requests"). Null or omitted sends nothing,
+   * which is correct for login and for any endpoint the gateway leaves open.
+   *
+   * NOT RECORDED: the diagram says "attach AT w any request" without naming
+   * the scheme. `Authorization: Bearer <token>` is the conventional reading
+   * for a JWT and is what this sends; if the gateway expects something else,
+   * this is the one line to change.
+   *
+   * Callers do not normally pass this by hand — features/auth/session wraps
+   * send() so the token and the refresh-on-expiry retry stay in one place.
+   */
+  accessToken?: string | null;
 }
 
 export async function send({
@@ -47,9 +62,12 @@ export async function send({
   method = "GET",
   body,
   headers = {},
+  accessToken = null,
 }: SendOptions): Promise<HttpResponse> {
   const requestHeaders = new Headers(headers);
   if (body !== undefined) requestHeaders.set("Content-Type", "application/json");
+  // AI-generated (edited by <name>).
+  if (accessToken) requestHeaders.set("Authorization", `Bearer ${accessToken}`);
 
   let response: Response;
   try {

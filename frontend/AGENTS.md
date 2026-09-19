@@ -57,14 +57,16 @@ grows alongside the services in the repo root.
 ```
 src/
 ├── features/
-│   ├── auth/          LoginPage + session types      [MOCK]
+│   ├── auth/          LoginPage, authApi (fixture + gateway clients),
+│   │                  session.ts (AT attach + refresh retry)
 │   ├── home/          landing view
 │   ├── suppliers/     view + components + suppliersApi.ts + types.ts
 │   ├── errands/       NewErrandView, MyErrandsView    [MOCK]
 │   ├── credits/       CreditsView                     [MOCK]
 │   └── profile/       ProfileView                     [MOCK]
 ├── components/        shared only — AppShell, Modal, Toast, MockBadge, icons
-├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures)
+├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
+│                      tokens.ts (AT/RT store)
 ├── App.tsx            session gate, view switching, acting mode, balance
 ├── views.ts           view names + the nav model, until a router is chosen
 └── main.tsx
@@ -95,6 +97,14 @@ with a real service behind it.
 frontend can be built and demoed, `auth/`, `errands/`, `credits/` and
 `profile/` talk to fixture modules in their own folders instead
 (`src/lib/mock.ts` has the full note).
+
+`auth/` is now half-out of that state. `authApi.ts` holds **two** clients —
+the fixtures, and a gateway-backed one implementing D-010..D-015 — and
+`App.tsx` picks between them once, on whether `VITE_GATEWAY_BASE_URL` is set.
+The lifecycle is recorded and implemented; the **endpoint paths and payloads
+in `ROUTES` and the decoders are still invented** and carry the same "replace,
+do not reconcile" rule as any other fixture. `<MockBadge />` on the login
+screen hides itself once a gateway URL is configured.
 
 **Those shapes are not a contract.** They were invented here to have something
 to render. An API interface belongs to its service's owner (root §1), and a
@@ -128,12 +138,17 @@ allocation quoted on the login screen.
 - **Port 3001**, which `compose.yaml` publishes onto nginx's :80 in the
   prototype (root §3). Backend ports are allocated in that same table —
   8081-8084 — so read them there rather than inventing or assuming one.
-- **Env vars:** one base-URL variable per backend service it talks to,
-  following the repo's `<SERVICE>_BASE_URL` naming plus whatever prefix the
-  chosen framework demands — here `VITE_`. Today that is
-  `VITE_SUPPLIER_BASE_URL`, resolved in `src/lib/config.ts` and defaulting to
-  `http://localhost:8082`. Every variable goes into the root `.env.example`
-  with a placeholder (root §9) and this folder's own.
+- **Env vars:** resolved in `src/lib/config.ts`, never read inline, and every
+  one goes into the root `.env.example` with a placeholder (root §9) plus this
+  folder's own. **D-010 makes this one URL, not one per service:** the gateway
+  is the only publicly reachable process, so `VITE_GATEWAY_BASE_URL` replaces
+  the per-service variables. The gateway is on **8080**, provisional (D-018).
+  The variable is left unset on purpose: `App.tsx` reads empty as "run the
+  fixture auth", so setting it is what switches the app onto the real flow —
+  do that once `api-gateway` can serve the auth routes.
+  `VITE_SUPPLIER_BASE_URL` survives as a marked transitional entry only
+  because `api-gateway/internal/proxy` is still an empty scaffold; delete it
+  the day the gateway forwards.
 - **Commands:** `npm install`, then `npm run dev` (Vite on 3001),
   `npm run build` (typecheck + production build) and `npm run preview`. There
   is still no `Makefile` in the repo (root §10) and no lint or test target —
@@ -148,7 +163,18 @@ allocation quoted on the login screen.
 - **The "Admin mode" checkbox is not auth.** It makes `suppliersApi.ts`
   send `X-User-Role: ADMIN`, which `supplier-service` currently trusts
   verbatim as an interim measure (its `internal/middleware/auth.go`). Do not
-  build real UI on that pattern or present it as access control.
+  build real UI on that pattern or present it as access control. **D-013 ends
+  this:** the gateway derives `role` from the verified access token and sets
+  the header itself, so the browser must stop sending it — and the gateway has
+  to strip any claim header a client supplies, or the checkbox becomes a
+  privilege escalation. Removing the checkbox is this folder's change;
+  stripping headers is `api-gateway`'s; neither touches `supplier-service`,
+  whose middleware is its owner's (root §3).
+- **Tokens never go in component state or storage.** `lib/tokens.ts` keeps the
+  access and refresh tokens in a closure created once in `App.tsx`. Where they
+  *should* live is an open question in `ai/decisions.md`; until it is answered,
+  nothing writes them to `localStorage`, `sessionStorage` or a cookie, and the
+  visible cost is that a page reload signs the user out.
 - **Do not assume a shared error envelope.** `supplier-service` today returns
   `{"error": "..."}` with a non-2xx status; whether the others match is an
   interface decision for their owners, not one to standardise from here. Every

@@ -1,14 +1,20 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Application root — session gate, view switching, acting mode, and the
-//   shared (mock) credit balance the shell displays.
+//   shared (mock) credit balance the shell displays. 2026-09-19: owns the
+//   TokenStore and picks the fixture or gateway auth client (ai/decisions.md
+//   D-010..D-015).
 // Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { Toast, type ToastMessage } from "./components/Toast";
+import * as authApi from "./features/auth/authApi";
+import type { AuthResult } from "./features/auth/authApi";
 import { LoginPage } from "./features/auth/LoginPage";
 import type { ActingMode, Session } from "./features/auth/types";
+import { config } from "./lib/config";
+import { createTokenStore } from "./lib/tokens";
 import * as creditsApi from "./features/credits/creditsApi";
 import { CreditsView } from "./features/credits/CreditsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
@@ -18,8 +24,35 @@ import { ProfileView } from "./features/profile/ProfileView";
 import { SuppliersView } from "./features/suppliers/SuppliersView";
 import type { ViewName } from "./views";
 
+/**
+ * D-010 routes everything through the gateway, so a configured gateway URL is
+ * what says "there is a real user-service behind this". Until one is set, the
+ * fixtures run. Chosen once, here, rather than by a flag threaded into the
+ * auth functions (root AGENTS.md §5, control coupling).
+ */
+const usingGateway = config.gatewayBaseUrl !== "";
+
+const authClient = usingGateway
+  ? {
+      logIn: authApi.logInViaGateway,
+      signUp: authApi.signUpViaGateway,
+      logOut: authApi.logOutViaGateway,
+    }
+  : {
+      logIn: (email: string, _password: string) => authApi.logIn(email),
+      signUp: (email: string, name: string, _password: string) =>
+        authApi.signUp(email, name),
+      logOut: (_accessToken: string) => authApi.logOut(),
+    };
+
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
+
+  // Created once and never replaced. The tokens live in its closure, not in
+  // component state, so a re-render cannot leak them into a React DevTools
+  // tree and nothing outside lib/tokens.ts reads the values.
+  const [tokens] = useState(createTokenStore);
+
   const [view, setView] = useState<ViewName>("home");
   const [mode, setMode] = useState<ActingMode>("requesting");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -46,8 +79,37 @@ export function App() {
 
   const dismissToast = useCallback(() => setToast(null), []);
 
+  const handleAuthenticated = useCallback(
+    (result: AuthResult) => {
+      // The pair goes to the store; only the profile reaches component state.
+      tokens.setPair(result.tokens);
+      setSession(result.session);
+    },
+    [tokens],
+  );
+
+  /**
+   * D-014: the server revokes — user-service deletes the refresh token and
+   * blocklists the access token's jti. The client can only ask and then forget
+   * its own copies, which it does either way.
+   */
+  const handleLogOut = useCallback(async () => {
+    const accessToken = tokens.getAccessToken();
+    if (accessToken) await authClient.logOut(accessToken);
+    tokens.clear();
+    setSession(null);
+    setView("home");
+  }, [tokens]);
+
   if (!session) {
-    return <LoginPage onAuthenticated={setSession} />;
+    return (
+      <LoginPage
+        onAuthenticated={handleAuthenticated}
+        logIn={authClient.logIn}
+        signUp={authClient.signUp}
+        isMock={!usingGateway}
+      />
+    );
   }
 
   return (
@@ -60,10 +122,7 @@ export function App() {
         onModeChange={setMode}
         available={available}
         held={held}
-        onLogOut={() => {
-          setSession(null);
-          setView("home");
-        }}
+        onLogOut={handleLogOut}
       >
         {view === "home" && <HomeView mode={mode} onNavigate={setView} />}
 
@@ -92,10 +151,7 @@ export function App() {
             session={session}
             mode={mode}
             onModeChange={setMode}
-            onLogOut={() => {
-              setSession(null);
-              setView("home");
-            }}
+            onLogOut={handleLogOut}
           />
         )}
       </AppShell>

@@ -1,16 +1,33 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
-// Scope: Built the sign-in screen from the owner's mockup, against the mock
-//   user-service.
+// Scope: Built the sign-in screen from the owner's mockup. 2026-09-19: takes
+//   the auth calls as props so App picks fixture vs gateway (ai/decisions.md
+//   D-010), and hands back the token pair alongside the session.
 // Author review: PENDING — <reviewer to complete>
 
 import { useState, type FormEvent } from "react";
 import { MockBadge } from "../../components/MockBadge";
-import * as authApi from "./authApi";
-import type { Session } from "./types";
+import type { AuthResult } from "./authApi";
 
 interface LoginPageProps {
-  onAuthenticated: (session: Session) => void;
+  /**
+   * Receives the session AND the token pair from D-011 — App puts the tokens
+   * in the TokenStore. This screen never touches token storage itself.
+   */
+  onAuthenticated: (result: AuthResult) => void;
+  /**
+   * Injected by App, which chooses the fixture client or the gateway client
+   * once at wiring time. Passing the function beats passing a `useMock`
+   * boolean the callee branches on (root AGENTS.md §5, control coupling).
+   */
+  logIn: (email: string, password: string) => Promise<AuthResult>;
+  signUp: (
+    email: string,
+    name: string,
+    password: string,
+  ) => Promise<AuthResult>;
+  /** Hides the mock notice once a real user-service is behind the gateway. */
+  isMock: boolean;
 }
 
 type Tab = "login" | "signup";
@@ -20,7 +37,12 @@ type Tab = "login" | "signup";
  * The actual figure is credit-service's to decide (its AGENTS.md calls the
  * size of the allocation the team's choice), so it is copy here, not a rule.
  */
-export function LoginPage({ onAuthenticated }: LoginPageProps) {
+export function LoginPage({
+  onAuthenticated,
+  logIn,
+  signUp,
+  isMock,
+}: LoginPageProps) {
   const [tab, setTab] = useState<Tab>("login");
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
@@ -33,11 +55,11 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
     setBusy(true);
     setError(null);
     try {
-      const session =
+      const result =
         tab === "login"
-          ? await authApi.logIn(email)
-          : await authApi.signUp(email, name);
-      onAuthenticated(session);
+          ? await logIn(email, password)
+          : await signUp(email, name, password);
+      onAuthenticated(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not sign in.");
     } finally {
@@ -52,7 +74,7 @@ export function LoginPage({ onAuthenticated }: LoginPageProps) {
         <h1 className="auth-title">Friend on Campus</h1>
         <p className="auth-sub">Someone&rsquo;s already walking past. Ask them.</p>
 
-        <MockBadge service="user-service" />
+        {isMock && <MockBadge service="user-service" />}
 
         <div className="tabs">
           <button
