@@ -254,6 +254,10 @@ make up / make down       # full stack via Compose
 ```
 
 What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
-and `go test ./...`; from the repo root, `docker compose up` (`compose.yaml` is
-empty on any branch where no service has merged). Integration tests everywhere
+and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
+carries Redis, the API Gateway, supplier-service and its database, and the
+frontend; it needs `JWT_SECRET` set in a local `.env`, and building
+supplier-service needs PR #1 merged. Services with no code yet are absent by
+design. A service is reachable from the host only if it has a `ports:` key —
+that is how D-010's trust zones are enforced. Integration tests everywhere
 are spelled `go test -tags=integration ./...`.
