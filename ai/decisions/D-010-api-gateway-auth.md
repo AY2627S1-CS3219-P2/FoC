@@ -18,8 +18,11 @@ Detail for rows **D-010 – D-015** in [`../decisions.md`](../decisions.md).
 > directly. The source is a team architecture diagram plus a token-lifecycle
 > write-up, both produced in discussion on 2026-09-19.
 >
-> The diagram is committed beside this file:
+> The team's original diagram is committed beside this file:
 > [`jwt-token-architecture-diagram.png`](jwt-token-architecture-diagram.png).
+> **It is now out of date** on Redis ownership (D-024) and on what logout does
+> to an access token (D-025a). The current picture is
+> [`architecture.md`](architecture.md), drawn in Mermaid so it diffs in review.
 
 ## Trust zones
 

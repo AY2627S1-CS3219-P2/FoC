@@ -15,6 +15,14 @@ Rationale matters beyond compliance: D3 and D4 grade "technical depth →
 rationale for decisions is explained; trade-offs and integration considerations
 addressed." These rows are the raw material for those slides.
 
+## The picture
+
+[`decisions/architecture.md`](decisions/architecture.md) renders these rows as
+Mermaid: trust zones, and the login, request-routing, refresh and revocation
+flows. It supersedes the PNG, which is kept as the team's original but is now
+out of date on Redis ownership (D-024) and on what logout does to an access
+token (D-025a).
+
 ## How to add one
 
 Append to the table. Keep the statement short enough that someone can build

@@ -1,0 +1,239 @@
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Opus 5), date: 2026-09-19
+Scope: Redrew the team's PNG architecture diagram as Mermaid and brought it in
+  line with decisions D-019..D-028. Every element traces to a recorded row in
+  ../decisions.md — no architecture was invented here, and no Rationale is
+  offered.
+Author review: PENDING — <reviewer to complete>
+-->
+
+# FoC — Architecture
+
+Supersedes [`jwt-token-architecture-diagram.png`](jwt-token-architecture-diagram.png)
+as the current picture. **The PNG is kept deliberately**: it is what the team
+drew on 2026-09-19 and what D-010–D-018 were transcribed from. It is now out of
+date in two places, both flagged below.
+
+Mermaid rather than an image so it renders on GitHub, diffs in review, and
+cannot silently drift from the decisions it depicts.
+
+Every box and arrow traces to a row in [`../decisions.md`](../decisions.md).
+Where something is **not built yet**, the diagram says so rather than showing an
+intention as though it were a system.
+
+---
+
+## 1. Trust zones and components
+
+```mermaid
+flowchart TB
+    subgraph PUBLIC["PUBLICLY REACHABLE"]
+        UI["Browser SPA<br/>React + Vite + TS<br/>:3001"]
+        GW["API Gateway<br/>:8080<br/>verify RS256, strip, inject, forward"]
+    end
+
+    subgraph INTERNAL["INTERNAL ONLY - enforced by having no ports: key"]
+        US["user-service<br/>:8081"]
+        SUP["supplier-service<br/>:8082"]
+        ORD["order-service<br/>:8083"]
+        CRE["credit-service<br/>:8084"]
+        UDB[("User DB<br/>PostgreSQL")]
+        SDB[("Supplier DB<br/>PostgreSQL")]
+        RDS[("Redis :6379<br/>jti blocklist +<br/>suspension keys")]
+    end
+
+    UI -->|"/auth/* and /api/*<br/>Bearer access token"| GW
+    GW -->|"REST + X-User-Id / X-User-Role"| SUP
+    GW -->|"REST + X-User-Id / X-User-Role"| ORD
+    GW -->|"REST + X-User-Id / X-User-Role"| CRE
+    GW -->|"/auth/* rewritten to /api/v1/users/*"| US
+    GW -.->|"GET /.well-known/jwks.json<br/>public keys only, fetched lazily"| US
+
+    US --> UDB
+    SUP --> SDB
+    US -->|"sole reader AND writer"| RDS
+
+    UI -.->|"LEAK: still published on 0.0.0.0:8082<br/>D-025b, prototype only"| SUP
+
+    classDef built fill:#1b5e20,stroke:#4caf50,color:#fff
+    classDef partial fill:#4a3800,stroke:#ffb300,color:#fff
+    classDef absent fill:#3a1212,stroke:#c62828,color:#fff,stroke-dasharray: 4 3
+    classDef store fill:#0d2b45,stroke:#2196f3,color:#fff
+
+    class GW built
+    class UI,SUP partial
+    class US,ORD,CRE absent
+    class UDB,SDB,RDS store
+```
+
+| Colour | Meaning | Components |
+| --- | --- | --- |
+| Green | Built and verified | `api-gateway` |
+| Amber | Built, not yet integrated | Browser SPA (runs on fixtures), `supplier-service` (in PR #1, unmerged) |
+| Red, dashed | Folder exists, no code | `user-service`, `order-service`, `credit-service` |
+
+> **Changed from the PNG (1 of 2).** The original attached Redis to the API
+> Gateway. **D-024 took the gateway out of Redis entirely** — `user-service` is
+> now the only process that touches it, which is why the sole arrow into Redis
+> comes from `user-service`.
+
+---
+
+## 2. Login and registration (D-012, D-015, D-023, D-027)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Browser SPA
+    participant GW as API Gateway
+    participant US as user-service
+    participant DB as User DB
+
+    UI->>GW: POST /auth/login {identifier, password}
+    Note over GW: Public route, no token required.<br/>Authorization preserved, claim<br/>headers stripped regardless.
+    GW->>US: POST /api/v1/users/login
+    US->>DB: GetByIdentifier + bcrypt compare
+    DB-->>US: user row
+    Note over US: Mints AT and RT, RS256, signed<br/>with the PRIVATE key. Sole issuer (D-012).
+    US->>DB: CreateSession, storing the RT HASH
+    US-->>GW: 200 {access token, refresh token}
+    GW-->>UI: 200 {access token, refresh token}
+    Note over UI: Stores the pair. Where exactly<br/>is still an open row.
+```
+
+The gateway mints, inspects and stores nothing here. It rewrites the path and
+passes the response back.
+
+---
+
+## 3. An authenticated request (D-013 as amended by D-024, plus D-022)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Browser SPA
+    participant GW as API Gateway
+    participant US as user-service
+    participant SVC as supplier / order / credit
+
+    UI->>GW: GET /api/suppliers/42<br/>Authorization: Bearer AT<br/>X-User-Role: ADMIN (forged)
+
+    alt key set not cached
+        GW->>US: GET /.well-known/jwks.json
+        US-->>GW: public keys, by kid
+    end
+
+    Note over GW: Verify RS256 signature and exp.<br/>NO revocation lookup (D-024).<br/>RS256 pinned, so none/HMAC is rejected.
+
+    alt token invalid or expired
+        GW-->>UI: 401
+    else keys unreachable
+        GW-->>UI: 503
+    else valid
+        Note over GW: STRIP the forged X-User-Role,<br/>then INJECT from verified claims.<br/>This is what D-022 rests on.
+        GW->>SVC: GET /42<br/>X-User-Id: uid<br/>X-User-Role: STUDENT
+        Note over SVC: Trusts the headers. Does not parse<br/>the JWT and never receives it.
+        SVC-->>GW: 200
+        GW-->>UI: 200
+    end
+```
+
+The forged `X-User-Role: ADMIN` arrives at the service as `STUDENT`.
+`TestClientCannotEscalateViaHeader` exists to keep it that way.
+
+---
+
+## 4. Refresh (D-015)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Browser SPA
+    participant GW as API Gateway
+    participant US as user-service
+    participant DB as User DB
+    participant RDS as Redis
+
+    UI->>GW: POST /auth/refresh {refresh token}
+    GW->>US: POST /api/v1/users/refresh
+    US->>DB: GetSessionByHash, SELECT ... FOR UPDATE
+    alt revoked_at already set (replay)
+        Note over US: Token already used or revoked:<br/>assume compromise.
+        US->>DB: RevokeAllUserSessions
+        US-->>GW: 401 session compromised
+    else valid
+        US->>RDS: check blocklist and suspension
+        US->>DB: RotateSession, old revoked, new inserted
+        US-->>GW: 200 {new AT, new RT}
+    end
+    GW-->>UI: response
+```
+
+**This is where revocation actually bites.** The gateway takes no part in the
+decision; it only carries the request.
+
+---
+
+## 5. Logout and suspension, and what D-025 costs
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant UI as Browser SPA
+    participant GW as API Gateway
+    participant US as user-service
+    participant RDS as Redis
+    participant DB as User DB
+
+    Note over UI,DB: LOGOUT
+    UI->>GW: POST /auth/logout (Bearer AT + RT)
+    GW->>US: POST /api/v1/users/logout, Authorization preserved
+    US->>RDS: push jti to blocklist, TTL = remaining exp
+    US->>DB: set revoked_at on the session
+    US-->>GW: 204
+
+    Note over UI,DB: ADMIN SUSPENSION
+    US->>RDS: set suspended:uid:uuid
+    US->>DB: set tokens_valid_after
+
+    Note over UI,DB: WHAT THIS DOES NOT DO (D-025a)
+    UI->>GW: GET /api/suppliers/1 with the SAME access token
+    Note over GW: Signature valid, exp not reached.<br/>Nothing reads the blocklist here.
+    GW->>US: forwarded, still authorised
+    Note over UI,DB: The AT keeps working until exp, up to 15 minutes.<br/>The blocklist stops a session being RENEWED,<br/>not a token being USED.
+```
+
+> **Changed from the PNG (2 of 2).** The original says logout makes the access
+> token *"stop working before its exp"*. Under **D-024** it does not — nothing
+> on the request path reads the blocklist. Accepted knowingly for the prototype
+> and recorded as **D-025a**.
+
+---
+
+## 6. Where the code actually is, today
+
+| Component | State | Branch |
+| --- | --- | --- |
+| `api-gateway` | **Working.** gofmt/vet/test clean, 14 tests, live-probed | `feat/api-gateway-auth-proxy` |
+| Browser SPA | **Working on fixtures.** Builds clean; not wired to the gateway | `feat/frontend-ui` |
+| `supplier-service` | **Working.** Trusts `X-User-Role` verbatim, by its own admission | PR #1, unmerged |
+| `user-service` | **Not started in the repo.** Design circulated, branch not pushed | — |
+| `order-service` | Folder only | — |
+| `credit-service` | Folder only | — |
+| Redis | In `compose.yaml`, no consumer yet | `feat/api-gateway-auth-proxy` |
+
+## 7. What this picture assumes, and does not yet have
+
+- **D-022's second leg does not hold.** Everything above depends on services
+  being unreachable except through the gateway. `supplier-service` is published
+  on `0.0.0.0:8082` today, so anything on the same network can set
+  `X-User-Role: ADMIN` and be believed. Accepted for the prototype (D-025b).
+- **The strip-and-inject rule is not recorded.** It is specified only in a
+  `user-service/AGENTS.md` that is on no branch. The team chose to build against
+  it anyway — an exception to §1, noted above the Open table in
+  [`../decisions.md`](../decisions.md).
+- **The gateway has never met a real `user-service`.** Every test mints its own
+  RS256 tokens against a stub JWKS.
+- **AWS deployment is undecided** (D-009). The private VPC this trust model
+  assumes has no decision and no code behind it.
