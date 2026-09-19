@@ -1,22 +1,36 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
-// Scope: Package placeholder only — no implementation.
+// Scope: Package placeholder only — no implementation. Doc comment rewritten
+//   after D-020 superseded D-017.
 // Author review: PENDING — <reviewer to complete>
 
 // Package revocation will answer "is this token still good?" against the
 // Redis-backed blocklist and suspension keys (D-013, D-014).
 //
-// OWNERSHIP IS SETTLED: D-017 gives this Redis to the gateway exclusively. It
-// is a separate datastore from the User DB and holds only revocation state —
-// the jti blocklist and suspended:<uid> keys. No credentials, no refresh
-// tokens, no profile data, and no other service gets the connection string.
+// THIS GATEWAY IS A READER, NOT A WRITER. D-020 supersedes D-017: user-service
+// is the sole writer to the blocklist, and nothing in this package writes to
+// Redis. D-017 had given the store to the gateway outright, which is no longer
+// the decision.
 //
-// STILL EMPTY, for a different reason. D-014 as drawn has user-service writing
-// those keys itself, which D-017 no longer permits, so logout and suspension
-// now need user-service to ASK the gateway to revoke. That inbound call is an
-// API nobody has specced (D-005), and its shape decides this package's — so it
-// waits for the spec rather than guessing at one.
+// That also removes what used to block this package. D-014 always drew
+// user-service writing the keys itself, and under D-020 it may, so logout and
+// suspension need no inbound "please revoke" API on the gateway — and the spec
+// this package was waiting on does not need to exist.
 //
-// Reading the store (is this jti blocklisted? is this sub suspended before
-// iat?) is unblocked and can be built now.
+// What it reads, per D-014:
+//
+//   - the jti blocklist — is this token's jti present?
+//   - the suspension keys — is this sub suspended, and was the token issued
+//     before the suspension timestamp?
+//
+// If Redis cannot be reached, the request is rejected rather than allowed
+// through. Failing open would make revocation advisory.
+//
+// STILL EMPTY, for two smaller reasons. No Redis client is in go.mod, and
+// adding a dependency is called out in root AGENTS.md §2. The exact key
+// spelling is also unsettled: the team diagram writes suspended:<uid>, while
+// user-service's own AGENTS.md writes suspended:uid:<uuid> and pins the key's
+// TTL to the access-token lifetime. That document is not committed to any
+// branch yet, so it is not yet something to build against (§1) — the two
+// spellings need reconciling into one recorded answer first.
 package revocation
