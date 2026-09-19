@@ -18,12 +18,14 @@ framework (no Tailwind, no MUI), and a linter. Assume none of them exist.
 Adding one is a stack decision, not an implementation detail — ask, and record
 the answer here before building on it (root §1).
 
-**The test runner IS now chosen: `vitest`** (D-029, 2026-09-20, Nigeltzy). It
-shares Vite's config and transform, so there is no second build pipeline to
-keep in step. Tests live beside the code as `*.test.ts`. Only pure logic is
-covered today — validation rules and the OTP fixture's timing. There is no
-component testing library, so rendering is still unverified; adding one is a
-separate stack decision and still needs asking.
+**The test runner is `vitest`** (D-029). It was chosen by the team with the
+rest of the frontend stack, but this file wrongly listed it as unchosen until
+2026-09-20 — which cost an agent a wrong turn. It shares Vite's config and
+transform, so there is no second build pipeline to keep in step. Tests live
+beside the code as `*.test.ts`. Only pure logic is covered today — validation
+rules and the OTP fixture's timing. There is no component testing library, so
+rendering is still unverified; adding one is a separate stack decision and
+still needs asking.
 
 ## Owner
 
