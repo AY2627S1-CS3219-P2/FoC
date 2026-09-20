@@ -3,6 +3,11 @@
 // Scope: Implemented the recorded login and refresh session application services.
 // Author review: COMPLETED BY ZI YANG
 
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-20
+// Scope: Refactored the refresh-session workflow into focused private helpers.
+// Author review: COMPLETED BY ZI YANG
+
 package user
 
 import (
@@ -105,70 +110,119 @@ func NewRefreshService(repository UserRepository, sessions SessionRepository, ve
 // Refresh verifies and rotates a refresh session. A previously revoked or
 // replaced token revokes every session belonging to the account.
 func (s *RefreshService) Refresh(ctx context.Context, rawToken string) (TokenPair, error) {
-	if s.repository == nil || s.sessions == nil || s.verifier == nil || s.issuer == nil {
-		return TokenPair{}, errors.New("refresh dependencies are required")
+	if err := s.validateDependencies(); err != nil {
+		return TokenPair{}, err
 	}
+	claims, err := s.verifyClaims(ctx, rawToken)
+	if err != nil {
+		return TokenPair{}, err
+	}
+	session, oldHash, err := s.activeSession(ctx, rawToken, claims)
+	if err != nil {
+		return TokenPair{}, err
+	}
+	account, err := s.activeAccount(ctx, claims)
+	if err != nil {
+		return TokenPair{}, err
+	}
+	pair, newSession, err := s.issueRefreshSession(ctx, account)
+	if err != nil {
+		return TokenPair{}, err
+	}
+	if err := s.rotateSession(ctx, session.UID, oldHash, newSession); err != nil {
+		return TokenPair{}, err
+	}
+	return pair, nil
+}
+
+func (s *RefreshService) validateDependencies() error {
+	if s.repository == nil || s.sessions == nil || s.verifier == nil || s.issuer == nil {
+		return errors.New("refresh dependencies are required")
+	}
+	return nil
+}
+
+func (s *RefreshService) verifyClaims(ctx context.Context, rawToken string) (RefreshClaims, error) {
 	claims, err := s.verifier.VerifyRefresh(ctx, rawToken)
 	if err != nil {
-		return TokenPair{}, fmt.Errorf("verify refresh token: %w", err)
+		return RefreshClaims{}, fmt.Errorf("verify refresh token: %w", err)
 	}
 	if claims.UserID == uuid.Nil || claims.JTI == uuid.Nil {
-		return TokenPair{}, ErrSessionNotFound
+		return RefreshClaims{}, ErrSessionNotFound
 	}
+	return claims, nil
+}
 
+func (s *RefreshService) activeSession(ctx context.Context, rawToken string, claims RefreshClaims) (*Session, string, error) {
 	oldHash := HashRefreshToken(rawToken)
 	session, err := s.sessions.GetSessionByHash(ctx, oldHash)
 	if err != nil {
 		if errors.Is(err, ErrSessionNotFound) {
-			return TokenPair{}, ErrSessionNotFound
+			return nil, "", ErrSessionNotFound
 		}
-		return TokenPair{}, fmt.Errorf("get refresh session: %w", err)
+		return nil, "", fmt.Errorf("get refresh session: %w", err)
 	}
 	if session == nil || session.UID != claims.UserID || session.JTI != claims.JTI {
-		return TokenPair{}, ErrSessionNotFound
+		return nil, "", ErrSessionNotFound
 	}
 	if session.RevokedAt != nil || session.ReplacedByTokenHash != nil {
-		if err := s.sessions.RevokeAllUserSessions(ctx, session.UID); err != nil {
-			return TokenPair{}, fmt.Errorf("revoke compromised user sessions: %w", err)
+		if err := s.revokeCompromisedSessions(ctx, session.UID); err != nil {
+			return nil, "", err
 		}
-		return TokenPair{}, ErrSessionCompromised
+		return nil, "", ErrSessionCompromised
 	}
 	if !session.ExpiresAt.After(s.now()) {
-		return TokenPair{}, ErrSessionNotFound
+		return nil, "", ErrSessionNotFound
 	}
+	return session, oldHash, nil
+}
 
+func (s *RefreshService) activeAccount(ctx context.Context, claims RefreshClaims) (*User, error) {
 	account, err := s.repository.GetByID(ctx, claims.UserID)
 	if err != nil {
-		return TokenPair{}, fmt.Errorf("get refresh account: %w", err)
+		return nil, fmt.Errorf("get refresh account: %w", err)
 	}
 	if account == nil || account.AccountStatus == AccountStatusSuspended || (!account.TokensValidAfter.IsZero() && claims.IssuedAt.Before(account.TokensValidAfter)) {
-		return TokenPair{}, ErrAccountSuspended
+		return nil, ErrAccountSuspended
 	}
+	return account, nil
+}
 
+func (s *RefreshService) issueRefreshSession(ctx context.Context, account *User) (TokenPair, *Session, error) {
 	pair, err := s.issuer.Issue(ctx, account)
 	if err != nil {
-		return TokenPair{}, fmt.Errorf("issue rotated JWT session: %w", err)
+		return TokenPair{}, nil, fmt.Errorf("issue rotated JWT session: %w", err)
 	}
 	if pair.RefreshJTI == uuid.Nil || pair.RefreshExpiresAt.IsZero() {
-		return TokenPair{}, errors.New("issuer returned incomplete refresh metadata")
+		return TokenPair{}, nil, errors.New("issuer returned incomplete refresh metadata")
 	}
-	newSession := &Session{
+	return pair, &Session{
 		JTI:       pair.RefreshJTI,
 		CreatedAt: s.now().UTC(),
 		ExpiresAt: pair.RefreshExpiresAt,
 		TokenHash: HashRefreshToken(pair.RefreshToken),
 		UID:       account.UID,
-	}
+	}, nil
+}
+
+func (s *RefreshService) rotateSession(ctx context.Context, uid uuid.UUID, oldHash string, newSession *Session) error {
 	if err := s.sessions.RotateSession(ctx, oldHash, newSession); err != nil {
 		if errors.Is(err, ErrSessionCompromised) {
-			if revokeErr := s.sessions.RevokeAllUserSessions(ctx, session.UID); revokeErr != nil {
-				return TokenPair{}, fmt.Errorf("revoke compromised user sessions: %w", revokeErr)
+			if revokeErr := s.revokeCompromisedSessions(ctx, uid); revokeErr != nil {
+				return revokeErr
 			}
-			return TokenPair{}, ErrSessionCompromised
+			return ErrSessionCompromised
 		}
-		return TokenPair{}, fmt.Errorf("rotate refresh session: %w", err)
+		return fmt.Errorf("rotate refresh session: %w", err)
 	}
-	return pair, nil
+	return nil
+}
+
+func (s *RefreshService) revokeCompromisedSessions(ctx context.Context, uid uuid.UUID) error {
+	if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
+		return fmt.Errorf("revoke compromised user sessions: %w", err)
+	}
+	return nil
 }
 
 // HashRefreshToken returns the stable database lookup value for a refresh
