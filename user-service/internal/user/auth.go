@@ -42,18 +42,9 @@ func NewAuthenticator(repository UserRepository, issuer TokenIssuer) *Authentica
 // Authenticate verifies an identifier and plaintext password, then issues JWT
 // access and refresh tokens for an active account.
 func (a *Authenticator) Authenticate(ctx context.Context, identifier, password string) (TokenPair, error) {
-	account, err := a.repository.GetByIdentifier(ctx, identifier)
+	account, err := a.authenticate(ctx, identifier, password)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return TokenPair{}, ErrInvalidCredentials
-		}
-		return TokenPair{}, fmt.Errorf("look up credentials: %w", err)
-	}
-	if account == nil || !CheckPassword(account.PasswordHash, password) {
-		return TokenPair{}, ErrInvalidCredentials
-	}
-	if account.AccountStatus == AccountStatusSuspended {
-		return TokenPair{}, ErrAccountSuspended
+		return TokenPair{}, err
 	}
 
 	pair, err := a.issuer.Issue(ctx, account)
@@ -61,4 +52,23 @@ func (a *Authenticator) Authenticate(ctx context.Context, identifier, password s
 		return TokenPair{}, fmt.Errorf("issue JWT session: %w", err)
 	}
 	return pair, nil
+}
+
+// authenticate verifies credentials and returns the active account for flows
+// that need its identity in addition to issued credentials.
+func (a *Authenticator) authenticate(ctx context.Context, identifier, password string) (*User, error) {
+	account, err := a.repository.GetByIdentifier(ctx, identifier)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, ErrInvalidCredentials
+		}
+		return nil, fmt.Errorf("look up credentials: %w", err)
+	}
+	if account == nil || !CheckPassword(account.PasswordHash, password) {
+		return nil, ErrInvalidCredentials
+	}
+	if account.AccountStatus == AccountStatusSuspended {
+		return nil, ErrAccountSuspended
+	}
+	return account, nil
 }

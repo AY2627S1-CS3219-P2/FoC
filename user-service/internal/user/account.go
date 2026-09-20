@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Implemented recorded registration, profile update, and account-status application logic.
-// Author review: PENDING — reviewer to complete
+// Author review: COMPLETED BY ZI YANG
 
 package user
 

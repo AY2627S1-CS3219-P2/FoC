@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Implemented the recorded Redis-first logout invalidation boundary.
-// Author review: PENDING — reviewer to complete
+// Author review: COMPLETED BY ZI YANG
 
 package user
 

@@ -76,7 +76,8 @@ func run(ctx context.Context, cfg config.Config) error {
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
 	accountService := user.NewAccountService(userRepository)
-	loginService := user.NewLoginService(userRepository, sessionRepository, jwtService, time.Now)
+	authenticator := user.NewAuthenticator(userRepository, jwtService)
+	loginService := user.NewLoginService(authenticator, sessionRepository, time.Now)
 	refreshService := user.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, time.Now)
 	logoutService := user.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
 	router := httpapi.NewRouter(httpapi.Dependencies{

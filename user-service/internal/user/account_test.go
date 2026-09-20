@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Added focused tests for registration, profile updates, and account-status transitions.
-// Author review: PENDING — reviewer to complete
+// Author review: COMPLETED BY ZI YANG
 
 package user
 

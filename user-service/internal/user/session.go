@@ -40,12 +40,12 @@ type LoginService struct {
 
 // NewLoginService constructs a login service with its persistence and token
 // dependencies ready for use.
-func NewLoginService(repository UserRepository, sessions SessionRepository, issuer TokenIssuer, now func() time.Time) *LoginService {
+func NewLoginService(a *Authenticator, sessions SessionRepository, now func() time.Time) *LoginService {
 	if now == nil {
 		now = time.Now
 	}
 	return &LoginService{
-		authenticator: NewAuthenticator(repository, issuer),
+		authenticator: a,
 		sessions:      sessions,
 		now:           now,
 	}
@@ -58,20 +58,10 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 		return TokenPair{}, errors.New("session repository is required")
 	}
 
-	account, err := s.authenticator.repository.GetByIdentifier(ctx, identifier)
+	account, err := s.authenticator.authenticate(ctx, identifier, password)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return TokenPair{}, ErrInvalidCredentials
-		}
-		return TokenPair{}, fmt.Errorf("look up credentials: %w", err)
+		return TokenPair{}, err
 	}
-	if account == nil || !CheckPassword(account.PasswordHash, password) {
-		return TokenPair{}, ErrInvalidCredentials
-	}
-	if account.AccountStatus == AccountStatusSuspended {
-		return TokenPair{}, ErrAccountSuspended
-	}
-
 	pair, err := s.authenticator.issuer.Issue(ctx, account)
 	if err != nil {
 		return TokenPair{}, fmt.Errorf("issue JWT session: %w", err)

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Added focused tests for login session creation, refresh rotation, and replay handling.
-// Author review: PENDING — reviewer to complete
+// Author review: COMPLETED BY ZI YANG
 
 package user
 
@@ -98,7 +98,8 @@ func newSessionServiceFixtures(t *testing.T) (*User, *fakeAuthRepository, *fakeS
 
 func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
-	service := NewLoginService(repo, sessions, issuer, func() time.Time { return now })
+	authenticator := NewAuthenticator(repo, issuer)
+	service := NewLoginService(authenticator, sessions, func() time.Time { return now })
 
 	pair, err := service.Login(context.Background(), "user@example.com", "ValidPass1")
 	if err != nil {
