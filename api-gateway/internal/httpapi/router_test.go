@@ -2,6 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: End-to-end tests for the router — real RS256 tokens against a real
 //   JWKS endpoint, through the middleware and proxy to stub downstreams.
+//   2026-09-21: three tests added for the reworked /api/users route.
 // Author review: PENDING — <reviewer to complete>
 
 package httpapi_test
@@ -303,5 +304,72 @@ func TestAuthRoutePreservesBearerForLogout(t *testing.T) {
 	}
 	if h.userRec.path != "/api/v1/users/logout" {
 		t.Errorf("user-service saw path %q, want %q", h.userRec.path, "/api/v1/users/logout")
+	}
+}
+
+// AI-generated (edited by <name>).
+// The three tests below cover the /api/users route after it was pointed at
+// user-service's real prefix and allowed to keep the bearer token.
+
+func TestUserRouteReachesUserServicePrefix(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/users/uid-123", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if got := h.do(req); got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+	}
+	// Not "/uid-123": user-service mounts its profile route at
+	// /api/v1/users/{uid}, per its committed api/openapi.yaml.
+	if want := "/api/v1/users/uid-123"; h.userRec.path != want {
+		t.Errorf("user-service saw path %q, want %q", h.userRec.path, want)
+	}
+}
+
+func TestUserRouteRetainsBearerAndStillAssertsIdentity(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/users/uid-123", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	// A caller trying to assert its own role on the way through.
+	req.Header.Set(proxy.ClaimHeaderRole, "ADMIN")
+
+	if got := h.do(req); got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", got.Code)
+	}
+	// user-service authenticates on this header itself (RequireJWT).
+	if h.userRec.header.Get("Authorization") != "Bearer "+token {
+		t.Error("user-service did not receive the bearer token it authenticates on")
+	}
+	// D-022 still holds: the client's ADMIN claim is replaced, not honoured.
+	if role := h.userRec.header.Get(proxy.ClaimHeaderRole); role != "STUDENT" {
+		t.Errorf("%s = %q, want STUDENT — the client's own value must not survive",
+			proxy.ClaimHeaderRole, role)
+	}
+	if uid := h.userRec.header.Get(proxy.ClaimHeaderUserID); uid != "uid-123" {
+		t.Errorf("%s = %q, want uid-123", proxy.ClaimHeaderUserID, uid)
+	}
+}
+
+func TestOtherServicesNeverReceiveTheBearerToken(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if got := h.do(req); got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", got.Code)
+	}
+	// Retaining the token is user-service's exception alone. Every other
+	// callee reads the claim headers and has no use for a credential.
+	if authz := h.suppRec.header.Get("Authorization"); authz != "" {
+		t.Errorf("supplier-service received Authorization = %q, want it stripped", authz)
 	}
 }

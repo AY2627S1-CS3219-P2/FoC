@@ -1,7 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Reverse proxy to one downstream service, including the header
-//   strip-and-inject that D-022 depends on.
+//   strip-and-inject that D-022 depends on. 2026-09-21: the single
+//   passthrough flag became two independent choices, and NewRetainingToken
+//   was added for user-service, which verifies the bearer token itself.
 // Author review: PENDING — <reviewer to complete>
 
 // Package proxy forwards a verified request to one downstream service over
@@ -47,10 +49,24 @@ type Identity struct {
 type Proxy struct {
 	reverse *httputil.ReverseProxy
 	route   Route
-	// passthrough distinguishes the two constructors. Set by New/NewPassthrough
-	// rather than passed in, so callers pick a named function instead of
-	// handing over a flag that selects a branch (root AGENTS.md §5).
-	passthrough bool
+	// behaviour distinguishes the constructors below. Set by them rather than
+	// passed in, so callers pick a named function instead of handing over
+	// flags that select a branch (root AGENTS.md §5).
+	behaviour behaviour
+}
+
+// behaviour is the two independent choices a route makes about credentials.
+//
+// These were a single `passthrough bool` until user-service landed, which was
+// only ever adequate because the two cases it named happened to differ in both
+// respects at once. They are not the same question: whether the callee still
+// needs the bearer token is about that service, and whether the gateway has a
+// verified identity to assert is about the route.
+type behaviour struct {
+	// forwardToken leaves Authorization on the outbound request.
+	forwardToken bool
+	// injectClaims writes the verified identity into the claim headers.
+	injectClaims bool
 }
 
 // Route describes one public prefix and where it goes. Adding a service to
@@ -75,7 +91,32 @@ type Route struct {
 // Returns a ready-to-use value; there is nothing to start afterwards
 // (root AGENTS.md §5).
 func New(route Route) (*Proxy, error) {
-	return build(route, false)
+	return build(route, behaviour{forwardToken: false, injectClaims: true})
+}
+
+// NewRetainingToken returns a Proxy for an AUTHENTICATED route whose callee
+// verifies the access token for itself.
+//
+// Same as New in every respect that matters to D-022 — client-supplied claim
+// headers are still stripped, and the gateway's own verified values are still
+// injected — except that Authorization survives the hop.
+//
+// This exists for user-service. It is the token ISSUER (D-012, D-023), and its
+// own routes sit behind a RequireJWT middleware that reads the Authorization
+// header; its api/openapi.yaml marks them `security: BearerAuth: []`. Under
+// New they answer 401, because the gateway had deleted the very header they
+// authenticate on.
+//
+// The credential is not being spread any wider than it already was: the token
+// was minted by user-service and this hands it back to the service that signed
+// it, not onward to a third party. Every other callee still gets New, so
+// supplier-, order- and credit-service never see a bearer token.
+//
+// NOT RECORDED. D-022 says downstream services do not parse JWTs, and this is
+// a deliberate exception to that for one service. It needs a decision row, and
+// writing one is the team's (root AGENTS.md §1).
+func NewRetainingToken(route Route) (*Proxy, error) {
+	return build(route, behaviour{forwardToken: true, injectClaims: true})
 }
 
 // NewPassthrough returns a Proxy for a PUBLIC auth route — login, register,
@@ -86,10 +127,10 @@ func New(route Route) (*Proxy, error) {
 // it can blocklist that jti. No claim headers are injected, because nothing
 // has been verified here — user-service authenticates these itself.
 func NewPassthrough(route Route) (*Proxy, error) {
-	return build(route, true)
+	return build(route, behaviour{forwardToken: true, injectClaims: false})
 }
 
-func build(route Route, passthrough bool) (*Proxy, error) {
+func build(route Route, how behaviour) (*Proxy, error) {
 	target, err := url.Parse(route.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("proxy: parsing base URL %q: %w", route.BaseURL, err)
@@ -98,7 +139,7 @@ func build(route Route, passthrough bool) (*Proxy, error) {
 		return nil, fmt.Errorf("proxy: base URL %q needs a scheme and host", route.BaseURL)
 	}
 
-	p := &Proxy{route: route, passthrough: passthrough}
+	p := &Proxy{route: route, behaviour: how}
 	p.reverse = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(target)
@@ -117,20 +158,22 @@ func build(route Route, passthrough bool) (*Proxy, error) {
 			r.Out.Header.Del(ClaimHeaderUserID)
 			r.Out.Header.Del(ClaimHeaderRole)
 
-			if p.passthrough {
-				// Public auth route: Authorization is the payload here, not a
-				// credential to be consumed. user-service validates it.
-				return
+			if !p.behaviour.forwardToken {
+				// Most downstream services do not parse JWTs (D-022), so
+				// forwarding the bearer token would spread a credential for no
+				// purpose. user-service is the exception — see
+				// NewRetainingToken.
+				r.Out.Header.Del("Authorization")
 			}
 
-			// Downstream services do not parse JWTs (D-022), so forwarding
-			// the bearer token would spread a credential for no purpose.
-			r.Out.Header.Del("Authorization")
-
 			// INJECT. Only values derived from a verified token reach here.
-			if id, ok := IdentityFrom(r.In.Context()); ok {
-				r.Out.Header.Set(ClaimHeaderUserID, id.UserID)
-				r.Out.Header.Set(ClaimHeaderRole, id.Role)
+			// Skipped on the public auth routes, where nothing has been
+			// verified yet and there is no identity to assert.
+			if p.behaviour.injectClaims {
+				if id, ok := IdentityFrom(r.In.Context()); ok {
+					r.Out.Header.Set(ClaimHeaderUserID, id.UserID)
+					r.Out.Header.Set(ClaimHeaderRole, id.Role)
+				}
 			}
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {

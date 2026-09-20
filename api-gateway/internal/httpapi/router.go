@@ -1,7 +1,8 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: The gateway's route table and router construction. Implements the
-//   public surface recorded as D-027.
+//   public surface recorded as D-027. 2026-09-21: /api/users now targets
+//   user-service's real /api/v1/users prefix and keeps the bearer token.
 // Author review: PENDING — <reviewer to complete>
 
 // Package httpapi holds the gateway's router and its transport-only handlers.
@@ -68,21 +69,39 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier) (http.Hand
 	// ---- Authenticated service routes -----------------------------------
 	// THE EXTENSION POINT. One entry per service; the middleware, the header
 	// strip and the injection come for free.
+	//
+	// addPrefix is where the callee actually mounts its routes, and it is not
+	// guesswork: it is read off that service's committed api/openapi.yaml. An
+	// empty one means the service serves its resources at the root, which is
+	// what the public path maps to once its own prefix is stripped.
+	//
+	// newProxy is the callee's credential handling. A named constructor per
+	// row rather than a bool in the struct, so the table says what it wants
+	// instead of selecting a branch inside the proxy (root AGENTS.md §5).
 	serviceRoutes := []struct {
-		prefix  string
-		baseURL string
+		prefix    string
+		baseURL   string
+		addPrefix string
+		newProxy  func(proxy.Route) (*proxy.Proxy, error)
 	}{
-		{"/api/users", downstream.User},
-		{"/api/suppliers", downstream.Supplier},
-		{"/api/orders", downstream.Order},
-		{"/api/credits", downstream.Credit},
+		// user-service serves /api/v1/users/{uid} and authenticates on the
+		// bearer token itself, so this row differs from the others twice over.
+		{"/api/users", downstream.User, userServiceAPIPrefix, proxy.NewRetainingToken},
+		// NOTE: supplier-service mounts at /suppliers/{id}, not at the root,
+		// so this row is wrong in the same way /api/users was — GET
+		// /api/suppliers/42 reaches it as /42 and 404s. Left alone on purpose:
+		// that is its owner's contract to confirm, not one to infer from here
+		// (root AGENTS.md §3). Flagged for Goh Chee Yang.
+		{"/api/suppliers", downstream.Supplier, "", proxy.New},
+		{"/api/orders", downstream.Order, "", proxy.New},
+		{"/api/credits", downstream.Credit, "", proxy.New},
 	}
 
 	for _, route := range serviceRoutes {
-		p, err := proxy.New(proxy.Route{
+		p, err := route.newProxy(proxy.Route{
 			BaseURL:     route.baseURL,
 			StripPrefix: route.prefix,
-			AddPrefix:   "",
+			AddPrefix:   route.addPrefix,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("httpapi: route %s: %w", route.prefix, err)

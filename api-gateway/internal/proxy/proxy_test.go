@@ -176,3 +176,45 @@ func TestNewRejectsUnusableBaseURL(t *testing.T) {
 		}
 	}
 }
+
+// AI-generated (edited by <name>).
+func TestRetainingTokenKeepsAuthorizationAndStillInjects(t *testing.T) {
+	t.Parallel()
+
+	var got http.Header
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer downstream.Close()
+
+	p, err := proxy.NewRetainingToken(proxy.Route{
+		BaseURL:     downstream.URL,
+		StripPrefix: "/api/users",
+		AddPrefix:   "/api/v1/users",
+	})
+	if err != nil {
+		t.Fatalf("NewRetainingToken: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/users/uid-1", nil)
+	req.Header.Set("Authorization", "Bearer a.b.c")
+	// What a malicious client sends. It must not survive.
+	req.Header.Set(proxy.ClaimHeaderRole, "ADMIN")
+	req = req.WithContext(proxy.WithIdentity(
+		req.Context(),
+		proxy.Identity{UserID: "uid-1", Role: "STUDENT"},
+	))
+	p.ServeHTTP(httptest.NewRecorder(), req)
+
+	if authz := got.Get("Authorization"); authz != "Bearer a.b.c" {
+		t.Errorf("Authorization = %q, want it retained for user-service", authz)
+	}
+	if role := got.Get(proxy.ClaimHeaderRole); role != "STUDENT" {
+		t.Errorf("%s = %q, want STUDENT — the strip must beat the client's value",
+			proxy.ClaimHeaderRole, role)
+	}
+	if uid := got.Get(proxy.ClaimHeaderUserID); uid != "uid-1" {
+		t.Errorf("%s = %q, want uid-1", proxy.ClaimHeaderUserID, uid)
+	}
+}
