@@ -3,7 +3,8 @@
 // Scope: Application root — session gate, view switching, acting mode, and the
 //   shared (mock) credit balance the shell displays. 2026-09-19: owns the
 //   TokenStore and picks the fixture or gateway auth client (ai/decisions.md
-//   D-010..D-015).
+//   D-010..D-015). 2026-09-21: logout sends both tokens, which
+//   user-service's LogoutRequest requires.
 // Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useState } from "react";
@@ -55,7 +56,7 @@ const authClient = usingGateway
       signUp: authApi.signUp,
       verifyRegistration: authApi.verifyRegistration,
       resendOtp: authApi.resendOtp,
-      logOut: (_accessToken: string) => authApi.logOut(),
+      logOut: (_accessToken: string, _refreshToken: string) => authApi.logOut(),
     };
 
 export function App() {
@@ -107,8 +108,14 @@ export function App() {
    * its own copies, which it does either way.
    */
   const handleLogOut = useCallback(async () => {
+    // Both, and before the store is cleared: user-service blocklists the
+    // access token's jti and deletes the refresh token's session row, so it
+    // needs each one. Its LogoutRequest makes refreshToken required.
     const accessToken = tokens.getAccessToken();
-    if (accessToken) await authClient.logOut(accessToken);
+    const refreshToken = tokens.getRefreshToken();
+    if (accessToken && refreshToken) {
+      await authClient.logOut(accessToken, refreshToken);
+    }
     tokens.clear();
     setSession(null);
     setView("home");

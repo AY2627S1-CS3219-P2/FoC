@@ -2,10 +2,12 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Attaches the access token to outgoing requests and performs the
 //   refresh exchange recorded in ai/decisions.md D-015.
+//   2026-09-21: a refresh now replaces the whole pair, because
+//   user-service rotates the refresh token.
 // Author review: PENDING — <reviewer to complete>
 
 import { send, type HttpResponse, type SendOptions } from "../../lib/http";
-import type { TokenStore } from "../../lib/tokens";
+import type { TokenPair, TokenStore } from "../../lib/tokens";
 
 /**
  * Steps 2 and 3 of the recorded token lifecycle, in one place:
@@ -27,8 +29,14 @@ import type { TokenStore } from "../../lib/tokens";
  * It is isolated to `isUnauthorized` below.
  */
 
-/** Exchanges a refresh token for a new access token. Supplied by authApi. */
-export type RefreshExchange = (refreshToken: string) => Promise<string>;
+/**
+ * Exchanges a refresh token for a fresh PAIR. Supplied by authApi.
+ *
+ * A pair rather than a lone access token because user-service rotates the
+ * refresh token on every exchange and treats a replayed one as a compromised
+ * session (`ErrSessionCompromised`). Whatever comes back must replace both.
+ */
+export type RefreshExchange = (refreshToken: string) => Promise<TokenPair>;
 
 /** Same shape as lib/http's send, minus the token the wrapper supplies. */
 export type AuthorizedSend = (
@@ -63,9 +71,11 @@ export function createAuthorizedSend({
       const refreshToken = tokens.getRefreshToken();
       if (!refreshToken) return null;
       try {
-        const accessToken = await refresh(refreshToken);
-        tokens.setAccessToken(accessToken);
-        return accessToken;
+        const pair = await refresh(refreshToken);
+        // setPair, not setAccessToken: the refresh token we just spent is
+        // dead, and presenting it again would read as a replay.
+        tokens.setPair(pair);
+        return pair.accessToken;
       } catch {
         // A refresh token that no longer verifies against the User DB (D-012)
         // is the end of the session. Nothing to retry.

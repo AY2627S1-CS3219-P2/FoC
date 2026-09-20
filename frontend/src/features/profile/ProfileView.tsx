@@ -1,6 +1,8 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Profile screen against the mock user-service session.
+//   2026-09-21: email and contact render only when present — the real
+//   user-service returns neither.
 // Author review: PENDING — <reviewer to complete>
 
 import { MockBadge } from "../../components/MockBadge";
@@ -40,13 +42,21 @@ export function ProfileView({
           </span>
           <div>
             <div style={{ fontSize: 17, fontWeight: 700 }}>{session.username}</div>
-            <div className="balance-label">{session.email}</div>
+            {session.email ? (
+              <div className="balance-label">{session.email}</div>
+            ) : null}
           </div>
         </div>
 
         {/* F1.4.1 - the account identifier, registered email, username and
             contact information are all viewable. F1.4.3 makes the identifier
-            and the email unchangeable, so they are shown as plain text. */}
+            and the email unchangeable, so they are shown as plain text.
+
+            Email and contact render only when present. Against the real
+            user-service they are not: its UserResponse has no email field and
+            the service has no contact field at all, so F1.4.1 cannot be
+            satisfied from the current contract. Flagged for that service's
+            owner rather than filled in from something the UI guessed. */}
         <h2 className="section-label">Account</h2>
         <dl className="detail-list">
           <div>
@@ -61,6 +71,12 @@ export function ProfileView({
             <dt>Contact</dt>
             <dd>{session.contact || "Not set"}</dd>
           </div>
+          {session.email ? (
+            <div>
+              <dt>Email</dt>
+              <dd>{session.email}</dd>
+            </div>
+          ) : null}
           <div>
             <dt>Role</dt>
             <dd>{session.role}</dd>

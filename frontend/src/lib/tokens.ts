@@ -2,6 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Client-side access/refresh token store, implementing the token
 //   lifecycle recorded in ai/decisions.md D-011 and D-015.
+//   2026-09-21: dropped setAccessToken — user-service rotates RTs.
 // Author review: PENDING — <reviewer to complete>
 
 /**
@@ -38,14 +39,17 @@ export interface TokenStore {
   getAccessToken(): string | null;
   /** The current refresh token, or null when logged out. */
   getRefreshToken(): string | null;
-  /** Replaces both, e.g. after login. */
-  setPair(pair: TokenPair): void;
   /**
-   * Replaces only the access token, after a refresh exchange. The RT is left
-   * alone because D-015 does not say the refresh response rotates it — if
-   * user-service turns out to rotate RTs, call setPair instead.
+   * Replaces both — after login AND after a refresh exchange.
+   *
+   * There is deliberately no access-token-only setter. This interface used to
+   * have one, on the assumption that a refresh leaves the RT alone; that is
+   * not how user-service behaves. Its `/api/v1/users/refresh` returns a new
+   * pair and retires the RT that was spent, so replacing only the AT would
+   * leave the store holding a dead RT and the next refresh would look like a
+   * replay of a stolen one.
    */
-  setAccessToken(accessToken: string): void;
+  setPair(pair: TokenPair): void;
   /** Drops both, e.g. on logout or a failed refresh. */
   clear(): void;
 }
@@ -60,9 +64,6 @@ export function createTokenStore(): TokenStore {
     setPair(pair) {
       accessToken = pair.accessToken;
       refreshToken = pair.refreshToken;
-    },
-    setAccessToken(next) {
-      accessToken = next;
     },
     clear() {
       accessToken = null;

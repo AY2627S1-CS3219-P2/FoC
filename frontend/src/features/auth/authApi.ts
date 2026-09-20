@@ -3,12 +3,17 @@
 // Scope: Auth client — fixture and gateway implementations side by side.
 //   2026-09-20: login now takes an identifier (F1.2.1), registration returns a
 //   pending registration rather than a session (F1.1.2.7), and OTP verify and
-//   resend were added (F1.1.2.4-F1.1.2.6).
+//   resend were added (F1.1.2.4-F1.1.2.6). 2026-09-21: the gateway client
+//   was reconciled with user-service's committed api/openapi.yaml — login
+//   builds its session from token claims plus the profile endpoint, logout
+//   sends the refresh token, refresh returns the rotated pair, and the
+//   three OTP calls are blocked because no endpoint implements them.
 // Author review: PENDING — <reviewer to complete>
 
 import { config } from "../../lib/config";
 import { NetworkError, send } from "../../lib/http";
 import { mockDelay } from "../../lib/mock";
+import { readAccessTokenClaims } from "../../lib/jwt";
 import type { TokenPair } from "../../lib/tokens";
 import * as fixtureOtp from "./fixtureOtp";
 import type { AccountRole, PendingRegistration, Session } from "./types";
@@ -43,6 +48,11 @@ const ROUTES = {
   verify: "/auth/register/verify",
   /** UNRECORDED — behaviour is required by F1.1.2.4, the call is not specced. */
   resend: "/auth/register/resend",
+  /**
+   * D-027's prefix proxy. `{uid}` is appended; the gateway rewrites this onto
+   * user-service's `/api/v1/users/{uid}`.
+   */
+  profile: "/api/users",
 } as const;
 
 export class AuthError extends Error {
@@ -189,8 +199,11 @@ export async function logOut(): Promise<void> {
  * practice. It exists so the fixture and gateway clients have the same
  * surface and App.tsx can swap one for the other in a single line.
  */
-export async function refreshAccessToken(): Promise<string> {
-  return mockDelay("mock-access-token");
+export async function refreshAccessToken(): Promise<TokenPair> {
+  return mockDelay({
+    accessToken: "mock-access-token",
+    refreshToken: "mock-refresh-token",
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -222,7 +235,8 @@ function decodeAuthError(body: unknown, status: number): AuthError {
   return new AuthError(`Sign-in failed (${status}).`);
 }
 
-function decodeAuthResult(body: unknown): AuthResult {
+/** Reads the `{accessToken, refreshToken}` pair user-service answers with. */
+function decodeTokenPair(body: unknown): TokenPair {
   if (!body || typeof body !== "object") {
     throw new AuthError("The server returned an unreadable response.");
   }
@@ -233,49 +247,87 @@ function decodeAuthResult(body: unknown): AuthResult {
   if (typeof accessToken !== "string" || typeof refreshToken !== "string") {
     throw new AuthError("The server did not return a usable session.");
   }
+  return { accessToken, refreshToken };
+}
 
-  const user = raw["user"];
-  const profile = (user && typeof user === "object" ? user : {}) as Record<
-    string,
-    unknown
-  >;
-  const email = String(profile["email"] ?? "");
-  const username = String(profile["username"] ?? usernameFromEmail(email));
-  const role: AccountRole =
-    String(profile["role"] ?? "STUDENT").toUpperCase() === "ADMIN"
-      ? "ADMIN"
-      : "STUDENT";
+function asAccountRole(value: unknown): AccountRole {
+  return String(value ?? "STUDENT").toUpperCase() === "ADMIN"
+    ? "ADMIN"
+    : "STUDENT";
+}
+
+/**
+ * Fetches the signed-in user's profile through the gateway's prefix proxy.
+ *
+ * Separate from login because user-service's login response is the token pair
+ * and nothing else — `AuthResponse` has exactly two fields. Who you are lives
+ * behind `GET /api/v1/users/{uid}`, and the uid comes from the token's `sub`.
+ *
+ * Returns null rather than throwing on any failure. A profile we could not
+ * read is a degraded display, not a failed login: the tokens are already valid
+ * and the user is already authenticated.
+ */
+async function fetchProfile(
+  uid: string,
+  accessToken: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const response = await send({
+      baseUrl: config.gatewayBaseUrl,
+      path: `${ROUTES.profile}/${encodeURIComponent(uid)}`,
+      accessToken,
+    });
+    if (!response.ok || !response.body || typeof response.body !== "object") {
+      return null;
+    }
+    return response.body as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Turns a verified token pair into a session.
+ *
+ * `fallbackUsername` is what the user typed at the login form. It is used only
+ * when the profile call could not answer, so the avatar and greeting have
+ * something truthful-ish to show rather than an empty chip.
+ *
+ * Note what is NOT set: `email` and `contact`. user-service returns neither
+ * (see features/auth/types.ts), so they stay undefined against the real stack.
+ */
+async function sessionFromTokens(
+  tokens: TokenPair,
+  fallbackUsername: string,
+): Promise<AuthResult> {
+  const claims = readAccessTokenClaims(tokens.accessToken);
+  const userId = claims.subject ?? "";
+
+  const profile = userId ? await fetchProfile(userId, tokens.accessToken) : null;
+  const username = String(profile?.["username"] ?? fallbackUsername);
 
   return {
     session: {
-      userId: String(profile["id"] ?? profile["uid"] ?? ""),
+      userId: String(profile?.["uid"] ?? userId),
       username,
-      email,
-      contact: String(profile["contact"] ?? profile["phoneNum"] ?? ""),
-      role,
+      // The role the GATEWAY will act on is the one in the token, so show
+      // that rather than the profile's column — if they ever disagree, the
+      // claim is what governs every authorization decision downstream.
+      role: asAccountRole(claims.role ?? profile?.["account_role"]),
       initials: initialsOf(username),
     },
-    tokens: { accessToken, refreshToken },
+    tokens,
   };
 }
 
-function decodePending(body: unknown, fallbackEmail: string): PendingRegistration {
-  const raw = (body ?? {}) as Record<string, unknown>;
-  const handle = raw["handle"] ?? raw["registrationId"];
-  if (typeof handle !== "string" || !handle) {
-    throw new AuthError("The server did not return a registration to verify.");
-  }
-  const expiresAt = Number(raw["expiresAt"]);
-  return {
-    handle,
-    email: String(raw["email"] ?? fallbackEmail),
-    // F1.1.2.5 — five minutes, unless the server says otherwise.
-    expiresAt: Number.isFinite(expiresAt) ? expiresAt : Date.now() + 5 * 60_000,
-    resendsRemaining: Number(raw["resendsRemaining"] ?? 3),
-    blockedUntil:
-      raw["blockedUntil"] == null ? null : Number(raw["blockedUntil"]),
-  };
-}
+/**
+ * Shown wherever the OTP flow is reached against the real stack. One constant
+ * so the wording cannot drift between the three entry points.
+ */
+const OTP_UNAVAILABLE =
+  "Registration is not available yet — user-service does not implement the " +
+  "email verification step. Ask an admin to create your account.";
+
 
 async function post(path: string, body: unknown) {
   try {
@@ -300,69 +352,89 @@ export async function logInViaGateway(
   if (!password) throw new AuthError("Enter your password.");
 
   // F1.2.1 — one field, either kind of identifier. The server decides which.
-  const response = await post(ROUTES.login, {
-    identifier: identifier.trim(),
-    password,
-  });
+  const trimmed = identifier.trim();
+  const response = await post(ROUTES.login, { identifier: trimmed, password });
   if (!response.ok) throw decodeAuthError(response.body, response.status);
-  return decodeAuthResult(response.body);
+
+  // Two round trips, because user-service's login answers with tokens only.
+  const fallback = trimmed.includes("@") ? usernameFromEmail(trimmed) : trimmed;
+  return sessionFromTokens(decodeTokenPair(response.body), fallback);
 }
 
-/** F1.1 + F1.1.2.3 — opens a registration; the OTP step completes it. */
+/**
+ * F1.1 + F1.1.2.3 — opens a registration; the OTP step completes it.
+ *
+ * BLOCKED, deliberately, and it does not call anything.
+ *
+ * user-service has no OTP. Its `POST /api/v1/users/register` takes email,
+ * username and password, answers `201` with an empty body, and the account is
+ * live immediately — there is no pending registration, no code, no handle,
+ * and no `verify`/`resend` endpoint behind D-027's four auth routes.
+ *
+ * Calling it anyway would be worse than refusing: the account would really be
+ * created, then `decodePending` would fail for want of a handle, and the user
+ * would be told registration failed while holding an account they can log into
+ * — with no way to discover that. So this stops before the request.
+ *
+ * F1.1.2.3-F1.1.2.7 are user-service's to build: the code and its five-minute
+ * expiry, the three-per-ten-minutes resend limit and the ten-minute block are
+ * all server-side rules, and enforcing them in the browser would make them
+ * bypassable (frontend/AGENTS.md). The two gateway routes are a small change
+ * here once their spec names the endpoints. Until then the fixture client
+ * carries this flow, badged as a mock.
+ */
 export async function signUpViaGateway(
   email: string,
   username: string,
   password: string,
-  contact: string,
+  _contact: string,
 ): Promise<PendingRegistration> {
   const problem = validateRegistration({ email, username, password });
   if (problem) throw new AuthError(problem);
 
-  const response = await post(ROUTES.register, {
-    email: email.trim(),
-    username: username.trim(),
-    password,
-    contact: contact.trim(),
-  });
-  if (!response.ok) throw decodeAuthError(response.body, response.status);
-  return decodePending(response.body, email.trim());
+  throw new AuthError(OTP_UNAVAILABLE);
 }
 
-/** F1.1.2.7 — registration completes only on the correct OTP. */
+/**
+ * F1.1.2.7 — registration completes only on the correct OTP.
+ *
+ * BLOCKED for the same reason as signUpViaGateway: there is no endpoint behind
+ * it. Unreachable in practice, since registration never gets this far.
+ */
 export async function verifyRegistrationViaGateway(
-  pendingRegistration: PendingRegistration,
+  _pendingRegistration: PendingRegistration,
   code: string,
 ): Promise<AuthResult> {
   const problem = validateOtp(code);
   if (problem) throw new AuthError(problem);
-
-  const response = await post(ROUTES.verify, {
-    handle: pendingRegistration.handle,
-    code: code.trim(),
-  });
-  if (!response.ok) throw decodeAuthError(response.body, response.status);
-  return decodeAuthResult(response.body);
+  throw new AuthError(OTP_UNAVAILABLE);
 }
 
-/** F1.1.2.4 — a replacement code. The server applies the F1.1.2.6 limits. */
+/**
+ * F1.1.2.4 — a replacement code. The server applies the F1.1.2.6 limits.
+ *
+ * BLOCKED for the same reason as signUpViaGateway.
+ */
 export async function resendOtpViaGateway(
-  pendingRegistration: PendingRegistration,
+  _pendingRegistration: PendingRegistration,
 ): Promise<PendingRegistration> {
-  const response = await post(ROUTES.resend, {
-    handle: pendingRegistration.handle,
-  });
-  if (!response.ok) throw decodeAuthError(response.body, response.status);
-  return decodePending(response.body, pendingRegistration.email);
+  throw new AuthError(OTP_UNAVAILABLE);
 }
 
 /**
  * D-015: the refresh exchange goes through the gateway, not direct to
- * user-service. Returns the fresh access token only — see TokenStore for why
- * the refresh token is left alone.
+ * user-service.
+ *
+ * Returns the whole PAIR, not just the access token. user-service rotates the
+ * refresh token on every exchange — its `POST /api/v1/users/refresh` responds
+ * with an `AuthResponse` carrying both fields — and it detects reuse of a
+ * spent one, answering 401 `ErrSessionCompromised`. Keeping the old refresh
+ * token would therefore not merely be stale: presenting it again looks like a
+ * stolen-token replay and kills the session. The caller must store both.
  */
 export async function refreshAccessTokenViaGateway(
   refreshToken: string,
-): Promise<string> {
+): Promise<TokenPair> {
   const response = await send({
     baseUrl: config.gatewayBaseUrl,
     path: ROUTES.refresh,
@@ -374,24 +446,35 @@ export async function refreshAccessTokenViaGateway(
 
   const raw = (response.body ?? {}) as Record<string, unknown>;
   const accessToken = raw["accessToken"];
-  if (typeof accessToken !== "string") {
+  const rotated = raw["refreshToken"];
+  if (typeof accessToken !== "string" || typeof rotated !== "string") {
     throw new AuthError("The server did not return a new access token.");
   }
-  return accessToken;
+  return { accessToken, refreshToken: rotated };
 }
 
 /**
  * D-014 logout: user-service drops the refresh token from the User DB and
  * blocklists the access token's jti in Redis. The UI cannot do either — it can
  * only ask, then forget its own copies regardless of the answer.
+ *
+ * BOTH tokens are required, because user-service revokes one of each kind and
+ * they arrive by different routes: the access token in the Authorization
+ * header, whose `jti` it blocklists, and the refresh token in the body, whose
+ * session row it deletes. Its `LogoutRequest` makes `refreshToken` required,
+ * so omitting it is a 400 and nothing is revoked at all.
  */
-export async function logOutViaGateway(accessToken: string): Promise<void> {
+export async function logOutViaGateway(
+  accessToken: string,
+  refreshToken: string,
+): Promise<void> {
   try {
     await send({
       baseUrl: config.gatewayBaseUrl,
       path: ROUTES.logout,
       method: "POST",
       accessToken,
+      body: { refreshToken },
     });
   } catch {
     // A failed logout call still clears the client. The server-side token
