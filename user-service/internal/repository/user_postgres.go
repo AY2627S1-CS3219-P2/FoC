@@ -22,16 +22,16 @@ const (
 	insertUserQuery = `
 		INSERT INTO users (
 			uid, username, email, password, phone_num, date_created,
-			last_login_date, account_role, account_status
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`
+			last_login_date, account_role, account_status, tokens_valid_after
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`
 	getUserByIDQuery = `
 		SELECT uid, username, email, password, phone_num, date_created,
-			last_login_date, account_role, account_status
+			last_login_date, account_role, account_status, tokens_valid_after
 		FROM users
 		WHERE uid = $1`
 	getUserByIdentifierQuery = `
 		SELECT uid, username, email, password, phone_num, date_created,
-			last_login_date, account_role, account_status
+			last_login_date, account_role, account_status, tokens_valid_after
 		FROM users
 		WHERE username = $1 OR email = $1`
 	updateUserQuery = `
@@ -43,6 +43,14 @@ const (
 			account_role = $5,
 			account_status = $6
 		WHERE uid = $7`
+	updateAccountStatusQuery = `
+		UPDATE users
+		SET account_status = $1,
+			tokens_valid_after = CASE
+				WHEN $1 = 'SUSPENDED' THEN $2
+				ELSE tokens_valid_after
+			END
+		WHERE uid = $3`
 )
 
 type PostgresRepository struct {
@@ -66,6 +74,7 @@ func (r *PostgresRepository) Create(ctx context.Context, u *user.User) error {
 		prepared.LastLoginDate,
 		prepared.AccountRole,
 		prepared.AccountStatus,
+		prepared.TokensValidAfter,
 	)
 	if err != nil {
 		return fmt.Errorf("create user: %w", mapDatabaseError(err))
@@ -104,6 +113,20 @@ func (r *PostgresRepository) Update(ctx context.Context, u *user.User) error {
 	return nil
 }
 
+// UpdateAccountStatusByID changes account status and invalidates existing JWTs
+// only when suspending an account. Reactivation preserves the validity boundary.
+// The caller supplies the timestamp so it can be shared with Redis invalidation.
+func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
+	result, err := r.pool.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid)
+	if err != nil {
+		return fmt.Errorf("update account status: %w", mapDatabaseError(err))
+	}
+	if result.RowsAffected() == 0 {
+		return user.ErrNotFound
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -128,6 +151,7 @@ func scanUser(row rowScanner) (*user.User, error) {
 		&got.LastLoginDate,
 		&got.AccountRole,
 		&got.AccountStatus,
+		&got.TokensValidAfter,
 	)
 	if err != nil {
 		return nil, err
@@ -147,6 +171,9 @@ func prepareForCreate(u user.User, now time.Time) user.User {
 	}
 	if u.AccountStatus == "" {
 		u.AccountStatus = user.AccountStatusActive
+	}
+	if u.TokensValidAfter.IsZero() {
+		u.TokensValidAfter = now
 	}
 	return u
 }

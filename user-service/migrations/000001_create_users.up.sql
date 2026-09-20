@@ -15,5 +15,6 @@ CREATE TABLE users (
     date_created TIMESTAMPTZ NOT NULL,
     last_login_date TIMESTAMPTZ,
     account_role account_role NOT NULL DEFAULT 'STUDENT',
-    account_status account_status NOT NULL DEFAULT 'ACTIVE'
+    account_status account_status NOT NULL DEFAULT 'ACTIVE',
+    tokens_valid_after TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

@@ -8,7 +8,11 @@ package user
 import "errors"
 
 var (
-	ErrNotFound          = errors.New("user not found")
-	ErrDuplicateEmail    = errors.New("email address is already in use")
-	ErrDuplicateUsername = errors.New("username is already in use")
+	ErrNotFound           = errors.New("user not found")
+	ErrDuplicateEmail     = errors.New("email address is already in use")
+	ErrDuplicateUsername  = errors.New("username is already in use")
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrAccountSuspended   = errors.New("account is suspended")
+	ErrSessionNotFound    = errors.New("session not found")
+	ErrSessionCompromised = errors.New("session compromised")
 )

@@ -1,0 +1,291 @@
+openapi: 3.0.3
+info:
+  title: CampusRun User Service API
+  version: 1.0.0
+  description: The identity authority for the CampusRun platform.
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, username, password]
+      properties:
+        email:
+          type: string
+          format: email
+        username:
+          type: string
+          maxLength: 128
+        password:
+          type: string
+          format: password
+          minLength: 8
+
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          description: Can be either email or username
+        password:
+          type: string
+          format: password
+
+    AuthResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    UserResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        account_role:
+          type: string
+          enum: [STUDENT, ADMIN]
+        account_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+        date_created:
+          type: string
+          format: date-time
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 128
+        password:
+          type: string
+          format: password
+
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+
+  /api/v1/users/register:
+    post:
+      summary: Register a new user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully
+        '409':
+          description: Email or username already exists
+
+  /api/v1/users/login:
+    post:
+      summary: Authenticate user
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+
+  /api/v1/users/refresh:
+    post:
+      summary: Refresh access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Unauthorized (Token invalid, expired, or ErrSessionCompromised)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/logout:
+    post:
+      summary: Terminate session
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Session terminated successfully
+        '401':
+          description: Unauthorized. The access token is missing, malformed, or cryptographically invalid
+        '500':
+          description: Internal Server Error (e.g., Redis invalidation failure)
+
+  /api/v1/users/{uid}:
+    get:
+      summary: Fetch public profile data
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '404':
+          description: User not found
+
+    put:
+      summary: Update mutable profile fields
+      description: >
+        Updates the user's username or password.
+        Authorization: The caller must either possess the ADMIN role, or their authenticated user ID (passed via the Gateway) must strictly match the `uid` in the path parameter.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '403':
+          description: Forbidden. The caller is not an ADMIN and is attempting to modify another user's profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict. The requested username is already taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/{uid}/status:
+    patch:
+      summary: Suspend or reactivate user (ADMIN only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated
+
+  /.well-known/jwks.json:
+    get:
+      summary: Retrieve standard JSON Web Key Set
+      responses:
+        '200':
+          description: JWKS payload containing active and retired public keys
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  keys:
+                    type: array
+                    items:
+                      type: object

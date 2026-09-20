@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added focused tests for environment configuration loading.
-// Author review: PENDING — reviewer to complete
+// Author review: COMPLETED BY ZI YANG
 
 package config
 
@@ -10,7 +10,8 @@ import "testing"
 func TestLoadReadsServiceEnvironment(t *testing.T) {
 	t.Setenv("PORT", "8081")
 	t.Setenv("USER_DB_URL", "postgres://user-db")
-	t.Setenv("JWT_SECRET", "secret")
+	t.Setenv("REDIS_URL", "redis://redis:6379/0")
+	t.Setenv("JWT_KEYSET_PATH", "/run/secrets/keys.json")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "15m")
 	t.Setenv("JWT_REFRESH_TOKEN_TTL", "7d")
 
@@ -19,7 +20,8 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 	want := Config{
 		Port:               "8081",
 		UserDBURL:          "postgres://user-db",
-		JWTSecret:          "secret",
+		RedisURL:           "redis://redis:6379/0",
+		JWTKeySetPath:      "/run/secrets/keys.json",
 		JWTAccessTokenTTL:  "15m",
 		JWTRefreshTokenTTL: "7d",
 	}
@@ -32,7 +34,8 @@ func TestLoadUsesEmptyValuesWhenEnvironmentIsUnset(t *testing.T) {
 	for _, name := range []string{
 		"PORT",
 		"USER_DB_URL",
-		"JWT_SECRET",
+		"REDIS_URL",
+		"JWT_KEYSET_PATH",
 		"JWT_ACCESS_TOKEN_TTL",
 		"JWT_REFRESH_TOKEN_TTL",
 	} {

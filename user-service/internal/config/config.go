@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added environment configuration plumbing for the user-service scaffold.
-// Author review: PENDING — reviewer to complete
+// Author review: COMPLETED BY ZI YANG
 
 // Package config loads process configuration at the service boundary.
 package config
@@ -12,7 +12,8 @@ import "os"
 type Config struct {
 	Port               string
 	UserDBURL          string
-	JWTSecret          string
+	RedisURL           string
+	JWTKeySetPath      string
 	JWTAccessTokenTTL  string
 	JWTRefreshTokenTTL string
 }
@@ -22,7 +23,8 @@ func Load() Config {
 	return Config{
 		Port:               os.Getenv("PORT"),
 		UserDBURL:          os.Getenv("USER_DB_URL"),
-		JWTSecret:          os.Getenv("JWT_SECRET"),
+		RedisURL:           os.Getenv("REDIS_URL"),
+		JWTKeySetPath:      os.Getenv("JWT_KEYSET_PATH"),
 		JWTAccessTokenTTL:  os.Getenv("JWT_ACCESS_TOKEN_TTL"),
 		JWTRefreshTokenTTL: os.Getenv("JWT_REFRESH_TOKEN_TTL"),
 	}
