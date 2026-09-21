@@ -48,6 +48,19 @@ func TestAccountServiceRegisterCanonicalizesEmail(t *testing.T) {
 	}
 }
 
+func TestAccountServiceRegisterRejectsInvalidPassword(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountService(repository)
+
+	_, err := service.Register(context.Background(), "student@example.com", "student", "weakpass")
+	if !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("error = %v, want ErrInvalidPassword", err)
+	}
+	if repository.user != nil {
+		t.Fatal("repository should not receive an invalid password")
+	}
+}
+
 func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	uid := uuid.New()
 	oldHash, err := hash.HashPassword("OldPass1")
@@ -67,6 +80,21 @@ func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	}
 	if repository.updated != account {
 		t.Fatal("repository did not receive the updated account")
+	}
+}
+
+func TestAccountServiceUpdateProfileRejectsInvalidPassword(t *testing.T) {
+	uid := uuid.New()
+	account := &User{UID: uid, Username: "old"}
+	repository := &fakeAccountRepository{user: account}
+	service := NewAccountService(repository)
+
+	_, err := service.UpdateProfile(context.Background(), uid, "", "", "weakpass")
+	if !errors.Is(err, ErrInvalidPassword) {
+		t.Fatalf("error = %v, want ErrInvalidPassword", err)
+	}
+	if repository.updated != nil {
+		t.Fatal("repository should not persist an invalid password")
 	}
 }
 

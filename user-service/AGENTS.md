@@ -249,6 +249,14 @@ When an `ADMIN` suspends an account, the user service shall push a Redis key (e.
 The API Gateway is a reader of the Redis blocklist, and the user service shall be the sole writer to the Redis blocklist.
 The TTL for a specific `jti` in Redis must exactly match the remaining time until that access token's exp timestamp. The TTL for a suspended:uid:<uuid> key must match the JWT_ACCESS_TOKEN_TTL duration.
 
+### Password Policy
+The password policy as stated in the product backlog is:
+- 8 – 128 characters
+- at least one uppercase letter
+- at least one lowercase letter
+- at least one digit
+This policy should be checked during registration and updating profile of a user.
+
 ### Entry point of service (`cmd/api/main.go`)
 The `main.go` file should construct its dependencies in the following order:
 1. Parse environment variables (using a library like kelseyhightower/envconfig).

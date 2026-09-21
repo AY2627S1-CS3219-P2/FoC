@@ -12,6 +12,7 @@ var (
 	ErrDuplicateEmail     = errors.New("email address is already in use")
 	ErrDuplicateUsername  = errors.New("username is already in use")
 	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrInvalidPassword    = errors.New("invalid password")
 	ErrAccountSuspended   = errors.New("account is suspended")
 	ErrSessionNotFound    = errors.New("session not found")
 	ErrSessionCompromised = errors.New("session compromised")

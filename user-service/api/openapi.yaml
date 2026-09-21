@@ -26,10 +26,13 @@ components:
         username:
           type: string
           maxLength: 128
+        # AI-generated (edited by ZI YANG): recorded password policy constraints.
         password:
           type: string
           format: password
           minLength: 8
+          maxLength: 128
+          description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
 
     LoginRequest:
       type: object
@@ -41,6 +44,9 @@ components:
         password:
           type: string
           format: password
+          minLength: 8
+          maxLength: 128
+          description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
 
     AuthResponse:
       type: object
@@ -146,7 +152,7 @@ paths:
         '201':
           description: User created successfully
         '400':
-          description: Email must end with '@u.nus.edu'
+          description: Invalid email, missing credentials, or password policy violation.
         '409':
           description: Email or username already exists
 
@@ -265,6 +271,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request body or password policy violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '403':
           description: Forbidden. The caller is not an ADMIN and is attempting to modify another user's profile.
           content:

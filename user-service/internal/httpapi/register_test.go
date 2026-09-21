@@ -52,9 +52,9 @@ func TestRegisterHandler(t *testing.T) {
 		},
 		"rejects incomplete credentials": {
 			body:       `{"email":"student@u.nus.edu","username":"student","password":"short"}`,
-			registrar:  &fakeRegistrar{},
+			registrar:  &fakeRegistrar{err: user.ErrInvalidPassword},
 			wantStatus: http.StatusBadRequest,
-			wantError:  "8-character password",
+			wantError:  "password must be 8-128 characters",
 		},
 		// AI-generated (edited by ZI YANG).
 		"rejects non-NUS email": {

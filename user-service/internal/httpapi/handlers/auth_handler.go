@@ -58,21 +58,23 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	if request.Email == "" || request.Username == "" || len(request.Password) < 8 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email, username, and an 8-character password are required"})
+	if request.Email == "" || request.Username == "" || request.Password == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email, username, and password are required"})
 		return
 	}
-    if !isNUSStudentEmail(request.Email) {
-        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must end with '@u.nus.edu'"})
-        return
-    }
+	if !isNUSStudentEmail(request.Email) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must end with '@u.nus.edu'"})
+		return
+	}
 	if h.deps.Registrar == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration unavailable"})
 		return
 	}
-    request.Email = normalizeEmail(request.Email)
+	request.Email = normalizeEmail(request.Email)
 	if _, err := h.deps.Registrar.Register(r.Context(), request.Email, request.Username, request.Password); err != nil {
-		if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
+		if errors.Is(err, user.ErrInvalidPassword) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
+		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})
 		} else {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration unavailable"})
@@ -97,10 +99,10 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "authentication unavailable"})
 		return
 	}
-    request.Identifier = strings.TrimSpace(request.Identifier)
-    if strings.Contains(request.Identifier, "@") {
-        request.Identifier = normalizeEmail(request.Identifier)
-    }
+	request.Identifier = strings.TrimSpace(request.Identifier)
+	if strings.Contains(request.Identifier, "@") {
+		request.Identifier = normalizeEmail(request.Identifier)
+	}
 	pair, err := h.deps.LoginService.Login(r.Context(), request.Identifier, request.Password)
 	if err != nil {
 		if errors.Is(err, user.ErrInvalidCredentials) {
@@ -175,11 +177,11 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func isNUSStudentEmail(email string) bool {
-    email = strings.TrimSpace(email)
-    at := strings.LastIndexByte(email, '@')
-    return at > 0 && strings.EqualFold(email[at:], "@u.nus.edu")
+	email = strings.TrimSpace(email)
+	at := strings.LastIndexByte(email, '@')
+	return at > 0 && strings.EqualFold(email[at:], "@u.nus.edu")
 }
 
 func normalizeEmail(email string) string {
-    return strings.ToLower(strings.TrimSpace(email))
+	return strings.ToLower(strings.TrimSpace(email))
 }

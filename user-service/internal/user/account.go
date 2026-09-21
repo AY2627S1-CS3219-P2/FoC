@@ -9,8 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 	"strings"
+	"time"
 
 	"foc/user-service/internal/hash"
 	"github.com/google/uuid"
@@ -33,6 +33,9 @@ func NewAccountService(repository UserRepository) *AccountService {
 func (s *AccountService) Register(ctx context.Context, email, username, password string) (*User, error) {
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
+	}
+	if err := ValidatePassword(password); err != nil {
+		return nil, fmt.Errorf("validate registration password: %w", err)
 	}
 	passwordHash, err := hash.HashPassword(password)
 	if err != nil {
@@ -71,6 +74,9 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 		account.PhoneNum = phone
 	}
 	if password != "" {
+		if err := ValidatePassword(password); err != nil {
+			return nil, fmt.Errorf("validate profile password: %w", err)
+		}
 		account.PasswordHash, err = hash.HashPassword(password)
 		if err != nil {
 			return nil, fmt.Errorf("hash profile password: %w", err)
@@ -100,5 +106,5 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 }
 
 func normalizeEmail(email string) string {
-    return strings.ToLower(strings.TrimSpace(email))
+	return strings.ToLower(strings.TrimSpace(email))
 }

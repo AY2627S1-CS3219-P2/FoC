@@ -17,10 +17,16 @@ import (
 	"foc/user-service/internal/httpapi/routes"
 )
 
-type fakeProfileUpdater struct{ uid uuid.UUID }
+type fakeProfileUpdater struct {
+	uid uuid.UUID
+	err error
+}
 
 func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, id uuid.UUID, _, _, _ string) (*user.User, error) {
 	f.uid = id
+	if f.err != nil {
+		return nil, f.err
+	}
 	return &user.User{UID: id, Username: "new", AccountRole: user.AccountRoleStudent, AccountStatus: user.AccountStatusActive}, nil
 }
 func TestUpdateProfileHandler(t *testing.T) {
@@ -43,5 +49,24 @@ func TestUpdateProfileHandler(t *testing.T) {
 				t.Fatal("not updated")
 			}
 		})
+	}
+}
+
+func TestUpdateProfileHandlerRejectsInvalidPassword(t *testing.T) {
+	id := uuid.New()
+	r := newTestRouter(routes.Dependencies{
+		TokenVerifier: &fakeTokenVerifier{principal: handlers.Principal{UserID: id, Role: user.AccountRoleStudent}},
+		Profile:       handlers.ProfileDependencies{ProfileUpdater: &fakeProfileUpdater{err: user.ErrInvalidPassword}},
+	})
+	q := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+id.String(), strings.NewReader(`{"password":"weakpass"}`))
+	q.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, q)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "password must be 8-128 characters") {
+		t.Fatalf("body = %q, want password validation error", w.Body.String())
 	}
 }
