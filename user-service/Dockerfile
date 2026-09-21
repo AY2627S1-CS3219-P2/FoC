@@ -26,6 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /out/user-service ./user-service
 COPY migrations ./migrations
+COPY keys.json ./keys.json
 
 USER appuser
 

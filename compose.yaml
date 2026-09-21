@@ -18,6 +18,14 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   user-service:
     build:
       context: ./user-service
@@ -25,11 +33,14 @@ services:
     environment:
       PORT: 8081
       USER_DB_URL: postgres://postgres:postgres@user-db:5432/user?sslmode=disable
-      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
+      JWT_KEYSET_PATH: /app/keys.json
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:?JWT_ACCESS_TOKEN_TTL must be set}
       JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:?JWT_REFRESH_TOKEN_TTL must be set}
     depends_on:
       user-db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "8081:8081"
