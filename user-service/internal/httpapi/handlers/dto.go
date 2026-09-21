@@ -46,6 +46,7 @@ type UserResponse struct {
 	UID           string    `json:"uid"`
 	Username      string    `json:"username"`
 	Email         string    `json:"email"`
+	PhoneNum      string    `json:"phone_num"`
 	AccountRole   string    `json:"account_role"`
 	AccountStatus string    `json:"account_status"`
 	DateCreated   time.Time `json:"date_created"`

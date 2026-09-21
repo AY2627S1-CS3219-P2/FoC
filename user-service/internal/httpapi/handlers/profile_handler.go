@@ -146,6 +146,7 @@ func userResponse(account *user.User) UserResponse {
 	    UID: account.UID.String(),
 	    Username: account.Username,
 	    Email: account.Email,
+	    PhoneNum: account.PhoneNum,
 	    AccountRole: string(account.AccountRole),
 	    AccountStatus: string(account.AccountStatus),
 	    DateCreated: account.DateCreated,

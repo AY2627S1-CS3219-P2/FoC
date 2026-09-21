@@ -74,6 +74,8 @@ components:
           type: string
         email:
           type: string
+        phone_num:
+          type: string
         account_role:
           type: string
           enum: [STUDENT, ADMIN]
