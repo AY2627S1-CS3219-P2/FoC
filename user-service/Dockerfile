@@ -26,7 +26,7 @@ WORKDIR /app
 
 COPY --from=builder /out/user-service ./user-service
 COPY migrations ./migrations
-COPY keys.json ./keys.json
+COPY --chown=appuser:appuser keys.json ./keys.json
 
 USER appuser
 
