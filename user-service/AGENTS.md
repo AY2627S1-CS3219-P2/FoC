@@ -167,7 +167,7 @@ Use Go Chi router for handling API calls. The API should handle these calls:
 1. GET /api/v1/health : Returns health status of the whole user microservice (includes Go logic layer and database health)
 2. POST /api/v1/users/register : Accepts email, username, and plaintext password. Triggers the repository Create method and publishes an event to the message broker so the Credit Service can allocate the initial credits
 3. POST /api/v1/users/login : Accepts an identifier (username or email) and plaintext password. Uses GetByIdentifier to verify credentials and returns JWT authentication/session tokens
-4. GET /api/v1/users/{uid} : Uses GetByID to fetch public profile data for a specific user (e.g., when a requester views a courier's profile)
+4. GET /api/v1/users/{uid} : Uses GetByID to fetch public profile data for a specific user (e.g., when a requester views a courier's profile. Any authenticated user may view another user's `username`, `email`, and `phone_num`, but not `account_role`, `account_status`, or `date_created`, unless the authenticated user is an admin)
 5. PUT /api/v1/users/{uid} : Uses Update to modify mutable user profile fields, such as the username or password.
 6. PATCH /api/v1/users/{uid}/status: An ADMIN-only endpoint to transition an account status between ACTIVE and SUSPENDED
 7. POST /api/v1/users/refresh : Accepts a valid refresh token. Issues a new access/refresh token pair and rotates the old refresh token in the database (uses `RotateSession` of the Session Repository's interface)

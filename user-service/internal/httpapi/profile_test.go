@@ -33,21 +33,26 @@ func (f *fakeProfileGetter) GetByID(_ context.Context, uid uuid.UUID) (*user.Use
 func TestProfileHandler(t *testing.T) {
 	uid := uuid.New()
 	tests := map[string]struct {
+		principal  handlers.Principal
 		header     string
 		getter     *fakeProfileGetter
 		wantStatus int
-		wantBody   string
+		wantBody   []string
+		avoidBody  []string
 	}{
-		"returns public profile": {
-			header: "Bearer access-token", getter: &fakeProfileGetter{account: &user.User{UID: uid, Username: "student", AccountRole: user.AccountRoleStudent, AccountStatus: user.AccountStatusActive}}, wantStatus: http.StatusOK, wantBody: `"username":"student"`,
+		"admin receives full profile": {
+			principal: handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleAdmin}, header: "Bearer access-token", getter: &fakeProfileGetter{account: &user.User{UID: uid, Username: "student", Email: "student@u.nus.edu", PhoneNum: "+6512345678", AccountRole: user.AccountRoleStudent, AccountStatus: user.AccountStatusActive}}, wantStatus: http.StatusOK, wantBody: []string{`"email":"student@u.nus.edu"`, `"phone_num":"+6512345678"`, `"account_role":"STUDENT"`, `"account_status":"ACTIVE"`, `"date_created":"0001-01-01T00:00:00Z"`},
 		},
-		"rejects missing authentication": {getter: &fakeProfileGetter{}, wantStatus: http.StatusUnauthorized, wantBody: "authentication required"},
-		"returns not found":              {header: "Bearer access-token", getter: &fakeProfileGetter{err: user.ErrNotFound}, wantStatus: http.StatusNotFound, wantBody: "user not found"},
-		"hides lookup failure":           {header: "Bearer access-token", getter: &fakeProfileGetter{err: errors.New("database unavailable")}, wantStatus: http.StatusInternalServerError, wantBody: "profile unavailable"},
+		"non-admin receives restricted profile": {
+			principal: handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}, header: "Bearer access-token", getter: &fakeProfileGetter{account: &user.User{UID: uid, Username: "student", Email: "student@u.nus.edu", PhoneNum: "+6512345678", AccountRole: user.AccountRoleStudent, AccountStatus: user.AccountStatusActive}}, wantStatus: http.StatusOK, wantBody: []string{`"uid":"` + uid.String() + `"`, `"username":"student"`, `"email":"student@u.nus.edu"`, `"phone_num":"+6512345678"`}, avoidBody: []string{`"account_role"`, `"account_status"`, `"date_created"`},
+		},
+		"rejects missing authentication": {getter: &fakeProfileGetter{}, wantStatus: http.StatusUnauthorized, wantBody: []string{"authentication required"}},
+		"returns not found":              {principal: handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}, header: "Bearer access-token", getter: &fakeProfileGetter{err: user.ErrNotFound}, wantStatus: http.StatusNotFound, wantBody: []string{"user not found"}},
+		"hides lookup failure":           {principal: handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}, header: "Bearer access-token", getter: &fakeProfileGetter{err: errors.New("database unavailable")}, wantStatus: http.StatusInternalServerError, wantBody: []string{"profile unavailable"}},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			verifier := &fakeTokenVerifier{principal: handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}}
+			verifier := &fakeTokenVerifier{principal: tt.principal}
 			router := newTestRouter(routes.Dependencies{TokenVerifier: verifier, Profile: handlers.ProfileDependencies{ProfileGetter: tt.getter}})
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+uid.String(), nil)
 			request.Header.Set("Authorization", tt.header)
@@ -56,8 +61,15 @@ func TestProfileHandler(t *testing.T) {
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d; body = %s", response.Code, tt.wantStatus, response.Body.String())
 			}
-			if !strings.Contains(response.Body.String(), tt.wantBody) {
-				t.Fatalf("body = %q, want it to contain %q", response.Body.String(), tt.wantBody)
+			for _, expected := range tt.wantBody {
+				if !strings.Contains(response.Body.String(), expected) {
+					t.Fatalf("body = %q, want it to contain %q", response.Body.String(), expected)
+				}
+			}
+			for _, forbidden := range tt.avoidBody {
+				if strings.Contains(response.Body.String(), forbidden) {
+					t.Fatalf("body = %q, must not contain %q", response.Body.String(), forbidden)
+				}
 			}
 			if tt.wantStatus == http.StatusOK && tt.getter.uid != uid {
 				t.Fatalf("GetByID uid = %s, want %s", tt.getter.uid, uid)

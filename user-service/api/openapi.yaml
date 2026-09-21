@@ -86,6 +86,21 @@ components:
           type: string
           format: date-time
 
+    RestrictedUserResponse:
+      type: object
+      additionalProperties: false
+      required: [uid, username, email, phone_num]
+      properties:
+        uid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        phone_num:
+          type: string
+
     UpdateProfileRequest:
       type: object
       properties:
@@ -198,7 +213,10 @@ paths:
 
   /api/v1/users/{uid}:
     get:
-      summary: Fetch public profile data
+      summary: Fetch profile data
+      description: >
+        Authenticated ADMIN callers receive full user details. Other
+        authenticated callers receive only uid, username, email, and phone_num.
       security:
         - BearerAuth: []
       parameters:
@@ -214,7 +232,9 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/UserResponse'
+                anyOf:
+                  - $ref: '#/components/schemas/UserResponse'
+                  - $ref: '#/components/schemas/RestrictedUserResponse'
         '404':
           description: User not found
 

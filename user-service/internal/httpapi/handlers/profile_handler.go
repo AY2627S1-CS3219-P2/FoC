@@ -45,8 +45,13 @@ type ProfileHandler struct{ deps ProfileDependencies }
 // NewProfileHandler constructs a profile handler with its required operations.
 func NewProfileHandler(deps ProfileDependencies) ProfileHandler { return ProfileHandler{deps: deps} }
 
-// Profile handles public-profile lookup.
+// Profile handles role-based profile lookup.
 func (h ProfileHandler) Profile(w http.ResponseWriter, r *http.Request) {
+	principal, ok := PrincipalFromContext(r.Context())
+	if !ok {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		return
+	}
 	uid, err := uuid.Parse(chi.URLParam(r, "uid"))
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
@@ -69,7 +74,12 @@ func (h ProfileHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		return
 	}
-	writeJSON(w, http.StatusOK, userResponse(account))
+	// AI-generated (edited by ZI YANG): select the response fields from the verified role.
+	if principal.Role == user.AccountRoleAdmin {
+		writeJSON(w, http.StatusOK, userResponse(account))
+		return
+	}
+	writeJSON(w, http.StatusOK, restrictedUserResponse(account))
 }
 
 // UpdateStatus handles an administrative account-status update.
@@ -143,12 +153,21 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 
 func userResponse(account *user.User) UserResponse {
 	return UserResponse{
-	    UID: account.UID.String(),
-	    Username: account.Username,
-	    Email: account.Email,
-	    PhoneNum: account.PhoneNum,
-	    AccountRole: string(account.AccountRole),
-	    AccountStatus: string(account.AccountStatus),
-	    DateCreated: account.DateCreated,
+		UID:           account.UID.String(),
+		Username:      account.Username,
+		Email:         account.Email,
+		PhoneNum:      account.PhoneNum,
+		AccountRole:   string(account.AccountRole),
+		AccountStatus: string(account.AccountStatus),
+		DateCreated:   account.DateCreated,
+	}
+}
+
+func restrictedUserResponse(account *user.User) RestrictedUserResponse {
+	return RestrictedUserResponse{
+		UID:      account.UID.String(),
+		Username: account.Username,
+		Email:    account.Email,
+		PhoneNum: account.PhoneNum,
 	}
 }

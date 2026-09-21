@@ -52,6 +52,15 @@ type UserResponse struct {
 	DateCreated   time.Time `json:"date_created"`
 }
 
+// AI-generated (edited by ZI YANG): restricted profile response for non-admin callers.
+// RestrictedUserResponse is the profile visible to authenticated non-admin users.
+type RestrictedUserResponse struct {
+	UID      string `json:"uid"`
+	Username string `json:"username"`
+	Email    string `json:"email"`
+	PhoneNum string `json:"phone_num"`
+}
+
 // UpdateStatusRequest is the JSON body accepted by account-status updates.
 type UpdateStatusRequest struct {
 	Status user.AccountStatus `json:"status"`
