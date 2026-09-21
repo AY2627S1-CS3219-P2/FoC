@@ -8,6 +8,8 @@
 //   builds its session from token claims plus the profile endpoint, logout
 //   sends the refresh token, refresh returns the rotated pair, and the
 //   three OTP calls are blocked because no endpoint implements them.
+//   2026-09-21 (later): the session now carries email and contact, which
+//   user-service's UserResponse/RestrictedUserResponse gained in 72fe5a5.
 // Author review: PENDING — <reviewer to complete>
 
 import { config } from "../../lib/config";
@@ -250,6 +252,21 @@ function decodeTokenPair(body: unknown): TokenPair {
   return { accessToken, refreshToken };
 }
 
+/**
+ * A profile field that may be absent, blank, or not a string at all.
+ *
+ * Returns undefined rather than an empty string so a view can test one thing
+ * — `session.email ? ... : ...` — instead of also guarding against "". The
+ * schema marks these required, but a user who has not filled in a phone number
+ * still has one stored as empty, and that is absent as far as the UI is
+ * concerned.
+ */
+function optionalText(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
+
 function asAccountRole(value: unknown): AccountRole {
   return String(value ?? "STUDENT").toUpperCase() === "ADMIN"
     ? "ADMIN"
@@ -293,8 +310,9 @@ async function fetchProfile(
  * when the profile call could not answer, so the avatar and greeting have
  * something truthful-ish to show rather than an empty chip.
  *
- * Note what is NOT set: `email` and `contact`. user-service returns neither
- * (see features/auth/types.ts), so they stay undefined against the real stack.
+ * `email` and `contact` come from the profile call, not from the token: no
+ * claim carries either. They stay undefined when that call could not answer,
+ * which is why both are optional on Session.
  */
 async function sessionFromTokens(
   tokens: TokenPair,
@@ -310,9 +328,17 @@ async function sessionFromTokens(
     session: {
       userId: String(profile?.["uid"] ?? userId),
       username,
+      // F1.4.1 — both are on every profile response now, RestrictedUserResponse
+      // included, so an ordinary STUDENT viewing their own account gets them.
+      // `phone_num` is user-service's name for what the backlog calls contact
+      // information; the rename happens here so no view has to know it.
+      email: optionalText(profile?.["email"]),
+      contact: optionalText(profile?.["phone_num"]),
       // The role the GATEWAY will act on is the one in the token, so show
       // that rather than the profile's column — if they ever disagree, the
       // claim is what governs every authorization decision downstream.
+      // The fallback is now unreachable for a non-admin caller:
+      // RestrictedUserResponse omits `account_role` entirely.
       role: asAccountRole(claims.role ?? profile?.["account_role"]),
       initials: initialsOf(username),
     },

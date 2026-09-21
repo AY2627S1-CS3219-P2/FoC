@@ -1,8 +1,8 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Profile screen against the mock user-service session.
-//   2026-09-21: email and contact render only when present — the real
-//   user-service returns neither.
+//   2026-09-21: email and contact render only when present — they come
+//   from the profile call, which can fail while the session stays valid.
 // Author review: PENDING — <reviewer to complete>
 
 import { MockBadge } from "../../components/MockBadge";
@@ -52,11 +52,11 @@ export function ProfileView({
             contact information are all viewable. F1.4.3 makes the identifier
             and the email unchangeable, so they are shown as plain text.
 
-            Email and contact render only when present. Against the real
-            user-service they are not: its UserResponse has no email field and
-            the service has no contact field at all, so F1.4.1 cannot be
-            satisfied from the current contract. Flagged for that service's
-            owner rather than filled in from something the UI guessed. */}
+            Email and contact render only when present. user-service supplies
+            both (`email` and `phone_num`, on the restricted response too), but
+            they arrive on the profile call that follows login rather than in a
+            token claim, so a failed call leaves them undefined while the
+            session itself stays valid. */}
         <h2 className="section-label">Account</h2>
         <dl className="detail-list">
           <div>
