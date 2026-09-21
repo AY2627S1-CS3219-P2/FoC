@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
@@ -61,6 +62,10 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email, username, and an 8-character password are required"})
 		return
 	}
+    if !isNUSStudentEmail(request.Email) {
+        writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must end with '@u.nus.edu'"})
+        return
+    }
 	if h.deps.Registrar == nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration unavailable"})
 		return
@@ -162,4 +167,10 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func isNUSStudentEmail(email string) bool {
+    email = strings.TrimSpace(email)
+    at := strings.LastIndexByte(email, '@')
+    return at > 0 && strings.EqualFold(email[at:], "@u.nus.edu")
 }

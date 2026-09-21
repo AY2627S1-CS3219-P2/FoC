@@ -130,6 +130,8 @@ paths:
       responses:
         '201':
           description: User created successfully
+        '400':
+          description: Email must end with '@u.nus.edu'
         '409':
           description: Email or username already exists
 

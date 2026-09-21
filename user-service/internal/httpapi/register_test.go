@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-20
 // Scope: Added focused HTTP tests transcribed from the recorded registration OpenAPI contract.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests
 
 package httpapi
 
@@ -40,7 +40,7 @@ func TestRegisterHandler(t *testing.T) {
 		wantError  string
 	}{
 		"creates account": {
-			body:       `{"email":"student@example.com","username":"student","password":"ValidPass1"}`,
+			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{},
 			wantStatus: http.StatusCreated,
 		},
@@ -51,25 +51,32 @@ func TestRegisterHandler(t *testing.T) {
 			wantError:  "invalid request body",
 		},
 		"rejects incomplete credentials": {
-			body:       `{"email":"student@example.com","username":"student","password":"short"}`,
+			body:       `{"email":"student@u.nus.edu","username":"student","password":"short"}`,
 			registrar:  &fakeRegistrar{},
 			wantStatus: http.StatusBadRequest,
 			wantError:  "8-character password",
 		},
-		"reports duplicate email": {
+		// AI-generated (edited by ZI YANG).
+		"rejects non-NUS email": {
 			body:       `{"email":"student@example.com","username":"student","password":"ValidPass1"}`,
+			registrar:  &fakeRegistrar{},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "email must end with '@u.nus.edu'",
+		},
+		"reports duplicate email": {
+			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{err: user.ErrDuplicateEmail},
 			wantStatus: http.StatusConflict,
 			wantError:  "account already exists",
 		},
 		"reports duplicate username": {
-			body:       `{"email":"student@example.com","username":"student","password":"ValidPass1"}`,
+			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{err: user.ErrDuplicateUsername},
 			wantStatus: http.StatusConflict,
 			wantError:  "account already exists",
 		},
 		"hides registration failure": {
-			body:       `{"email":"student@example.com","username":"student","password":"ValidPass1"}`,
+			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{err: errors.New("database unavailable")},
 			wantStatus: http.StatusInternalServerError,
 			wantError:  "registration unavailable",
@@ -94,7 +101,7 @@ func TestRegisterHandler(t *testing.T) {
 				if response.Body.Len() != 0 {
 					t.Fatalf("body = %q, want empty", response.Body.String())
 				}
-				if tt.registrar.email != "student@example.com" || tt.registrar.username != "student" || tt.registrar.password != "ValidPass1" {
+				if tt.registrar.email != "student@u.nus.edu" || tt.registrar.username != "student" || tt.registrar.password != "ValidPass1" {
 					t.Fatalf("registration input = %q/%q/%q", tt.registrar.email, tt.registrar.username, tt.registrar.password)
 				}
 			}
