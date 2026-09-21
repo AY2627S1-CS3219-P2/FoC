@@ -142,5 +142,12 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 func userResponse(account *user.User) UserResponse {
-	return UserResponse{UID: account.UID.String(), Username: account.Username, AccountRole: string(account.AccountRole), AccountStatus: string(account.AccountStatus), DateCreated: account.DateCreated}
+	return UserResponse{
+	    UID: account.UID.String(),
+	    Username: account.Username,
+	    Email: account.Email,
+	    AccountRole: string(account.AccountRole),
+	    AccountStatus: string(account.AccountStatus),
+	    DateCreated: account.DateCreated,
+	}
 }

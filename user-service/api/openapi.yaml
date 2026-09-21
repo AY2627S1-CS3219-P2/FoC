@@ -72,6 +72,8 @@ components:
           format: uuid
         username:
           type: string
+        email:
+          type: string
         account_role:
           type: string
           enum: [STUDENT, ADMIN]
