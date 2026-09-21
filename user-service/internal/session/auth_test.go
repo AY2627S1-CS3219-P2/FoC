@@ -3,7 +3,7 @@
 // Scope: Added unit tests for the user authentication service boundary.
 // Author review: COMPLETED BY ZI YANG
 
-package user
+package session
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"foc/user-service/internal/hash"
+	. "foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
@@ -56,7 +58,7 @@ func (f *fakeTokenIssuer) Issue(_ context.Context, account *User) (TokenPair, er
 }
 
 func TestAuthenticatorAuthenticate(t *testing.T) {
-	passwordHash, err := HashPassword("ValidPass1")
+	passwordHash, err := hash.HashPassword("ValidPass1")
 	if err != nil {
 		t.Fatalf("hash password: %v", err)
 	}

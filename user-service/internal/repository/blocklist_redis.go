@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"foc/user-service/internal/user"
+	"foc/user-service/internal/session"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
@@ -50,4 +50,4 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 	return nil
 }
 
-var _ user.BlocklistWriter = (*RedisBlocklistWriter)(nil)
+var _ session.BlocklistWriter = (*RedisBlocklistWriter)(nil)

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"net/http"
 
+	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 )
 
@@ -21,17 +22,17 @@ type Registrar interface {
 
 // LoginService authenticates an account and persists its refresh session.
 type LoginService interface {
-	Login(context.Context, string, string) (user.TokenPair, error)
+	Login(context.Context, string, string) (session.TokenPair, error)
 }
 
 // Refresher rotates a valid refresh-token session.
 type Refresher interface {
-	Refresh(context.Context, string) (user.TokenPair, error)
+	Refresh(context.Context, string) (session.TokenPair, error)
 }
 
 // Logoutter invalidates a verified access token and refresh session.
 type Logoutter interface {
-	Logout(context.Context, user.AccessTokenClaims, string) error
+	Logout(context.Context, session.AccessTokenClaims, string) error
 }
 
 // AuthDependencies contains only the operations required by AuthHandler.
@@ -39,7 +40,7 @@ type AuthDependencies struct {
 	Registrar      Registrar
 	LoginService   LoginService
 	Refresher      Refresher
-	AccessVerifier user.AccessTokenVerifier
+	AccessVerifier session.AccessTokenVerifier
 	Logoutter      Logoutter
 }
 

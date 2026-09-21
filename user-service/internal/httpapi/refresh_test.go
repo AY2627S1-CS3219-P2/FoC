@@ -16,16 +16,17 @@ import (
 
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/routes"
+	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 )
 
 type fakeRefresher struct {
-	pair         user.TokenPair
+	pair         session.TokenPair
 	err          error
 	refreshToken string
 }
 
-func (f *fakeRefresher) Refresh(_ context.Context, refreshToken string) (user.TokenPair, error) {
+func (f *fakeRefresher) Refresh(_ context.Context, refreshToken string) (session.TokenPair, error) {
 	f.refreshToken = refreshToken
 	return f.pair, f.err
 }
@@ -39,7 +40,7 @@ func TestRefreshHandler(t *testing.T) {
 	}{
 		"returns rotated token pair": {
 			body:       `{"refreshToken":"old-refresh"}`,
-			refresher:  &fakeRefresher{pair: user.TokenPair{AccessToken: "new-access", RefreshToken: "new-refresh"}},
+			refresher:  &fakeRefresher{pair: session.TokenPair{AccessToken: "new-access", RefreshToken: "new-refresh"}},
 			wantStatus: http.StatusOK,
 		},
 		"rejects malformed JSON": {

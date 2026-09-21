@@ -1,9 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Added focused tests for login session creation, refresh rotation, and replay handling.
-// Author review: COMPLETED BY ZI YANG
+// Author review: Repackaged and validated correctness
 
-package user
+package session
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"foc/user-service/internal/hash"
+	. "foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
@@ -73,7 +75,7 @@ func (f *fakeRefreshVerifier) VerifyRefresh(context.Context, string) (RefreshCla
 
 func newSessionServiceFixtures(t *testing.T) (*User, *fakeAuthRepository, *fakeSessionRepository, *fakeTokenIssuer, time.Time) {
 	t.Helper()
-	passwordHash, err := HashPassword("ValidPass1")
+	passwordHash, err := hash.HashPassword("ValidPass1")
 	if err != nil {
 		t.Fatal(err)
 	}

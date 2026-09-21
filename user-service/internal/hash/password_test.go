@@ -1,34 +1,33 @@
 // AI Assistance Disclosure:
-// Tool: Codex (GPT-5), date: 2026-09-18
-// Scope: Added focused tests for bcrypt password hashing and verification.
-// Author review: PENDING — reviewer to complete
+// Tool: Codex (GPT-5), date: 2026-09-21
+// Scope: Added direct regression coverage for the password-cryptography package.
+// Author review: Repackaged this file and validated tests
 
-package user
+package hash
 
 import "testing"
 
 func TestHashPasswordDoesNotReturnPlaintext(t *testing.T) {
 	password := "CorrectHorseBattery9"
-	hash, err := HashPassword(password)
+	got, err := HashPassword(password)
 	if err != nil {
 		t.Fatalf("HashPassword() error = %v", err)
 	}
-	if hash == password {
-		t.Fatal("HashPassword() returned the plaintext password")
+	if got == password {
+		t.Fatal("HashPassword() returned plaintext")
 	}
 }
 
 func TestCheckPasswordMatchesOnlyTheOriginalPassword(t *testing.T) {
 	password := "CorrectHorseBattery9"
-	hash, err := HashPassword(password)
+	passwordHash, err := HashPassword(password)
 	if err != nil {
 		t.Fatalf("HashPassword() error = %v", err)
 	}
-
-	if !CheckPassword(hash, password) {
+	if !CheckPassword(passwordHash, password) {
 		t.Fatal("CheckPassword() rejected the original password")
 	}
-	if CheckPassword(hash, "WrongPassword9") {
+	if CheckPassword(passwordHash, "WrongPassword9") {
 		t.Fatal("CheckPassword() accepted an incorrect password")
 	}
 }

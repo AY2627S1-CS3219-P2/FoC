@@ -13,20 +13,20 @@ import (
 	"strings"
 	"testing"
 
-	"foc/user-service/internal/user"
+	"foc/user-service/internal/session"
 )
 
 type loginServiceStub struct {
-	pair user.TokenPair
+	pair session.TokenPair
 }
 
-func (s loginServiceStub) Login(context.Context, string, string) (user.TokenPair, error) {
+func (s loginServiceStub) Login(context.Context, string, string) (session.TokenPair, error) {
 	return s.pair, nil
 }
 
 func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
 	handler := NewAuthHandler(AuthDependencies{
-		LoginService: loginServiceStub{pair: user.TokenPair{AccessToken: "access", RefreshToken: "refresh"}},
+		LoginService: loginServiceStub{pair: session.TokenPair{AccessToken: "access", RefreshToken: "refresh"}},
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", strings.NewReader(`{"identifier":"student","password":"ValidPass1"}`))
 	response := httptest.NewRecorder()

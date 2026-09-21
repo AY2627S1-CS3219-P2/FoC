@@ -16,18 +16,19 @@ import (
 
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/routes"
+	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
 type fakeLoginService struct {
-	pair       user.TokenPair
+	pair       session.TokenPair
 	err        error
 	identifier string
 	password   string
 }
 
-func (f *fakeLoginService) Login(_ context.Context, identifier, password string) (user.TokenPair, error) {
+func (f *fakeLoginService) Login(_ context.Context, identifier, password string) (session.TokenPair, error) {
 	f.identifier = identifier
 	f.password = password
 	return f.pair, f.err
@@ -71,14 +72,14 @@ func TestNewRouterRegistersRecordedRoutes(t *testing.T) {
 func TestLoginHandler(t *testing.T) {
 	tests := map[string]struct {
 		body       string
-		authPair   user.TokenPair
+		authPair   session.TokenPair
 		authErr    error
 		wantStatus int
 		wantError  string
 	}{
 		"returns JWT pair": {
 			body:       `{"identifier":"student","password":"ValidPass1"}`,
-			authPair:   user.TokenPair{AccessToken: "access", RefreshToken: "refresh"},
+			authPair:   session.TokenPair{AccessToken: "access", RefreshToken: "refresh"},
 			wantStatus: http.StatusOK,
 		},
 		"rejects malformed JSON": {

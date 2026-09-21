@@ -19,6 +19,7 @@ import (
 	"foc/user-service/internal/httpapi/router"
 	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/repository"
+	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -78,10 +79,10 @@ func run(ctx context.Context, cfg config.Config) error {
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
 	accountService := user.NewAccountService(userRepository)
-	authenticator := user.NewAuthenticator(userRepository, jwtService)
-	loginService := user.NewLoginService(authenticator, sessionRepository, time.Now)
-	refreshService := user.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, time.Now)
-	logoutService := user.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
+	authenticator := session.NewAuthenticator(userRepository, jwtService)
+	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)
+	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, time.Now)
+	logoutService := session.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
 	httpHandler := router.Setup(routes.Dependencies{
 		Auth: handlers.AuthDependencies{
 			Registrar:      accountService,

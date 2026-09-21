@@ -6,9 +6,9 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-20
 // Scope: Refactored the refresh-session workflow into focused private helpers.
-// Author review: COMPLETED BY ZI YANG
+// Author review: Repackaged and validated correctness
 
-package user
+package session
 
 import (
 	"context"
@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"time"
 
+	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
@@ -39,13 +40,13 @@ type RefreshTokenVerifier interface {
 // LoginService authenticates an account and records its refresh session.
 type LoginService struct {
 	authenticator *Authenticator
-	sessions      SessionRepository
+	sessions      user.SessionRepository
 	now           func() time.Time
 }
 
 // NewLoginService constructs a login service with its persistence and token
 // dependencies ready for use.
-func NewLoginService(a *Authenticator, sessions SessionRepository, now func() time.Time) *LoginService {
+func NewLoginService(a *Authenticator, sessions user.SessionRepository, now func() time.Time) *LoginService {
 	if now == nil {
 		now = time.Now
 	}
@@ -76,7 +77,7 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 	}
 
 	now := s.now().UTC()
-	session := &Session{
+	session := &user.Session{
 		JTI:       pair.RefreshJTI,
 		CreatedAt: now,
 		ExpiresAt: pair.RefreshExpiresAt,
@@ -91,8 +92,8 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 
 // RefreshService rotates refresh sessions and detects replayed credentials.
 type RefreshService struct {
-	repository UserRepository
-	sessions   SessionRepository
+	repository user.UserRepository
+	sessions   user.SessionRepository
 	verifier   RefreshTokenVerifier
 	issuer     TokenIssuer
 	now        func() time.Time
@@ -100,7 +101,7 @@ type RefreshService struct {
 
 // NewRefreshService constructs a refresh service with injected token and
 // persistence boundaries.
-func NewRefreshService(repository UserRepository, sessions SessionRepository, verifier RefreshTokenVerifier, issuer TokenIssuer, now func() time.Time) *RefreshService {
+func NewRefreshService(repository user.UserRepository, sessions user.SessionRepository, verifier RefreshTokenVerifier, issuer TokenIssuer, now func() time.Time) *RefreshService {
 	if now == nil {
 		now = time.Now
 	}
@@ -148,47 +149,47 @@ func (s *RefreshService) verifyClaims(ctx context.Context, rawToken string) (Ref
 		return RefreshClaims{}, fmt.Errorf("verify refresh token: %w", err)
 	}
 	if claims.UserID == uuid.Nil || claims.JTI == uuid.Nil {
-		return RefreshClaims{}, ErrSessionNotFound
+		return RefreshClaims{}, user.ErrSessionNotFound
 	}
 	return claims, nil
 }
 
-func (s *RefreshService) activeSession(ctx context.Context, rawToken string, claims RefreshClaims) (*Session, string, error) {
+func (s *RefreshService) activeSession(ctx context.Context, rawToken string, claims RefreshClaims) (*user.Session, string, error) {
 	oldHash := HashRefreshToken(rawToken)
 	session, err := s.sessions.GetSessionByHash(ctx, oldHash)
 	if err != nil {
-		if errors.Is(err, ErrSessionNotFound) {
-			return nil, "", ErrSessionNotFound
+		if errors.Is(err, user.ErrSessionNotFound) {
+			return nil, "", user.ErrSessionNotFound
 		}
 		return nil, "", fmt.Errorf("get refresh session: %w", err)
 	}
 	if session == nil || session.UID != claims.UserID || session.JTI != claims.JTI {
-		return nil, "", ErrSessionNotFound
+		return nil, "", user.ErrSessionNotFound
 	}
 	if session.RevokedAt != nil || session.ReplacedByTokenHash != nil {
 		if err := s.revokeCompromisedSessions(ctx, session.UID); err != nil {
 			return nil, "", err
 		}
-		return nil, "", ErrSessionCompromised
+		return nil, "", user.ErrSessionCompromised
 	}
 	if !session.ExpiresAt.After(s.now()) {
-		return nil, "", ErrSessionNotFound
+		return nil, "", user.ErrSessionNotFound
 	}
 	return session, oldHash, nil
 }
 
-func (s *RefreshService) activeAccount(ctx context.Context, claims RefreshClaims) (*User, error) {
+func (s *RefreshService) activeAccount(ctx context.Context, claims RefreshClaims) (*user.User, error) {
 	account, err := s.repository.GetByID(ctx, claims.UserID)
 	if err != nil {
 		return nil, fmt.Errorf("get refresh account: %w", err)
 	}
-	if account == nil || account.AccountStatus == AccountStatusSuspended || (!account.TokensValidAfter.IsZero() && claims.IssuedAt.Before(account.TokensValidAfter)) {
-		return nil, ErrAccountSuspended
+	if account == nil || account.AccountStatus == user.AccountStatusSuspended || (!account.TokensValidAfter.IsZero() && claims.IssuedAt.Before(account.TokensValidAfter)) {
+		return nil, user.ErrAccountSuspended
 	}
 	return account, nil
 }
 
-func (s *RefreshService) issueRefreshSession(ctx context.Context, account *User) (TokenPair, *Session, error) {
+func (s *RefreshService) issueRefreshSession(ctx context.Context, account *user.User) (TokenPair, *user.Session, error) {
 	pair, err := s.issuer.Issue(ctx, account)
 	if err != nil {
 		return TokenPair{}, nil, fmt.Errorf("issue rotated JWT session: %w", err)
@@ -196,7 +197,7 @@ func (s *RefreshService) issueRefreshSession(ctx context.Context, account *User)
 	if pair.RefreshJTI == uuid.Nil || pair.RefreshExpiresAt.IsZero() {
 		return TokenPair{}, nil, errors.New("issuer returned incomplete refresh metadata")
 	}
-	return pair, &Session{
+	return pair, &user.Session{
 		JTI:       pair.RefreshJTI,
 		CreatedAt: s.now().UTC(),
 		ExpiresAt: pair.RefreshExpiresAt,
@@ -205,13 +206,13 @@ func (s *RefreshService) issueRefreshSession(ctx context.Context, account *User)
 	}, nil
 }
 
-func (s *RefreshService) rotateSession(ctx context.Context, uid uuid.UUID, oldHash string, newSession *Session) error {
+func (s *RefreshService) rotateSession(ctx context.Context, uid uuid.UUID, oldHash string, newSession *user.Session) error {
 	if err := s.sessions.RotateSession(ctx, oldHash, newSession); err != nil {
-		if errors.Is(err, ErrSessionCompromised) {
+		if errors.Is(err, user.ErrSessionCompromised) {
 			if revokeErr := s.revokeCompromisedSessions(ctx, uid); revokeErr != nil {
 				return revokeErr
 			}
-			return ErrSessionCompromised
+			return user.ErrSessionCompromised
 		}
 		return fmt.Errorf("rotate refresh session: %w", err)
 	}

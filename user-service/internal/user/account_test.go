@@ -11,11 +11,12 @@ import (
 	"testing"
 	"time"
 
+	"foc/user-service/internal/hash"
 	"github.com/google/uuid"
 )
 
 func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
-	repository := &fakeAuthRepository{}
+	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository)
 
 	account, err := service.Register(context.Background(), "student@example.com", "student", "ValidPass1")
@@ -28,19 +29,19 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	if account.Email != "student@example.com" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusActive {
 		t.Fatalf("created account = %#v", account)
 	}
-	if account.PasswordHash == "ValidPass1" || !CheckPassword(account.PasswordHash, "ValidPass1") {
+	if account.PasswordHash == "ValidPass1" || !hash.CheckPassword(account.PasswordHash, "ValidPass1") {
 		t.Fatal("registration password was not stored as a valid hash")
 	}
 }
 
 func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	uid := uuid.New()
-	oldHash, err := HashPassword("OldPass1")
+	oldHash, err := hash.HashPassword("OldPass1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	account := &User{UID: uid, Username: "old", PasswordHash: oldHash}
-	repository := &fakeAuthRepository{user: account}
+	repository := &fakeAccountRepository{user: account}
 	service := NewAccountService(repository)
 
 	updated, err := service.UpdateProfile(context.Background(), uid, "new", "+6512345678", "")
@@ -56,7 +57,7 @@ func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 }
 
 func TestAccountServiceUpdateStatusDelegatesRecordedTransitions(t *testing.T) {
-	repository := &fakeAuthRepository{}
+	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository)
 	timestamp := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
 
@@ -76,7 +77,7 @@ func TestAccountServiceUpdateStatusDelegatesRecordedTransitions(t *testing.T) {
 
 func TestAccountServicePropagatesRepositoryErrors(t *testing.T) {
 	failure := errors.New("database unavailable")
-	repository := &fakeAuthRepository{lookupErr: failure}
+	repository := &fakeAccountRepository{lookupErr: failure}
 	service := NewAccountService(repository)
 
 	_, err := service.UpdateProfile(context.Background(), uuid.New(), "new", "", "")

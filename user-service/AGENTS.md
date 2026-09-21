@@ -68,9 +68,9 @@ internal/
    |- routes/           (contains `routes.go` which imports handlers and implements GetRoutes() which returns `func(r chi.Router)` which specifies routes and their respective handlers)
    |- handlers/         (contains `auth_handler.go`, `profile_handler.go` and `system_handler.go` with their own dependencies)
 |- repository/          (contains all files related to postgresql database or redis)
-|- user/                (contains all domain specific functions)
-   |- hash/             (contains `password.go` for other modules to use its cryptographic functions)
-   |- session/          (contains session lifecycle, login orchestration, redis invalidation logic)
+|- user/                (contains all domain specific functions, errors, and repository interfaces)
+|- hash/                (contains `password.go` for other modules to use its cryptographic functions)
+|- session/             (contains `auth.go`, `session.go`, and `invalidation.go` for session lifecycle and login orchestration)
 ```
 
 The handlers will be imported by `routes.go` so as a package and instantiated in `GetRoutes()` instead of being passed as instantiations.

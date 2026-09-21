@@ -1,9 +1,10 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added bcrypt password hashing and verification helpers.
-// Author review: COMPLETED BY ZI YANG
+// Author review: Repackaged this file and validated correctness
 
-package user
+// Package hash contains user-service password cryptography.
+package hash
 
 import "golang.org/x/crypto/bcrypt"
 

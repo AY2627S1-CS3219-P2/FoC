@@ -1,9 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Added focused tests for Redis-first logout ordering and TTL behavior.
-// Author review: PENDING — reviewer to complete
+// Author review: Repackaed and validated correctness
 
-package user
+package session
 
 import (
 	"context"

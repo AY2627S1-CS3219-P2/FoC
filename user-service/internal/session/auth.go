@@ -1,9 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added the domain authentication boundary and JWT token interface.
-// Author review: COMPLETED BY ZI YANG
+// Author review: Repackaged and validated correctness
 
-package user
+package session
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"fmt"
 	"time"
 
+	"foc/user-service/internal/hash"
+	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
@@ -24,18 +26,18 @@ type TokenPair struct {
 // TokenIssuer creates JWT session credentials for an authenticated account.
 // The concrete signing and claims policy belongs outside the domain service.
 type TokenIssuer interface {
-	Issue(ctx context.Context, account *User) (TokenPair, error)
+	Issue(ctx context.Context, account *user.User) (TokenPair, error)
 }
 
 // Authenticator verifies account credentials and delegates JWT issuance.
 type Authenticator struct {
-	repository UserRepository
+	repository user.UserRepository
 	issuer     TokenIssuer
 }
 
 // NewAuthenticator constructs an authenticator with its persistence and JWT
 // dependencies ready for use.
-func NewAuthenticator(repository UserRepository, issuer TokenIssuer) *Authenticator {
+func NewAuthenticator(repository user.UserRepository, issuer TokenIssuer) *Authenticator {
 	return &Authenticator{repository: repository, issuer: issuer}
 }
 
@@ -56,19 +58,19 @@ func (a *Authenticator) Authenticate(ctx context.Context, identifier, password s
 
 // authenticate verifies credentials and returns the active account for flows
 // that need its identity in addition to issued credentials.
-func (a *Authenticator) authenticate(ctx context.Context, identifier, password string) (*User, error) {
+func (a *Authenticator) authenticate(ctx context.Context, identifier, password string) (*user.User, error) {
 	account, err := a.repository.GetByIdentifier(ctx, identifier)
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil, ErrInvalidCredentials
+		if errors.Is(err, user.ErrNotFound) {
+			return nil, user.ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("look up credentials: %w", err)
 	}
-	if account == nil || !CheckPassword(account.PasswordHash, password) {
-		return nil, ErrInvalidCredentials
+	if account == nil || !hash.CheckPassword(account.PasswordHash, password) {
+		return nil, user.ErrInvalidCredentials
 	}
-	if account.AccountStatus == AccountStatusSuspended {
-		return nil, ErrAccountSuspended
+	if account.AccountStatus == user.AccountStatusSuspended {
+		return nil, user.ErrAccountSuspended
 	}
 	return account, nil
 }

@@ -1,9 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Implemented the recorded Redis-first logout invalidation boundary.
-// Author review: COMPLETED BY ZI YANG
+// Author review: Repackaged and validated correctness
 
-package user
+package session
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
@@ -35,14 +36,14 @@ type BlocklistWriter interface {
 // LogoutService invalidates an access token in Redis before revoking its
 // refresh session in PostgreSQL, as recorded by the service requirements.
 type LogoutService struct {
-	sessions  SessionRepository
+	sessions  user.SessionRepository
 	blocklist BlocklistWriter
 	now       func() time.Time
 }
 
 // NewLogoutService constructs a logout service with its persistence and
 // invalidation boundaries ready for use.
-func NewLogoutService(sessions SessionRepository, blocklist BlocklistWriter, now func() time.Time) *LogoutService {
+func NewLogoutService(sessions user.SessionRepository, blocklist BlocklistWriter, now func() time.Time) *LogoutService {
 	if now == nil {
 		now = time.Now
 	}

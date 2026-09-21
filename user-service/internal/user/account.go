@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"foc/user-service/internal/hash"
 	"github.com/google/uuid"
 )
 
@@ -32,7 +33,7 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
-	passwordHash, err := HashPassword(password)
+	passwordHash, err := hash.HashPassword(password)
 	if err != nil {
 		return nil, fmt.Errorf("hash registration password: %w", err)
 	}
@@ -69,7 +70,7 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 		account.PhoneNum = phone
 	}
 	if password != "" {
-		account.PasswordHash, err = HashPassword(password)
+		account.PasswordHash, err = hash.HashPassword(password)
 		if err != nil {
 			return nil, fmt.Errorf("hash profile password: %w", err)
 		}

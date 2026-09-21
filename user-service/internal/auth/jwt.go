@@ -17,6 +17,7 @@ import (
 	"sort"
 	"time"
 
+	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -143,26 +144,26 @@ func (s *Service) IssueRefreshToken(subject uuid.UUID, ttl time.Duration) (strin
 
 // Issue implements the domain token issuer using the recorded default token
 // lifetimes and returns the refresh metadata required for session persistence.
-func (s *Service) Issue(ctx context.Context, account *user.User) (user.TokenPair, error) {
+func (s *Service) Issue(ctx context.Context, account *user.User) (session.TokenPair, error) {
 	if err := ctx.Err(); err != nil {
-		return user.TokenPair{}, fmt.Errorf("issue JWT session: %w", err)
+		return session.TokenPair{}, fmt.Errorf("issue JWT session: %w", err)
 	}
 	if account == nil {
-		return user.TokenPair{}, errors.New("JWT account is required")
+		return session.TokenPair{}, errors.New("JWT account is required")
 	}
 	accessToken, err := s.IssueAccessToken(account.UID, account.AccountRole, s.accessTokenTTL)
 	if err != nil {
-		return user.TokenPair{}, err
+		return session.TokenPair{}, err
 	}
 	refreshToken, err := s.IssueRefreshToken(account.UID, s.refreshTokenTTL)
 	if err != nil {
-		return user.TokenPair{}, err
+		return session.TokenPair{}, err
 	}
 	refreshClaims, err := s.Verify(refreshToken)
 	if err != nil {
-		return user.TokenPair{}, fmt.Errorf("read issued refresh claims: %w", err)
+		return session.TokenPair{}, fmt.Errorf("read issued refresh claims: %w", err)
 	}
-	return user.TokenPair{
+	return session.TokenPair{
 		AccessToken:      accessToken,
 		RefreshToken:     refreshToken,
 		RefreshJTI:       refreshClaims.JTI,
@@ -266,18 +267,18 @@ func (s *Service) Verify(raw string) (VerifiedToken, error) {
 
 // VerifyRefresh implements the domain refresh-token boundary while keeping
 // JWT library types inside this adapter.
-func (s *Service) VerifyRefresh(ctx context.Context, rawToken string) (user.RefreshClaims, error) {
+func (s *Service) VerifyRefresh(ctx context.Context, rawToken string) (session.RefreshClaims, error) {
 	if err := ctx.Err(); err != nil {
-		return user.RefreshClaims{}, fmt.Errorf("verify refresh JWT: %w", err)
+		return session.RefreshClaims{}, fmt.Errorf("verify refresh JWT: %w", err)
 	}
 	verified, err := s.Verify(rawToken)
 	if err != nil {
-		return user.RefreshClaims{}, err
+		return session.RefreshClaims{}, err
 	}
 	if verified.Type != RefreshToken {
-		return user.RefreshClaims{}, errors.New("JWT is not a refresh token")
+		return session.RefreshClaims{}, errors.New("JWT is not a refresh token")
 	}
-	return user.RefreshClaims{
+	return session.RefreshClaims{
 		UserID:    verified.Subject,
 		JTI:       verified.JTI,
 		IssuedAt:  verified.IssuedAt,
@@ -287,18 +288,18 @@ func (s *Service) VerifyRefresh(ctx context.Context, rawToken string) (user.Refr
 
 // VerifyAccess implements the domain access-token verification boundary while
 // keeping JWT library types inside this adapter.
-func (s *Service) VerifyAccess(ctx context.Context, rawToken string) (user.AccessTokenClaims, error) {
+func (s *Service) VerifyAccess(ctx context.Context, rawToken string) (session.AccessTokenClaims, error) {
 	if err := ctx.Err(); err != nil {
-		return user.AccessTokenClaims{}, fmt.Errorf("verify access JWT: %w", err)
+		return session.AccessTokenClaims{}, fmt.Errorf("verify access JWT: %w", err)
 	}
 	verified, err := s.Verify(rawToken)
 	if err != nil {
-		return user.AccessTokenClaims{}, err
+		return session.AccessTokenClaims{}, err
 	}
 	if verified.Type != AccessToken {
-		return user.AccessTokenClaims{}, errors.New("JWT is not an access token")
+		return session.AccessTokenClaims{}, errors.New("JWT is not an access token")
 	}
-	return user.AccessTokenClaims{JTI: verified.JTI, ExpiresAt: verified.ExpiresAt}, nil
+	return session.AccessTokenClaims{JTI: verified.JTI, ExpiresAt: verified.ExpiresAt}, nil
 }
 
 // JWKS returns the public keys in a self-contained JSON Web Key Set document.
@@ -341,5 +342,5 @@ func newJWK(key Key) jwk {
 	}
 }
 
-var _ user.TokenIssuer = (*Service)(nil)
-var _ user.AccessTokenVerifier = (*Service)(nil)
+var _ session.TokenIssuer = (*Service)(nil)
+var _ session.AccessTokenVerifier = (*Service)(nil)

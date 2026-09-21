@@ -15,37 +15,37 @@ import (
 
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/routes"
+	"foc/user-service/internal/session"
 	"time"
 
-	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
 type fakeAccessVerifier struct {
-	claims user.AccessTokenClaims
+	claims session.AccessTokenClaims
 	err    error
 	raw    string
 }
 
-func (f *fakeAccessVerifier) VerifyAccess(_ context.Context, rawToken string) (user.AccessTokenClaims, error) {
+func (f *fakeAccessVerifier) VerifyAccess(_ context.Context, rawToken string) (session.AccessTokenClaims, error) {
 	f.raw = rawToken
 	return f.claims, f.err
 }
 
 type fakeLogoutter struct {
 	err          error
-	accessClaims user.AccessTokenClaims
+	accessClaims session.AccessTokenClaims
 	refreshToken string
 }
 
-func (f *fakeLogoutter) Logout(_ context.Context, access user.AccessTokenClaims, refreshToken string) error {
+func (f *fakeLogoutter) Logout(_ context.Context, access session.AccessTokenClaims, refreshToken string) error {
 	f.accessClaims = access
 	f.refreshToken = refreshToken
 	return f.err
 }
 
 func TestLogoutHandler(t *testing.T) {
-	claims := user.AccessTokenClaims{JTI: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}
+	claims := session.AccessTokenClaims{JTI: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}
 	tests := map[string]struct {
 		header     string
 		body       string
