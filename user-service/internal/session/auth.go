@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"strings"
 
 	"foc/user-service/internal/hash"
 	"foc/user-service/internal/user"
@@ -59,6 +60,9 @@ func (a *Authenticator) Authenticate(ctx context.Context, identifier, password s
 // authenticate verifies credentials and returns the active account for flows
 // that need its identity in addition to issued credentials.
 func (a *Authenticator) authenticate(ctx context.Context, identifier, password string) (*user.User, error) {
+    if strings.Contains(identifier, "@") {
+        identifier = normalizeEmail(identifier)
+    }
 	account, err := a.repository.GetByIdentifier(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, user.ErrNotFound) {
@@ -73,4 +77,8 @@ func (a *Authenticator) authenticate(ctx context.Context, identifier, password s
 		return nil, user.ErrAccountSuspended
 	}
 	return account, nil
+}
+
+func normalizeEmail(email string) string {
+    return strings.ToLower(strings.TrimSpace(email))
 }

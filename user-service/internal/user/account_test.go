@@ -34,6 +34,20 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by ZI YANG).
+func TestAccountServiceRegisterCanonicalizesEmail(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountService(repository)
+
+	account, err := service.Register(context.Background(), " Student@U.NUS.EDU ", "student", "ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if account.Email != "student@u.nus.edu" {
+		t.Fatalf("created account email = %q, want %q", account.Email, "student@u.nus.edu")
+	}
+}
+
 func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	uid := uuid.New()
 	oldHash, err := hash.HashPassword("OldPass1")

@@ -70,6 +70,7 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration unavailable"})
 		return
 	}
+    request.Email = normalizeEmail(request.Email)
 	if _, err := h.deps.Registrar.Register(r.Context(), request.Email, request.Username, request.Password); err != nil {
 		if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})
@@ -96,6 +97,10 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "authentication unavailable"})
 		return
 	}
+    request.Identifier = strings.TrimSpace(request.Identifier)
+    if strings.Contains(request.Identifier, "@") {
+        request.Identifier = normalizeEmail(request.Identifier)
+    }
 	pair, err := h.deps.LoginService.Login(r.Context(), request.Identifier, request.Password)
 	if err != nil {
 		if errors.Is(err, user.ErrInvalidCredentials) {
@@ -173,4 +178,8 @@ func isNUSStudentEmail(email string) bool {
     email = strings.TrimSpace(email)
     at := strings.LastIndexByte(email, '@')
     return at > 0 && strings.EqualFold(email[at:], "@u.nus.edu")
+}
+
+func normalizeEmail(email string) string {
+    return strings.ToLower(strings.TrimSpace(email))
 }

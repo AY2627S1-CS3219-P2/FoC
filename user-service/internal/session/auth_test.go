@@ -17,10 +17,11 @@ import (
 )
 
 type fakeAuthRepository struct {
-	user      *User
-	lookupErr error
-	updated   *User
-	status    AccountStatus
+	user       *User
+	lookupErr  error
+	identifier string
+	updated    *User
+	status     AccountStatus
 }
 
 func (f *fakeAuthRepository) Create(_ context.Context, account *User) error {
@@ -32,13 +33,33 @@ func (f *fakeAuthRepository) GetByID(context.Context, uuid.UUID) (*User, error) 
 	return f.user, f.lookupErr
 }
 
-func (f *fakeAuthRepository) GetByIdentifier(context.Context, string) (*User, error) {
+func (f *fakeAuthRepository) GetByIdentifier(_ context.Context, identifier string) (*User, error) {
+	f.identifier = identifier
 	return f.user, f.lookupErr
 }
 
 func (f *fakeAuthRepository) Update(_ context.Context, got *User) error {
 	f.updated = got
 	return nil
+}
+
+// AI-generated (edited by PENDING).
+func TestAuthenticatorAuthenticateCanonicalizesEmailIdentifier(t *testing.T) {
+	passwordHash, err := hash.HashPassword("ValidPass1")
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	repository := &fakeAuthRepository{
+		user: &User{PasswordHash: passwordHash, AccountStatus: AccountStatusActive},
+	}
+	authenticator := NewAuthenticator(repository, &fakeTokenIssuer{})
+
+	if _, err := authenticator.Authenticate(context.Background(), " Student@U.NUS.EDU ", "ValidPass1"); err != nil {
+		t.Fatal(err)
+	}
+	if repository.identifier != "student@u.nus.edu" {
+		t.Fatalf("lookup identifier = %q, want %q", repository.identifier, "student@u.nus.edu")
+	}
 }
 
 func (f *fakeAuthRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.UUID, status AccountStatus, _ time.Time) error {

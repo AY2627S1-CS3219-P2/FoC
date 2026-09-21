@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"strings"
 
 	"foc/user-service/internal/hash"
 	"github.com/google/uuid"
@@ -38,7 +39,7 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 		return nil, fmt.Errorf("hash registration password: %w", err)
 	}
 	account := &User{
-		Email:         email,
+		Email:         normalizeEmail(email),
 		Username:      username,
 		PasswordHash:  passwordHash,
 		AccountRole:   AccountRoleStudent,
@@ -96,4 +97,8 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 		return fmt.Errorf("update account status: %w", err)
 	}
 	return nil
+}
+
+func normalizeEmail(email string) string {
+    return strings.ToLower(strings.TrimSpace(email))
 }
