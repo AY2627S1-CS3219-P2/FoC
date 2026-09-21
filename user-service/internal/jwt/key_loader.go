@@ -3,7 +3,7 @@
 // Scope: Added the recorded PEM key-set loader and SHA-256 key-ID derivation.
 // Author review: COMPLETED BY ZI YANG
 
-package auth
+package jwt
 
 import (
 	"crypto/rsa"

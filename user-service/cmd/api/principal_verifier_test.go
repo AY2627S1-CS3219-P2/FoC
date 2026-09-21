@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"foc/user-service/internal/auth"
+	"foc/user-service/internal/jwt"
 	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
@@ -22,11 +22,11 @@ func TestJWTPrincipalVerifierAcceptsOnlyAccessTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	keySet, err := auth.NewKeySet([]auth.Key{{ID: "active", PrivateKey: privateKey, PublicKey: &privateKey.PublicKey}}, "active")
+	keySet, err := jwt.NewKeySet([]jwt.Key{{ID: "active", PrivateKey: privateKey, PublicKey: &privateKey.PublicKey}}, "active")
 	if err != nil {
 		t.Fatal(err)
 	}
-	service := auth.NewService(keySet, time.Now)
+	service := jwt.NewService(keySet, time.Now)
 	verifier := jwtPrincipalVerifier{service: service}
 	uid := uuid.New()
 	accessToken, err := service.IssueAccessToken(uid, user.AccountRoleAdmin, time.Minute)

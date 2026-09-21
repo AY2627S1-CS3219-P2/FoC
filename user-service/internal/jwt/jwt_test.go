@@ -3,7 +3,7 @@
 // Scope: Added focused tests for the recorded RS256 JWT and JWKS boundary.
 // Author review: PENDING — reviewer to complete
 
-package auth
+package jwt
 
 import (
 	"context"

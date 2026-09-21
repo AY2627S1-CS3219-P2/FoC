@@ -13,11 +13,11 @@ import (
 	"net/http"
 	"time"
 
-	"foc/user-service/internal/auth"
 	"foc/user-service/internal/config"
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/router"
 	"foc/user-service/internal/httpapi/routes"
+	"foc/user-service/internal/jwt"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
@@ -59,19 +59,19 @@ func run(ctx context.Context, cfg config.Config) error {
 		return fmt.Errorf("ping Redis: %w", err)
 	}
 
-	keySet, err := auth.LoadKeySet(cfg.JWTKeySetPath)
+	keySet, err := jwt.LoadKeySet(cfg.JWTKeySetPath)
 	if err != nil {
 		return fmt.Errorf("load JWT key set: %w", err)
 	}
-	accessTokenTTL, err := parseTokenTTL(cfg.JWTAccessTokenTTL, auth.DefaultAccessTokenTTL)
+	accessTokenTTL, err := parseTokenTTL(cfg.JWTAccessTokenTTL, jwt.DefaultAccessTokenTTL)
 	if err != nil {
 		return fmt.Errorf("parse JWT access-token TTL: %w", err)
 	}
-	refreshTokenTTL, err := parseTokenTTL(cfg.JWTRefreshTokenTTL, auth.DefaultRefreshTokenTTL)
+	refreshTokenTTL, err := parseTokenTTL(cfg.JWTRefreshTokenTTL, jwt.DefaultRefreshTokenTTL)
 	if err != nil {
 		return fmt.Errorf("parse JWT refresh-token TTL: %w", err)
 	}
-	jwtService, err := auth.NewServiceWithTokenTTLs(keySet, time.Now, accessTokenTTL, refreshTokenTTL)
+	jwtService, err := jwt.NewServiceWithTokenTTLs(keySet, time.Now, accessTokenTTL, refreshTokenTTL)
 	if err != nil {
 		return fmt.Errorf("create JWT service: %w", err)
 	}
@@ -110,7 +110,7 @@ func run(ctx context.Context, cfg config.Config) error {
 	return nil
 }
 
-type jwtPrincipalVerifier struct{ service *auth.Service }
+type jwtPrincipalVerifier struct{ service *jwt.Service }
 
 func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (handlers.Principal, error) {
 	if err := ctx.Err(); err != nil {
@@ -123,7 +123,7 @@ func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (hand
 	if err != nil {
 		return handlers.Principal{}, err
 	}
-	if verified.Type != auth.AccessToken {
+	if verified.Type != jwt.AccessToken {
 		return handlers.Principal{}, errors.New("JWT is not an access token")
 	}
 	return handlers.Principal{UserID: verified.Subject, Role: verified.Role}, nil

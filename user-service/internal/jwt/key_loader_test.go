@@ -3,7 +3,7 @@
 // Scope: Added focused tests for the recorded JSON PEM key-set loader.
 // Author review: PENDING — reviewer to complete
 
-package auth
+package jwt
 
 import (
 	"crypto/rand"

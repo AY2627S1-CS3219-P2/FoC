@@ -4,7 +4,7 @@
 // Author review: COMPLETED BY ZI YANG
 
 // Package auth contains the user-service authentication adapters.
-package auth
+package jwt
 
 import (
 	"context"
