@@ -15,7 +15,9 @@ import (
 
 	"foc/user-service/internal/auth"
 	"foc/user-service/internal/config"
-	"foc/user-service/internal/httpapi"
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/router"
+	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/user"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -80,21 +82,27 @@ func run(ctx context.Context, cfg config.Config) error {
 	loginService := user.NewLoginService(authenticator, sessionRepository, time.Now)
 	refreshService := user.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, time.Now)
 	logoutService := user.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
-	router := httpapi.NewRouter(httpapi.Dependencies{
-		Registrar:      accountService,
-		ProfileGetter:  userRepository,
-		StatusUpdater:  accountService,
-		ProfileUpdater: accountService,
-		TokenVerifier:  jwtPrincipalVerifier{service: jwtService},
-		LoginService:   loginService,
-		Refresher:      refreshService,
-		AccessVerifier: jwtService,
-		Logoutter:      logoutService,
-		JWKSProvider:   jwtService,
-		HealthCheck:    pool.Ping,
+	httpHandler := router.Setup(routes.Dependencies{
+		Auth: handlers.AuthDependencies{
+			Registrar:      accountService,
+			LoginService:   loginService,
+			Refresher:      refreshService,
+			AccessVerifier: jwtService,
+			Logoutter:      logoutService,
+		},
+		Profile: handlers.ProfileDependencies{
+			ProfileGetter:  userRepository,
+			StatusUpdater:  accountService,
+			ProfileUpdater: accountService,
+		},
+		System: handlers.SystemDependencies{
+			JWKSProvider: jwtService,
+			HealthCheck:  pool.Ping,
+		},
+		TokenVerifier: jwtPrincipalVerifier{service: jwtService},
 	})
 
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: router}
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler}
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	}
@@ -103,21 +111,21 @@ func run(ctx context.Context, cfg config.Config) error {
 
 type jwtPrincipalVerifier struct{ service *auth.Service }
 
-func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (httpapi.Principal, error) {
+func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (handlers.Principal, error) {
 	if err := ctx.Err(); err != nil {
-		return httpapi.Principal{}, err
+		return handlers.Principal{}, err
 	}
 	if v.service == nil {
-		return httpapi.Principal{}, errors.New("JWT service is required")
+		return handlers.Principal{}, errors.New("JWT service is required")
 	}
 	verified, err := v.service.Verify(rawToken)
 	if err != nil {
-		return httpapi.Principal{}, err
+		return handlers.Principal{}, err
 	}
 	if verified.Type != auth.AccessToken {
-		return httpapi.Principal{}, errors.New("JWT is not an access token")
+		return handlers.Principal{}, errors.New("JWT is not an access token")
 	}
-	return httpapi.Principal{UserID: verified.Subject, Role: verified.Role}, nil
+	return handlers.Principal{UserID: verified.Subject, Role: verified.Role}, nil
 }
 
 func parseTokenTTL(value string, defaultValue time.Duration) (time.Duration, error) {

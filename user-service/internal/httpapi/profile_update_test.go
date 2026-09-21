@@ -12,6 +12,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 )
 
 type fakeProfileUpdater struct{ uid uuid.UUID }
@@ -23,12 +26,12 @@ func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, id uuid.UUID, _, _
 func TestUpdateProfileHandler(t *testing.T) {
 	id := uuid.New()
 	for n, tt := range map[string]struct {
-		principal Principal
+		principal handlers.Principal
 		want      int
-	}{"self": {Principal{UserID: id, Role: user.AccountRoleStudent}, 200}, "admin": {Principal{UserID: uuid.New(), Role: user.AccountRoleAdmin}, 200}, "other": {Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}, 403}} {
+	}{"self": {handlers.Principal{UserID: id, Role: user.AccountRoleStudent}, 200}, "admin": {handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleAdmin}, 200}, "other": {handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}, 403}} {
 		t.Run(n, func(t *testing.T) {
 			u := &fakeProfileUpdater{}
-			r := NewRouter(Dependencies{TokenVerifier: &fakeTokenVerifier{principal: tt.principal}, ProfileUpdater: u})
+			r := newTestRouter(routes.Dependencies{TokenVerifier: &fakeTokenVerifier{principal: tt.principal}, Profile: handlers.ProfileDependencies{ProfileUpdater: u}})
 			q := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+id.String(), strings.NewReader(`{"username":"new"}`))
 			q.Header.Set("Authorization", "Bearer token")
 			w := httptest.NewRecorder()

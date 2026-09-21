@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
@@ -45,8 +47,8 @@ func TestProfileHandler(t *testing.T) {
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			verifier := &fakeTokenVerifier{principal: Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}}
-			router := NewRouter(Dependencies{TokenVerifier: verifier, ProfileGetter: tt.getter})
+			verifier := &fakeTokenVerifier{principal: handlers.Principal{UserID: uuid.New(), Role: user.AccountRoleStudent}}
+			router := newTestRouter(routes.Dependencies{TokenVerifier: verifier, Profile: handlers.ProfileDependencies{ProfileGetter: tt.getter}})
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/users/"+uid.String(), nil)
 			request.Header.Set("Authorization", tt.header)
 			response := httptest.NewRecorder()

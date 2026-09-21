@@ -54,6 +54,27 @@ owner writes the spec, an agent implements against it.
 
 The request schemas, response schemas, and error contracts (specifically 401 Unauthorized for expired/compromised tokens and 500 Internal Server Error for Redis failures) for /refresh, /logout, and /.well-known/jwks.json must be fully documented in `api/openapi.yaml` to comply with the project's spec-first requirement.
 
+## Packaging
+
+Always try to group all logical units together to reduce coupling and increase cohesion.
+
+In `internal` directory, it should have the following general structure:
+```
+internal/
+|- jwt/                 (contains all jwt service related files)
+|- config/              (contains all files related to extracting config information for startup)
+|- httpapi/             (contains dtos, handlers, routers, routes)
+   |- router/           (contains `router.go` so that `main.go` can call `router.Setup()`, which in turn calls private function `setUpRoutes` which groups routes obtained from `routes.GetRoutes()` for idiomatic purposes)
+   |- routes/           (contains `routes.go` which imports handlers and implements GetRoutes() which returns `func(r chi.Router)` which specifies routes and their respective handlers)
+   |- handlers/         (contains `auth_handler.go`, `profile_handler.go` and `system_handler.go` with their own dependencies)
+|- repository/          (contains all files related to postgresql database or redis)
+|- user/                (contains all domain specific functions)
+   |- hash/             (contains `password.go` for other modules to use its cryptographic functions)
+   |- session/          (contains session lifecycle, login orchestration, redis invalidation logic)
+```
+
+The handlers will be imported by `routes.go` so as a package and instantiated in `GetRoutes()` instead of being passed as instantiations.
+
 ## Database Decisions
 
 ### PostgreSQL DB
@@ -161,6 +182,12 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - Request: Unauthenticated GET request.
    - Response: 200 OK with the standard JWKS JSON payload containing active and retired public keys.
    - This API endpoint should not be reachable beyond the API gateway. Only the API gateway should be able to reach this endpoint and verify the signatures of incoming JWTs.
+
+Handlers should be grouped according to functions. For example:
+1. AuthHandler (includes register, login, refresh, logout)
+2. ProfileHandler (includes profile, updateProfile, updateStatus)
+3. SystemHandler (includes health and jwks)
+Handlers should all be grouped under a package in `httpapi`.
 
 ### JWT Signing, Key Policy, and Trust Boundary
 - Signing Algorithm & Key Type: RS256, the user service shall hold the private key to sign tokens, while the API gateway

@@ -11,6 +11,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 	"time"
 
 	"foc/user-service/internal/user"
@@ -41,7 +44,7 @@ func TestUpdateStatusHandler(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			updater := &fakeStatusUpdater{}
-			router := NewRouter(Dependencies{TokenVerifier: &fakeTokenVerifier{principal: Principal{Role: tt.role}}, StatusUpdater: updater})
+			router := newTestRouter(routes.Dependencies{TokenVerifier: &fakeTokenVerifier{principal: handlers.Principal{Role: tt.role}}, Profile: handlers.ProfileDependencies{StatusUpdater: updater}})
 			req := httptest.NewRequest(http.MethodPatch, "/api/v1/users/"+uid.String()+"/status", strings.NewReader(`{"status":"SUSPENDED"}`))
 			req.Header.Set("Authorization", tt.auth)
 			res := httptest.NewRecorder()

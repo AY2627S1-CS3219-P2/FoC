@@ -1,9 +1,9 @@
 // AI Assistance Disclosure:
-// Tool: Codex (GPT-5), date: 2026-09-18
-// Scope: Added JWT verification middleware and session invalidation interfaces.
+// Tool: Codex (GPT-5), date: 2026-09-21
+// Scope: Relocated JWT middleware and authenticated-principal transport boundary with handlers.
 // Author review: COMPLETED BY ZI YANG
 
-package httpapi
+package handlers
 
 import (
 	"context"
@@ -23,15 +23,13 @@ type Principal struct {
 }
 
 // TokenVerifier verifies a JWT and returns its authenticated principal.
-// Claims and signing policy belong to the injected implementation.
 type TokenVerifier interface {
-	Verify(ctx context.Context, rawToken string) (Principal, error)
+	Verify(context.Context, string) (Principal, error)
 }
 
-// SessionInvalidator defines the boundary used to invalidate all active JWT
-// sessions for logout or account suspension.
+// SessionInvalidator invalidates all active JWT sessions for an account.
 type SessionInvalidator interface {
-	InvalidateUserSessions(ctx context.Context, userID uuid.UUID) error
+	InvalidateUserSessions(context.Context, uuid.UUID) error
 }
 
 // RequireJWT protects an HTTP handler with an injected JWT verifier.
@@ -42,27 +40,22 @@ func RequireJWT(verifier TokenVerifier) func(http.Handler) http.Handler {
 				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "authentication unavailable"})
 				return
 			}
-
 			rawToken, ok := bearerToken(r.Header.Get("Authorization"))
 			if !ok {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 				return
 			}
-
 			principal, err := verifier.Verify(r.Context(), rawToken)
 			if err != nil {
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 				return
 			}
-
-			requestContext := context.WithValue(r.Context(), principalContextKey{}, principal)
-			next.ServeHTTP(w, r.WithContext(requestContext))
+			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)))
 		})
 	}
 }
 
-// PrincipalFromContext returns the authenticated principal attached by
-// RequireJWT.
+// PrincipalFromContext returns the principal attached by RequireJWT.
 func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	principal, ok := ctx.Value(principalContextKey{}).(Principal)
 	return principal, ok
@@ -70,8 +63,5 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 
 func bearerToken(header string) (string, bool) {
 	scheme, token, ok := strings.Cut(header, " ")
-	if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" || strings.Contains(token, " ") {
-		return "", false
-	}
-	return token, true
+	return token, ok && strings.EqualFold(scheme, "Bearer") && token != "" && !strings.Contains(token, " ")
 }

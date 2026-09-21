@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/user"
 )
 
@@ -76,7 +78,7 @@ func TestRegisterHandler(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			router := NewRouter(Dependencies{Registrar: tt.registrar})
+			router := newTestRouter(routes.Dependencies{Auth: handlers.AuthDependencies{Registrar: tt.registrar}})
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", strings.NewReader(tt.body))
 			response := httptest.NewRecorder()
 

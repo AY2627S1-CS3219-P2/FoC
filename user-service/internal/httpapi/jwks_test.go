@@ -11,6 +11,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 )
 
 type fakeJWKSProvider struct {
@@ -24,7 +27,7 @@ func (f fakeJWKSProvider) JWKS() ([]byte, error) {
 
 func TestJWKSHandler(t *testing.T) {
 	tests := map[string]struct {
-		provider   JWKSProvider
+		provider   handlers.JWKSProvider
 		wantStatus int
 		wantBody   string
 	}{
@@ -42,7 +45,7 @@ func TestJWKSHandler(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			router := NewRouter(Dependencies{JWKSProvider: tt.provider})
+			router := newTestRouter(routes.Dependencies{System: handlers.SystemDependencies{JWKSProvider: tt.provider}})
 			request := httptest.NewRequest(http.MethodGet, "/.well-known/jwks.json", nil)
 			response := httptest.NewRecorder()
 

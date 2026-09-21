@@ -12,17 +12,18 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
 
 type fakeTokenVerifier struct {
-	principal Principal
+	principal handlers.Principal
 	err       error
 	token     string
 }
 
-func (f *fakeTokenVerifier) Verify(_ context.Context, rawToken string) (Principal, error) {
+func (f *fakeTokenVerifier) Verify(_ context.Context, rawToken string) (handlers.Principal, error) {
 	f.token = rawToken
 	return f.principal, f.err
 }
@@ -30,7 +31,7 @@ func (f *fakeTokenVerifier) Verify(_ context.Context, rawToken string) (Principa
 func TestRequireJWT(t *testing.T) {
 	accountID := uuid.New()
 	tests := map[string]struct {
-		verifier     TokenVerifier
+		verifier     handlers.TokenVerifier
 		authorize    string
 		wantStatus   int
 		wantHandler  bool
@@ -54,7 +55,7 @@ func TestRequireJWT(t *testing.T) {
 			wantToken:    "invalid",
 		},
 		"passes verified principal to handler": {
-			verifier: &fakeTokenVerifier{principal: Principal{
+			verifier: &fakeTokenVerifier{principal: handlers.Principal{
 				UserID: accountID,
 				Role:   user.AccountRoleAdmin,
 			}},
@@ -75,7 +76,7 @@ func TestRequireJWT(t *testing.T) {
 			handlerCalled := false
 			next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				handlerCalled = true
-				principal, ok := PrincipalFromContext(r.Context())
+				principal, ok := handlers.PrincipalFromContext(r.Context())
 				if !ok {
 					t.Fatal("principal missing from request context")
 				}
@@ -88,7 +89,7 @@ func TestRequireJWT(t *testing.T) {
 			request.Header.Set("Authorization", tt.authorize)
 			response := httptest.NewRecorder()
 
-			RequireJWT(tt.verifier)(next).ServeHTTP(response, request)
+			handlers.RequireJWT(tt.verifier)(next).ServeHTTP(response, request)
 
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", response.Code, tt.wantStatus)
@@ -107,7 +108,7 @@ func TestRequireJWT(t *testing.T) {
 }
 
 func TestPrincipalFromContextWithoutPrincipal(t *testing.T) {
-	if _, ok := PrincipalFromContext(context.Background()); ok {
+	if _, ok := handlers.PrincipalFromContext(context.Background()); ok {
 		t.Fatal("principal found in empty context")
 	}
 }

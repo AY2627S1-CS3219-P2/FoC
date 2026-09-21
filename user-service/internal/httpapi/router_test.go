@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/user"
 	"github.com/google/uuid"
 )
@@ -32,9 +34,9 @@ func (f *fakeLoginService) Login(_ context.Context, identifier, password string)
 }
 
 func TestNewRouterRegistersRecordedRoutes(t *testing.T) {
-	router := NewRouter(Dependencies{
-		LoginService: &fakeLoginService{},
-		HealthCheck:  func(context.Context) error { return nil },
+	router := newTestRouter(routes.Dependencies{
+		Auth:   handlers.AuthDependencies{LoginService: &fakeLoginService{}},
+		System: handlers.SystemDependencies{HealthCheck: func(context.Context) error { return nil }},
 	})
 
 	tests := []struct {
@@ -112,9 +114,9 @@ func TestLoginHandler(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			loginService := &fakeLoginService{pair: tt.authPair, err: tt.authErr}
-			router := NewRouter(Dependencies{
-				LoginService: loginService,
-				HealthCheck:  func(context.Context) error { return nil },
+			router := newTestRouter(routes.Dependencies{
+				Auth:   handlers.AuthDependencies{LoginService: loginService},
+				System: handlers.SystemDependencies{HealthCheck: func(context.Context) error { return nil }},
 			})
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", strings.NewReader(tt.body))
 			req.Header.Set("Content-Type", "application/json")
@@ -129,11 +131,11 @@ func TestLoginHandler(t *testing.T) {
 				t.Fatalf("body = %s, want error containing %q", res.Body.String(), tt.wantError)
 			}
 			if tt.wantStatus == http.StatusOK {
-				var got AuthResponse
+				var got handlers.AuthResponse
 				if err := json.Unmarshal(res.Body.Bytes(), &got); err != nil {
 					t.Fatalf("decode response: %v", err)
 				}
-				if got != (AuthResponse{AccessToken: "access", RefreshToken: "refresh"}) {
+				if got != (handlers.AuthResponse{AccessToken: "access", RefreshToken: "refresh"}) {
 					t.Fatalf("response = %#v, want JWT pair", got)
 				}
 				if loginService.identifier != "student" || loginService.password != "ValidPass1" {
@@ -156,9 +158,9 @@ func TestHealthHandler(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			router := NewRouter(Dependencies{
-				LoginService: &fakeLoginService{},
-				HealthCheck:  func(context.Context) error { return tt.healthErr },
+			router := newTestRouter(routes.Dependencies{
+				Auth:   handlers.AuthDependencies{LoginService: &fakeLoginService{}},
+				System: handlers.SystemDependencies{HealthCheck: func(context.Context) error { return tt.healthErr }},
 			})
 			res := httptest.NewRecorder()
 			router.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/health", nil))

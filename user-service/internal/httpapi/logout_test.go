@@ -12,6 +12,9 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 	"time"
 
 	"foc/user-service/internal/user"
@@ -101,7 +104,7 @@ func TestLogoutHandler(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			router := NewRouter(Dependencies{AccessVerifier: tt.verifier, Logoutter: tt.logoutter})
+			router := newTestRouter(routes.Dependencies{Auth: handlers.AuthDependencies{AccessVerifier: tt.verifier, Logoutter: tt.logoutter}})
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/logout", strings.NewReader(tt.body))
 			request.Header.Set("Authorization", tt.header)
 			response := httptest.NewRecorder()

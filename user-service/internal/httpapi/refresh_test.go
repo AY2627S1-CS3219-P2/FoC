@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"foc/user-service/internal/httpapi/handlers"
+	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/user"
 )
 
@@ -74,7 +76,7 @@ func TestRefreshHandler(t *testing.T) {
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			router := NewRouter(Dependencies{Refresher: tt.refresher})
+			router := newTestRouter(routes.Dependencies{Auth: handlers.AuthDependencies{Refresher: tt.refresher}})
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/users/refresh", strings.NewReader(tt.body))
 			response := httptest.NewRecorder()
 
@@ -87,11 +89,11 @@ func TestRefreshHandler(t *testing.T) {
 				t.Fatalf("body = %s, want error containing %q", response.Body.String(), tt.wantError)
 			}
 			if tt.wantStatus == http.StatusOK {
-				var got AuthResponse
+				var got handlers.AuthResponse
 				if err := json.Unmarshal(response.Body.Bytes(), &got); err != nil {
 					t.Fatal(err)
 				}
-				if got != (AuthResponse{AccessToken: "new-access", RefreshToken: "new-refresh"}) {
+				if got != (handlers.AuthResponse{AccessToken: "new-access", RefreshToken: "new-refresh"}) {
 					t.Fatalf("response = %#v", got)
 				}
 				if tt.refresher.refreshToken != "old-refresh" {
