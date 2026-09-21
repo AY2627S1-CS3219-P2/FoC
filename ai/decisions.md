@@ -91,6 +91,11 @@ once it is written somewhere the team can point at. It is recorded here so the
 exception is visible rather than silent. Pushing `feat/user-service` closes the
 gap and costs nothing.
 
+<!-- The service-to-service transport row below: AI-added (Claude Code, Opus 5,
+     2026-09-21) as a GAP MARKER, not a decision. It records the question a PR
+     review raised against D-013 - whether internal calls are gRPC - because no
+     row, and no code on any branch, says so today. The answer, and its
+     Rationale, are the team's to write. -->
 | Question | Blocks | Milestone |
 | --- | --- | --- |
 | Whether the gateway is a Go service we write or an off-the-shelf product | API Gateway | D2 |
@@ -100,6 +105,7 @@ gap and costs nothing.
 | Whether credit reservation is atomic with order persistence | Order + Credit Services | D3 |
 | What happens to an errand that stalls after acceptance | Order Service | D3 |
 | How credit-operation atomicity is achieved | Credit Service | D3 |
+| The transport for service-to-service calls: REST, as D-013 states and the code does, or gRPC | API Gateway + all services | D3 |
 | Which interactions are asynchronous, and the broker technology | Async workflow (M6) | D3 |
 | The event schema, and how duplicate events are handled | Order + Credit Services | D3 |
 | AWS compute target (ECS Fargate / EKS / other) and IaC tool | Cloud deployment | D3–D4 |
