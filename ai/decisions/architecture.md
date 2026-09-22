@@ -5,6 +5,9 @@ Scope: Redrew the team's PNG architecture diagram as Mermaid and brought it in
   line with decisions D-019..D-028. Every element traces to a recorded row in
   ../decisions.md — no architecture was invented here, and no Rationale is
   offered.
+  2026-09-22: corrected two errors (refresh read Postgres not Redis; the
+  lingering-token arrow goes to supplier-service not user-service), added §6
+  on who answers "is this token still good?", refreshed §7's state table.
 Author review: PENDING — <reviewer to complete>
 -->
 
@@ -163,7 +166,7 @@ sequenceDiagram
         US->>DB: RevokeAllUserSessions
         US-->>GW: 401 session compromised
     else valid
-        US->>RDS: check blocklist and suspension
+        US->>DB: check account_status and tokens_valid_after
         US->>DB: RotateSession, old revoked, new inserted
         US-->>GW: 200 {new AT, new RT}
     end
@@ -172,6 +175,13 @@ sequenceDiagram
 
 **This is where revocation actually bites.** The gateway takes no part in the
 decision; it only carries the request.
+
+> **Corrected 2026-09-22.** This diagram previously showed `user-service`
+> reading the Redis blocklist here. It does not. `RefreshService.activeAccount`
+> reads `account_status` and `tokens_valid_after` from **PostgreSQL**, and the
+> replay check above reads the session row. `user-service`'s Redis adapter is
+> `RedisBlocklistWriter`, whose interface is `Set` only — there is no `Get`
+> anywhere in the service. See §5.
 
 ---
 
@@ -183,6 +193,7 @@ sequenceDiagram
     participant UI as Browser SPA
     participant GW as API Gateway
     participant US as user-service
+    participant SUP as supplier-service
     participant RDS as Redis
     participant DB as User DB
 
@@ -200,7 +211,7 @@ sequenceDiagram
     Note over UI,DB: WHAT THIS DOES NOT DO (D-025a)
     UI->>GW: GET /api/suppliers/1 with the SAME access token
     Note over GW: Signature valid, exp not reached.<br/>Nothing reads the blocklist here.
-    GW->>US: forwarded, still authorised
+    GW->>SUP: forwarded, still authorised
     Note over UI,DB: The AT keeps working until exp, up to 15 minutes.<br/>The blocklist stops a session being RENEWED,<br/>not a token being USED.
 ```
 
@@ -209,21 +220,119 @@ sequenceDiagram
 > on the request path reads the blocklist. Accepted knowingly for the prototype
 > and recorded as **D-025a**.
 
+> **Added 2026-09-22.** Both writes above currently have **no reader anywhere**.
+> The gateway does not read them (D-024), and `user-service` cannot — its Redis
+> interface is `Set`-only. `jti:` and `suspended:uid:` are write-only today.
+> That is the state D-024 left behind when it removed the reader D-020 had
+> assigned to the gateway, and it is what the open F1.7.2 / D-025a question
+> turns on. Note this does not mean revocation is unenforced: it is enforced at
+> **refresh**, from PostgreSQL, as §4 shows.
+
+> **Corrected 2026-09-22.** The last arrow previously went to `user-service`.
+> A request for `/api/suppliers/1` is proxied straight to `supplier-service`;
+> `user-service` is on the path only for `/auth/*` and `/api/users/*`.
+
 ---
 
-## 6. Where the code actually is, today
+## 6. Who answers "is this token still good?"
+
+Added 2026-09-22, because this is the question the repo keeps disagreeing with
+itself about. Two different jobs get called "validating a token":
+
+| | Question | Needs | Who does it today |
+| --- | --- | --- | --- |
+| **Job 1** | Is this token genuine and unexpired? | The issuer's **public** key, and nothing else | **The API Gateway**, locally, on every request |
+| **Job 2** | Has it been killed early — logout, suspension? | **Shared state** (the Redis keys) | **Nobody** |
+
+Job 1 needs no network call. Access tokens are RS256 (D-023): `user-service`
+holds the private key and is the only process that can mint one (D-012); the
+gateway holds only the public key, fetched once from `/.well-known/jwks.json`
+and cached. Verifying is arithmetic.
+
+Job 2 cannot be answered from the token. A logged-out access token is
+byte-for-byte valid until its `exp`. Answering it means reading state that
+something else wrote.
+
+**Three models have been described. Only one is built.**
+
+```mermaid
+flowchart LR
+    subgraph A["D-020 — superseded 2026-09-19"]
+        direction TB
+        A1["Gateway verifies"] --> A2["Gateway READS Redis"] --> A3["forward, or reject"]
+    end
+    subgraph B["D-024 — ACCEPTED, and what is built"]
+        direction TB
+        B1["Gateway verifies"] --> B3["forward"]
+    end
+    subgraph C["Not recorded anywhere"]
+        direction TB
+        C1["Gateway forwards"] --> C2["user-service READS Redis"] --> C3["?"]
+    end
+```
+
+**A** is what the PNG, the team's Mermaid step 8 and `user-service/AGENTS.md`
+("*If the Gateway cannot reach Redis … the request must be rejected*") still
+describe. **B** is what every line of code on every branch does. **C** has come
+up in discussion; nothing implements it, and it is worth saying why it does not
+follow from the current call graph: `user-service` is on the request path only
+for `/auth/*` and `/api/users/*`. `supplier-service`, `order-service` and
+`credit-service` are proxied to **directly by the gateway** and never call
+`user-service`, which has no base URL, no client and no endpoint for any of
+them. Under C those three services would go unchecked.
+
+### The Redis keys have no reader
+
+| Key | Written by | Read by |
+| --- | --- | --- |
+| `jti:<jti>` | `user-service` on logout (`BlockAccessToken`) | — |
+| `suspended:uid:<uuid>` | `user-service` on suspension (`WriteSuspension`) | — |
+
+`user-service`'s adapter is `RedisBlocklistWriter` and its interface is
+`Set`-only; there is no `Get` or `Exists` anywhere in the service. The gateway
+has no Redis client at all (D-024) — no dependency in its `go.mod`, no
+`REDIS_URL` in `internal/config`, no `depends_on` in `compose.yaml`. It parses
+`jti` off the token purely so downstream logs can correlate a session.
+
+This is not a bug in either service. D-020 assigned the reader role to the
+gateway; D-024 removed that role and did not reassign it. The writes stayed.
+
+### Revocation is still enforced — at refresh, from PostgreSQL
+
+Worth stating plainly, because "nothing reads the blocklist" reads worse than
+it is. `RefreshService.activeAccount` checks `account_status` and
+`tokens_valid_after`, and the replay check reads the session row's
+`revoked_at`. All PostgreSQL, no Redis. So a logged-out or suspended user
+**cannot renew a session**. What survives is the access token already in the
+browser, until its `exp` — up to 15 minutes. That is exactly D-025a, accepted
+knowingly.
+
+### The one thing that cannot be settled by cleanup
+
+**F1.7.2** in the product backlog says sessions terminate *upon* suspension.
+**D-025a** says up to 15 minutes later. Both cannot be true. Either F1.7.2 is
+amended, or D-025a is superseded and a reader is built. That is a team
+decision with a rationale to write, and no agent may pick it (root
+`AGENTS.md` §1).
+
+---
+
+## 7. Where the code actually is, today
+
+Refreshed 2026-09-22.
 
 | Component | State | Branch |
 | --- | --- | --- |
-| `api-gateway` | **Working.** gofmt/vet/test clean, 14 tests, live-probed | `feat/api-gateway-auth-proxy` |
-| Browser SPA | **Working on fixtures.** Builds clean; not wired to the gateway | `feat/frontend-ui` |
-| `supplier-service` | **Working.** Trusts `X-User-Role` verbatim, by its own admission | PR #1, unmerged |
-| `user-service` | **Not started in the repo.** Design circulated, branch not pushed | — |
+| `api-gateway` | **Working.** vet/test clean, 25 tests. Never run against a real `user-service` | `feat/api-gateway-auth-proxy` |
+| Browser SPA | **Working on fixtures.** Builds clean, 62 tests. `VITE_GATEWAY_BASE_URL` defaults to empty, so it is not wired to the gateway | `feat/frontend-ui` |
+| `supplier-service` | **Working.** Trusts `X-User-Role` verbatim, by its own admission | **merged to `main`** (PR #1) |
+| `user-service` | **Working.** RS256/JWKS issuer, register/login/refresh/logout, profile, suspension, default admin. **No OTP** | `feat/user-service`, no PR |
 | `order-service` | Folder only | — |
 | `credit-service` | Folder only | — |
-| Redis | In `compose.yaml`, no consumer yet | `feat/api-gateway-auth-proxy` |
+| `notification-service` | No folder, no owner, no decision row | — |
+| Redis | In `compose.yaml`; written by `user-service`, read by nobody (§6) | `feat/api-gateway-auth-proxy` |
 
-## 7. What this picture assumes, and does not yet have
+## 8. What this picture assumes, and does not yet have
 
 - **D-022's second leg does not hold.** Everything above depends on services
   being unreachable except through the gateway. `supplier-service` is published
