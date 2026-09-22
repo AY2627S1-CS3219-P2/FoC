@@ -70,4 +70,5 @@ type UpdateStatusRequest struct {
 type UpdateProfileRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`
+	PhoneNum string `json:"phone_num"`
 }

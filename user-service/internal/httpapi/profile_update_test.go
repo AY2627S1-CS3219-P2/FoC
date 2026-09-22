@@ -18,12 +18,14 @@ import (
 )
 
 type fakeProfileUpdater struct {
-	uid uuid.UUID
-	err error
+	uid   uuid.UUID
+	phone string
+	err   error
 }
 
-func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, id uuid.UUID, _, _, _ string) (*user.User, error) {
+func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, id uuid.UUID, _, phone, _ string) (*user.User, error) {
 	f.uid = id
+	f.phone = phone
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -49,6 +51,26 @@ func TestUpdateProfileHandler(t *testing.T) {
 				t.Fatal("not updated")
 			}
 		})
+	}
+}
+
+func TestUpdateProfileHandlerPassesPhoneNumber(t *testing.T) {
+	id := uuid.New()
+	u := &fakeProfileUpdater{}
+	r := newTestRouter(routes.Dependencies{
+		TokenVerifier: &fakeTokenVerifier{principal: handlers.Principal{UserID: id, Role: user.AccountRoleStudent}},
+		Profile:       handlers.ProfileDependencies{ProfileUpdater: u},
+	})
+	q := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+id.String(), strings.NewReader(`{"phone_num":"+6512345678"}`))
+	q.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, q)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if u.phone != "+6512345678" {
+		t.Fatalf("phone = %q, want %q", u.phone, "+6512345678")
 	}
 }
 

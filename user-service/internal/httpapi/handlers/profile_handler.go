@@ -139,7 +139,7 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "profile unavailable"})
 		return
 	}
-	account, err := h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, "", request.Password)
+	account, err := h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, request.PhoneNum, request.Password)
 	if err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})

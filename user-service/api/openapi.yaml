@@ -119,6 +119,8 @@ components:
         password:
           type: string
           format: password
+        phone_num:
+          type: string
 
     UpdateStatusRequest:
       type: object
@@ -250,7 +252,7 @@ paths:
     put:
       summary: Update mutable profile fields
       description: >
-        Updates the user's username or password.
+        Updates the user's username, password, or phone number.
         Authorization: The caller must either possess the ADMIN role, or their authenticated user ID (passed via the Gateway) must strictly match the `uid` in the path parameter.
       security:
         - BearerAuth: []
