@@ -157,7 +157,9 @@ export function NewErrandView({
               Could not load suppliers: {supplierError}
               <br />
               <span className="status-hint">
-                Check that supplier-service is running.
+                The browser reaches suppliers through the API Gateway
+                (D-010), so this is the gateway not answering — which may
+                mean the gateway itself, or supplier-service behind it.
               </span>
             </p>
           )}

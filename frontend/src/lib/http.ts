@@ -19,7 +19,11 @@
 /** Thrown when the request never reached the server. */
 export class NetworkError extends Error {
   constructor(baseUrl: string) {
-    super(`Could not reach the service at ${baseUrl}`);
+    // baseUrl is the gateway for every caller now (D-010). "Could not
+    // reach" also covers a response the BROWSER refused — a CORS failure
+    // surfaces here as a rejected fetch, indistinguishable from the host
+    // being down, so the wording does not promise which it was.
+    super(`No usable response from ${baseUrl}`);
     this.name = "NetworkError";
   }
 }
