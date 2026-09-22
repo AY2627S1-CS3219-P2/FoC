@@ -4,6 +4,8 @@
 //   strip-and-inject that D-022 depends on. 2026-09-21: the single
 //   passthrough flag became two independent choices, and NewRetainingToken
 //   was added for user-service, which verifies the bearer token itself.
+//   2026-09-22: comment only — NewRetainingToken's "NOT RECORDED" note
+//   replaced with a pointer to D-030, which now records it.
 // Author review: PENDING — <reviewer to complete>
 
 // Package proxy forwards a verified request to one downstream service over
@@ -112,9 +114,8 @@ func New(route Route) (*Proxy, error) {
 // it, not onward to a third party. Every other callee still gets New, so
 // supplier-, order- and credit-service never see a bearer token.
 //
-// NOT RECORDED. D-022 says downstream services do not parse JWTs, and this is
-// a deliberate exception to that for one service. It needs a decision row, and
-// writing one is the team's (root AGENTS.md §1).
+// Recorded as D-022's one exception in ai/decisions.md (D-030), which also
+// marks D-022 amended. Every other callee keeps New.
 func NewRetainingToken(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: true, injectClaims: true})
 }
