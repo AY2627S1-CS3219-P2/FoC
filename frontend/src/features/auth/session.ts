@@ -8,7 +8,10 @@
 //   catches logout and suspension, which D-024 makes false. Later that day:
 //   D-033 — the refresh token is a cookie, so the exchange takes no argument,
 //   runs under a cross-tab Web Lock, and fires on demand rather than on load.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Used to create the original boilerplate generation, 
+// which seems valid and, then afterwards it was used to update the changes based on the team's discussions, they
+// made the updates and updated the code and it seems correct. Includes comments on changes made, reasoning and observations
+// supplied by me and the team as well.
 
 import { send, type HttpResponse, type SendOptions } from "../../lib/http";
 import type { TokenPair, TokenStore } from "../../lib/tokens";

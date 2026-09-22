@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Built the Credits screen from the owner's mockup, against the mock
 //   credit-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI built it according to the prototype our team designed and the requirements provided. The code is fairly boilerplate, seems valid and works as intended.
 
 import { useEffect, useState } from "react";
 import { MockBadge } from "../../components/MockBadge";

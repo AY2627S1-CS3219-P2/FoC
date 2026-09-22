@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-22
 // Scope: Tests for the D-033 refresh path — on demand rather than on page
 //   load, and serialised so two callers cannot spend the cookie twice.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the unit tests for the refresh path. Checked and is valid and works as intended.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createAuthorizedSend } from "./session";

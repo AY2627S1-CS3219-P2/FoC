@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Ported supplierCardHtml() from the prototype to a React component.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the simple generated converted file.
 
 import type { Supplier } from "./types";
 import { SupplierImage } from "./SupplierImage";

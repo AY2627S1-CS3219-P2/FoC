@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-20
 // Scope: Unit tests for the OTP fixture's timing and rate-limit rules.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the unit tests for the OTP fixture and its functions. Checked and is valid and works as intended.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { peek, resend, startRegistration, verify } from "./fixtureOtp";

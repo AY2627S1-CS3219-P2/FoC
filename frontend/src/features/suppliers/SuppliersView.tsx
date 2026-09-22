@@ -5,7 +5,7 @@
 //   2026-09-22: takes the suppliers client as a prop instead of importing the
 //   module, now that it carries a per-session token. The admin checkbox's
 //   label no longer claims to bypass access control — it cannot any more.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SuppliersApi } from "./suppliersApi";

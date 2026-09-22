@@ -2,7 +2,8 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-20
 // Scope: Client-side validation for the registration fields, transcribing the
 //   limits stated in the D1 backlog (F1.1.2.1, F1.1.3.1, F1.1.4.2).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the validation rules and functions. Checked and is valid and works as intended.
+// Requirements were decided upon by the team and is reflected in our product backlog.
 
 /**
  * The registration rules, in one place, as pure functions.

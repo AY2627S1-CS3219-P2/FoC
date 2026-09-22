@@ -3,7 +3,8 @@
 // Scope: In-browser stand-in for the OTP half of registration, so the flow can
 //   be built and exercised before user-service exists. Enforces the timing and
 //   rate limits from F1.1.2.4-F1.1.2.7 rather than rubber-stamping them.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the OTP fixture and its functions., though OTP is not yet set up. This is just boilerplate.
+// Values used are default values, if the team wants to change the values, it will be reflected in decision log.
 
 import { AuthError } from "./authApi";
 import { OTP_LENGTH } from "./validation";

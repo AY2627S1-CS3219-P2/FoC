@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: MOCK client standing in for order-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI used to generate boilerplate implementation for mock client scaffolding and for testing. Checked and is valid and works as mock.
 
 import { mockDelay, nextErrandId } from "../../lib/mock";
 import type { Errand, NewErrand } from "./types";

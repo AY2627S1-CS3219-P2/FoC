@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Placeholder types for the mock credit-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the mock client scaffolding and for testing. Checked and is valid and works as mock.
 
 /**
  * MOCK SHAPES — invented by the frontend, not a contract. `credit-service`

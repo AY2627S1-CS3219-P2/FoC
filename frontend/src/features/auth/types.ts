@@ -6,7 +6,8 @@
 //   made optional — user-service supplies neither. 2026-09-21 (later):
 //   both are on user-service's profile responses after Zi Yang's 72fe5a5,
 //   so the comments saying they have no source were corrected.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the session types and pending registration types. Checked and is valid and works as intended.
+// Update was made according to changes in teammate's architecture and framework. Changes made are valid and intended.
 
 /**
  * The signed-in user, as far as the UI can actually know them.

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: React entry point.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Simple main.tsx boilerpoint.
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";

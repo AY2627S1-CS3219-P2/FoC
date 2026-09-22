@@ -6,7 +6,7 @@
  * Scope: Rewrote the stylesheet to the tokens and component styles read off
  *   the owner's mockups (navy/orange palette, card surfaces, navy sidebar,
  *   mobile bottom tab bar). Replaces the D1 prototype stylesheet.
- * Author review: PENDING — <reviewer to complete>
+ * Author review: Nigeltzy - Updated based on our requirements. It's a simple style.css, it can't get simplier than this.
  *
  * No CSS framework is chosen (frontend/AGENTS.md), so this is hand-written and
  * token-driven. Change a value here, not in a component.

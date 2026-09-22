@@ -5,7 +5,9 @@
 //   2026-09-22: repointed from supplier-service's own port onto the API
 //   Gateway (D-010, D-025b). Module-level functions became a factory taking
 //   the authorized transport, because every call now carries a token.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - The AI is used to generate boilerplate simple connections
+// to the endpoints of my teammate's service. The code seems valid and appropriate based
+// on what was supplied to them.
 
 import type { AuthorizedSend } from "../auth/session";
 import { config } from "../../lib/config";

@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: MOCK client standing in for credit-service, seeded with the ledger
 //   from the owner's mockup.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI used to create implementation for the mock client scaffolding and for testing. Checked and is valid and works as mock.
 
 import { mockDelay } from "../../lib/mock";
 import type { Balance, LedgerEntry } from "./types";

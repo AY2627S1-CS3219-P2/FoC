@@ -4,7 +4,7 @@
 #   now serving the build output instead of hand-written files.
 #   2026-09-22: the build arg is the gateway's URL, not supplier-service's —
 #   the browser holds one base URL now (D-010, D-025b).
-# Author review: PENDING — <reviewer to complete>
+# Author review: Nigeltzy - See docker file updates in other branch, this is deprecated, originally used to work in absence of other services, created boilerplate.
 
 FROM node:22-alpine AS build
 WORKDIR /app

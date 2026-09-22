@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: View identifiers and the navigation model for the shell.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Boilerplate view template for ts.
 
 /**
  * No router is chosen yet (frontend/AGENTS.md), so views are switched by state

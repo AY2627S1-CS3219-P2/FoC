@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Ported openForm()/submitForm() from the prototype to a controlled
 //   React form.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
 
 import { useState, type FormEvent } from "react";
 import type { Supplier, SupplierInput } from "./types";

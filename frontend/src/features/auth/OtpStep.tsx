@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-20
 // Scope: The OTP verification step of registration (F1.1.2.3-F1.1.2.7).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create boilerplate OTP setup, though OTP is not actually set up yet.
 
 import { useEffect, useState, type FormEvent } from "react";
 import type { AuthResult } from "./authApi";

@@ -5,7 +5,7 @@
 //   2026-09-20: identifier login (F1.2.1), username and contact fields (F1.1,
 //   F1.4.1), live password rules (F1.1.3.1), suspended accounts (F1.2.4), and
 //   the OTP step (F1.1.2.7).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the sign-in screen as per the mockup the team designed. Checked and is valid and works as intended.
 
 import { useState, type FormEvent } from "react";
 import { MockBadge } from "../../components/MockBadge";

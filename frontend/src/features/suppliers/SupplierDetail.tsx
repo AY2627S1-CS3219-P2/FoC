@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Ported openDetail() from the prototype, replacing window.confirm()
 //   with an inline confirmation step.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
 
 import { useState } from "react";
 import type { Supplier } from "./types";

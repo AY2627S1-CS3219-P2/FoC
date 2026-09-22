@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-22
 // Scope: Tests for the per-tab view memory.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI built this implementation for testing based on my requirements. Seems valid as a test.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearLastView, readLastView, writeLastView } from "./lastView";

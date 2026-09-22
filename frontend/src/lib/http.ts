@@ -2,7 +2,9 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Shared transport plumbing, extracted from the supplier client so each
 //   feature's api module does not repeat it.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Used to create the original boilerplate generation, 
+// seems like a valid typical implementation, with updates I instructed based on
+// the contents of my teammates' system design decisions.
 
 /**
  * Transport only: URL joining, headers, JSON parsing, and the one failure mode

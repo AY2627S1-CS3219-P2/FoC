@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Generated the Vite config for the React + TypeScript frontend.
 //   2026-09-22: added the same-origin dev proxy D-033 requires.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Boilerplate vite.config.ts file for ts. No changes needed.
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";

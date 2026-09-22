@@ -2,7 +2,8 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-21
 // Scope: Reads display claims out of an access token, because user-service's
 //   login response carries no profile.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Used to create the code based on our team's requirements and
+// system design, seems like a valid implementation of the code, and the changes made are correct based on the updated requirements.
 
 /**
  * Reads the payload of an access token WITHOUT verifying it.

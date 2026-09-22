@@ -6,7 +6,8 @@
 //   supplier-service through the gateway, which closes D-025b. Later that
 //   day: D-033 makes the gateway same-origin, so an EMPTY base URL became the
 //   correct production value and could no longer mean "run the fixtures".
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Used to create boilerplate config implementation,
+// seems like a typical implementation of config.ts, and the changes made to the file are valid and correct based on the updated requirements.
 
 /**
  * Every environment variable the app reads, resolved once here and imported

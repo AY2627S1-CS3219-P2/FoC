@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Inline SVG icons matching the mockups' line-icon set.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Generated based on the simple designs that our team decided to use for the time being. Simple designs and they look valid and as intended.
 
 /**
  * Hand-written rather than pulled from an icon package — adding a dependency

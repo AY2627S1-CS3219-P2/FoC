@@ -9,7 +9,10 @@
 //   the gateway (D-010, D-025b). Then: restores the session from the refresh
 //   cookie on mount, which is what makes a page reload survive (D-033), and
 //   remembers which view the tab was on across that reload.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Used to create the original boilerplate generation,
+// afterall most react App.tsx files follow a similar pattern, and then afterwards it was used to update the changes based on my updated requirements, seems to have validly made 
+// updates thereafter according to updating requirements and changes to other files.
+// This file is the main entry point and so I typically review it every testing cycle as well.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "./components/AppShell";

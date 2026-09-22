@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Visible marker for screens backed by fixtures rather than a service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigetlzy - Simple boilerplate for mock badge UI.
 
 interface MockBadgeProps {
   /** The service this screen is waiting on, e.g. "credit-service". */

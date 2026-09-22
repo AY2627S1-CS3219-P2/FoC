@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Placeholder types for the mock order-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI used to generate the config and assign the types based on our team's planned architecture design (most types are intuitive and decided by me)
 
 /**
  * `order-service` does not exist yet, so the rest of this file is still a MOCK

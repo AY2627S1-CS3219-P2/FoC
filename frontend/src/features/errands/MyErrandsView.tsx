@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Built the My errands list against the mock order-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI built it according to the prototype our team designed and the requirements provided. The code  is fairly boilerplate, seems valid.
 
 import { useEffect, useState } from "react";
 import { MockBadge } from "../../components/MockBadge";

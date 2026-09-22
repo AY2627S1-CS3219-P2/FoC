@@ -5,7 +5,9 @@
 //   2026-09-21: dropped setAccessToken — user-service rotates RTs.
 //   2026-09-22: the refresh token left this file entirely. D-033 puts it in
 //   an HttpOnly cookie the gateway owns, which JS cannot read.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Used to create the original boilerplate generation, then afterwards
+// it was used to update the changes based on my updated requirements, seems to have validly
+// made the updates and shifted the relevant code to the gateway which I have also made.
 
 /**
  * Holds the access token (AT) and refresh token (RT) the gateway hands back at

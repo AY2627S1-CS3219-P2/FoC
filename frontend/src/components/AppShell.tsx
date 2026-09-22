@@ -3,7 +3,8 @@
 // Scope: Built the application chrome from the owner's mockups — navy sidebar
 //   on desktop, bottom tab bar on mobile, top bar with avatar, acting-mode
 //   toggle and credits pill.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI created the implementation as per the mockup that the team designed.
+// Code wise and UI looks wise, seems valid and as intended.
 
 import type { ReactNode } from "react";
 import type { ActingMode, Session } from "../features/auth/types";

@@ -3,7 +3,8 @@
 // Scope: Built the Request an errand screen from the owner's mockup. Supplier
 //   list comes from the real supplier-service; posting goes to the mock
 //   order-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI built it according to the prototype our team designed and the requirements provided.
+// Per code and viewed UI, it seems valid and works as intended.
 
 import { useEffect, useState } from "react";
 import { MockBadge } from "../../components/MockBadge";

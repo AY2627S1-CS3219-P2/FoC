@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Ported the prototype's toast notification to a React component.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Simple boilerplate toast.
 
 import { useEffect } from "react";
 

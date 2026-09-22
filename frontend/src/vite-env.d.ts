@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Types the one build-time env var this app reads.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Boilerplate vite-env.d.ts file for ts. No changes needed.
 
 /// <reference types="vite/client" />
 

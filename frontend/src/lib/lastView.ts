@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-22
 // Scope: Remembers which view a tab was on, so a page reload lands where the
 //   user left off rather than on Home.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI built this according to my requirements and the feature works as intended. Tried to keep implementation simple.
 
 import { VIEW_NAMES, type ViewName } from "../views";
 

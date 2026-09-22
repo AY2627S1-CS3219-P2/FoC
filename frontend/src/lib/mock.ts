@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Shared helpers for the frontend-local mock services.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI built this for use when mock was needed, may not be used anymore depending on services implementation. Worked as intended previously. Deprecated.
 
 /**
  * ============================ READ THIS FIRST ============================

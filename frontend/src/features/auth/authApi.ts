@@ -10,7 +10,10 @@
 //   three OTP calls are blocked because no endpoint implements them.
 //   2026-09-21 (later): the session now carries email and contact, which
 //   user-service's UserResponse/RestrictedUserResponse gained in 72fe5a5.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - The AI was used to generate the original boilerplate code,
+// as per our team's decisions, direction and requirements. As far as I can tell, the code 
+// is valid and I have asked the AI to explain some aprts as well as include comments for my
+// understanding. There are parts of the code that were originally mocked and now updated for srvices.
 
 import { config } from "../../lib/config";
 import { NetworkError, send } from "../../lib/http";
@@ -100,7 +103,13 @@ function usernameFromEmail(email: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures — active while user-service does not exist
+// Fixtures — OPT-IN, and dead code unless asked for
+//
+// Reached only when VITE_USE_FIXTURES=true (lib/config.ts). Until 2026-09-22
+// this half ran whenever no gateway URL was set, which D-033 turned into the
+// normal value — so the whole stack quietly served mock accounts. The switch
+// is explicit now, and with it off Vite drops everything below from the
+// bundle.
 // ---------------------------------------------------------------------------
 
 function fixtureSession(
@@ -203,7 +212,11 @@ export async function refreshAccessToken(): Promise<TokenPair> {
 }
 
 // ---------------------------------------------------------------------------
-// Gateway-backed — inert until api-gateway serves the auth routes
+// Gateway-backed — the default, and what actually runs
+//
+// api-gateway serves these routes: it terminates /auth/* onto user-service's
+// /api/v1/users/*, and owns the refresh token's cookie (D-033), which is why
+// nothing here reads or sends a refresh token.
 // ---------------------------------------------------------------------------
 
 function decodeAuthError(body: unknown, status: number): AuthError {
@@ -432,8 +445,12 @@ export async function logInViaGateway(
  * expiry, the three-per-ten-minutes resend limit and the ten-minute block are
  * all server-side rules, and enforcing them in the browser would make them
  * bypassable (frontend/AGENTS.md). The two gateway routes are a small change
- * here once their spec names the endpoints. Until then the fixture client
- * carries this flow, badged as a mock.
+ * here once their spec names the endpoints.
+ *
+ * Until then registration cannot complete through the UI at all. The fixture
+ * client used to carry this flow, but it is opt-in since 2026-09-22 and does
+ * not run by default — so the demo path is the bootstrapped admin account,
+ * not signing up.
  */
 export async function signUpViaGateway(
   email: string,

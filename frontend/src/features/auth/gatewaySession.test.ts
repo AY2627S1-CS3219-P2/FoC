@@ -3,7 +3,7 @@
 // Scope: Tests for the session the gateway client builds out of a token pair
 //   plus the profile call — specifically the email/phone_num mapping added
 //   when user-service's UserResponse gained both fields (72fe5a5).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the unit tests for the session and gateway client. Checked and is valid and works as intended.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Transcribed supplier-service's JSON shapes into TypeScript types.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the simple generated converted file based on the team's architecture decisions made and requirements provided.
 
 /**
  * Mirrors `supplierResponse` in

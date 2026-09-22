@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Restyled the landing view to the owner's design system and pointed
 //   its cards at the new views.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the boilerplate generated file. Mostly just formatting and our selected text.
 
 import type { ActingMode } from "../auth/types";
 import type { ViewName } from "../../views";

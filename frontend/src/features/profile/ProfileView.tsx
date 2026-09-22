@@ -6,7 +6,8 @@
 //   2026-09-22: the "Mock data · user-service" badge was unconditional and
 //   is now tied to isMock, like LoginPage's. Against the gateway every field
 //   on this page is real.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
+// The file was then updated thereafter according to changing requirements and development process. All seems valid when checked.
 
 import { MockBadge } from "../../components/MockBadge";
 import type { ActingMode, Session } from "../auth/types";

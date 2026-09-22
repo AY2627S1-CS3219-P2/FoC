@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-20
 // Scope: Unit tests for the registration validation rules.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - AI was used to create the implementation for the unit tests for the validation rules and functions. Checked and is valid and works as intended.
 
 import { describe, expect, it } from "vitest";
 import {
