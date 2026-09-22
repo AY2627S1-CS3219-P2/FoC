@@ -2,10 +2,12 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Ported the prototype's supplier list, search, filter and admin CRUD
 //   flow (loadSuppliers, renderGrid, renderCategoryOptions) to React.
+//   2026-09-22: takes the suppliers client as a prop instead of importing the
+//   module, now that it carries a per-session token.
 // Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import * as supplierApi from "./suppliersApi";
+import type { SuppliersApi } from "./suppliersApi";
 import type { Supplier, SupplierInput } from "./types";
 import { Modal } from "../../components/Modal";
 import { SupplierCard } from "./SupplierCard";
@@ -14,6 +16,8 @@ import { SupplierForm } from "./SupplierForm";
 import type { ToastMessage } from "../../components/Toast";
 
 interface SuppliersViewProps {
+  /** Injected by App, which owns the token store the transport reads. */
+  api: SuppliersApi;
   isAdmin: boolean;
   onAdminChange: (isAdmin: boolean) => void;
   onNotify: (message: ToastMessage) => void;
@@ -27,6 +31,7 @@ type ModalState =
   | null;
 
 export function SuppliersView({
+  api,
   isAdmin,
   onAdminChange,
   onNotify,
@@ -51,7 +56,7 @@ export function SuppliersView({
     setLoading(true);
     setError(null);
     try {
-      const results = await supplierApi.listSuppliers({ search, category });
+      const results = await api.listSuppliers({ search, category });
       setSuppliers(results);
       if (!categoriesLoaded.current && !search && !category) {
         categoriesLoaded.current = true;
@@ -75,10 +80,10 @@ export function SuppliersView({
     setSubmitting(true);
     try {
       if (modal?.kind === "edit") {
-        await supplierApi.updateSupplier(modal.supplier.id, input);
+        await api.updateSupplier(modal.supplier.id, input);
         onNotify({ text: "Supplier updated", kind: "success" });
       } else {
-        await supplierApi.createSupplier(input);
+        await api.createSupplier(input);
         onNotify({ text: "Supplier created", kind: "success" });
       }
       setModal(null);
@@ -95,7 +100,7 @@ export function SuppliersView({
 
   const handleDelete = async (supplier: Supplier) => {
     try {
-      await supplierApi.deleteSupplier(supplier.id);
+      await api.deleteSupplier(supplier.id);
       onNotify({ text: "Supplier deleted", kind: "success" });
       setModal(null);
       await load();
@@ -150,10 +155,15 @@ export function SuppliersView({
       </div>
 
       {/*
-        Interim development switch, NOT access control. It makes suppliersApi
-        send `X-User-Role: ADMIN`, which supplier-service currently trusts
-        verbatim. Anyone can send that header without this checkbox — see the
-        Gotchas in frontend/AGENTS.md. Remove it once real auth exists.
+        A VIEW switch only, as of 2026-09-22. It shows and hides the admin
+        controls; it no longer makes the client assert anything. suppliersApi
+        used to send `X-User-Role: ADMIN` itself, which worked only while the
+        browser reached supplier-service directly. Through the gateway that
+        header is stripped and replaced with the role from the verified token
+        (D-022), so ticking this box on a STUDENT account now surfaces the
+        buttons and the writes come back 403 from supplier-service.
+        Drive it from session.role and delete the checkbox once someone
+        decides that is the behaviour they want.
       */}
       <label
         className="checkbox-row"

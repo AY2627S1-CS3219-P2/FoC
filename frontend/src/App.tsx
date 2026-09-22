@@ -4,10 +4,12 @@
 //   shared (mock) credit balance the shell displays. 2026-09-19: owns the
 //   TokenStore and picks the fixture or gateway auth client (ai/decisions.md
 //   D-010..D-015). 2026-09-21: logout sends both tokens, which
-//   user-service's LogoutRequest requires.
+//   user-service's LogoutRequest requires. 2026-09-22: builds the authorized
+//   transport and the suppliers client over it, now that suppliers go through
+//   the gateway (D-010, D-025b).
 // Author review: PENDING — <reviewer to complete>
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { Toast, type ToastMessage } from "./components/Toast";
 import * as authApi from "./features/auth/authApi";
@@ -20,6 +22,8 @@ import type {
 } from "./features/auth/types";
 import { config } from "./lib/config";
 import { createTokenStore } from "./lib/tokens";
+import { createAuthorizedSend } from "./features/auth/session";
+import { createSuppliersApi } from "./features/suppliers/suppliersApi";
 import * as creditsApi from "./features/credits/creditsApi";
 import { CreditsView } from "./features/credits/CreditsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
@@ -66,6 +70,30 @@ export function App() {
   // component state, so a re-render cannot leak them into a React DevTools
   // tree and nothing outside lib/tokens.ts reads the values.
   const [tokens] = useState(createTokenStore);
+
+  /**
+   * The authorized transport, and the one client built over it.
+   *
+   * Created here because App owns the TokenStore, and passed down rather than
+   * reached for: a module-level token would be exactly the global coupling
+   * root AGENTS.md §5 rules out. One instance for the app's lifetime, so the
+   * shared in-flight refresh inside it actually dedupes.
+   *
+   * onSessionExpired only clears local state — the refresh token is already
+   * dead server-side, so there is nothing to revoke and no call to make.
+   */
+  const suppliers = useMemo(() => {
+    const authorizedSend = createAuthorizedSend({
+      tokens,
+      refresh: authApi.refreshAccessTokenViaGateway,
+      onSessionExpired: () => {
+        tokens.clear();
+        setSession(null);
+        setView("home");
+      },
+    });
+    return createSuppliersApi(authorizedSend);
+  }, [tokens]);
 
   const [view, setView] = useState<ViewName>("home");
   const [mode, setMode] = useState<ActingMode>("requesting");
@@ -150,6 +178,7 @@ export function App() {
 
         {view === "new-errand" && (
           <NewErrandView
+            suppliersApi={suppliers}
             available={available ?? 0}
             onNotify={setToast}
             onPosted={() => setView("my-errands")}
@@ -160,6 +189,7 @@ export function App() {
 
         {view === "suppliers" && (
           <SuppliersView
+            api={suppliers}
             isAdmin={isAdmin}
             onAdminChange={setIsAdmin}
             onNotify={setToast}

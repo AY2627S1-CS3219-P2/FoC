@@ -9,11 +9,13 @@ import { useEffect, useState } from "react";
 import { MockBadge } from "../../components/MockBadge";
 import { SearchIcon } from "../../components/icons";
 import type { ToastMessage } from "../../components/Toast";
-import * as suppliersApi from "../suppliers/suppliersApi";
+import type { SuppliersApi } from "../suppliers/suppliersApi";
 import type { Supplier } from "../suppliers/types";
 import * as errandsApi from "./errandsApi";
 
 interface NewErrandViewProps {
+  /** Injected by App, which owns the token store the transport reads. */
+  suppliersApi: SuppliersApi;
   /** Spendable credits, for the "leaves you N available" hint. */
   available: number;
   onNotify: (message: ToastMessage) => void;
@@ -22,7 +24,8 @@ interface NewErrandViewProps {
 
 /**
  * Composes two services in one view, which frontend/AGENTS.md explicitly
- * allows: suppliers are read from supplier-service through its own client,
+ * allows: suppliers are read from supplier-service through its own client
+ * (injected as a prop since 2026-09-22, because it now carries a token),
  * the errand is posted through order-service's. Each call goes through that
  * service's module; neither knows about the other.
  *
@@ -39,6 +42,7 @@ const DELIVERY_LOCATIONS = [
 ];
 
 export function NewErrandView({
+  suppliersApi,
   available,
   onNotify,
   onPosted,
