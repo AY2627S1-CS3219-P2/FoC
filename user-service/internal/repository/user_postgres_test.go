@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added focused tests for PostgreSQL row/error mapping and Go-side defaults.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests reflects intended behaviour
 
 package repository
 

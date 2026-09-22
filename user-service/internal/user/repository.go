@@ -22,6 +22,11 @@ type UserRepository interface {
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
 }
 
+// SuspensionWriter persists the invalidation marker for a suspended account.
+type SuspensionWriter interface {
+	WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error
+}
+
 // SessionRepository persists refresh-token sessions and their revocation state.
 type SessionRepository interface {
 	CreateSession(ctx context.Context, session *Session) error

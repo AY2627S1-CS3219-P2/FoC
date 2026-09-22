@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-21
 // Scope: Added shared test helper that exercises the dedicated router package.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests reflects intended behaviour
 
 package httpapi
 

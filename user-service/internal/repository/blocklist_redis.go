@@ -16,7 +16,10 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const accessTokenBlocklistKeyPrefix = "jti:"
+const (
+	accessTokenBlocklistKeyPrefix = "jti:"
+	suspensionKeyPrefix           = "suspended:uid:"
+)
 
 type redisSetter interface {
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
@@ -46,6 +49,27 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 	}
 	if err := w.client.Set(ctx, accessTokenBlocklistKeyPrefix+jti.String(), "1", ttl).Err(); err != nil {
 		return fmt.Errorf("set Redis access-token blocklist key: %w", err)
+	}
+	return nil
+}
+
+// WriteSuspension records the account suspension timestamp for the configured
+// access-token lifetime so the API gateway can reject tokens issued before it.
+func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error {
+	if w.client == nil {
+		return errors.New("Redis client is required")
+	}
+	if uid == uuid.Nil {
+		return errors.New("suspended account ID is required")
+	}
+	if suspendedAt.IsZero() {
+		return errors.New("suspension timestamp is required")
+	}
+	if ttl <= 0 {
+		return errors.New("suspension key TTL must be positive")
+	}
+	if err := w.client.Set(ctx, suspensionKeyPrefix+uid.String(), suspendedAt.UTC().Format(time.RFC3339Nano), ttl).Err(); err != nil {
+		return fmt.Errorf("set Redis suspension key: %w", err)
 	}
 	return nil
 }

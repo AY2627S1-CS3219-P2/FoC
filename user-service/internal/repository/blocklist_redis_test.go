@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-20
 // Scope: Added focused tests for the recorded Redis access-token blocklist adapter.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests reflects intended behvaiour
 
 package repository
 

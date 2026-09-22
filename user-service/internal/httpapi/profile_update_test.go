@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-20
 // Scope: Added focused tests for the recorded self-or-admin profile-update endpoint.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests reflects intended behaviour
 package httpapi
 
 import (

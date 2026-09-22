@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-20
 // Scope: Added focused HTTP tests transcribed from the recorded refresh OpenAPI contract.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests reflects intended behaviour
 
 package httpapi
 

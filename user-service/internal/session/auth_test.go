@@ -43,7 +43,7 @@ func (f *fakeAuthRepository) Update(_ context.Context, got *User) error {
 	return nil
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by ZI YANG).
 func TestAuthenticatorAuthenticateCanonicalizesEmailIdentifier(t *testing.T) {
 	passwordHash, err := hash.HashPassword("ValidPass1")
 	if err != nil {

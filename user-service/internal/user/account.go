@@ -20,13 +20,21 @@ import (
 // boundary. Event publication remains outside this service until its contract
 // is recorded.
 type AccountService struct {
-	repository UserRepository
+	repository       UserRepository
+	suspensionWriter SuspensionWriter
+	sessions         SessionRepository
+	suspensionTTL    time.Duration
 }
 
-// NewAccountService constructs an account service with its repository ready for
-// use.
-func NewAccountService(repository UserRepository) *AccountService {
-	return &AccountService{repository: repository}
+// NewAccountService constructs an account service with the dependencies
+// required to invalidate suspended accounts before persistence.
+func NewAccountService(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration) *AccountService {
+	return &AccountService{
+		repository:       repository,
+		suspensionWriter: suspensionWriter,
+		sessions:         sessions,
+		suspensionTTL:    suspensionTTL,
+	}
 }
 
 // Register creates an active student account with a bcrypt password hash.
@@ -106,6 +114,20 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	}
 	if status == AccountStatusSuspended && tokensValidAfter.IsZero() {
 		return errors.New("suspension timestamp is required")
+	}
+	if status == AccountStatusSuspended {
+		if s.suspensionWriter == nil || s.sessions == nil {
+			return errors.New("suspension invalidation dependencies are required")
+		}
+		if s.suspensionTTL <= 0 {
+			return errors.New("suspension TTL must be positive")
+		}
+		if err := s.suspensionWriter.WriteSuspension(ctx, uid, tokensValidAfter, s.suspensionTTL); err != nil {
+			return fmt.Errorf("write suspension invalidation: %w", err)
+		}
+		if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
+			return fmt.Errorf("revoke suspended account sessions: %w", err)
+		}
 	}
 	if err := s.repository.UpdateAccountStatusByID(ctx, uid, status, tokensValidAfter); err != nil {
 		return fmt.Errorf("update account status: %w", err)

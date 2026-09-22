@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added unit tests for JWT verification middleware and principal context.
-// Author review: PENDING — reviewer to complete
+// Author review: Validated tests reflects intended behaviour
 
 package httpapi
 
