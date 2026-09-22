@@ -2,7 +2,8 @@
 # Tool: Claude Code (model: Opus 5), date: 2026-09-19
 # Scope: Compose baseline — extends the supplier-service/frontend stack from
 #   PR #1 with Redis and the API Gateway, and closes the public ports that
-#   ai/decisions.md D-010 says must be internal.
+#   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
+#   which landed PR #1's half of this file; comments brought up to date.
 # Author review: PENDING — <reviewer to complete>
 
 # The trust zones from ai/decisions.md D-010 are enforced here by ONE thing:
@@ -16,15 +17,20 @@
 # deliberately absent — they have Dockerfiles but nothing to build, and listing
 # them would break `docker compose up`. Add each one as it lands.
 #
-# NOTE: building supplier-service requires PR #1 to be merged; its source is
-# not on main yet.
+# user-service is absent here but exists on feat/user-service, with its own
+# compose half (user-db, redis, user-service). Merging the two halves is
+# blocked on ai/decisions.md D-024 versus user-service/AGENTS.md — see the
+# note on redis below.
 
 services:
   # ---- Revocation store (D-013, D-014) ------------------------------------
   # AI-generated (edited by PENDING) — rewritten for D-024.
   # user-service is the ONLY process that touches this; the gateway is not a
-  # Redis client at all. Nothing consumes it in this file yet because
-  # user-service has no code — it is here so the store exists when it lands.
+  # Redis client at all (D-024). Nothing consumes it in this file yet because
+  # user-service is not in this half — it is here so the store exists when the
+  # two halves merge. NOTE: feat/user-service's compose declares redis:8-alpine
+  # with no persistence and no volume, which would empty the jti blocklist on
+  # restart. That difference has to be settled before the halves are merged.
   # No `ports:` key, so nothing outside this network can reach it — which
   # matters because write access is enough to un-revoke a logged-out token.
   redis:
@@ -88,11 +94,13 @@ services:
     environment:
       PORT: 8082
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
-    # TRANSITIONAL — D-010 says this must not be published. It still is because
-    # api-gateway/internal/proxy is an empty scaffold, so the frontend reaches
-    # supplier-service directly (VITE_SUPPLIER_BASE_URL). Delete these two
-    # lines in the same change that lands the proxy; until then the zones in
-    # the architecture diagram are not actually enforced for this service.
+    # TRANSITIONAL — D-010 says this must not be published. The gateway now
+    # proxies /api/suppliers correctly onto supplier-service's own /suppliers
+    # prefix, so nothing here needs the published port any more; what still
+    # does is the frontend, which reads VITE_SUPPLIER_BASE_URL and addresses
+    # :8082 directly. Delete these two lines in the same change that points
+    # the frontend at the gateway (D-025b); until then the zones in the
+    # architecture diagram are not actually enforced for this service.
     ports:
       - "8082:8082"
 
