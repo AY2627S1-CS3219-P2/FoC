@@ -111,6 +111,10 @@ func stubService(rec *recorder) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.path = r.URL.Path
 		rec.header = r.Header.Clone()
+		// supplier-service runs its own permissive cors.Handler, from when the
+		// browser reached it directly. The stub does the same so the proxy is
+		// tested against what a real callee actually sends back.
+		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
 	}))
@@ -470,5 +474,29 @@ func TestCORSDoesNotAdvertiseTheClaimHeaders(t *testing.T) {
 		if strings.Contains(allowed, banned) {
 			t.Errorf("Access-Control-Allow-Headers advertises %q; the gateway strips it (D-022)", banned)
 		}
+	}
+}
+
+// AI-generated (edited by <name>).
+func TestDownstreamCORSHeadersDoNotReachTheBrowser(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Origin", "http://localhost:3001")
+
+	got := h.do(req)
+	if got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", got.Code)
+	}
+	// EXACTLY one. Two is what a browser refuses: "the header contains
+	// multiple values '*, *', but only one is allowed" — and fetch() then
+	// rejects, which the UI reports as the service being unreachable. curl
+	// does not care, so only this test and a real browser catch it.
+	if n := len(got.Header().Values("Access-Control-Allow-Origin")); n != 1 {
+		t.Errorf("Access-Control-Allow-Origin appears %d times, want exactly 1 "+
+			"(the gateway's own; the callee's must be stripped)", n)
 	}
 }

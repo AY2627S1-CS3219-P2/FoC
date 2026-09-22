@@ -5,7 +5,8 @@
 //   passthrough flag became two independent choices, and NewRetainingToken
 //   was added for user-service, which verifies the bearer token itself.
 //   2026-09-22: comment only — NewRetainingToken's "NOT RECORDED" note
-//   replaced with a pointer to D-030, which now records it.
+//   replaced with a pointer to D-030, which now records it. Later that day:
+//   ModifyResponse added, to drop CORS headers a callee sets for itself.
 // Author review: PENDING — <reviewer to complete>
 
 // Package proxy forwards a verified request to one downstream service over
@@ -176,6 +177,28 @@ func build(route Route, how behaviour) (*Proxy, error) {
 					r.Out.Header.Set(ClaimHeaderRole, id.Role)
 				}
 			}
+		},
+		// Downstream services set their own CORS headers — supplier-service
+		// runs a permissive cors.Handler of its own, from when the browser
+		// reached it directly. ReverseProxy copies response headers through,
+		// so the browser would receive TWO Access-Control-Allow-Origin values
+		// and reject the response outright: "the header contains multiple
+		// values '*, *', but only one is allowed". fetch() then rejects, and
+		// the UI reports it as the service being unreachable.
+		//
+		// curl cannot catch this — it ignores CORS entirely. Only a browser
+		// sees it.
+		//
+		// The gateway is the public edge and owns the CORS policy alone
+		// (internal/httpapi's interimCORS), so whatever a callee said about
+		// origins is discarded here.
+		ModifyResponse: func(res *http.Response) error {
+			for name := range res.Header {
+				if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") {
+					res.Header.Del(name)
+				}
+			}
+			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// A downstream being unreachable is the gateway's problem to
