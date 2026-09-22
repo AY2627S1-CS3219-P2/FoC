@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Process wiring — config load, verifier, router, HTTP server,
 //   graceful shutdown.
-// Author review: Edited by nigeltzy
+// Author review: Edited by nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a main.go file for an API gateway, with proper error handling and graceful shutdown.
 //
 // 2026-09-19: rewritten from the scaffold's health-only server to wire the
 // real router (D-027). Re-read before relying on the sign-off above.

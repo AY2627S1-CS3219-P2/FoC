@@ -5,7 +5,7 @@ Scope: Transcription of the team's API-gateway architecture diagram and
   token-lifecycle write-up into the repository, so D-010..D-015 in
   ../decisions.md have something to point at. Wording only — no rationale,
   no design choice, and nothing added that the source artifacts did not say.
-Author review: PENDING — <reviewer to complete>
+Author review: Nigeltzy - The AI was used to format the documentation and update based our team's discussions, which is accurately transcripted.
 -->
 
 # D-010 — API Gateway and the token lifecycle

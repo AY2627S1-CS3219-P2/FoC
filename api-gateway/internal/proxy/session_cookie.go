@@ -3,7 +3,10 @@
 // Scope: Refresh-token cookie translation at the browser edge — moving the
 //   token between user-service's JSON bodies and an HttpOnly cookie, so it
 //   is never readable by page scripts.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - The AI was used to create the above, with human review and edits.
+//   This idea was based on my understanding of HttpOnly cookies and security
+//   considerations that I learned in my other CS mods. The AI helped generate the
+//   boiler code functions, and I reviewed to check if they made sense.
 
 package proxy
 

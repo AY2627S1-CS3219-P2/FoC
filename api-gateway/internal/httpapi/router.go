@@ -10,7 +10,9 @@
 //   cross-origin — the frontend proxies to here — so that policy was deleted
 //   again, and the auth routes gained one constructor each for the refresh
 //   token's cookie.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Directed and checked the ouput of the AI code, intention and
+//   changes are as seen above. I also checked externally to see if practices
+//   such as importing third-party packages were reasonable and safe.
 
 // Package httpapi holds the gateway's router and its transport-only handlers.
 //

@@ -6,7 +6,8 @@
        D-023 (RS256/JWKS), D-024 (no Redis), D-027 (route surface) and
        D-028 (code-first).
      2026-09-22: dependency list and the CORS entry under "Still open".
-     Author review: PENDING — <reviewer to complete> -->
+     Author review: Nigeltzy — Checked the output of this constantly, as this
+     is constantly being updated as needed alongside development -->
 
 The single public entry point (**D-010**). Every request from the UI arrives
 here; `user-service`, `supplier-service`, `order-service` and `credit-service`

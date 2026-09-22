@@ -2,7 +2,9 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Bearer-token middleware — verifies the access token and establishes
 //   the request identity the proxy injects.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - I checked the output of this generated code and asked for
+// some explanation as this was generated alongside the proxy package that I
+// had guided the AI to create.
 
 package httpapi
 

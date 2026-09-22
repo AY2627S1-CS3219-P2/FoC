@@ -2,7 +2,7 @@
 # Tool: Claude Code (model: Opus 5), date: 2026-09-22
 # Scope: Added the frontend build stage. The gateway serves the built SPA so
 #   the browser is same-origin with the API (ai/decisions.md D-033).
-# Author review: PENDING — <reviewer to complete>
+# Author review: Nigeltzy - Checked the output of dockerfile and it seems to be a reasonable implementation of a multi-stage build for the gateway and frontend. The frontend is built using Node.js and the gateway is built using Go, and the final image serves both the API and the static files from the frontend.
 
 # Build context is the repository root, matching the other services.
 

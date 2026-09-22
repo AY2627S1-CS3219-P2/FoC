@@ -6,7 +6,7 @@
 #   which landed PR #1's half of this file; comments brought up to date. Later
 #   that day: the frontend service was removed — the gateway serves the built
 #   SPA, so the browser has one origin (D-033).
-# Author review: PENDING — <reviewer to complete>
+# Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
 
 # The trust zones from ai/decisions.md D-010 are enforced here by ONE thing:
 # whether a service has a `ports:` key. A published port is reachable from the

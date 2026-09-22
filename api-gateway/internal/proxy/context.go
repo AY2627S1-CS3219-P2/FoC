@@ -1,7 +1,8 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Request-scoped carriage of the verified identity.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - I checked the output of this generated code
+// (file was generated alongside the proxy package)
 
 package proxy
 

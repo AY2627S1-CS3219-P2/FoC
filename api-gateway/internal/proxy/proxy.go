@@ -9,7 +9,10 @@
 //   ModifyResponse added, to drop CORS headers a callee sets for itself.
 //   Then: the refresh token moved into an HttpOnly cookie the gateway owns,
 //   translated to and from user-service's JSON bodies here.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - The AI was used to create the above, with human review and edits.
+//   The generated code follows the framework and intent of what was discussed with me
+//   and my teammate. Other than it, the AI was told to used default implementation
+//   patterns for reverse proxies, and to use the existing codebase as a reference.
 
 // Package proxy forwards a verified request to one downstream service over
 // synchronous REST, translating the token claims into HTTP headers (D-013).

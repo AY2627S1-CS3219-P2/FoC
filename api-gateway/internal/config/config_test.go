@@ -1,7 +1,8 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Unit tests for Load — the error path first, per root AGENTS.md §7.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - This file was generated alongside the config package, and I checked the output of the generated code and it seems to be a typical implementation of unit tests for the config package. The numbers and ports are chosen by the team and / or used as default values. For example, the
+//   TTL is a value that the team decided upon (and is typically the norm).
 
 package config_test
 

@@ -8,7 +8,7 @@ Scope: Redrew the team's PNG architecture diagram as Mermaid and brought it in
   2026-09-22: corrected two errors (refresh read Postgres not Redis; the
   lingering-token arrow goes to supplier-service not user-service), added §6
   on who answers "is this token still good?", refreshed §7's state table.
-Author review: PENDING — <reviewer to complete>
+Author review: Nigeltzy - The AI was use dto convert the team's original PNG diagram into mermaid for easier recording and updating on the repo.
 -->
 
 # FoC — Architecture

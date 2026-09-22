@@ -6,7 +6,7 @@
 //   2026-09-22: two added for /api/suppliers reaching supplier-service's
 //   /suppliers prefix. The two interim-CORS tests were removed with the
 //   policy when the frontend became same-origin.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Directed and generated as part of implementation of unit tests for the router package. I checked the output and it seems to be reasonable and typical unit tests for the router package.
 
 package httpapi_test
 

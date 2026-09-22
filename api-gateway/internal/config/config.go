@@ -6,7 +6,7 @@
 //   2026-09-22: RefreshTokenTTL added — the gateway now owns the refresh
 //   token's cookie and needs its Max-Age — and StaticDir, the built
 //   frontend it serves so the browser is same-origin.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the output of this implementation code and the AI is confirmed to have generated and filled in the config as 
 
 // Package config reads the gateway's environment once at startup and returns
 // an immutable Config. Nothing else in the service reads os.Getenv, and there

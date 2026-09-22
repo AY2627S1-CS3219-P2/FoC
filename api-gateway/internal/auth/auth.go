@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: RS256 access-token verification against user-service's JWKS, and the
 //   claim set the gateway forwards. Implements D-023.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - Checked the output of this generated code, this is part of the auth package that my team had discussed extensively about before, and the generated code seems to be a reasonable implementation of the requirements. I also checked the output of the generated code and it seems to be a typical implementation of an access-token verification package.
 
 // Package auth verifies access-token signatures and exposes the claims the
 // gateway forwards downstream.

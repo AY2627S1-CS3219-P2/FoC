@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-22
 // Scope: Serves the built frontend from the gateway, which is what makes the
 //   browser same-origin with the API in Compose and in production (D-033).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Checked the simple generated boilerplate code and it seems reasonable. I also checked the output of the generated code and it seems to be a typical implementation of a SPA handler.
 
 package httpapi
 

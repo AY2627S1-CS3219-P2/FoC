@@ -5,7 +5,9 @@ Scope: TRANSCRIPTION of Nigeltzy's decision, taken to the team. The fifteen
   numbered points are his, restated; the "what this changed in the code"
   section records what was built against them. No Rationale is offered here
   and none was written — the Why column in ../decisions.md is his to fill.
-Author review: PENDING — <reviewer to complete>
+Author review: Nigeltzy - The AI was used to help summarise and format my response so that the team can read my rationale. 
+I had decided on the architecture before telling the AI, the decision was made based on my prerequisite knowledge of CS
+prior to this, and some of my own research.
 -->
 
 # D-033 — Where the browser keeps the access and refresh tokens

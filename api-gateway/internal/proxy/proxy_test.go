@@ -1,7 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-19
 // Scope: Unit tests for path rewriting and the D-022 header strip-and-inject.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Nigeltzy - The AI was used to write implementation code of unit tests
+// based on the current implementation of the proxy package. I checked and they
+// seem to be typical unit tests for the proxy package.
 
 package proxy_test
 
