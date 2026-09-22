@@ -4,6 +4,8 @@
 //   refresh exchange recorded in ai/decisions.md D-015.
 //   2026-09-21: a refresh now replaces the whole pair, because
 //   user-service rotates the refresh token.
+//   2026-09-22: comment only — corrected a claim that the gateway's 401
+//   catches logout and suspension, which D-024 makes false.
 // Author review: PENDING — <reviewer to complete>
 
 import { send, type HttpResponse, type SendOptions } from "../../lib/http";
@@ -20,12 +22,20 @@ import type { TokenPair, TokenStore } from "../../lib/tokens";
  * "The UI detects an expired access token" is implemented as *the gateway said
  * 401*, not as the client reading `exp` itself. Reading `exp` client-side means
  * trusting an unverified token and racing clock skew; the gateway is the thing
- * that actually decides, and it also catches the revocation cases in D-014
- * (logout blocklist, suspension) where the token is unexpired but dead. The
- * cost is one extra round trip on expiry, which is the cheap direction to err.
+ * that actually decides. The cost is one extra round trip on expiry, which is
+ * the cheap direction to err.
  *
- * NOT RECORDED: that the gateway signals an expired/revoked token with 401 is
- * an interface detail nobody has written down (ai/decisions.md, Open table).
+ * CORRECTED 2026-09-22: this comment used to claim the gateway's 401 also
+ * catches D-014's revocation cases (logout, suspension). It does not. Under
+ * D-024 the gateway is not a Redis client and reads no blocklist, so an
+ * access token that has been logged out or suspended stays valid to it until
+ * `exp` — up to 15 minutes (D-025a). Revocation bites at REFRESH, where
+ * user-service checks PostgreSQL: a killed session cannot be renewed, but the
+ * access token already in this browser keeps working. So the retry below
+ * recovers from expiry, and from nothing else.
+ *
+ * NOT RECORDED: that the gateway signals an expired token with 401 is an
+ * interface detail nobody has written down (ai/decisions.md, Open table).
  * It is isolated to `isUnauthorized` below.
  */
 

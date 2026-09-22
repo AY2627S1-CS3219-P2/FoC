@@ -32,12 +32,14 @@ export const config = {
   /**
    * TRANSITIONAL — delete this when the gateway actually forwards.
    *
-   * D-010 says the browser must not address a service directly, and it will
-   * not once `api-gateway/internal/proxy` is implemented. Today that package
-   * is an empty scaffold, so supplier-service (the one real service we have)
-   * is still reached on its own port. Removing this line before the gateway
-   * can proxy would break the only working integration in the repo, which is
-   * why it is still here and why it is marked.
+   * D-010 says the browser must not address a service directly.
+   *
+   * CORRECTED 2026-09-22: this used to say `api-gateway/internal/proxy` was an
+   * empty scaffold. It is not — the gateway proxies `/api/suppliers/*` onto
+   * supplier-service's own `/suppliers` prefix and has done since PR #1 landed
+   * that router on main. What still keeps this line alive is only that nothing
+   * has repointed `suppliersApi.ts` at the gateway yet. Doing so, and deleting
+   * the published 8082 from `compose.yaml`, is what closes D-025b.
    */
   supplierBaseUrl:
     import.meta.env.VITE_SUPPLIER_BASE_URL ?? "http://localhost:8082",
