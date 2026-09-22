@@ -52,7 +52,15 @@ export DB_PW='postgres'
 export DB_URL='postgres://USER:PASSWORD@localhost:5432/user_service?sslmode=disable'
 ```
 
-3. Start the service
+3. Configure the initial admin account
+
+For the first startup, set `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, and
+`INITIAL_ADMIN_PASSWORD` in your `.env` file or terminal environment. These
+values are used to create the initial `ADMIN` account when the database has no
+admin account yet. Use a strong, unique password and keep these credentials out
+of version control and production logs.
+
+4. Start the service
 
 You can start the service using either of the following methods:
 

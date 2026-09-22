@@ -34,6 +34,10 @@ const (
 			last_login_date, account_role, account_status, tokens_valid_after
 		FROM users
 		WHERE username = $1 OR email = $1`
+	hasAdminQuery = `
+		SELECT EXISTS (
+			SELECT 1 FROM users WHERE account_role = 'ADMIN'
+		)`
 	updateUserQuery = `
 		UPDATE users
 		SET username = $1,
@@ -91,6 +95,15 @@ func (r *PostgresRepository) GetByID(ctx context.Context, uid uuid.UUID) (*user.
 // GetByIdentifier retrieves a user by username or email.
 func (r *PostgresRepository) GetByIdentifier(ctx context.Context, identifier string) (*user.User, error) {
 	return r.get(ctx, r.pool.QueryRow(ctx, getUserByIdentifierQuery, identifier), "get user by identifier")
+}
+
+// HasAdmin reports whether the users table already contains an administrator.
+func (r *PostgresRepository) HasAdmin(ctx context.Context) (bool, error) {
+	var exists bool
+	if err := r.pool.QueryRow(ctx, hasAdminQuery).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check for admin: %w", err)
+	}
+	return exists, nil
 }
 
 // Update updates mutable user fields without changing UID or email.

@@ -78,6 +78,9 @@ func run(ctx context.Context, cfg config.Config) error {
 
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
+	if err := bootstrapInitialAdmin(ctx, userRepository, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
+		return fmt.Errorf("bootstrap initial admin: %w", err)
+	}
 	accountService := user.NewAccountService(
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),

@@ -14,16 +14,22 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 	t.Setenv("JWT_KEYSET_PATH", "/run/secrets/keys.json")
 	t.Setenv("JWT_ACCESS_TOKEN_TTL", "15m")
 	t.Setenv("JWT_REFRESH_TOKEN_TTL", "7d")
+	t.Setenv("INITIAL_ADMIN_EMAIL", "admin@u.nus.edu")
+	t.Setenv("INITIAL_ADMIN_USERNAME", "initial-admin")
+	t.Setenv("INITIAL_ADMIN_PASSWORD", "StrongAdminPassword1")
 
 	got := Load()
 
 	want := Config{
-		Port:               "8081",
-		UserDBURL:          "postgres://user-db",
-		RedisURL:           "redis://redis:6379/0",
-		JWTKeySetPath:      "/run/secrets/keys.json",
-		JWTAccessTokenTTL:  "15m",
-		JWTRefreshTokenTTL: "7d",
+		Port:                 "8081",
+		UserDBURL:            "postgres://user-db",
+		RedisURL:             "redis://redis:6379/0",
+		JWTKeySetPath:        "/run/secrets/keys.json",
+		JWTAccessTokenTTL:    "15m",
+		JWTRefreshTokenTTL:   "7d",
+		InitialAdminEmail:    "admin@u.nus.edu",
+		InitialAdminUsername: "initial-admin",
+		InitialAdminPassword: "StrongAdminPassword1",
 	}
 	if got != want {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
@@ -38,6 +44,9 @@ func TestLoadUsesEmptyValuesWhenEnvironmentIsUnset(t *testing.T) {
 		"JWT_KEYSET_PATH",
 		"JWT_ACCESS_TOKEN_TTL",
 		"JWT_REFRESH_TOKEN_TTL",
+		"INITIAL_ADMIN_EMAIL",
+		"INITIAL_ADMIN_USERNAME",
+		"INITIAL_ADMIN_PASSWORD",
 	} {
 		t.Setenv(name, "")
 	}

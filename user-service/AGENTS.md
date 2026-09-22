@@ -260,15 +260,23 @@ The password policy as stated in the product backlog is:
 - at least one digit
 This policy should be checked during registration and updating profile of a user.
 
+### First Admin creation
+`INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` should be configured in `.env` 
+for user service to read. There should be a `bootstrap.go` file in `cmd/api/` alongside `main.go` to
+initialise the `users` table with a default admin. This bootstrap step shall be done after user repository
+initialisation and before the Chi router is configured. Ensure that the admin credentials will not be leaked
+into production.
+
 ### Entry point of service (`cmd/api/main.go`)
 The `main.go` file should construct its dependencies in the following order:
 1. Parse environment variables (using a library like kelseyhightower/envconfig).
 2. Initialize the PostgreSQL pgxpool and the go-redis client.
 3. Initialize the JWT Key Manager (parsing PEMs and generating kids).
 4. Instantiate the Repositories (UserRepository, SessionRepository).
-5. Instantiate the background Outbox worker goroutine. (to be done at the last stage of the project)
-6. Instantiate the Domain Service (injecting repos, redis client, and JWT manager).
-7. Instantiate the HTTP Handlers and mount them to the Chi router.
+5. Add default admin account if `users` table does not have at least 1 user with ADMIN role.
+6. Instantiate the background Outbox worker goroutine. (to be done at the last stage of the project)
+7. Instantiate the Domain Service (injecting repos, redis client, and JWT manager).
+8. Instantiate the HTTP Handlers and mount them to the Chi router.
 
 ### Project sequencing decision
 
