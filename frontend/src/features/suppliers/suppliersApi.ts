@@ -80,15 +80,8 @@ export function createSuppliersApi(authorizedSend: AuthorizedSend): SuppliersApi
     path: string,
     init: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown } = {},
   ): Promise<T> {
-    if (!config.gatewayBaseUrl) {
-      // Better than a relative fetch against the dev server, which fails as a
-      // confusing 404 from Vite rather than as a missing configuration.
-      throw new SupplierApiError(
-        "No gateway configured: set VITE_GATEWAY_BASE_URL.",
-        0,
-      );
-    }
-
+    // No guard on an empty base URL: under D-033 that is the normal value and
+    // means "same origin", so a relative path is exactly right.
     let response;
     try {
       response = await authorizedSend({

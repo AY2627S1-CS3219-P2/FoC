@@ -3,7 +3,9 @@
 // Scope: Central read of build-time configuration. Reworked for the API
 //   Gateway decision (ai/decisions.md D-010).
 //   2026-09-22: VITE_SUPPLIER_BASE_URL removed — the browser now reaches
-//   supplier-service through the gateway, which closes D-025b.
+//   supplier-service through the gateway, which closes D-025b. Later that
+//   day: D-033 makes the gateway same-origin, so an EMPTY base URL became the
+//   correct production value and could no longer mean "run the fixtures".
 // Author review: PENDING — <reviewer to complete>
 
 /**
@@ -24,12 +26,27 @@
  */
 export const config = {
   /**
-   * The gateway (D-010), on its provisional port 8080 (D-018).
+   * The gateway (D-010).
    *
-   * App.tsx reads an empty value as "no gateway, run the fixtures", so the
-   * default here is what switches the app onto the real auth flow. It stays
-   * empty until api-gateway can actually serve those routes — set
-   * VITE_GATEWAY_BASE_URL in .env to try it against a running gateway.
+   * EMPTY IS THE NORMAL VALUE and means "same origin": requests go to
+   * relative paths like /auth/login. D-033 serves the page and the API from
+   * one origin — the gateway serves the built SPA in Compose, and Vite's
+   * server.proxy does it in development — which is what lets the
+   * SameSite=Strict refresh cookie ride along at all.
+   *
+   * Set it only to aim a dev build at a gateway somewhere else. That makes
+   * requests cross-origin again, and the cookie will not be sent.
    */
   gatewayBaseUrl: import.meta.env.VITE_GATEWAY_BASE_URL ?? "",
+
+  /**
+   * Run the in-browser fixtures instead of a real gateway. OPT-IN.
+   *
+   * It has to be explicit. Until 2026-09-22 this was inferred from an empty
+   * gateway URL, and D-033 turned that into the correct production value — so
+   * the inference silently put the whole Compose stack on mock accounts, and
+   * the login page said so while nobody was reading it. A switch that decides
+   * whether the app talks to a real backend is not something to derive.
+   */
+  useFixtures: import.meta.env.VITE_USE_FIXTURES === "true",
 } as const;

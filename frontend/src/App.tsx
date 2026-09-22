@@ -34,12 +34,15 @@ import { SuppliersView } from "./features/suppliers/SuppliersView";
 import type { ViewName } from "./views";
 
 /**
- * D-010 routes everything through the gateway, so a configured gateway URL is
- * what says "there is a real user-service behind this". Until one is set, the
- * fixtures run. Chosen once, here, rather than by a flag threaded into the
- * auth functions (root AGENTS.md §5, control coupling).
+ * D-010 routes everything through the gateway and D-033 makes it same-origin,
+ * so the gateway's base URL is EMPTY in normal operation and cannot be what
+ * distinguishes a real backend from the fixtures. The gateway is the default;
+ * fixtures are opt-in with VITE_USE_FIXTURES=true.
+ *
+ * Chosen once, here, rather than by a flag threaded into the auth functions
+ * (root AGENTS.md §5, control coupling).
  */
-const usingGateway = config.gatewayBaseUrl !== "";
+const usingGateway = !config.useFixtures;
 
 const authClient = usingGateway
   ? {
