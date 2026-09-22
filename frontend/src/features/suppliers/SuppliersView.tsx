@@ -3,7 +3,8 @@
 // Scope: Ported the prototype's supplier list, search, filter and admin CRUD
 //   flow (loadSuppliers, renderGrid, renderCategoryOptions) to React.
 //   2026-09-22: takes the suppliers client as a prop instead of importing the
-//   module, now that it carries a per-session token.
+//   module, now that it carries a per-session token. The admin checkbox's
+//   label no longer claims to bypass access control — it cannot any more.
 // Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -167,7 +168,7 @@ export function SuppliersView({
       */}
       <label
         className="checkbox-row"
-        title="Development only — not real auth"
+        title="Shows the admin controls. Whether they work is decided by supplier-service, from the role in your access token."
         style={{ marginBottom: 18 }}
       >
         <input
@@ -176,7 +177,7 @@ export function SuppliersView({
           onChange={(e) => onAdminChange(e.target.checked)}
         />
         <span className="balance-label">
-          Admin mode (development only — not access control)
+          Show admin controls (an ADMIN account is still required to use them)
         </span>
       </label>
 
