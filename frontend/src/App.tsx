@@ -7,7 +7,8 @@
 //   user-service's LogoutRequest requires. 2026-09-22: builds the authorized
 //   transport and the suppliers client over it, now that suppliers go through
 //   the gateway (D-010, D-025b). Then: restores the session from the refresh
-//   cookie on mount, which is what makes a page reload survive (D-033).
+//   cookie on mount, which is what makes a page reload survive (D-033), and
+//   remembers which view the tab was on across that reload.
 // Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -23,6 +24,7 @@ import type {
 } from "./features/auth/types";
 import { config } from "./lib/config";
 import { createTokenStore } from "./lib/tokens";
+import { clearLastView, readLastView, writeLastView } from "./lib/lastView";
 import { createAuthorizedSend } from "./features/auth/session";
 import { createSuppliersApi } from "./features/suppliers/suppliersApi";
 import * as creditsApi from "./features/credits/creditsApi";
@@ -104,7 +106,10 @@ export function App() {
     return createSuppliersApi(authorizedSend);
   }, [tokens]);
 
-  const [view, setView] = useState<ViewName>("home");
+  // Restored from sessionStorage so a reload lands where the tab was, not on
+  // Home. Read once, at initial state: doing it in an effect would render Home
+  // first and then jump.
+  const [view, setView] = useState<ViewName>(() => readLastView() ?? "home");
   const [mode, setMode] = useState<ActingMode>("requesting");
   const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
@@ -142,6 +147,12 @@ export function App() {
       cancelled = true;
     };
   }, [tokens]);
+
+  // Remember the view for this tab. Only while signed in: a signed-out tab
+  // that remembered "profile" would just bounce off the login gate.
+  useEffect(() => {
+    if (session) writeLastView(view);
+  }, [session, view]);
 
   useEffect(() => {
     if (!session) return;
@@ -183,6 +194,7 @@ export function App() {
       await authClient.logOut(accessToken);
     }
     tokens.clear();
+    clearLastView();
     setSession(null);
     setView("home");
   }, [tokens]);
