@@ -13,6 +13,7 @@
 # host; everything else is reachable only by name, from inside this network.
 #
 #   published   api-gateway, as 3001 — it serves the browser app AND the API
+#   internal    everything else, with no `ports:` key at all
 #   internal    redis, supplier-db, and every service
 #
 # Services with no code yet (user-service, order-service, credit-service) are
@@ -106,17 +107,12 @@ services:
     environment:
       PORT: 8082
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
-    # TRANSITIONAL — D-010 says this must not be published. The gateway now
-    # proxies /api/suppliers correctly onto supplier-service's own /suppliers
-    # prefix, so nothing here needs the published port any more; what still
-    # does is the frontend, which reads VITE_SUPPLIER_BASE_URL and addresses
-    # :8082 directly. Delete these two lines in the same change that points
-    # the frontend at the gateway (D-025b); until then the zones in the
-    # architecture diagram are not actually enforced for this service.
-    ports:
-      - "8082:8082"
+    # No `ports:` key — D-025b is CLOSED. The gateway proxies /api/suppliers
+    # onto supplier-service's own /suppliers prefix, and the browser reaches
+    # it that way (frontend/src/features/suppliers/suppliersApi.ts), so
+    # nothing on the host needs this port any more. D-010's trust zones are
+    # now actually enforced for this service.
 
-  # ---- Browser client ------------------------------------------------------
   # ---- Browser client ------------------------------------------------------
   # There is no frontend service any more. api-gateway/Dockerfile builds the
   # SPA and the gateway serves it from "/", so the browser has ONE origin and
