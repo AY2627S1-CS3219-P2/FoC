@@ -4,6 +4,9 @@ Friend on Campus: a peer-to-peer campus errand platform. Microservices, one
 folder per service. This file is the single source of truth for both Claude
 Code and Codex. `CLAUDE.md` just imports it — **edit this file, never that one.**
 
+**Overall shape:** microservices behind one API Gateway; only the gateway is
+publicly reachable to clients.
+
 Service-specific rules live in `<service>/AGENTS.md` and override anything here.
 Each service folder carries the same `AGENTS.md` + `CLAUDE.md` pair; Claude loads
 a subfolder's pair on demand, so work on one service does not pull in the other
@@ -82,10 +85,13 @@ trade-off rationale and it is the team's to write.
 | HTTP router | `chi/v5` |
 | Database | PostgreSQL via `pgx/v5`; migrations via `golang-migrate` |
 | API contract | OpenAPI 3.1, spec-first (`<service>/api/openapi.yaml`) |
+| | Exception: `api-gateway` is written code-first, not spec-first |
+| Service-to-service | gRPC |
+| Message broker | Kafka |
 | Tests | stdlib `testing` + `testify`; `testcontainers-go` for integration |
 | Containers | Docker + Docker Compose |
 | CI | GitHub Actions — agreed, but no workflow is committed yet |
-| Frontend | React + Vite, TypeScript (see `frontend/AGENTS.md`) |
+| Frontend | React + Vite, TypeScript, `vitest` for tests |
 | Cloud | AWS (target and IaC tool not yet decided — do not scaffold either) |
 
 Do not add a dependency that isn't already in a `go.mod` without saying so
@@ -130,8 +136,8 @@ one.
 2. **No shared business-logic package.** Go's `internal/` already blocks
    cross-module imports; keep it that way. Duplicating a small struct in two
    services is correct here — deduplicating it couples them.
-3. **Talk over contracts, not internals.** Service-to-service calls go through
-   the generated OpenAPI client, never a hand-rolled URL string.
+3. **Talk over contracts, not internals.** Service-to-service calls go over
+   gRPC against the service's generated client, never a hand-rolled connection.
 4. **Config is injected, never global.** Read env vars once in
    `internal/config`, pass the resulting struct down. No package-level mutable
    state, no `init()` side effects, no singletons.
@@ -196,7 +202,11 @@ report the other two as running.
 ## 8. API contracts
 
 Spec-first. `<service>/api/openapi.yaml` is the contract; Go types and the
-server interface are generated from it into `internal/gen/`.
+server interface are generated from it into `internal/gen/`. This governs the
+public contract each service exposes; internal service-to-service calls are
+gRPC instead, per §4.
+
+Further reading: [Backend 101 — a guide to OpenAPI and API-first](https://medium.com/@briannqc/backend-101-a-guide-to-openapi-and-api-first-approach-c25297226905).
 
 - **Never hand-edit anything in `internal/gen/`.** Change the YAML, re-run
   `make generate`.
