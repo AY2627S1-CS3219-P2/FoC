@@ -6,7 +6,8 @@
 //   D-010..D-015). 2026-09-21: logout sends both tokens, which
 //   user-service's LogoutRequest requires. 2026-09-22: builds the authorized
 //   transport and the suppliers client over it, now that suppliers go through
-//   the gateway (D-010, D-025b).
+//   the gateway (D-010, D-025b). Then: restores the session from the refresh
+//   cookie on mount, which is what makes a page reload survive (D-033).
 // Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -69,6 +70,11 @@ const authClient = usingGateway
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
 
+  // True until the refresh cookie has been given its chance. Without this the
+  // login page renders for a frame and then vanishes, which reads as a bug
+  // even when the restore succeeds.
+  const [restoring, setRestoring] = useState(usingGateway);
+
   // Created once and never replaced. The tokens live in its closure, not in
   // component state, so a re-render cannot leak them into a React DevTools
   // tree and nothing outside lib/tokens.ts reads the values.
@@ -108,6 +114,34 @@ export function App() {
   // mock credit-service until that service exists.
   const [available, setAvailable] = useState<number | null>(null);
   const [held, setHeld] = useState<number | null>(null);
+
+  /**
+   * D-033: the access token lives only in this page's memory, so a reload
+   * starts with none — but the HttpOnly refresh cookie survives. Spend it
+   * once, here, to find out whether there is still a session.
+   *
+   * Runs once on mount. A visitor who is not signed in costs one 401, which
+   * is the price of not asking them to log in again after every refresh.
+   */
+  useEffect(() => {
+    if (!usingGateway) return;
+    let cancelled = false;
+
+    authApi
+      .restoreSessionViaGateway()
+      .then((restored) => {
+        if (cancelled || !restored) return;
+        tokens.setPair(restored.tokens);
+        setSession(restored.session);
+      })
+      .finally(() => {
+        if (!cancelled) setRestoring(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tokens]);
 
   useEffect(() => {
     if (!session) return;
@@ -152,6 +186,12 @@ export function App() {
     setSession(null);
     setView("home");
   }, [tokens]);
+
+  if (restoring) {
+    // Deliberately bare. A spinner that flashes for 200ms is worse than a
+    // blank frame, and this is one round trip.
+    return <div className="app-loading" aria-busy="true" />;
+  }
 
   if (!session) {
     return (

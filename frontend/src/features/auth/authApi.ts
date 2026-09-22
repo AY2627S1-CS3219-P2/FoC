@@ -371,6 +371,31 @@ async function post(path: string, body: unknown) {
 }
 
 /** D-027: credentials go to the gateway, which rewrites onto user-service. */
+/**
+ * Rebuilds the session after a page load, or returns null when there is none.
+ *
+ * This is the "no access token in memory" case of D-033, not a blanket
+ * refresh on every load: the closure is empty because the page is new, and the
+ * app cannot render anything until it knows who the user is. The refresh
+ * cookie is what answers that — the browser attaches it, the gateway turns it
+ * into the body user-service wants, and a fresh access token comes back.
+ *
+ * Returns null rather than throwing for the ordinary case of a visitor who is
+ * simply not signed in: no cookie, an expired one, or one already spent at
+ * logout. That is the login page, not an error.
+ */
+export async function restoreSessionViaGateway(): Promise<AuthResult | null> {
+  let tokens: TokenPair;
+  try {
+    tokens = await refreshAccessTokenViaGateway();
+  } catch {
+    return null;
+  }
+  // No typed identifier to fall back on here — the profile call is the only
+  // source for the username, and it has the access token it needs.
+  return sessionFromTokens(tokens, "");
+}
+
 export async function logInViaGateway(
   identifier: string,
   password: string,

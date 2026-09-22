@@ -1289,3 +1289,11 @@ button.service-card:hover {
   text-align: right;
   word-break: break-all;
 }
+
+/* AI-generated (edited by <name>). */
+/* Shown for the one round trip it takes to exchange the refresh cookie for an
+   access token on page load (ai/decisions.md D-033). Deliberately blank: the
+   login form flashing up and disappearing reads as a bug. */
+.app-loading {
+  min-height: 100vh;
+}
