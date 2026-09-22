@@ -7,6 +7,8 @@
 //   2026-09-22: comment only — NewRetainingToken's "NOT RECORDED" note
 //   replaced with a pointer to D-030, which now records it. Later that day:
 //   ModifyResponse added, to drop CORS headers a callee sets for itself.
+//   Then: the refresh token moved into an HttpOnly cookie the gateway owns,
+//   translated to and from user-service's JSON bodies here.
 // Author review: PENDING — <reviewer to complete>
 
 // Package proxy forwards a verified request to one downstream service over
@@ -70,6 +72,28 @@ type behaviour struct {
 	forwardToken bool
 	// injectClaims writes the verified identity into the claim headers.
 	injectClaims bool
+	// session is the refresh-token cookie translation, empty for every route
+	// that does not carry one.
+	session sessionBehaviour
+}
+
+// sessionBehaviour is what a route does about the refresh-token cookie.
+//
+// Set by the named constructors below, never passed in: a caller picks
+// NewSessionRotating, it does not hand over three booleans that select
+// branches in here (root AGENTS.md §5, control coupling).
+type sessionBehaviour struct {
+	// cookieFromBody moves refreshToken out of the RESPONSE body into a
+	// Set-Cookie. Login and refresh, where user-service issues one.
+	cookieFromBody bool
+	// bodyFromCookie puts refreshToken back into the REQUEST body from the
+	// cookie. Refresh and logout, whose contracts still require the field.
+	bodyFromCookie bool
+	// clearCookie expires the cookie on the response. Logout.
+	clearCookie bool
+	// ttl is the cookie's Max-Age, from config (must match user-service's
+	// JWT_REFRESH_TOKEN_TTL).
+	ttl time.Duration
 }
 
 // Route describes one public prefix and where it goes. Adding a service to
@@ -132,6 +156,50 @@ func NewPassthrough(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: true, injectClaims: false})
 }
 
+// NewSessionIssuing returns a Proxy for POST /auth/login.
+//
+// user-service answers with {accessToken, refreshToken}. The refresh token is
+// lifted out of that body into an HttpOnly cookie and never reaches the page,
+// so a script that compromises the tab gets the access token -- which expires
+// in minutes -- and not the durable credential.
+func NewSessionIssuing(route Route, ttl time.Duration) (*Proxy, error) {
+	return build(route, behaviour{
+		forwardToken: true,
+		session:      sessionBehaviour{cookieFromBody: true, ttl: ttl},
+	})
+}
+
+// NewSessionRotating returns a Proxy for POST /auth/refresh.
+//
+// Both directions. user-service's RefreshRequest requires refreshToken in the
+// body and the browser can no longer read it, so the gateway puts the cookie's
+// value back in on the way out; the rotated token in the reply is lifted into
+// a new cookie on the way back. user-service rotates on every exchange and
+// treats a replay as a compromised session, so the cookie MUST be replaced
+// here -- leaving the old one is a self-inflicted session revocation.
+func NewSessionRotating(route Route, ttl time.Duration) (*Proxy, error) {
+	return build(route, behaviour{
+		forwardToken: true,
+		session:      sessionBehaviour{bodyFromCookie: true, cookieFromBody: true, ttl: ttl},
+	})
+}
+
+// NewSessionEnding returns a Proxy for POST /auth/logout.
+//
+// Injects the cookie's token into the body, because LogoutRequest requires it
+// and the browser cannot supply it, then expires the cookie. The bearer token
+// is forwarded too: user-service blocklists that access token's jti.
+//
+// This route is why the cookie's Path is /auth and not /auth/refresh -- the
+// browser would not send it here otherwise, and logout would silently stop
+// revoking anything.
+func NewSessionEnding(route Route) (*Proxy, error) {
+	return build(route, behaviour{
+		forwardToken: true,
+		session:      sessionBehaviour{bodyFromCookie: true, clearCookie: true},
+	})
+}
+
 func build(route Route, how behaviour) (*Proxy, error) {
 	target, err := url.Parse(route.BaseURL)
 	if err != nil {
@@ -168,6 +236,24 @@ func build(route Route, how behaviour) (*Proxy, error) {
 				r.Out.Header.Del("Authorization")
 			}
 
+			// The refresh token travels as a cookie now, so put it back in
+			// the body user-service's contract still asks for. Failure is
+			// deliberately silent: no cookie means no session, and
+			// user-service answers 401 on the missing field, which is the
+			// right answer and its to give.
+			if p.behaviour.session.bodyFromCookie {
+				if c, err := r.In.Cookie(refreshCookieName); err == nil && c.Value != "" {
+					if raw, err := readAndClose(r.Out.Body); err == nil {
+						if merged, err := putRefreshToken(raw, c.Value); err == nil {
+							r.Out.Body, r.Out.ContentLength = setJSONBody(r.Out.Header, merged)
+						} else {
+							log.Printf("api-gateway: refresh cookie into body: %v", err)
+							r.Out.Body, r.Out.ContentLength = setJSONBody(r.Out.Header, raw)
+						}
+					}
+				}
+			}
+
 			// INJECT. Only values derived from a verified token reach here.
 			// Skipped on the public auth routes, where nothing has been
 			// verified yet and there is no identity to assert.
@@ -197,6 +283,32 @@ func build(route Route, how behaviour) (*Proxy, error) {
 				if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") {
 					res.Header.Del(name)
 				}
+			}
+
+			// Only on success. An error reply carries no token to lift, and
+			// clearing the cookie on a failed logout would sign the user out
+			// of a session the server still considers live.
+			if res.StatusCode < 200 || res.StatusCode > 299 {
+				return nil
+			}
+
+			if p.behaviour.session.cookieFromBody {
+				raw, err := readAndClose(res.Body)
+				if err != nil {
+					return fmt.Errorf("proxy: reading auth response: %w", err)
+				}
+				token, rest, err := takeRefreshToken(raw)
+				if err != nil {
+					return err
+				}
+				if token != "" {
+					res.Header.Add("Set-Cookie", newRefreshCookie(token, p.behaviour.session.ttl).String())
+				}
+				res.Body, res.ContentLength = setJSONBody(res.Header, rest)
+			}
+
+			if p.behaviour.session.clearCookie {
+				res.Header.Add("Set-Cookie", expiredRefreshCookie().String())
 			}
 			return nil
 		},

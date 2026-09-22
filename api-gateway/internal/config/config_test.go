@@ -8,6 +8,7 @@ package config_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"foc/api-gateway/internal/config"
 )
@@ -23,6 +24,9 @@ func all() map[string]string {
 		"SUPPLIER_BASE_URL": "http://supplier-service:8082",
 		"ORDER_BASE_URL":    "http://order-service:8083",
 		"CREDIT_BASE_URL":   "http://credit-service:8084",
+		// Must match user-service's JWT_REFRESH_TOKEN_TTL: the gateway owns
+		// the refresh cookie's Max-Age but not the token's lifetime.
+		"REFRESH_TOKEN_TTL": "168h",
 	}
 }
 
@@ -34,6 +38,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 	for _, name := range []string{
 		"PORT", "JWKS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
+		"REFRESH_TOKEN_TTL",
 	} {
 		t.Setenv(name, vars[name])
 	}
@@ -117,5 +122,30 @@ func TestMissingVariablesAreListedInSortedOrder(t *testing.T) {
 	want := "CREDIT_BASE_URL, JWKS_URL, PORT"
 	if !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to contain %q", err, want)
+	}
+}
+
+// AI-generated (edited by <name>).
+func TestRefreshTokenTTLIsParsed(t *testing.T) {
+	setEnv(t, all())
+
+	cfg, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := 168 * time.Hour; cfg.RefreshTokenTTL != want {
+		t.Errorf("RefreshTokenTTL = %v, want %v", cfg.RefreshTokenTTL, want)
+	}
+}
+
+func TestRefreshTokenTTLRejectsNonDurations(t *testing.T) {
+	vars := all()
+	// A bare number is the plausible mistake: Go needs a unit, and a silent
+	// zero here would expire the cookie the moment it was set.
+	vars["REFRESH_TOKEN_TTL"] = "604800"
+	setEnv(t, vars)
+
+	if _, err := config.Load(); err == nil {
+		t.Fatal("Load: expected an error for a unitless duration, got nil")
 	}
 }

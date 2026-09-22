@@ -6,7 +6,10 @@
 //   2026-09-22: /api/suppliers likewise targets supplier-service's real
 //   /suppliers prefix, now that PR #1 has put that router on main, and the
 //   interim permissive CORS policy was added so the browser can reach the
-//   gateway cross-origin at all.
+//   gateway cross-origin at all. Later that day the browser stopped being
+//   cross-origin — the frontend proxies to here — so that policy was deleted
+//   again, and the auth routes gained one constructor each for the refresh
+//   token's cookie.
 // Author review: PENDING — <reviewer to complete>
 
 // Package httpapi holds the gateway's router and its transport-only handlers.
@@ -20,10 +23,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
 
 	"foc/api-gateway/internal/auth"
 	"foc/api-gateway/internal/config"
@@ -40,52 +43,45 @@ const userServiceAPIPrefix = "/api/v1/users"
 // user-service: the public /api/suppliers/* path is rewritten onto it.
 const supplierServiceAPIPrefix = "/suppliers"
 
-// interimCORS mirrors the permissive policy supplier-service already runs, and
-// carries the same warning.
-//
-// INTERIM. `AllowedOrigins: ["*"]` means any site a user visits can call this
-// gateway from their browser. That is wrong for a public edge and is here only
-// so the frontend works at all: it is served from a separate origin
-// (nginx :3001) and calls the gateway on :8080, so every authenticated request
-// is cross-origin and preflighted. Without this the preflight OPTIONS is
-// answered by RequireToken with a bare 401 and the browser blocks the real
-// request. Replace `*` with an origin allowlist — read from config like
-// everything else (root AGENTS.md §4.4) — before this is deployed anywhere.
-//
-// Two deliberate differences from supplier-service's copy, both forced:
-//
-//   - Authorization is allowed. The browser sends the access token on every
-//     proxied route, and a header the preflight does not permit is not sent.
-//   - PATCH is allowed. user-service's /api/v1/users/{uid}/status is a PATCH,
-//     and supplier-service's list predates it.
-//
-// X-User-Role is deliberately NOT allowed, though supplier-service allows it.
-// The gateway deletes that header on every route (D-022); advertising it as
-// acceptable to send would suggest a client may assert its own role.
-//
-// Not a recorded decision — see `../../../ai/decisions.md`, which has no row on
-// browser origins. Marked so the gap is visible rather than silent.
-var interimCORS = cors.Options{
-	AllowedOrigins: []string{"*"},
-	AllowedMethods: []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-	AllowedHeaders: []string{"Content-Type", "Authorization"},
-}
-
-// authRoutes are the four public routes the gateway terminates. They take
+// authRoute is one of the four public routes the gateway terminates. They take
 // credentials rather than a verified identity, so they are NOT behind
 // RequireToken — user-service authenticates them itself.
-var authRoutes = []string{"register", "login", "refresh", "logout"}
+//
+// Each names its own credential handling rather than sharing one constructor,
+// because the refresh token's cookie makes them genuinely different: register
+// carries no token at all, login receives one, refresh both spends and
+// receives one, and logout spends one and ends it.
+type authRoute struct {
+	name     string
+	newProxy func(proxy.Route, time.Duration) (*proxy.Proxy, error)
+}
+
+func authRoutes() []authRoute {
+	return []authRoute{
+		// 201, no body, no tokens — nothing to translate.
+		{"register", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
+			return proxy.NewPassthrough(r)
+		}},
+		// Where the refresh token is FIRST issued. Its AuthResponse carries
+		// one, so the cookie is set here as well as on refresh — the point
+		// that was missing when this change was specified.
+		{"login", proxy.NewSessionIssuing},
+		{"refresh", proxy.NewSessionRotating},
+		{"logout", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
+			return proxy.NewSessionEnding(r)
+		}},
+	}
+}
 
 // NewRouter builds the gateway's handler.
 //
 // It returns a ready-to-serve handler or an error; there is nothing to start
 // afterwards (root AGENTS.md §5).
-func NewRouter(downstream config.Downstream, verifier *auth.Verifier) (http.Handler, error) {
+func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
-	r.Use(cors.Handler(interimCORS))
 
 	// The gateway's own liveness check. Not proxied anywhere.
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -95,13 +91,13 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier) (http.Hand
 	})
 
 	// ---- Public auth routes, rewritten onto user-service ----------------
-	for _, name := range authRoutes {
-		public := "/auth/" + name
-		p, err := proxy.NewPassthrough(proxy.Route{
+	for _, route := range authRoutes() {
+		public := "/auth/" + route.name
+		p, err := route.newProxy(proxy.Route{
 			BaseURL:     downstream.User,
 			StripPrefix: "/auth",
 			AddPrefix:   userServiceAPIPrefix,
-		})
+		}, refreshTokenTTL)
 		if err != nil {
 			return nil, fmt.Errorf("httpapi: auth route %s: %w", public, err)
 		}

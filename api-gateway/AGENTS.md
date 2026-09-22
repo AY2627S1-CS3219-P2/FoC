@@ -37,6 +37,10 @@ exercised against a real `user-service`, because there isn't one.
   (**D-023**). Do not introduce a private key or a shared secret here.
 - It is **not** a Redis client (**D-024**). It does not check revocation. A
   token is good until its `exp`; what that costs is recorded as **D-025**.
+- It **owns the refresh token's cookie**. `internal/proxy/session_cookie.go`
+  moves the token between user-service's JSON bodies and an `HttpOnly` cookie,
+  so a page script can never read it. user-service's contract is unchanged —
+  it still requires `refreshToken` in the body and the gateway supplies it.
 - No shared auth package with the services (root §4.2). If the gateway and a
   service both parse a claim, the duplication is correct.
 
@@ -116,27 +120,19 @@ order). The auth routes keep working throughout, since they carry no token.
 
 ## Dependencies
 
-Three, all deliberate (root §2):
+Two, both deliberate (root §2):
 
 - `github.com/go-chi/chi/v5` - the recorded router (**D-002**).
 - `github.com/golang-jwt/jwt/v5` - RS256 verification. Hand-rolling JWT
   signature checking is the kind of thing that goes quietly wrong, so the
   stdlib alone is not the right call here.
-- `github.com/go-chi/cors` - the same version `supplier-service` already
-  pins (v1.2.2), for the interim permissive policy in `internal/httpapi`.
-  Preflight handling is the other thing that goes quietly wrong by hand.
 
-JWKS parsing stays stdlib (`crypto/rsa`, `encoding/base64`, `math/big`) rather
-than a fourth dependency.
+`go-chi/cors` was added on 2026-09-22 and removed the same day: the browser is
+same-origin with the gateway now, so there is no CORS policy to run. JWKS
+parsing and the refresh cookie are both stdlib.
 
 ## Still open
 
-- **CORS is `AllowedOrigins: ["*"]`, marked INTERIM in `internal/httpapi`.**
-  The frontend is served from a separate origin and every authenticated call
-  is preflighted, so the gateway needs *a* policy to work at all; `*` is the
-  one supplier-service already runs, not a considered choice. No row in
-  `ai/decisions.md` covers browser origins. Replace with an allowlist read
-  from `internal/config` before any deployment.
 - **`api/openapi.yaml` is empty.** D-028 records the deliberate deviation from
   D-005's spec-first rule, to be **backfilled** before the gateway is treated
   as a stable contract. It is not an exemption for anyone else.

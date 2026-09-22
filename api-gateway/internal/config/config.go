@@ -3,6 +3,8 @@
 // Scope: Config plumbing for the gateway — reads env once, returns a struct.
 //   Reworked for D-023 (RS256/JWKS replaces the symmetric secret) and D-024
 //   (the gateway is not a Redis client, so RedisURL is gone).
+//   2026-09-22: RefreshTokenTTL added — the gateway now owns the refresh
+//   token's cookie and needs its Max-Age.
 // Author review: PENDING — <reviewer to complete>
 
 // Package config reads the gateway's environment once at startup and returns
@@ -15,6 +17,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Config is the gateway's complete runtime configuration. Load returns a
@@ -32,6 +35,15 @@ type Config struct {
 	// The gateway holds no private key and cannot mint a token, which is what
 	// keeps user-service the sole issuer (D-012).
 	JWKSURL string
+
+	// RefreshTokenTTL is how long the refresh-token cookie lives, and must
+	// match user-service's JWT_REFRESH_TOKEN_TTL. The gateway sets that
+	// cookie, so it needs the lifetime; it does not issue the token itself
+	// and cannot derive it from one, because the RT is opaque here.
+	//
+	// A mismatch is one-directional and not symmetric: too short logs the
+	// user out early, too long leaves a cookie that fails at the exchange.
+	RefreshTokenTTL time.Duration
 
 	// Downstream holds one base URL per callee, per root AGENTS.md §3.
 	Downstream Downstream
@@ -55,9 +67,16 @@ type Downstream struct {
 // gateway's port is provisional (D-018), and an invented default would
 // silently manufacture a decision nobody made.
 func Load() (Config, error) {
+	rawTTL := os.Getenv("REFRESH_TOKEN_TTL")
+	ttl, err := time.ParseDuration(rawTTL)
+	if rawTTL != "" && err != nil {
+		return Config{}, fmt.Errorf("config: REFRESH_TOKEN_TTL %q is not a duration: %w", rawTTL, err)
+	}
+
 	cfg := Config{
-		Port:    os.Getenv("PORT"),
-		JWKSURL: os.Getenv("JWKS_URL"),
+		Port:            os.Getenv("PORT"),
+		JWKSURL:         os.Getenv("JWKS_URL"),
+		RefreshTokenTTL: ttl,
 		Downstream: Downstream{
 			User:     os.Getenv("USER_BASE_URL"),
 			Supplier: os.Getenv("SUPPLIER_BASE_URL"),
@@ -73,6 +92,7 @@ func Load() (Config, error) {
 		"SUPPLIER_BASE_URL": cfg.Downstream.Supplier,
 		"ORDER_BASE_URL":    cfg.Downstream.Order,
 		"CREDIT_BASE_URL":   cfg.Downstream.Credit,
+		"REFRESH_TOKEN_TTL": rawTTL,
 	}
 
 	var missing []string
