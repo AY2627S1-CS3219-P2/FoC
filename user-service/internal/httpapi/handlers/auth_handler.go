@@ -72,7 +72,9 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	}
 	request.Email = normalizeEmail(request.Email)
 	if _, err := h.deps.Registrar.Register(r.Context(), request.Email, request.Username, request.Password); err != nil {
-		if errors.Is(err, user.ErrInvalidPassword) {
+		if errors.Is(err, user.ErrInvalidUsername) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
+		} else if errors.Is(err, user.ErrInvalidPassword) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})

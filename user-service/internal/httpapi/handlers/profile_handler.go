@@ -141,7 +141,9 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	account, err := h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, "", request.Password)
 	if err != nil {
-		if errors.Is(err, user.ErrInvalidPassword) {
+		if errors.Is(err, user.ErrInvalidUsername) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
+		} else if errors.Is(err, user.ErrInvalidPassword) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "username already taken"})

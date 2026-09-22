@@ -56,6 +56,12 @@ func TestRegisterHandler(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 			wantError:  "password must be 8-128 characters",
 		},
+		"rejects invalid username": {
+			body:       `{"email":"student@u.nus.edu","username":"student_user","password":"ValidPass1"}`,
+			registrar:  &fakeRegistrar{err: user.ErrInvalidUsername},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "username must be at most 128 characters",
+		},
 		// AI-generated (edited by ZI YANG).
 		"rejects non-NUS email": {
 			body:       `{"email":"student@example.com","username":"student","password":"ValidPass1"}`,

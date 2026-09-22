@@ -34,6 +34,9 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
+	if err := ValidateUsername(username); err != nil {
+		return nil, fmt.Errorf("validate registration username: %w", err)
+	}
 	if err := ValidatePassword(password); err != nil {
 		return nil, fmt.Errorf("validate registration password: %w", err)
 	}
@@ -59,6 +62,11 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, username, phone, password string) (*User, error) {
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
+	}
+	if username != "" {
+		if err := ValidateUsername(username); err != nil {
+			return nil, fmt.Errorf("validate profile username: %w", err)
+		}
 	}
 	account, err := s.repository.GetByID(ctx, uid)
 	if err != nil {

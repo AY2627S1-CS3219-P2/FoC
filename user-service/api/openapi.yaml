@@ -23,9 +23,11 @@ components:
         email:
           type: string
           format: email
+        # AI-generated (edited by PENDING): recorded username policy constraints.
         username:
           type: string
           maxLength: 128
+          description: Must contain only alphanumeric characters.
         # AI-generated (edited by ZI YANG): recorded password policy constraints.
         password:
           type: string
@@ -113,6 +115,7 @@ components:
         username:
           type: string
           maxLength: 128
+          description: Must contain only alphanumeric characters.
         password:
           type: string
           format: password

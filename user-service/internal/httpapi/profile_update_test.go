@@ -70,3 +70,22 @@ func TestUpdateProfileHandlerRejectsInvalidPassword(t *testing.T) {
 		t.Fatalf("body = %q, want password validation error", w.Body.String())
 	}
 }
+
+func TestUpdateProfileHandlerRejectsInvalidUsername(t *testing.T) {
+	id := uuid.New()
+	r := newTestRouter(routes.Dependencies{
+		TokenVerifier: &fakeTokenVerifier{principal: handlers.Principal{UserID: id, Role: user.AccountRoleStudent}},
+		Profile:       handlers.ProfileDependencies{ProfileUpdater: &fakeProfileUpdater{err: user.ErrInvalidUsername}},
+	})
+	q := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+id.String(), strings.NewReader(`{"username":"student_user"}`))
+	q.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, q)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "username must be at most 128 characters") {
+		t.Fatalf("body = %q, want username validation error", w.Body.String())
+	}
+}
