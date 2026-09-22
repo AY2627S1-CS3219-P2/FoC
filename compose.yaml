@@ -1,8 +1,3 @@
-# AI Assistance Disclosure:
-# Tool: Codex (GPT-5), date: 2026-09-18
-# Scope: Added local PostgreSQL 16 and user-service API containers.
-# Author review: COMPLETED BY ZI YANG
-
 services:
   user-db:
     image: postgres:16-alpine
@@ -17,7 +12,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
+      
   redis:
     image: redis:8-alpine
     healthcheck:
@@ -48,6 +43,39 @@ services:
     ports:
       - "8081:8081"
     restart: on-failure
+    
+  supplier-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: supplier
+    volumes:
+      - supplier-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+
+  supplier-service:
+    build:
+      context: .
+      dockerfile: supplier-service/Dockerfile
+    depends_on:
+      supplier-db:
+        condition: service_healthy
+    environment:
+      PORT: 8082
+      SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
+    ports:
+      - "8082:8082"
+
+  frontend:
+    build:
+      context: ./frontend
+    depends_on:
+      - supplier-service
+    ports:
+      - "3001:80"
 
 volumes:
   user-db-data:
+  supplier-db-data:
