@@ -5,6 +5,7 @@
      Scope: Rewritten when the gateway went from scaffold to working, for
        D-023 (RS256/JWKS), D-024 (no Redis), D-027 (route surface) and
        D-028 (code-first).
+     2026-09-22: dependency list and the CORS entry under "Still open".
      Author review: PENDING — <reviewer to complete> -->
 
 The single public entry point (**D-010**). Every request from the UI arrives
@@ -115,18 +116,27 @@ order). The auth routes keep working throughout, since they carry no token.
 
 ## Dependencies
 
-Two, both deliberate (root §2):
+Three, all deliberate (root §2):
 
 - `github.com/go-chi/chi/v5` - the recorded router (**D-002**).
 - `github.com/golang-jwt/jwt/v5` - RS256 verification. Hand-rolling JWT
   signature checking is the kind of thing that goes quietly wrong, so the
   stdlib alone is not the right call here.
+- `github.com/go-chi/cors` - the same version `supplier-service` already
+  pins (v1.2.2), for the interim permissive policy in `internal/httpapi`.
+  Preflight handling is the other thing that goes quietly wrong by hand.
 
-JWKS parsing is stdlib (`crypto/rsa`, `encoding/base64`, `math/big`) rather
-than a third dependency.
+JWKS parsing stays stdlib (`crypto/rsa`, `encoding/base64`, `math/big`) rather
+than a fourth dependency.
 
 ## Still open
 
+- **CORS is `AllowedOrigins: ["*"]`, marked INTERIM in `internal/httpapi`.**
+  The frontend is served from a separate origin and every authenticated call
+  is preflighted, so the gateway needs *a* policy to work at all; `*` is the
+  one supplier-service already runs, not a considered choice. No row in
+  `ai/decisions.md` covers browser origins. Replace with an allowlist read
+  from `internal/config` before any deployment.
 - **`api/openapi.yaml` is empty.** D-028 records the deliberate deviation from
   D-005's spec-first rule, to be **backfilled** before the gateway is treated
   as a stable contract. It is not an exemption for anyone else.

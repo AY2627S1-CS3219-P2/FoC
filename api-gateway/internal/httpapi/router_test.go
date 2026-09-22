@@ -4,7 +4,7 @@
 //   JWKS endpoint, through the middleware and proxy to stub downstreams.
 //   2026-09-21: three tests added for the reworked /api/users route.
 //   2026-09-22: two added for /api/suppliers reaching supplier-service's
-//   /suppliers prefix.
+//   /suppliers prefix, and two for the interim CORS policy.
 // Author review: PENDING — <reviewer to complete>
 
 package httpapi_test
@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -417,5 +418,57 @@ func TestSupplierCollectionRouteKeepsThePrefix(t *testing.T) {
 	// trailing-slash case.
 	if want := "/suppliers"; h.suppRec.path != want {
 		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, want)
+	}
+}
+
+// AI-generated (edited by <name>).
+// The two tests below cover the interim permissive CORS policy. The first is
+// the one that matters: a preflight carries no Authorization header, so it
+// must be answered BEFORE RequireToken sees it, or the browser never sends the
+// real request and the whole frontend is dead against the gateway.
+
+func TestPreflightOnAuthenticatedRouteIsNotRejected(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/suppliers/42", nil)
+	req.Header.Set("Origin", "http://localhost:3001")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "Authorization")
+
+	got := h.do(req)
+	if got.Code == http.StatusUnauthorized {
+		t.Fatalf("preflight got 401 — RequireToken ran before the CORS handler, "+
+			"so the browser will never send the real request (body %s)", got.Body.String())
+	}
+	if origin := got.Header().Get("Access-Control-Allow-Origin"); origin == "" {
+		t.Error("no Access-Control-Allow-Origin on the preflight response")
+	}
+	// A header the preflight does not permit is not sent by the browser, and
+	// every proxied route needs the bearer token.
+	allowed := got.Header().Get("Access-Control-Allow-Headers")
+	if !strings.Contains(strings.ToLower(allowed), "authorization") {
+		t.Errorf("Access-Control-Allow-Headers = %q, want it to include Authorization", allowed)
+	}
+}
+
+func TestCORSDoesNotAdvertiseTheClaimHeaders(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/suppliers/42", nil)
+	req.Header.Set("Origin", "http://localhost:3001")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+
+	allowed := strings.ToLower(h.do(req).Header().Get("Access-Control-Allow-Headers"))
+	// D-022: the gateway deletes these on every route. Telling a browser it
+	// may send one would suggest a client can assert its own identity.
+	for _, banned := range []string{
+		strings.ToLower(proxy.ClaimHeaderUserID),
+		strings.ToLower(proxy.ClaimHeaderRole),
+	} {
+		if strings.Contains(allowed, banned) {
+			t.Errorf("Access-Control-Allow-Headers advertises %q; the gateway strips it (D-022)", banned)
+		}
 	}
 }
