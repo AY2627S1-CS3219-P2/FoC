@@ -3,6 +3,8 @@
 // Scope: The gateway's route table and router construction. Implements the
 //   public surface recorded as D-027. 2026-09-21: /api/users now targets
 //   user-service's real /api/v1/users prefix and keeps the bearer token.
+//   2026-09-22: /api/suppliers likewise targets supplier-service's real
+//   /suppliers prefix, now that PR #1 has put that router on main.
 // Author review: PENDING — <reviewer to complete>
 
 // Package httpapi holds the gateway's router and its transport-only handlers.
@@ -29,6 +31,11 @@ import (
 // gateway's public /auth/* paths are rewritten onto it, so the browser never
 // sees the internal layout (D-027).
 const userServiceAPIPrefix = "/api/v1/users"
+
+// supplierServiceAPIPrefix is where supplier-service mounts its routes
+// (`r.Route("/suppliers", ...)` in its own router). Same arrangement as
+// user-service: the public /api/suppliers/* path is rewritten onto it.
+const supplierServiceAPIPrefix = "/suppliers"
 
 // authRoutes are the four public routes the gateway terminates. They take
 // credentials rather than a verified identity, so they are NOT behind
@@ -87,12 +94,12 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier) (http.Hand
 		// user-service serves /api/v1/users/{uid} and authenticates on the
 		// bearer token itself, so this row differs from the others twice over.
 		{"/api/users", downstream.User, userServiceAPIPrefix, proxy.NewRetainingToken},
-		// NOTE: supplier-service mounts at /suppliers/{id}, not at the root,
-		// so this row is wrong in the same way /api/users was — GET
-		// /api/suppliers/42 reaches it as /42 and 404s. Left alone on purpose:
-		// that is its owner's contract to confirm, not one to infer from here
-		// (root AGENTS.md §3). Flagged for Goh Chee Yang.
-		{"/api/suppliers", downstream.Supplier, "", proxy.New},
+		// supplier-service mounts at /suppliers, with /{id} beneath it —
+		// read off its internal/httpapi/router.go, which is on main since
+		// PR #1 (f779ced), so this is its owner's committed contract and not
+		// an inference. Without the prefix, GET /api/suppliers/42 arrived as
+		// /42 and 404'd.
+		{"/api/suppliers", downstream.Supplier, supplierServiceAPIPrefix, proxy.New},
 		{"/api/orders", downstream.Order, "", proxy.New},
 		{"/api/credits", downstream.Credit, "", proxy.New},
 	}

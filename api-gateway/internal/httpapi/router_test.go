@@ -3,6 +3,8 @@
 // Scope: End-to-end tests for the router — real RS256 tokens against a real
 //   JWKS endpoint, through the middleware and proxy to stub downstreams.
 //   2026-09-21: three tests added for the reworked /api/users route.
+//   2026-09-22: two added for /api/suppliers reaching supplier-service's
+//   /suppliers prefix.
 // Author review: PENDING — <reviewer to complete>
 
 package httpapi_test
@@ -195,8 +197,11 @@ func TestServiceRouteForwardsVerifiedIdentity(t *testing.T) {
 	if got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
 	}
-	if h.suppRec.path != "/42" {
-		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, "/42")
+	// Was "/42" until 2026-09-22, when the route gained supplier-service's
+	// own /suppliers prefix. This test is about the claim headers below;
+	// the path itself is covered by TestSupplierRouteReachesSupplierServicePrefix.
+	if h.suppRec.path != "/suppliers/42" {
+		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, "/suppliers/42")
 	}
 	if uid := h.suppRec.header.Get(proxy.ClaimHeaderUserID); uid != "uid-123" {
 		t.Errorf("user id header = %q, want %q", uid, "uid-123")
@@ -371,5 +376,46 @@ func TestOtherServicesNeverReceiveTheBearerToken(t *testing.T) {
 	// callee reads the claim headers and has no use for a credential.
 	if authz := h.suppRec.header.Get("Authorization"); authz != "" {
 		t.Errorf("supplier-service received Authorization = %q, want it stripped", authz)
+	}
+}
+
+// AI-generated (edited by <name>).
+// The two tests below cover /api/suppliers after it was pointed at
+// supplier-service's real /suppliers prefix (PR #1, f779ced).
+
+func TestSupplierRouteReachesSupplierServicePrefix(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if got := h.do(req); got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+	}
+	// Not "/42": supplier-service mounts its routes under /suppliers, so the
+	// bare id 404'd there before this prefix was added.
+	if want := "/suppliers/42"; h.suppRec.path != want {
+		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, want)
+	}
+}
+
+func TestSupplierCollectionRouteKeepsThePrefix(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/suppliers", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if got := h.do(req); got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+	}
+	// The bare prefix must not become "/suppliers/" — chi's r.Route mounts
+	// the list handler at "/suppliers" itself. This is Route.RewritePath's
+	// trailing-slash case.
+	if want := "/suppliers"; h.suppRec.path != want {
+		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, want)
 	}
 }
