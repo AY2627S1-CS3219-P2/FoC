@@ -3,6 +3,8 @@
 // Scope: Client-side access/refresh token store, implementing the token
 //   lifecycle recorded in ai/decisions.md D-011 and D-015.
 //   2026-09-21: dropped setAccessToken — user-service rotates RTs.
+//   2026-09-22: the refresh token left this file entirely. D-033 puts it in
+//   an HttpOnly cookie the gateway owns, which JS cannot read.
 // Author review: PENDING — <reviewer to complete>
 
 /**
@@ -10,64 +12,67 @@
  * login (D-011, D-012), so that lib/http can attach the AT to every request
  * and features/auth/session can exchange the RT when the AT expires (D-015).
  *
- * WHERE THESE ARE KEPT IS NOT DECIDED. The Open table in ai/decisions.md lists
- * "Where the UI keeps the AT and RT" as unanswered, so this deliberately keeps
- * them in a closure and nowhere else:
+ * SETTLED BY D-033. The rule for the access token is **in memory, never
+ * written to storage** — not "a module-level variable", which root AGENTS.md
+ * §5 rules out. The closure below already satisfies it and did not change.
  *
- *   - Nothing is written to localStorage, sessionStorage or a cookie. Anything
- *     persisted is readable by any script on the origin, and that trade-off is
- *     the team's to make, not this file's.
- *   - The consequence is real and visible: a page reload logs the user out.
- *     That is the honest default until someone records the alternative.
- *
- * Whatever is chosen, it changes only this file — nothing else touches the
- * token values.
+ *   - Nothing here is written to localStorage, sessionStorage or a cookie. An
+ *     XSS can read this token for the lifetime of the page, and it expires in
+ *     15 minutes.
+ *   - The REFRESH token is not here at all. It is an HttpOnly cookie the
+ *     gateway sets and reads (D-033), so this code cannot see it, and neither
+ *     can anything else running on the page.
+ *   - A page reload therefore leaves no access token but a live cookie, which
+ *     is what makes the session survive: features/auth/session exchanges the
+ *     cookie for a fresh token on the first authenticated request.
  *
  * No module-level `let` holds the tokens: the store is created once in App.tsx
  * and passed down, mirroring "config is injected, never global" (root
  * AGENTS.md §4.4) and avoiding the common coupling §5 lists.
  */
 
-/** The pair user-service issues and the UI carries (D-011). */
+/**
+ * What the browser receives from an auth route now.
+ *
+ * user-service still issues a pair (D-011), but the gateway lifts the refresh
+ * token into its cookie and strips it from the body (D-033), so only the
+ * access token reaches this code.
+ */
 export interface TokenPair {
   accessToken: string;
-  refreshToken: string;
 }
 
 export interface TokenStore {
-  /** The current access token, or null when logged out. */
+  /** The current access token, or null when there is none in memory. */
   getAccessToken(): string | null;
-  /** The current refresh token, or null when logged out. */
-  getRefreshToken(): string | null;
   /**
-   * Replaces both — after login AND after a refresh exchange.
+   * Replaces the access token — after login AND after a refresh exchange.
    *
-   * There is deliberately no access-token-only setter. This interface used to
-   * have one, on the assumption that a refresh leaves the RT alone; that is
-   * not how user-service behaves. Its `/api/v1/users/refresh` returns a new
-   * pair and retires the RT that was spent, so replacing only the AT would
-   * leave the store holding a dead RT and the next refresh would look like a
-   * replay of a stolen one.
+   * Rotation of the refresh token is no longer this file's problem: the
+   * gateway replaces its own cookie on every exchange, so there is no stale
+   * copy here to leave behind.
    */
   setPair(pair: TokenPair): void;
-  /** Drops both, e.g. on logout or a failed refresh. */
+  /**
+   * Drops the access token.
+   *
+   * This does NOT end the session — the refresh cookie is the session, and
+   * only the gateway can clear it, on logout. Calling this alone just forces
+   * the next request to exchange the cookie for a new token.
+   */
   clear(): void;
 }
 
 export function createTokenStore(): TokenStore {
   let accessToken: string | null = null;
-  let refreshToken: string | null = null;
 
   return {
     getAccessToken: () => accessToken,
-    getRefreshToken: () => refreshToken,
     setPair(pair) {
       accessToken = pair.accessToken;
-      refreshToken = pair.refreshToken;
     },
     clear() {
       accessToken = null;
-      refreshToken = null;
     },
   };
 }

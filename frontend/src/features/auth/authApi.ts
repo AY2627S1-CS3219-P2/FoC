@@ -123,10 +123,7 @@ function fixtureSession(
 function fixtureResult(session: Session): AuthResult {
   return {
     session,
-    tokens: {
-      accessToken: "mock-access-token",
-      refreshToken: "mock-refresh-token",
-    },
+    tokens: { accessToken: "mock-access-token" },
   };
 }
 
@@ -202,10 +199,7 @@ export async function logOut(): Promise<void> {
  * surface and App.tsx can swap one for the other in a single line.
  */
 export async function refreshAccessToken(): Promise<TokenPair> {
-  return mockDelay({
-    accessToken: "mock-access-token",
-    refreshToken: "mock-refresh-token",
-  });
+  return mockDelay({ accessToken: "mock-access-token" });
 }
 
 // ---------------------------------------------------------------------------
@@ -237,19 +231,26 @@ function decodeAuthError(body: unknown, status: number): AuthError {
   return new AuthError(`Sign-in failed (${status}).`);
 }
 
-/** Reads the `{accessToken, refreshToken}` pair user-service answers with. */
+/**
+ * Reads what the gateway passes on from user-service's AuthResponse.
+ *
+ * user-service sends `{accessToken, refreshToken}`; the gateway lifts the
+ * refresh token into its HttpOnly cookie and strips it from the body (D-033),
+ * so only the access token arrives here. A body that still carried a refresh
+ * token would mean the gateway's translation had been bypassed — worth
+ * noticing, not worth failing on, so it is ignored rather than rejected.
+ */
 function decodeTokenPair(body: unknown): TokenPair {
   if (!body || typeof body !== "object") {
     throw new AuthError("The server returned an unreadable response.");
   }
   const raw = body as Record<string, unknown>;
   const accessToken = raw["accessToken"];
-  const refreshToken = raw["refreshToken"];
 
-  if (typeof accessToken !== "string" || typeof refreshToken !== "string") {
+  if (typeof accessToken !== "string") {
     throw new AuthError("The server did not return a usable session.");
   }
-  return { accessToken, refreshToken };
+  return { accessToken };
 }
 
 /**
@@ -458,25 +459,26 @@ export async function resendOtpViaGateway(
  * token would therefore not merely be stale: presenting it again looks like a
  * stolen-token replay and kills the session. The caller must store both.
  */
-export async function refreshAccessTokenViaGateway(
-  refreshToken: string,
-): Promise<TokenPair> {
+export async function refreshAccessTokenViaGateway(): Promise<TokenPair> {
+  // No body and no argument. The refresh token is an HttpOnly cookie the
+  // browser attaches by itself (D-033); this code cannot read it, and the
+  // gateway puts it into the body user-service still requires.
   const response = await send({
     baseUrl: config.gatewayBaseUrl,
     path: ROUTES.refresh,
     method: "POST",
-    body: { refreshToken },
   });
 
   if (!response.ok) throw new AuthError("Your session has expired.");
 
   const raw = (response.body ?? {}) as Record<string, unknown>;
   const accessToken = raw["accessToken"];
-  const rotated = raw["refreshToken"];
-  if (typeof accessToken !== "string" || typeof rotated !== "string") {
+  if (typeof accessToken !== "string") {
     throw new AuthError("The server did not return a new access token.");
   }
-  return { accessToken, refreshToken: rotated };
+  // The rotated refresh token is deliberately NOT here — the gateway strips
+  // it from the body and replaces its cookie instead.
+  return { accessToken };
 }
 
 /**
@@ -484,23 +486,21 @@ export async function refreshAccessTokenViaGateway(
  * blocklists the access token's jti in Redis. The UI cannot do either — it can
  * only ask, then forget its own copies regardless of the answer.
  *
- * BOTH tokens are required, because user-service revokes one of each kind and
- * they arrive by different routes: the access token in the Authorization
- * header, whose `jti` it blocklists, and the refresh token in the body, whose
- * session row it deletes. Its `LogoutRequest` makes `refreshToken` required,
- * so omitting it is a 400 and nothing is revoked at all.
+ * user-service still revokes one token of each kind, and they still arrive by
+ * different routes — the access token in the Authorization header, whose
+ * `jti` it blocklists, and the refresh token in the body, whose session row it
+ * deletes. `LogoutRequest` still makes `refreshToken` required. What changed
+ * in D-033 is who supplies it: this function sends NO body, and the gateway
+ * injects the token from its cookie and then clears it. That is also why the
+ * cookie's Path is /auth and not /auth/refresh.
  */
-export async function logOutViaGateway(
-  accessToken: string,
-  refreshToken: string,
-): Promise<void> {
+export async function logOutViaGateway(accessToken: string): Promise<void> {
   try {
     await send({
       baseUrl: config.gatewayBaseUrl,
       path: ROUTES.logout,
       method: "POST",
       accessToken,
-      body: { refreshToken },
     });
   } catch {
     // A failed logout call still clears the client. The server-side token

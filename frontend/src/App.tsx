@@ -60,7 +60,7 @@ const authClient = usingGateway
       signUp: authApi.signUp,
       verifyRegistration: authApi.verifyRegistration,
       resendOtp: authApi.resendOtp,
-      logOut: (_accessToken: string, _refreshToken: string) => authApi.logOut(),
+      logOut: (_accessToken: string) => authApi.logOut(),
     };
 
 export function App() {
@@ -139,10 +139,11 @@ export function App() {
     // Both, and before the store is cleared: user-service blocklists the
     // access token's jti and deletes the refresh token's session row, so it
     // needs each one. Its LogoutRequest makes refreshToken required.
+    // No refresh token to pass: the gateway holds it in its cookie, injects
+    // it into the body user-service requires, and clears it (D-033).
     const accessToken = tokens.getAccessToken();
-    const refreshToken = tokens.getRefreshToken();
-    if (accessToken && refreshToken) {
-      await authClient.logOut(accessToken, refreshToken);
+    if (accessToken) {
+      await authClient.logOut(accessToken);
     }
     tokens.clear();
     setSession(null);

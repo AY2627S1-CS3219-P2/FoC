@@ -113,7 +113,9 @@ describe("logInViaGateway", () => {
 
     const { session, tokens } = await logInViaGateway("nigeltzy", "Password1");
 
-    expect(tokens.refreshToken).toBe("refresh-token");
+    // Only the access token reaches this code: the gateway lifts the refresh
+    // token into its HttpOnly cookie and strips it from the body (D-033).
+    expect(typeof tokens.accessToken).toBe("string");
     expect(session.userId).toBe(UID);
     expect(session.username).toBe("nigeltzy");
     expect(session.email).toBeUndefined();
