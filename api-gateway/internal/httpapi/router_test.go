@@ -19,6 +19,8 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -150,7 +152,7 @@ func newHarness(t *testing.T) *harness {
 		Supplier: suppSvc.URL,
 		Order:    suppSvc.URL,
 		Credit:   suppSvc.URL,
-	}, verifier, testRefreshTTL)
+	}, verifier, testRefreshTTL, "")
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -495,7 +497,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder, func()) {
 
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
-	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL)
+	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL, "")
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -617,5 +619,81 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 	res := post(h, "/auth/register", `{"email":"a@u.nus.edu","username":"a","password":"Passw0rd"}`)
 	if c := refreshCookieFrom(t, res); c != nil {
 		t.Errorf("register set a refresh cookie (%+v); it issues no tokens", c)
+	}
+}
+
+// AI-generated (edited by <name>).
+// Serving the built frontend is what makes the browser same-origin with the
+// API (D-033), so these check it does not shadow the API.
+
+func newStaticHarness(t *testing.T) (http.Handler, string, func()) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>APP"), 0o600); err != nil {
+		t.Fatalf("write index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "app.js"), []byte("console.log(1)"), 0o600); err != nil {
+		t.Fatalf("write asset: %v", err)
+	}
+
+	iss := newIssuer(t)
+	jwks := httptest.NewServer(iss.jwksHandler())
+	rec := &recorder{}
+	svc := stubService(rec)
+	router, err := httpapi.NewRouter(config.Downstream{
+		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
+	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL, dir)
+	if err != nil {
+		t.Fatalf("NewRouter: %v", err)
+	}
+	return router, dir, func() { jwks.Close(); svc.Close() }
+}
+
+func get(h http.Handler, path string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+	return w
+}
+
+func TestStaticFilesAndSPAFallback(t *testing.T) {
+	h, _, done := newStaticHarness(t)
+	defer done()
+
+	if got := get(h, "/app.js"); got.Code != http.StatusOK ||
+		!strings.Contains(got.Body.String(), "console.log") {
+		t.Errorf("GET /app.js = %d %q, want the asset", got.Code, got.Body.String())
+	}
+	// A client-side route is not a file. 404ing it would break every deep
+	// link into the app.
+	if got := get(h, "/suppliers"); got.Code != http.StatusOK ||
+		!strings.Contains(got.Body.String(), "APP") {
+		t.Errorf("GET /suppliers = %d %q, want index.html", got.Code, got.Body.String())
+	}
+}
+
+func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
+	h, _, done := newStaticHarness(t)
+	defer done()
+
+	// The catch-all is registered last, so an API path with no token must
+	// still get the API's 401 -- not a page with status 200, which would make
+	// every unauthenticated call look successful to the client.
+	if got := get(h, "/api/suppliers/42"); got.Code != http.StatusUnauthorized {
+		t.Errorf("GET /api/suppliers/42 = %d, want 401 from the API", got.Code)
+	}
+	if got := get(h, "/healthz"); got.Code != http.StatusOK ||
+		!strings.Contains(got.Body.String(), `"status":"ok"`) {
+		t.Errorf("GET /healthz = %d %q, want the gateway's own", got.Code, got.Body.String())
+	}
+}
+
+func TestNoStaticDirLeavesTheDefault404(t *testing.T) {
+	h := newHarness(t)
+	defer h.teardown()
+
+	// `go run ./cmd/api` sets no STATIC_DIR: Vite serves the app and proxies
+	// here, so the gateway must not invent a page.
+	if got := h.do(httptest.NewRequest(http.MethodGet, "/suppliers", nil)); got.Code != http.StatusNotFound {
+		t.Errorf("GET /suppliers = %d, want 404 when no static dir is configured", got.Code)
 	}
 }

@@ -77,12 +77,15 @@ func authRoutes() []authRoute {
 //
 // It returns a ready-to-serve handler or an error; there is nothing to start
 // afterwards (root AGENTS.md §5).
-func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
+func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration, staticDir string) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
 
+	// The built frontend, served from "/" so the page and the API share one
+	// origin (D-033). Registered LAST, below, because it is the catch-all.
+	//
 	// The gateway's own liveness check. Not proxied anywhere.
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -151,6 +154,14 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 			gr.Handle(route.prefix, p)
 			gr.Handle(route.prefix+"/*", p)
 		})
+	}
+
+	// LAST. chi matches specific patterns before NotFound, so every route
+	// above still wins; only what is left over becomes a page. An empty
+	// staticDir leaves the default 404, which is what `go run ./cmd/api`
+	// wants — Vite serves the app in development.
+	if staticDir != "" {
+		r.NotFound(newSPAHandler(staticDir).ServeHTTP)
 	}
 
 	return r, nil

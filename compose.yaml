@@ -3,14 +3,16 @@
 # Scope: Compose baseline — extends the supplier-service/frontend stack from
 #   PR #1 with Redis and the API Gateway, and closes the public ports that
 #   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
-#   which landed PR #1's half of this file; comments brought up to date.
+#   which landed PR #1's half of this file; comments brought up to date. Later
+#   that day: the frontend service was removed — the gateway serves the built
+#   SPA, so the browser has one origin (D-033).
 # Author review: PENDING — <reviewer to complete>
 
 # The trust zones from ai/decisions.md D-010 are enforced here by ONE thing:
 # whether a service has a `ports:` key. A published port is reachable from the
 # host; everything else is reachable only by name, from inside this network.
 #
-#   published   api-gateway 8080, frontend 3001
+#   published   api-gateway, as 3001 — it serves the browser app AND the API
 #   internal    redis, supplier-db, and every service
 #
 # Services with no code yet (user-service, order-service, credit-service) are
@@ -66,8 +68,18 @@ services:
       SUPPLIER_BASE_URL: http://supplier-service:8082
       ORDER_BASE_URL: http://order-service:8083
       CREDIT_BASE_URL: http://credit-service:8084
+      # The refresh cookie's Max-Age. MUST match user-service's
+      # JWT_REFRESH_TOKEN_TTL — the gateway owns the cookie, not the token.
+      REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
+      # The built SPA, baked into the image by api-gateway/Dockerfile. This is
+      # what makes the page and the API one origin, which a SameSite=Strict
+      # cookie requires (D-033).
+      STATIC_DIR: /app/web
+    # Published as 3001 — the frontend's allocation in root AGENTS.md §3 —
+    # because this is now the only thing the browser talks to. 8080 remains
+    # the in-container port (D-018).
     ports:
-      - "8080:8080"
+      - "3001:8080"
 
   # ---- Supplier service and its own database (D-003) ----------------------
   supplier-db:
@@ -105,14 +117,14 @@ services:
       - "8082:8082"
 
   # ---- Browser client ------------------------------------------------------
-  frontend:
-    build:
-      context: ./frontend
-    depends_on:
-      - api-gateway
-      - supplier-service
-    ports:
-      - "3001:80"
+  # ---- Browser client ------------------------------------------------------
+  # There is no frontend service any more. api-gateway/Dockerfile builds the
+  # SPA and the gateway serves it from "/", so the browser has ONE origin and
+  # the SameSite=Strict refresh cookie rides along without any CORS (D-033).
+  #
+  # frontend/Dockerfile and frontend/nginx.conf are kept rather than deleted:
+  # D-033 says to bring nginx back only if serving from the gateway proves
+  # unworkable, and to flag that rather than doing it silently.
 
 volumes:
   redis-data:

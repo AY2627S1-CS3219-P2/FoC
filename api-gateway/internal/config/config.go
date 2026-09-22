@@ -4,7 +4,8 @@
 //   Reworked for D-023 (RS256/JWKS replaces the symmetric secret) and D-024
 //   (the gateway is not a Redis client, so RedisURL is gone).
 //   2026-09-22: RefreshTokenTTL added — the gateway now owns the refresh
-//   token's cookie and needs its Max-Age.
+//   token's cookie and needs its Max-Age — and StaticDir, the built
+//   frontend it serves so the browser is same-origin.
 // Author review: PENDING — <reviewer to complete>
 
 // Package config reads the gateway's environment once at startup and returns
@@ -45,6 +46,14 @@ type Config struct {
 	// user out early, too long leaves a cookie that fails at the exchange.
 	RefreshTokenTTL time.Duration
 
+	// StaticDir is the built frontend the gateway serves from "/", making
+	// the browser same-origin with the API (D-033).
+	//
+	// OPTIONAL, and the only optional variable here. Empty means serve no
+	// pages, which is what `go run ./cmd/api` wants: Vite serves the app in
+	// development and proxies here. Compose sets it.
+	StaticDir string
+
 	// Downstream holds one base URL per callee, per root AGENTS.md §3.
 	Downstream Downstream
 }
@@ -77,6 +86,7 @@ func Load() (Config, error) {
 		Port:            os.Getenv("PORT"),
 		JWKSURL:         os.Getenv("JWKS_URL"),
 		RefreshTokenTTL: ttl,
+		StaticDir:       os.Getenv("STATIC_DIR"),
 		Downstream: Downstream{
 			User:     os.Getenv("USER_BASE_URL"),
 			Supplier: os.Getenv("SUPPLIER_BASE_URL"),

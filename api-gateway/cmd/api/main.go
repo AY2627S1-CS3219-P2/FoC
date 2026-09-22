@@ -41,7 +41,7 @@ func main() {
 	// assume user-service is already up (root AGENTS.md §5).
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 
-	router, err := httpapi.NewRouter(cfg.Downstream, verifier, cfg.RefreshTokenTTL)
+	router, err := httpapi.NewRouter(cfg.Downstream, verifier, cfg.RefreshTokenTTL, cfg.StaticDir)
 	if err != nil {
 		log.Fatalf("api-gateway: building router: %v", err)
 	}
