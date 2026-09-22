@@ -201,6 +201,7 @@ export function App() {
         {view === "profile" && (
           <ProfileView
             session={session}
+            isMock={!usingGateway}
             mode={mode}
             onModeChange={setMode}
             onLogOut={handleLogOut}

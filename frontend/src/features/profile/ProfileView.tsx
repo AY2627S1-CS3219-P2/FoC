@@ -1,8 +1,11 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
-// Scope: Profile screen against the mock user-service session.
+// Scope: Profile screen for the session, fixture or real.
 //   2026-09-21: email and contact render only when present — they come
 //   from the profile call, which can fail while the session stays valid.
+//   2026-09-22: the "Mock data · user-service" badge was unconditional and
+//   is now tied to isMock, like LoginPage's. Against the gateway every field
+//   on this page is real.
 // Author review: PENDING — <reviewer to complete>
 
 import { MockBadge } from "../../components/MockBadge";
@@ -10,6 +13,8 @@ import type { ActingMode, Session } from "../auth/types";
 
 interface ProfileViewProps {
   session: Session;
+  /** False once a gateway is configured — see App's `usingGateway`. */
+  isMock: boolean;
   mode: ActingMode;
   onModeChange: (mode: ActingMode) => void;
   onLogOut: () => void;
@@ -23,6 +28,7 @@ interface ProfileViewProps {
  */
 export function ProfileView({
   session,
+  isMock,
   mode,
   onModeChange,
   onLogOut,
@@ -33,7 +39,15 @@ export function ProfileView({
         <h1>Profile</h1>
       </div>
 
-      <MockBadge service="user-service" />
+      {/*
+        Conditional since 2026-09-22. This was rendered unconditionally from
+        when the screen was written (17 Sep), because there was no
+        user-service then. There is now: against the gateway every field
+        below comes from the access token's claims plus
+        GET /api/v1/users/{uid}, so the badge was claiming invented data on a
+        page that has none. LoginPage has always gated it this way.
+      */}
+      {isMock && <MockBadge service="user-service" />}
 
       <div className="card">
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -83,7 +97,10 @@ export function ProfileView({
           </div>
         </dl>
         <p className="balance-label">
-          Editing your username and contact details (F1.4.2) is not built yet.
+          Editing your username and contact details (F1.4.2) is not built
+          here yet. user-service accepts it — its PUT profile route takes
+          username, password and phone_num — so what is missing is this
+          screen, not the service.
         </p>
 
         <h2 className="section-label">Acting as</h2>
