@@ -81,7 +81,6 @@ services:
     ports:
       - "3001:80"
 
-
 volumes:
   user-db-data:
   supplier-db-data:
