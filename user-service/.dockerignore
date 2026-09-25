@@ -1,0 +1,12 @@
+# AI Assistance Disclosure:
+# Tool: Codex (GPT-5), date: 2026-09-18
+# Scope: Excluded repository metadata, local configuration, documentation, and tests from the Docker build context.
+# Author review: COMPLETED BY ZI YANG
+
+.git
+.env
+.env.*
+README.md
+AGENTS.md
+CLAUDE.md
+*_test.go

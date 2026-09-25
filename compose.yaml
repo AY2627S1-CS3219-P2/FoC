@@ -1,4 +1,54 @@
+# AI Assistance Disclosure:
+# Tool: Codex (GPT-5), date: 2026-09-18
+# Scope: Added local PostgreSQL 16 and user-service API containers.
+# Author review: COMPLETED BY ZI YANG
+
 services:
+  user-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user
+      POSTGRES_USER: ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set} -d user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8081
+      USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
+      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
+      JWT_KEYSET_PATH: /app/keys.json
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-15m}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:?INITIAL_ADMIN_EMAIL must be set}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?INITIAL_ADMIN_USERNAME must be set}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set}
+    depends_on:
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "8081:8081"
+    restart: on-failure
+
   supplier-db:
     image: postgres:16-alpine
     environment:
@@ -9,9 +59,6 @@ services:
       - supplier-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   supplier-service:
     build:
@@ -35,4 +82,5 @@ services:
       - "3001:80"
 
 volumes:
+  user-db-data:
   supplier-db-data:
