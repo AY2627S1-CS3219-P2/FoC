@@ -1,14 +1,19 @@
+# AI Assistance Disclosure:
+# Tool: Codex (GPT-5), date: 2026-09-18
+# Scope: Added local PostgreSQL 16 and user-service API containers.
+# Author review: COMPLETED BY ZI YANG
+
 services:
   user-db:
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: user
-      POSTGRES_USER: ${DB_USER:?DB_USER must be set}
-      POSTGRES_PASSWORD: ${DB_PW:?DB_PW must be set}
+      POSTGRES_USER: ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}
     volumes:
       - user-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d user"]
+      test: ["CMD-SHELL", "pg_isready -U ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set} -d user"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,7 +32,7 @@ services:
       dockerfile: Dockerfile
     environment:
       PORT: 8081
-      USER_DB_URL: postgres://postgres:postgres@user-db:5432/user?sslmode=disable
+      USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
       REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
       JWT_KEYSET_PATH: /app/keys.json
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-15m}

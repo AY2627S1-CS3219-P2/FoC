@@ -47,9 +47,9 @@ export JWT_KEYSET_PATH='./keys.json'
 export JWT_ACCESS_TOKEN_TTL='15m'
 export JWT_REFRESH_TOKEN_TTL='168h'
 export REDIS_URL='redis://redis:6379/0'
-export DB_USER='postgres'
-export DB_PW='postgres'
-export DB_URL='postgres://USER:PASSWORD@localhost:5432/user_service?sslmode=disable'
+export USER_SRV_DB_USER='postgres'
+export USER_SRV_DB_PW='postgres'
+export USER_DB_URL='postgres://postgres:postgres@localhost:5432/user?sslmode=disable'
 ```
 
 3. Configure the initial admin account
