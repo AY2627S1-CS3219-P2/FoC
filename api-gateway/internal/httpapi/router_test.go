@@ -652,6 +652,32 @@ func TestStaticFilesAndSPAFallback(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING).
+// TestStaticServesNamesStartingWithDotDot checks that a file whose name merely
+// starts with ".." is served, while a path that climbs out of the static dir
+// is still refused.
+func TestStaticServesNamesStartingWithDotDot(t *testing.T) {
+	h, dir, done := newStaticHarness(t)
+	defer done()
+
+	if err := os.WriteFile(filepath.Join(dir, "..foo"), []byte("DOTDOT"), 0o600); err != nil {
+		t.Fatalf("write ..foo: %v", err)
+	}
+	if got := get(h, "/..foo"); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "DOTDOT") {
+		t.Errorf("GET /..foo = %d %q, want the file", got.Code, got.Body.String())
+	}
+
+	// A file beside the static dir must stay unreachable.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(dir), "secret.txt"), []byte("SECRET"), 0o600); err != nil {
+		t.Fatalf("write secret: %v", err)
+	}
+	for _, path := range []string{"/../secret.txt", "/..", "/a/../../secret.txt"} {
+		if got := get(h, path); got.Code != http.StatusNotFound || strings.Contains(got.Body.String(), "SECRET") {
+			t.Errorf("GET %s = %d %q, want 404", path, got.Code, got.Body.String())
+		}
+	}
+}
+
 func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
 	h, _, done := newStaticHarness(t)
 	defer done()

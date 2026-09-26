@@ -8,6 +8,7 @@
 package proxy_test
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -137,5 +138,38 @@ func TestUnreachableRefreshKeepsTheCookie(t *testing.T) {
 	}
 	if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
 		t.Errorf("Set-Cookie = %q, want none", got)
+	}
+}
+
+// AI-generated (edited by PENDING).
+// TestRefreshForwardsANonJSONBodyUnchanged checks the path where the refresh
+// cookie cannot be merged into the request body because the body is not a
+// JSON object: the body is forwarded as it came, with a matching length.
+func TestRefreshForwardsANonJSONBodyUnchanged(t *testing.T) {
+	t.Parallel()
+
+	var gotBody string
+	var gotLength int64
+	downstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody, gotLength = string(raw), r.ContentLength
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	t.Cleanup(downstream.Close)
+
+	p, err := proxy.NewSessionRotating(authRoute(downstream.URL), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/auth/refresh", strings.NewReader("not json"))
+	req.AddCookie(&http.Cookie{Name: "foc_refresh", Value: "rt"})
+	rec := httptest.NewRecorder()
+	p.ServeHTTP(rec, req)
+
+	if gotBody != "not json" || gotLength != int64(len("not json")) {
+		t.Errorf("downstream got body %q (Content-Length %d), want it unchanged", gotBody, gotLength)
+	}
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want user-service's 400 passed through", rec.Code)
 	}
 }

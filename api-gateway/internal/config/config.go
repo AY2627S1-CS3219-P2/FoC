@@ -6,7 +6,7 @@
 //   2026-09-22: RefreshTokenTTL added — the gateway now owns the refresh
 //   token's cookie and needs its Max-Age — and StaticDir, the built
 //   frontend it serves so the browser is same-origin.
-// Author review: Nigeltzy - Checked the output of this implementation code and the AI is confirmed to have generated
+// Author review: Nigeltzy - Checked the output of this implementation code and the AI is confirmed to have generated a valid config.
 // and filled in the config as per standard procedure.
 
 // Package config reads the gateway's environment once at startup and returns a

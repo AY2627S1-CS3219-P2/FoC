@@ -21,10 +21,12 @@ func newSPAHandler(dir string) http.Handler {
 	files := http.FileServer(http.Dir(dir))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// AI-generated (edited by PENDING).
 		// Reject paths that clean to outside dir before os.Stat sees them;
-		// http.Dir also refuses to leave its root.
+		// http.Dir also refuses to leave its root. IsLocal rejects ".." as a
+		// path element but not a name that merely starts with "..".
 		clean := filepath.Clean(strings.TrimPrefix(r.URL.Path, "/"))
-		if strings.HasPrefix(clean, "..") {
+		if !filepath.IsLocal(clean) {
 			http.NotFound(w, r)
 			return
 		}
