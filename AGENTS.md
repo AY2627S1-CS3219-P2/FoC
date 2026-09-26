@@ -101,8 +101,9 @@ explicitly in your summary and explaining why the stdlib won't do.
 
 ```
 user-service/      order-service/      frontend/
-supplier-service/  credit-service/     ai/usage-log.md
+supplier-service/  credit-service/     api-gateway/
 data/              compose.yaml        .env.example
+ai/usage-log.md    ai/decisions.md
 ```
 
 One developer owns each folder. **Stay inside the folder the task names.** If a
@@ -120,6 +121,7 @@ state its own port but must not restate this table.
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
 | `frontend` | 3001, published by Compose onto nginx's :80 | — |
+| `api-gateway` | 8080 (provisional, D-018) | — (no database of any kind: D-024 keeps it out of Redis entirely) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
@@ -262,6 +264,8 @@ make up / make down       # full stack via Compose
 ```
 
 What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
-and `go test ./...`; from the repo root, `docker compose up` (`compose.yaml` is
-empty on any branch where no service has merged). Integration tests everywhere
-are spelled `go test -tags=integration ./...`.
+and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
+carries Redis, the API Gateway, supplier-service and its database. Services
+with no code yet are absent. A service is reachable from the host only if it
+has a `ports:` key — that is how D-010's trust zones are enforced. Integration
+tests everywhere are spelled `go test -tags=integration ./...`.

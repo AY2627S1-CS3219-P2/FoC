@@ -1,4 +1,63 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5), date: 2026-09-19
+# Scope: Compose baseline — extends the supplier-service/frontend stack from
+#   PR #1 with Redis and the API Gateway, and closes the public ports that
+#   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
+#   which landed PR #1's half of this file; comments brought up to date. Later
+#   that day: the frontend service was removed — the gateway serves the built
+#   SPA, so the browser has one origin (D-033).
+# Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
+
+# Only services with a `ports:` key are reachable from the host; api-gateway
+# (host port 3001) is the only one. Downstream services trust the gateway's
+# X-User-Id and X-User-Role headers, so publishing any other service lets a
+# client skip token verification (D-010 in ai/decisions.md).
+#
+# Services with no code yet (user-service, order-service, credit-service) are
+# not listed.
+
 services:
+  # ---- Redis ------------------------------------------------------------
+  # AI-generated (edited by nigeltzy) — rewritten for D-024.
+  # Used only by user-service, which is not in this file yet. No `ports:` key,
+  # so it is reachable only inside this network.
+  redis:
+    image: redis:7-alpine
+    # Append-only persistence, so the jti blocklist survives a restart.
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---- API gateway ------------------------------------------------------
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    # No depends_on: the gateway fetches JWKS on first use, so it can start
+    # before user-service.
+    environment:
+      PORT: 8080
+      # user-service's JWKS endpoint. Until user-service is running, authenticated
+      # routes return 503.
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      # All four base URLs are required, including services not in this file yet.
+      USER_BASE_URL: http://user-service:8081
+      SUPPLIER_BASE_URL: http://supplier-service:8082
+      ORDER_BASE_URL: http://order-service:8083
+      CREDIT_BASE_URL: http://credit-service:8084
+      # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
+      # (default 168h) so it matches user-service's refresh-token lifetime.
+      REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
+    # Host port 3001 maps to the gateway's container port 8080 (PORT above).
+    ports:
+      - "3001:8080"
+
+  # ---- Supplier service and its database -------------------------------
   supplier-db:
     image: postgres:16-alpine
     environment:
@@ -23,16 +82,9 @@ services:
     environment:
       PORT: 8082
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
-    ports:
-      - "8082:8082"
+    # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
-  frontend:
-    build:
-      context: ./frontend
-    depends_on:
-      - supplier-service
-    ports:
-      - "3001:80"
 
 volumes:
+  redis-data:
   supplier-db-data:

@@ -1,0 +1,29 @@
+# Build contexts in compose.yaml are the repo root (api-gateway, supplier-service),
+# so this keeps dependencies, build output and secrets out of those builds.
+# The **/ patterns also match inside subfolders such as frontend/.
+
+# Node toolchain artifacts
+**/node_modules
+**/*.tsbuildinfo
+
+# Build output
+dist/
+build/
+out/
+
+# VCS and local tooling
+.git/
+.github/
+.claude/
+.codex/
+
+# Environment and key files, at any depth
+**/.env
+**/.env.local
+**/.env.*.local
+**/*.pem
+**/*.key
+
+# OS
+.DS_Store
+Thumbs.db
