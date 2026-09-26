@@ -21,7 +21,7 @@ func newSPAHandler(dir string) http.Handler {
 	files := http.FileServer(http.Dir(dir))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// AI-generated (edited by Nigeltzy).
+		// AI-generated (edited by nigeltzy).
 		// Reject paths that clean to outside dir before os.Stat sees them;
 		// http.Dir also refuses to leave its root. IsLocal rejects ".." as a
 		// path element but not a name that merely starts with "..".
