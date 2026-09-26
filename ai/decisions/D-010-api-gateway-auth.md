@@ -36,10 +36,8 @@ Redis sits outside the public zone. It is a separate datastore from the User
 DB, holding only revocation state — the `jti` blocklist and `suspended:<uid>`
 keys — and never credentials, refresh tokens or profile data.
 
-**D-024 is the current position, and it supersedes both D-017 and D-020:**
-`user-service` is the **only** process that connects to Redis. The API Gateway
-is not a Redis client at all — not a writer, not a reader. (D-017 gave the store
-to the gateway; D-020 made the gateway a reader; D-024 removes it entirely.)
+**D-024:** `user-service` is the **only** process that connects to Redis. The
+API Gateway is not a Redis client at all — not a writer, not a reader.
 
 ## Token shapes
 
@@ -58,7 +56,8 @@ to the gateway; D-020 made the gateway a reader; D-024 removes it entirely.)
 ## 1. Issuing (login and registration)
 
 1. The UI submits credentials to the API Gateway, which forwards the payload to
-   `user-service` over a synchronous REST call.
+   `user-service` over gRPC (D-031; decided but not built yet, so the gateway
+   still forwards over HTTP today).
 2. `user-service` authenticates the payload against the User DB and crafts an
    access token (`sub`, `role`, `jti`, `exp`) and a refresh token.
 3. The refresh token's hash is stored in the User DB, and both tokens are
@@ -69,8 +68,9 @@ to the gateway; D-020 made the gateway a reader; D-024 removes it entirely.)
 1. The UI attaches the access token to every subsequent request.
 2. The gateway verifies the JWT's RS256 signature against the public key
    (D-023) and checks `exp`, then translates the claims into HTTP headers and
-   forwards the request over synchronous REST to the downstream service (Order
-   API, Credit API, Supplier API, …).
+   forwards the request to the downstream service (Order API, Credit API,
+   Supplier API, …) over gRPC (D-013; decided but not built yet, so the
+   gateway still forwards over HTTP today).
 
    **No revocation lookup happens here (D-024).** The diagram as drawn had the
    gateway checking Redis at this step; it no longer does, and it does not ask
@@ -90,10 +90,10 @@ have to hold:
    through the front door — no network access needed. This step is specified in
    `user-service`'s own `AGENTS.md`, which is on no branch yet, so it is not
    recorded (root `AGENTS.md` §1).
-2. **No direct route.** Nothing but the gateway can address a service. Today
-   this is false: `compose.yaml` publishes `supplier-service` on
-   `0.0.0.0:8082`, and `supplier-service/internal/middleware/auth.go` trusts
-   `X-User-Role` verbatim by its own admission.
+2. **No direct route.** Nothing but the gateway can address a service. In
+   `compose.yaml` only the gateway has a `ports:` key, so this holds locally.
+   D-009 leaves the AWS target undecided, so it has nothing behind it in a
+   deployment yet.
 
 Exposed gateway routes limit *what* an outsider can reach; strip-and-inject
 limits *who they are* when they reach it. Neither substitutes for the other.
@@ -119,7 +119,7 @@ the access token's `jti` to a Redis blocklist.
 is that user and which was issued before the suspension timestamp, ending every
 active session at once.
 
-> Both flows above are the **team diagram's** wording, and D-020 keeps
+> Both flows above are the **team diagram's** wording, and D-024 keeps
 > `user-service` as the writer, so they stand. `user-service`'s own `AGENTS.md`
 > is more specific on two points — the exact key spelling
 > (`suspended:uid:<uuid>`) and a mandatory write order (Redis first, then
@@ -131,10 +131,8 @@ active session at once.
 Listed in the **Open** table of [`../decisions.md`](../decisions.md) rather than
 repeated here.
 
-The D-014/D-017 clash that used to block implementation hardest is **resolved
-by D-024**, which takes the gateway out of Redis altogether. Exactly one service
-touches the datastore, so the root `AGENTS.md` §4.1 carve-out that D-020 owed
-is no longer needed.
+D-024 takes the gateway out of Redis altogether, so exactly one service touches
+the datastore and root `AGENTS.md` §4.1 holds without a carve-out.
 
 **What D-024 costs, recorded as D-025:** nothing reads the blocklist on the
 request path any more, so a logged-out or suspended access token keeps working

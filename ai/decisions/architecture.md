@@ -47,17 +47,15 @@ flowchart TB
     end
 
     UI -->|"/auth/* and /api/*<br/>Bearer access token"| GW
-    GW -->|"REST + X-User-Id / X-User-Role"| SUP
-    GW -->|"REST + X-User-Id / X-User-Role"| ORD
-    GW -->|"REST + X-User-Id / X-User-Role"| CRE
+    GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| SUP
+    GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| ORD
+    GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| CRE
     GW -->|"/auth/* rewritten to /api/v1/users/*"| US
     GW -.->|"GET /.well-known/jwks.json<br/>public keys only, fetched lazily"| US
 
     US --> UDB
     SUP --> SDB
     US -->|"sole reader AND writer"| RDS
-
-    UI -.->|"LEAK: still published on 0.0.0.0:8082<br/>D-025b, prototype only"| SUP
 
     classDef built fill:#1b5e20,stroke:#4caf50,color:#fff
     classDef partial fill:#4a3800,stroke:#ffb300,color:#fff
@@ -135,7 +133,7 @@ sequenceDiagram
         GW-->>UI: 503
     else valid
         Note over GW: STRIP the forged X-User-Role,<br/>then INJECT from verified claims.<br/>This is what D-022 rests on.
-        GW->>SVC: GET /42<br/>X-User-Id: uid<br/>X-User-Role: STUDENT
+        GW->>SVC: GET /suppliers/42<br/>X-User-Id: uid<br/>X-User-Role: STUDENT
         Note over SVC: Trusts the headers. Does not parse<br/>the JWT and never receives it.
         SVC-->>GW: 200
         GW-->>UI: 200
@@ -223,8 +221,8 @@ sequenceDiagram
 > **Added 2026-09-22.** Both writes above currently have **no reader anywhere**.
 > The gateway does not read them (D-024), and `user-service` cannot — its Redis
 > interface is `Set`-only. `jti:` and `suspended:uid:` are write-only today.
-> That is the state D-024 left behind when it removed the reader D-020 had
-> assigned to the gateway, and it is what the open F1.7.2 / D-025a question
+> That is the state D-024 left behind when it took the gateway out of Redis,
+> which removed the only planned reader, and it is what the open F1.7.2 / D-025a question
 > turns on. Note this does not mean revocation is unenforced: it is enforced at
 > **refresh**, from PostgreSQL, as §4 shows.
 
@@ -257,7 +255,7 @@ something else wrote.
 
 ```mermaid
 flowchart LR
-    subgraph A["D-020 — superseded 2026-09-19"]
+    subgraph A["Gateway reads Redis — replaced by D-024"]
         direction TB
         A1["Gateway verifies"] --> A2["Gateway READS Redis"] --> A3["forward, or reject"]
     end
@@ -294,7 +292,7 @@ has no Redis client at all (D-024) — no dependency in its `go.mod`, no
 `REDIS_URL` in `internal/config`, no `depends_on` in `compose.yaml`. It parses
 `jti` off the token purely so downstream logs can correlate a session.
 
-This is not a bug in either service. D-020 assigned the reader role to the
+This is not a bug in either service. The reader role was planned for the
 gateway; D-024 removed that role and did not reassign it. The writes stayed.
 
 ### Revocation is still enforced — at refresh, from PostgreSQL
@@ -334,10 +332,6 @@ Refreshed 2026-09-22.
 
 ## 8. What this picture assumes, and does not yet have
 
-- **D-022's second leg does not hold.** Everything above depends on services
-  being unreachable except through the gateway. `supplier-service` is published
-  on `0.0.0.0:8082` today, so anything on the same network can set
-  `X-User-Role: ADMIN` and be believed. Accepted for the prototype (D-025b).
 - **The strip-and-inject rule is not recorded.** It is specified only in a
   `user-service/AGENTS.md` that is on no branch. The team chose to build against
   it anyway — an exception to §1, noted above the Open table in
