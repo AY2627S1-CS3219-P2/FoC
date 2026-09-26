@@ -12,8 +12,10 @@
 The single public entry point (**D-010**). Every request from the UI arrives
 here; `user-service`, `supplier-service`, `order-service` and `credit-service`
 are not publicly reachable. The gateway verifies the access token's RS256
-signature, translates claims into HTTP headers, and forwards over synchronous
-REST (**D-013**, as amended by **D-024**).
+signature, translates claims into HTTP headers, and forwards the request.
+**D-013** records gRPC for this hop, decided but not built yet; until it is,
+the code here forwards over HTTP. Do not build new REST-specific forwarding on
+the assumption that HTTP is the rule.
 
 Owner: **Nigeltzy** (**D-026**).
 
@@ -23,8 +25,7 @@ decision this folder implements is written up in
 
 **Status: working barebones.** Verifies RS256 tokens against user-service's
 JWKS, terminates the four auth routes, and proxies the four service prefixes
-with claim-header strip-and-inject. Unit and router tests pass. Never yet
-exercised against a real `user-service`, because there isn't one.
+with claim-header strip-and-inject. Unit and router tests pass.
 
 ## What this folder owns, and what it must not
 
@@ -84,13 +85,17 @@ outbound request before injecting its own. **D-022 rests entirely on that.**
 Remove it and any caller can send `X-User-Role: ADMIN` with an ordinary token
 and be believed by every service downstream.
 
-`TestClientCannotEscalateViaHeader` in `internal/httpapi/router_test.go` exists
-to catch exactly that regression. If it fails, stop.
+`TestUnauthenticatedRequestGetsNoClaimHeaders` and
+`TestPassthroughPreservesAuthorization` in `internal/proxy/proxy_test.go` fail
+if the delete is removed. `TestClientCannotEscalateViaHeader` does not: on an
+authenticated route the injected values overwrite the forged ones anyway. If
+either of the first two fails, stop.
 
 ## Layout
 
-Mirrors `supplier-service` package for package (root §6), minus the database
-layers — the gateway has no domain and no Postgres.
+Follows root §6's layering, minus the database layers — the gateway has no
+domain and no Postgres. `internal/auth` and `internal/proxy` have no
+`supplier-service` counterpart.
 
 ```
 cmd/api/              process wiring: config, verifier, router, shutdown
@@ -106,8 +111,8 @@ There is no `internal/revocation/`: D-024 leaves it with nothing to do.
 ## Local development
 
 Module path `foc/api-gateway`. Port **8080**, provisional (D-018). Env vars are
-in `.env.example`, and every one is required; the process exits with a sorted
-list of what is missing rather than guessing.
+in `.env.example`. Every one except `STATIC_DIR` is required; the process exits
+with a sorted list of what is missing rather than guessing.
 
 ```bash
 go run ./cmd/api      # needs a filled .env
@@ -117,7 +122,8 @@ go test ./...
 `JWKS_URL` is fetched **lazily**, on the first token that needs a key - not at
 boot. The gateway therefore starts fine with `user-service` absent, and answers
 `503` on authenticated routes until it appears (root §5: never assume startup
-order). The auth routes keep working throughout, since they carry no token.
+order). The auth routes forward to `user-service` too, so they answer `502`
+while it is down.
 
 ## Dependencies
 
@@ -137,6 +143,3 @@ parsing and the refresh cookie are both stdlib.
 - **`api/openapi.yaml` is empty.** D-028 records the deliberate deviation from
   D-005's spec-first rule, to be **backfilled** before the gateway is treated
   as a stable contract. It is not an exemption for anyone else.
-- **Never exercised against a real `user-service`.** Every test mints its own
-  RS256 tokens against a stub JWKS. The first contact with Zi Yang's service
-  will find things.

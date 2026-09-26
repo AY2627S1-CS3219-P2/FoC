@@ -7,13 +7,10 @@
 // 2026-09-19: rewritten from the scaffold's health-only server to wire the
 // real router (D-027). Re-read before relying on the sign-off above.
 
-// Command api is the FoC API Gateway (D-010): the only publicly reachable
-// process in the system.
-//
-// It verifies an access token's RS256 signature against user-service's JWKS
-// (D-023), strips any claim headers the caller sent, injects its own, and
-// forwards over synchronous REST (D-013, D-022). It does not talk to Redis
-// and does not check revocation (D-024).
+// Command api runs the FoC API Gateway. It verifies each access token against
+// user-service's JWKS, strips client-supplied claim headers, injects its own,
+// forwards the request to the downstream service over HTTP, and serves the
+// built frontend when STATIC_DIR is set.
 package main
 
 import (
@@ -37,8 +34,6 @@ func main() {
 		log.Fatalf("api-gateway: %v", err)
 	}
 
-	// Keys are fetched lazily on first use, not here: the gateway must not
-	// assume user-service is already up (root AGENTS.md §5).
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 
 	router, err := httpapi.NewRouter(cfg.Downstream, verifier, cfg.RefreshTokenTTL, cfg.StaticDir)

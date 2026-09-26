@@ -67,10 +67,10 @@ func TestRewritePath(t *testing.T) {
 	}
 }
 
-// TestStripsClientSuppliedClaimHeaders is the test that matters most in this
-// package. D-022 lets downstream services trust the claim headers precisely
-// because a caller cannot set them. If this test ever fails, every service's
-// access control is bypassable by anyone who can reach the gateway.
+// TestStripsClientSuppliedClaimHeaders checks that client-supplied claim
+// headers are replaced by the verified identity. If it fails, any caller can
+// claim another user's ID or role to every downstream service (D-022 in
+// ai/decisions.md).
 func TestStripsClientSuppliedClaimHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -107,8 +107,9 @@ func TestStripsClientSuppliedClaimHeaders(t *testing.T) {
 	}
 }
 
-// An unauthenticated request must reach a downstream service with NO claim
-// headers at all, rather than empty ones a service might read as a value.
+// TestUnauthenticatedRequestGetsNoClaimHeaders checks that a request with no
+// verified identity reaches the downstream without a role header, not an
+// empty one.
 func TestUnauthenticatedRequestGetsNoClaimHeaders(t *testing.T) {
 	t.Parallel()
 
@@ -134,8 +135,8 @@ func TestUnauthenticatedRequestGetsNoClaimHeaders(t *testing.T) {
 	}
 }
 
-// The public auth routes must keep Authorization: logout needs the access
-// token to reach user-service so it can blocklist that jti.
+// TestPassthroughPreservesAuthorization checks that NewPassthrough forwards
+// Authorization unchanged and still strips client-supplied claim headers.
 func TestPassthroughPreservesAuthorization(t *testing.T) {
 	t.Parallel()
 
@@ -179,7 +180,7 @@ func TestNewRejectsUnusableBaseURL(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by <name>).
+// AI-generated (edited by nigeltzy).
 func TestRetainingTokenKeepsAuthorizationAndStillInjects(t *testing.T) {
 	t.Parallel()
 

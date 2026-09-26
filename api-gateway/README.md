@@ -1,9 +1,9 @@
 # API Gateway
 
-Single public entry point for FoC. Verifies access tokens, checks revocation,
-translates claims into headers, and forwards to the internal services.
+Single public entry point for FoC. Verifies access tokens, replaces client-supplied
+claim headers with verified ones, forwards to the internal services, and serves
+the built frontend.
 
-Currently a **scaffold**: it starts, serves `/healthz`, and shuts down cleanly.
-See [`AGENTS.md`](AGENTS.md) for what is deliberately unbuilt and why, and
+See [`AGENTS.md`](AGENTS.md) for routes and local setup, and
 [`../ai/decisions/D-010-api-gateway-auth.md`](../ai/decisions/D-010-api-gateway-auth.md)
-for the architecture it implements.
+for the design it implements.

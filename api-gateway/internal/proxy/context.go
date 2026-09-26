@@ -8,9 +8,8 @@ package proxy
 
 import "context"
 
-// contextKey is unexported so no other package can write an Identity into a
-// request context. Only the gateway's own auth middleware can establish one,
-// which is what makes the injected headers trustworthy (D-022).
+// contextKey is unexported so an Identity can only enter a context through
+// WithIdentity.
 type contextKey struct{}
 
 // WithIdentity returns a context carrying the verified identity.

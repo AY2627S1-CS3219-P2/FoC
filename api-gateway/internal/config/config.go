@@ -6,11 +6,11 @@
 //   2026-09-22: RefreshTokenTTL added — the gateway now owns the refresh
 //   token's cookie and needs its Max-Age — and StaticDir, the built
 //   frontend it serves so the browser is same-origin.
-// Author review: Nigeltzy - Checked the output of this implementation code and the AI is confirmed to have generated and filled in the config as 
+// Author review: Nigeltzy - Checked the output of this implementation code and the AI is confirmed to have generated
+// and filled in the config as per standard procedure.
 
-// Package config reads the gateway's environment once at startup and returns
-// an immutable Config. Nothing else in the service reads os.Getenv, and there
-// is no package-level state (root AGENTS.md §4.4, §5).
+// Package config reads the gateway's environment once at startup and returns a
+// Config. Nothing else in the service reads os.Getenv.
 package config
 
 import (
@@ -21,49 +21,31 @@ import (
 	"time"
 )
 
-// Config is the gateway's complete runtime configuration. Load returns a
-// ready-to-use value; there is no Init or Start to call afterwards
-// (root AGENTS.md §5, temporal coupling).
+// Config is the gateway's runtime configuration, as returned by Load.
 type Config struct {
-	// Port the gateway listens on. This is the ONLY publicly reachable port
-	// in the system (D-010).
+	// Port is the port the gateway listens on (PORT).
 	Port string
 
-	// JWKSURL is user-service's JSON Web Key Set endpoint, from which the
-	// gateway fetches the RSA public keys it verifies access tokens with
-	// (D-023).
-	//
-	// The gateway holds no private key and cannot mint a token, which is what
-	// keeps user-service the sole issuer (D-012).
+	// JWKSURL is user-service's JWKS endpoint, from which the gateway fetches the
+	// RSA public keys it verifies access tokens with (JWKS_URL).
 	JWKSURL string
 
-	// RefreshTokenTTL is how long the refresh-token cookie lives, and must
-	// match user-service's JWT_REFRESH_TOKEN_TTL. The gateway sets that
-	// cookie, so it needs the lifetime; it does not issue the token itself
-	// and cannot derive it from one, because the RT is opaque here.
-	//
-	// A mismatch is one-directional and not symmetric: too short logs the
-	// user out early, too long leaves a cookie that fails at the exchange.
+	// RefreshTokenTTL is the Max-Age of the refresh-token cookie
+	// (REFRESH_TOKEN_TTL). It must equal user-service's JWT_REFRESH_TOKEN_TTL:
+	// shorter logs users out early, longer leaves a cookie the refresh call rejects.
 	RefreshTokenTTL time.Duration
 
-	// StaticDir is the built frontend the gateway serves from "/", making
-	// the browser same-origin with the API (D-033).
-	//
-	// OPTIONAL, and the only optional variable here. Empty means serve no
-	// pages, which is what `go run ./cmd/api` wants: Vite serves the app in
-	// development and proxies here. Compose sets it.
+	// StaticDir is the directory of built frontend files served at "/" for any
+	// path no other route matches (STATIC_DIR). Optional: empty serves no pages.
 	StaticDir string
 
-	// Downstream holds one base URL per callee, per root AGENTS.md §3.
+	// Downstream holds the base URL of each service the gateway forwards to.
 	Downstream Downstream
 }
 
-// Downstream is the set of services the gateway forwards to. One base URL per
-// callee, named <SERVICE>_BASE_URL (root AGENTS.md §3).
-//
-// This is the gateway's extension point: a new service means a field here, an
-// env var, and a prefix in the proxy's route table (D-027). Nothing else in
-// the gateway needs to know it exists.
+// Downstream is the set of services the gateway forwards to, one base URL each,
+// read from <SERVICE>_BASE_URL. Adding a service means a field here, its
+// variable in Load, and a row in httpapi's serviceRoutes.
 type Downstream struct {
 	User     string
 	Supplier string
@@ -71,10 +53,9 @@ type Downstream struct {
 	Credit   string
 }
 
-// Load reads the environment and validates that every required variable is
-// present. It returns an error rather than falling back to a default: the
-// gateway's port is provisional (D-018), and an invented default would
-// silently manufacture a decision nobody made.
+// Load reads the environment and returns an error naming every required
+// variable that is unset or blank, or a REFRESH_TOKEN_TTL that is not a Go
+// duration. There are no defaults; STATIC_DIR is the only optional variable.
 func Load() (Config, error) {
 	rawTTL := os.Getenv("REFRESH_TOKEN_TTL")
 	ttl, err := time.ParseDuration(rawTTL)

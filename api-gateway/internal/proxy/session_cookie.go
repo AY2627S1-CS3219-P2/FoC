@@ -19,27 +19,17 @@ import (
 	"time"
 )
 
-// The refresh token's cookie. Its attributes are a recorded decision, not
-// defaults picked here:
-//
-//	HttpOnly  page scripts cannot read it, so an XSS cannot steal the
-//	          durable credential — only the in-memory access token, which
-//	          expires in minutes.
-//	Secure    HTTPS only. Browsers make an exception for localhost, so local
-//	          development is unaffected.
-//	Strict    the frontend and the gateway are same-origin (the browser
-//	          talks only to the frontend's port, which proxies here), so
-//	          nothing legitimate is cross-site.
-//	Path      /auth covers refresh AND logout. Scoping it to /auth/refresh
-//	          alone would stop the browser sending it to /auth/logout, and
-//	          user-service's LogoutRequest requires the token.
+// The refresh-token cookie is HttpOnly, Secure, SameSite=Strict and scoped to
+// Path=/auth (D-033 in ai/decisions.md). The Path must cover /auth/logout as
+// well as /auth/refresh: with a narrower Path the browser does not send the
+// cookie to logout, and logout cannot revoke the session.
 const (
 	refreshCookieName = "foc_refresh"
 	refreshCookiePath = "/auth"
 )
 
-// refreshTokenField is the JSON key user-service uses on the wire, in both
-// AuthResponse and LogoutRequest (its committed api/openapi.yaml).
+// refreshTokenField is the JSON field that carries the refresh token in
+// user-service's login, refresh and logout bodies.
 const refreshTokenField = "refreshToken"
 
 // newRefreshCookie returns the cookie carrying a freshly issued refresh token.
@@ -74,11 +64,8 @@ func expiredRefreshCookie() *http.Cookie {
 // takeRefreshToken removes refreshToken from a JSON object body and returns it
 // with the remaining body.
 //
-// The token must not reach the page: it goes into the cookie instead, and what
-// the browser receives has no durable credential in it at all.
-//
-// A body that is not a JSON object, or carries no refreshToken, comes back
-// unchanged with an empty token — an error response passes through untouched.
+// A body that is not a JSON object, or has no refreshToken, comes back
+// unchanged with an empty token.
 func takeRefreshToken(body []byte) (token string, rest []byte, err error) {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(body, &fields); err != nil {
@@ -99,13 +86,8 @@ func takeRefreshToken(body []byte) (token string, rest []byte, err error) {
 	return token, rest, nil
 }
 
-// putRefreshToken adds refreshToken to a JSON object body.
-//
-// This is what keeps user-service's contract unchanged: its LogoutRequest and
-// RefreshRequest still require the field, and the browser no longer has it to
-// send, so the gateway puts back what it took out. An empty or absent body
-// becomes a fresh object rather than failing — the frontend deliberately sends
-// no body on these routes now.
+// putRefreshToken sets refreshToken in a JSON object body. An empty body
+// becomes a new object.
 func putRefreshToken(body []byte, token string) ([]byte, error) {
 	fields := map[string]json.RawMessage{}
 	if len(bytes.TrimSpace(body)) > 0 {
@@ -130,9 +112,8 @@ func readAndClose(body io.ReadCloser) ([]byte, error) {
 	return io.ReadAll(body)
 }
 
-// setJSONBody replaces a request or response body and keeps the length
-// headers consistent. A stale Content-Length is not a cosmetic problem: the
-// peer reads that many bytes and hangs or truncates.
+// setJSONBody replaces a request or response body and sets Content-Type and
+// Content-Length to match, so the peer does not read a stale length.
 func setJSONBody(header http.Header, body []byte) (io.ReadCloser, int64) {
 	header.Set("Content-Type", "application/json")
 	header.Set("Content-Length", fmt.Sprintf("%d", len(body)))

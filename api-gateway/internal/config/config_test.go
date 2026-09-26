@@ -14,9 +14,8 @@ import (
 	"foc/api-gateway/internal/config"
 )
 
-// all is the complete set Load requires. Tests start from this and remove
-// what they want to be missing, so a new required variable makes these tests
-// fail loudly rather than silently passing with stale expectations.
+// all returns a value for every variable Load requires. Tests blank out the
+// ones they want missing.
 func all() map[string]string {
 	return map[string]string{
 		"PORT":              "8080",
@@ -25,17 +24,14 @@ func all() map[string]string {
 		"SUPPLIER_BASE_URL": "http://supplier-service:8082",
 		"ORDER_BASE_URL":    "http://order-service:8083",
 		"CREDIT_BASE_URL":   "http://credit-service:8084",
-		// Must match user-service's JWT_REFRESH_TOKEN_TTL: the gateway owns
-		// the refresh cookie's Max-Age but not the token's lifetime.
 		"REFRESH_TOKEN_TTL": "168h",
 	}
 }
 
 func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()
-	// t.Setenv restores the previous value at the end of the test and refuses
-	// to run in parallel, so no test here leaks config into another
-	// (root AGENTS.md §7: no test depends on another's leftover state).
+	// t.Setenv restores each variable when the test ends and panics under
+	// t.Parallel, so no test leaks config into another.
 	for _, name := range []string{
 		"PORT", "JWKS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
@@ -107,8 +103,6 @@ func TestLoadReportsMissingVariables(t *testing.T) {
 	}
 }
 
-// The list is sorted so the message is stable between runs; Go randomises map
-// iteration, and an unsorted list would make this very assertion flaky.
 func TestMissingVariablesAreListedInSortedOrder(t *testing.T) {
 	vars := all()
 	vars["PORT"] = ""
@@ -126,7 +120,7 @@ func TestMissingVariablesAreListedInSortedOrder(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by <name>).
+// AI-generated (edited by nigeltzy).
 func TestRefreshTokenTTLIsParsed(t *testing.T) {
 	setEnv(t, all())
 
@@ -141,8 +135,8 @@ func TestRefreshTokenTTLIsParsed(t *testing.T) {
 
 func TestRefreshTokenTTLRejectsNonDurations(t *testing.T) {
 	vars := all()
-	// A bare number is the plausible mistake: Go needs a unit, and a silent
-	// zero here would expire the cookie the moment it was set.
+	// A bare number is the likely mistake: time.ParseDuration needs a unit, so
+	// "604800" must be rejected, not read as seconds.
 	vars["REFRESH_TOKEN_TTL"] = "604800"
 	setEnv(t, vars)
 

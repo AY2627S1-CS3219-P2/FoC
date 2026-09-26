@@ -8,38 +8,22 @@
 #   SPA, so the browser has one origin (D-033).
 # Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
 
-# The trust zones from ai/decisions.md D-010 are enforced here by ONE thing:
-# whether a service has a `ports:` key. A published port is reachable from the
-# host; everything else is reachable only by name, from inside this network.
-#
-#   published   api-gateway, as 3001 — it serves the browser app AND the API
-#   internal    everything else, with no `ports:` key at all
-#   internal    redis, supplier-db, and every service
+# Only services with a `ports:` key are reachable from the host; api-gateway
+# (host port 3001) is the only one. Downstream services trust the gateway's
+# X-User-Id and X-User-Role headers, so publishing any other service lets a
+# client skip token verification (D-010 in ai/decisions.md).
 #
 # Services with no code yet (user-service, order-service, credit-service) are
-# deliberately absent — they have Dockerfiles but nothing to build, and listing
-# them would break `docker compose up`. Add each one as it lands.
-#
-# user-service is absent here but exists on feat/user-service, with its own
-# compose half (user-db, redis, user-service). Merging the two halves is
-# blocked on ai/decisions.md D-024 versus user-service/AGENTS.md — see the
-# note on redis below.
+# not listed.
 
 services:
-  # ---- Revocation store (D-013, D-014) ------------------------------------
-  # AI-generated (edited by PENDING) — rewritten for D-024.
-  # user-service is the ONLY process that touches this; the gateway is not a
-  # Redis client at all (D-024). Nothing consumes it in this file yet because
-  # user-service is not in this half — it is here so the store exists when the
-  # two halves merge. NOTE: feat/user-service's compose declares redis:8-alpine
-  # with no persistence and no volume, which would empty the jti blocklist on
-  # restart. That difference has to be settled before the halves are merged.
-  # No `ports:` key, so nothing outside this network can reach it — which
-  # matters because write access is enough to un-revoke a logged-out token.
+  # ---- Redis ------------------------------------------------------------
+  # AI-generated (edited by nigeltzy) — rewritten for D-024.
+  # Used only by user-service, which is not in this file yet. No `ports:` key,
+  # so it is reachable only inside this network.
   redis:
     image: redis:7-alpine
-    # Append-only persistence: without it a restart empties the jti blocklist,
-    # silently un-revoking every token that was logged out before the restart.
+    # Append-only persistence, so the jti blocklist survives a restart.
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
@@ -49,40 +33,31 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---- The only public entry point (D-010) --------------------------------
+  # ---- API gateway ------------------------------------------------------
   api-gateway:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
-    # No depends_on: the gateway is not a Redis client (D-024), and it fetches
-    # JWKS lazily rather than requiring user-service at boot (root AGENTS.md
-    # §5 — never assume startup order).
+    # No depends_on: the gateway fetches JWKS on first use, so it can start
+    # before user-service.
     environment:
       PORT: 8080
-      # user-service's public keys (D-023). While user-service is absent the
-      # gateway still starts; authenticated routes answer 503 until it appears.
+      # user-service's JWKS endpoint. Until user-service is running, authenticated
+      # routes return 503.
       JWKS_URL: http://user-service:8081/.well-known/jwks.json
-      # config.Load requires all four, so a missing one fails at boot rather
-      # than at the first request that needs it. Services that do not exist
-      # yet can still be named.
+      # All four base URLs are required, including services not in this file yet.
       USER_BASE_URL: http://user-service:8081
       SUPPLIER_BASE_URL: http://supplier-service:8082
       ORDER_BASE_URL: http://order-service:8083
       CREDIT_BASE_URL: http://credit-service:8084
-      # The refresh cookie's Max-Age. MUST match user-service's
-      # JWT_REFRESH_TOKEN_TTL — the gateway owns the cookie, not the token.
+      # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
+      # (default 168h) so it matches user-service's refresh-token lifetime.
       REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
-      # The built SPA, baked into the image by api-gateway/Dockerfile. This is
-      # what makes the page and the API one origin, which a SameSite=Strict
-      # cookie requires (D-033).
-      STATIC_DIR: /app/web
-    # Published as 3001 — the frontend's allocation in root AGENTS.md §3 —
-    # because this is now the only thing the browser talks to. 8080 remains
-    # the in-container port (D-018).
+    # Host port 3001 maps to the gateway's container port 8080 (PORT above).
     ports:
       - "3001:8080"
 
-  # ---- Supplier service and its own database (D-003) ----------------------
+  # ---- Supplier service and its database -------------------------------
   supplier-db:
     image: postgres:16-alpine
     environment:
@@ -107,20 +82,8 @@ services:
     environment:
       PORT: 8082
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
-    # No `ports:` key — D-025b is CLOSED. The gateway proxies /api/suppliers
-    # onto supplier-service's own /suppliers prefix, and the browser reaches
-    # it that way (frontend/src/features/suppliers/suppliersApi.ts), so
-    # nothing on the host needs this port any more. D-010's trust zones are
-    # now actually enforced for this service.
+    # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
-  # ---- Browser client ------------------------------------------------------
-  # There is no frontend service any more. api-gateway/Dockerfile builds the
-  # SPA and the gateway serves it from "/", so the browser has ONE origin and
-  # the SameSite=Strict refresh cookie rides along without any CORS (D-033).
-  #
-  # frontend/Dockerfile and frontend/nginx.conf are kept rather than deleted:
-  # D-033 says to bring nginx back only if serving from the gateway proves
-  # unworkable, and to flag that rather than doing it silently.
 
 volumes:
   redis-data:
