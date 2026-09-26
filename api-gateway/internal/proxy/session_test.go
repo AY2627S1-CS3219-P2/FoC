@@ -141,7 +141,7 @@ func TestUnreachableRefreshKeepsTheCookie(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // TestRefreshForwardsANonJSONBodyUnchanged checks the path where the refresh
 // cookie cannot be merged into the request body because the body is not a
 // JSON object: the body is forwarded as it came, with a matching length.

@@ -6,7 +6,7 @@
 //   2026-09-22: two added for /api/suppliers reaching supplier-service's
 //   /suppliers prefix. The two interim-CORS tests were removed with the
 //   policy when the frontend became same-origin.
-// Author review: Directed and generated as part of implementation of unit tests for the router package. I checked the output and it seems to be reasonable and typical unit tests for the router package.
+// Author review: Nigeltzy - Directed and generated as part of implementation of unit tests for the router package. I checked the output and it seems to be reasonable and typical unit tests for the router package.
 
 package httpapi_test
 
@@ -652,7 +652,7 @@ func TestStaticFilesAndSPAFallback(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // TestStaticServesNamesStartingWithDotDot checks that a file whose name merely
 // starts with ".." is served, while a path that climbs out of the static dir
 // is still refused.

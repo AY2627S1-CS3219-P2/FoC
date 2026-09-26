@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-22
 // Scope: Serves the built frontend from the gateway, which is what makes the
 //   browser same-origin with the API in Compose and in production (D-033).
-// Author review: Checked the simple generated boilerplate code and it seems reasonable. I also checked the output of the generated code and it seems to be a typical implementation of a SPA handler.
+// Author review: Nigeltzy - Checked the simple generated boilerplate code and it seems reasonable. I also checked the output of the generated code and it seems to be a typical implementation of a SPA handler.
 
 package httpapi
 
@@ -21,7 +21,7 @@ func newSPAHandler(dir string) http.Handler {
 	files := http.FileServer(http.Dir(dir))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// AI-generated (edited by PENDING).
+		// AI-generated (edited by Nigeltzy).
 		// Reject paths that clean to outside dir before os.Stat sees them;
 		// http.Dir also refuses to leave its root. IsLocal rejects ".." as a
 		// path element but not a name that merely starts with "..".
