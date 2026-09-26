@@ -4,13 +4,10 @@
 //   claim set the gateway forwards. Implements D-023.
 // Author review: Nigeltzy - Checked the output of this generated code, this is part of the auth package that my team had discussed extensively about before, and the generated code seems to be a reasonable implementation of the requirements. I also checked the output of the generated code and it seems to be a typical implementation of an access-token verification package.
 
-// Package auth verifies access-token signatures and exposes the claims the
-// gateway forwards downstream.
-//
-// It verifies with a PUBLIC key only (D-023). The gateway holds no private key
-// and cannot mint a token, which is what keeps user-service the sole issuer
-// (D-012). It does NOT check revocation: under D-024 the gateway never talks
-// to Redis, so a token is good until its exp (D-025 records what that costs).
+// Package auth verifies RS256 access tokens against the public keys that
+// user-service publishes at its JWKS endpoint, and exposes the claims the
+// gateway forwards. It holds no private key, so it cannot mint a token
+// (D-023 in ai/decisions.md). It does not check revocation.
 package auth
 
 import (
@@ -37,7 +34,7 @@ var (
 	// ErrInvalidSignature covers a token whose signature does not verify, or
 	// which names a key the issuer does not publish.
 	ErrInvalidSignature = errors.New("auth: invalid signature")
-	// ErrExpired covers a token past its exp, allowing for clock skew.
+	// ErrExpired covers a token past its exp or before its nbf, after clockSkew leeway.
 	ErrExpired = errors.New("auth: token expired")
 	// ErrWrongType covers a refresh token presented where an access token
 	// belongs. They are both JWTs signed by the same key, so nothing but the
@@ -49,8 +46,8 @@ var (
 	ErrKeysUnavailable = errors.New("auth: signing keys unavailable")
 )
 
-// clockSkew is the tolerance applied to exp, so a few seconds of drift between
-// user-service and the gateway does not reject a valid token.
+// clockSkew is the leeway applied to exp and nbf, so a few seconds of drift
+// between user-service and the gateway does not reject a valid token.
 const clockSkew = 5 * time.Second
 
 // minRefreshInterval throttles JWKS refetches. An unknown kid triggers a
@@ -58,32 +55,33 @@ const clockSkew = 5 * time.Second
 // by sending tokens with invented kids.
 const minRefreshInterval = 30 * time.Second
 
-// Claims is the subset of the access token the gateway acts on. user-service
-// mints more than this; anything not listed here is deliberately ignored
-// rather than forwarded.
+// Claims is the subset of the access token the gateway acts on. Other claims
+// are ignored and not forwarded.
 type Claims struct {
 	// Subject is the user's UUID, forwarded as the user id header.
 	Subject string
-	// Role is STUDENT or ADMIN (D-019), forwarded as the role header.
+	// Role is STUDENT or ADMIN, forwarded as the role header.
 	Role string
-	// ID is the jti. The gateway does not use it — nothing here reads a
-	// blocklist (D-024) — but it is parsed so downstream logging can
-	// correlate a request with a session.
+	// ID is the token's jti. It is parsed but not used or forwarded.
 	ID string
 }
 
 // Verifier verifies access tokens against the issuer's published RSA keys.
-//
-// New returns a ready-to-use value. Keys are fetched lazily on first use, not
-// in the constructor, because the gateway must not assume user-service is
-// already up (root AGENTS.md §5, temporal coupling).
+// Keys are fetched on first use, so the gateway can start before user-service
+// is reachable.
 type Verifier struct {
 	jwksURL string
 	client  *http.Client
 
+	// AI-generated (edited by nigeltzy).
+	// fetchMu serialises refetches, so concurrent requests with an unknown
+	// kid share one fetch instead of each starting their own.
+	fetchMu sync.Mutex
+
 	mu          sync.RWMutex
 	keys        map[string]*rsa.PublicKey
-	lastFetched time.Time
+	lastAttempt time.Time
+	lastErr     error
 }
 
 // NewVerifier returns a Verifier that fetches keys from jwksURL.
@@ -99,7 +97,8 @@ func NewVerifier(jwksURL string, client *http.Client) *Verifier {
 }
 
 // Verify parses and validates an access token, returning the claims the
-// gateway forwards. The returned error is one of the sentinels above.
+// gateway forwards. The returned error matches one of the sentinels above
+// under errors.Is; ErrKeysUnavailable carries the underlying cause.
 func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, error) {
 	if tokenString == "" {
 		return Claims{}, ErrMalformed
@@ -120,14 +119,17 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 		// shared secret — the classic JWT algorithm-confusion attack.
 		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
 		jwt.WithLeeway(clockSkew),
+		// AI-generated (edited by nigeltzy).
+		// A token with no exp would otherwise never expire.
+		jwt.WithExpirationRequired(),
 	)
 	if err != nil {
 		switch {
 		case errors.Is(err, jwt.ErrTokenExpired), errors.Is(err, jwt.ErrTokenNotValidYet):
 			return Claims{}, ErrExpired
 		case errors.Is(err, ErrKeysUnavailable):
-			return Claims{}, ErrKeysUnavailable
-		case errors.Is(err, jwt.ErrTokenMalformed):
+			return Claims{}, err
+		case errors.Is(err, jwt.ErrTokenMalformed), errors.Is(err, jwt.ErrTokenRequiredClaimMissing), errors.Is(err, ErrMalformed):
 			return Claims{}, ErrMalformed
 		default:
 			return Claims{}, ErrInvalidSignature
@@ -154,58 +156,92 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 	}, nil
 }
 
-// keyFor resolves the key a token names in its kid header, refetching the key
+// AI-generated (edited by nigeltzy).
+// keyFor resolves the key named by the token's kid header, refetching the key
 // set once if the kid is unknown. user-service publishes an active key plus
-// retired ones (D-023), so an unknown kid normally means a rotation the
-// gateway has not picked up yet.
+// retired ones, so an unknown kid usually means a rotation not yet fetched.
 func (v *Verifier) keyFor(ctx context.Context, token *jwt.Token) (*rsa.PublicKey, error) {
 	kid, _ := token.Header["kid"].(string)
 	if kid == "" {
 		return nil, ErrMalformed
 	}
 
-	v.mu.RLock()
-	key, ok := v.keys[kid]
-	fetched := v.lastFetched
-	v.mu.RUnlock()
-	if ok {
+	if key, ok := v.cachedKey(kid); ok {
 		return key, nil
 	}
 
-	if !fetched.IsZero() && time.Since(fetched) < minRefreshInterval {
-		// Recently refreshed and the kid still is not there: treat it as a
-		// key the issuer does not publish rather than refetch on demand.
-		return nil, ErrInvalidSignature
-	}
+	v.fetchMu.Lock()
+	defer v.fetchMu.Unlock()
 
-	if err := v.refresh(ctx); err != nil {
-		return nil, err
+	// Another request may have fetched while this one waited for fetchMu.
+	if key, ok := v.cachedKey(kid); ok {
+		return key, nil
 	}
 
 	v.mu.RLock()
-	key, ok = v.keys[kid]
+	attempted, lastErr := v.lastAttempt, v.lastErr
 	v.mu.RUnlock()
-	if !ok {
+	if !attempted.IsZero() && time.Since(attempted) < minRefreshInterval {
+		// Attempted recently, successful or not: answer from that attempt
+		// rather than fetch again.
+		if lastErr != nil {
+			return nil, lastErr
+		}
 		return nil, ErrInvalidSignature
 	}
-	return key, nil
+
+	// The fetch is detached from the request's cancellation: its result is
+	// cached for every request, so one client disconnecting must not record
+	// a failure. The http.Client timeout still bounds it.
+	if err := v.refresh(context.WithoutCancel(ctx)); err != nil {
+		return nil, err
+	}
+
+	if key, ok := v.cachedKey(kid); ok {
+		return key, nil
+	}
+	return nil, ErrInvalidSignature
 }
 
-// refresh replaces the cached key set from the JWKS endpoint.
+// cachedKey returns the already-fetched key for kid, if there is one.
+func (v *Verifier) cachedKey(kid string) (*rsa.PublicKey, bool) {
+	v.mu.RLock()
+	defer v.mu.RUnlock()
+	key, ok := v.keys[kid]
+	return key, ok
+}
+
+// refresh fetches the key set and records the attempt, successful or not, so
+// minRefreshInterval also throttles fetches while the endpoint is failing. A
+// failed fetch keeps the previously cached keys.
 func (v *Verifier) refresh(ctx context.Context) error {
+	keys, err := v.fetch(ctx)
+
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.lastAttempt = time.Now()
+	v.lastErr = err
+	if err == nil {
+		v.keys = keys
+	}
+	return err
+}
+
+// fetch downloads and decodes the key set from the JWKS endpoint.
+func (v *Verifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, nil)
 	if err != nil {
-		return fmt.Errorf("%w: building request: %v", ErrKeysUnavailable, err)
+		return nil, fmt.Errorf("%w: building request: %v", ErrKeysUnavailable, err)
 	}
 
 	resp, err := v.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrKeysUnavailable, err)
+		return nil, fmt.Errorf("%w: %v", ErrKeysUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("%w: %s returned %d", ErrKeysUnavailable, v.jwksURL, resp.StatusCode)
+		return nil, fmt.Errorf("%w: %s returned %d", ErrKeysUnavailable, v.jwksURL, resp.StatusCode)
 	}
 
 	var set struct {
@@ -217,7 +253,7 @@ func (v *Verifier) refresh(ctx context.Context) error {
 		} `json:"keys"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&set); err != nil {
-		return fmt.Errorf("%w: decoding key set: %v", ErrKeysUnavailable, err)
+		return nil, fmt.Errorf("%w: decoding key set: %v", ErrKeysUnavailable, err)
 	}
 
 	keys := make(map[string]*rsa.PublicKey, len(set.Keys))
@@ -233,14 +269,10 @@ func (v *Verifier) refresh(ctx context.Context) error {
 		keys[k.Kid] = key
 	}
 	if len(keys) == 0 {
-		return fmt.Errorf("%w: %s published no usable RSA keys", ErrKeysUnavailable, v.jwksURL)
+		return nil, fmt.Errorf("%w: %s published no usable RSA keys", ErrKeysUnavailable, v.jwksURL)
 	}
 
-	v.mu.Lock()
-	v.keys = keys
-	v.lastFetched = time.Now()
-	v.mu.Unlock()
-	return nil
+	return keys, nil
 }
 
 // rsaKeyFrom rebuilds a public key from the base64url modulus and exponent a

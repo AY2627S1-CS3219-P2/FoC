@@ -14,15 +14,9 @@
 //   and my teammate. Other than it, the AI was told to used default implementation
 //   patterns for reverse proxies, and to use the existing codebase as a reference.
 
-// Package proxy forwards a verified request to one downstream service over
-// synchronous REST, translating the token claims into HTTP headers (D-013).
-//
-// The strip in Rewrite is the security-critical line in this package. D-022
-// lets downstream services trust ClaimHeaderUserID and ClaimHeaderRole
-// precisely because a client cannot set them: whatever the caller sent is
-// deleted, and only values derived from a verified token are written. Remove
-// the strip and any caller can send "X-User-Role: ADMIN" with an ordinary
-// token and be believed.
+// Package proxy forwards a request to one downstream service over HTTP. It
+// deletes any client-supplied ClaimHeaderUserID and ClaimHeaderRole headers
+// and, on authenticated routes, sets them from the verified identity.
 package proxy
 
 import (
@@ -35,8 +29,8 @@ import (
 	"time"
 )
 
-// Claim headers the gateway injects and downstream services read (D-022).
-// supplier-service already reads ClaimHeaderRole as an interim stand-in.
+// Claim headers the gateway sets from the verified token for downstream
+// services to read.
 const (
 	ClaimHeaderUserID = "X-User-Id"
 	ClaimHeaderRole   = "X-User-Role"
@@ -49,27 +43,17 @@ type Identity struct {
 	Role   string
 }
 
-// Proxy forwards to a single downstream service.
-//
-// One Proxy per callee, constructed with that callee's base URL. Adding a
-// service to the gateway is a new Proxy and a route in internal/httpapi — no
-// change in here (D-027).
+// Proxy forwards requests for one Route to its downstream service.
 type Proxy struct {
 	reverse *httputil.ReverseProxy
 	route   Route
-	// behaviour distinguishes the constructors below. Set by them rather than
-	// passed in, so callers pick a named function instead of handing over
-	// flags that select a branch (root AGENTS.md §5).
+	// behaviour is set only by the New* constructors.
 	behaviour behaviour
 }
 
-// behaviour is the two independent choices a route makes about credentials.
-//
-// These were a single `passthrough bool` until user-service landed, which was
-// only ever adequate because the two cases it named happened to differ in both
-// respects at once. They are not the same question: whether the callee still
-// needs the bearer token is about that service, and whether the gateway has a
-// verified identity to assert is about the route.
+// behaviour is what a route does with credentials: whether Authorization is
+// forwarded, whether the verified identity is injected, and how the refresh
+// cookie is handled.
 type behaviour struct {
 	// forwardToken leaves Authorization on the outbound request.
 	forwardToken bool
@@ -80,28 +64,27 @@ type behaviour struct {
 	session sessionBehaviour
 }
 
-// sessionBehaviour is what a route does about the refresh-token cookie.
-//
-// Set by the named constructors below, never passed in: a caller picks
-// NewSessionRotating, it does not hand over three booleans that select
-// branches in here (root AGENTS.md §5, control coupling).
+// sessionBehaviour is what a route does with the refresh-token cookie.
 type sessionBehaviour struct {
-	// cookieFromBody moves refreshToken out of the RESPONSE body into a
-	// Set-Cookie. Login and refresh, where user-service issues one.
+	// cookieFromBody moves refreshToken from the response body into a
+	// Set-Cookie (login and refresh).
 	cookieFromBody bool
-	// bodyFromCookie puts refreshToken back into the REQUEST body from the
-	// cookie. Refresh and logout, whose contracts still require the field.
+	// bodyFromCookie copies the cookie's value into the request body's
+	// refreshToken field (refresh and logout).
 	bodyFromCookie bool
-	// clearCookie expires the cookie on the response. Logout.
+	// clearCookie expires the cookie on every response, whatever user-service
+	// answered. Logout.
 	clearCookie bool
+	// AI-generated (edited by nigeltzy).
+	// clearOnReject expires the cookie when user-service answers 401, so a
+	// dead refresh token is not presented again. Refresh.
+	clearOnReject bool
 	// ttl is the cookie's Max-Age, from config (must match user-service's
 	// JWT_REFRESH_TOKEN_TTL).
 	ttl time.Duration
 }
 
-// Route describes one public prefix and where it goes. Adding a service to
-// the gateway is a new Route in internal/httpapi's table (D-027) — this
-// package does not change.
+// Route describes one public path prefix and the downstream service it maps to.
 type Route struct {
 	// BaseURL is the downstream service, e.g. "http://order-service:8083".
 	BaseURL string
@@ -114,57 +97,32 @@ type Route struct {
 	AddPrefix string
 }
 
-// New returns a Proxy for an AUTHENTICATED route. The caller's token has
-// already been verified, so the bearer token is stripped (downstream services
-// do not parse JWTs, D-022) and the claim headers are injected.
-//
-// Returns a ready-to-use value; there is nothing to start afterwards
-// (root AGENTS.md §5).
+// New returns a Proxy for an authenticated route. It deletes the
+// Authorization header and injects the verified identity into the claim
+// headers.
 func New(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: false, injectClaims: true})
 }
 
-// NewRetainingToken returns a Proxy for an AUTHENTICATED route whose callee
-// verifies the access token for itself.
-//
-// Same as New in every respect that matters to D-022 — client-supplied claim
-// headers are still stripped, and the gateway's own verified values are still
-// injected — except that Authorization survives the hop.
-//
-// This exists for user-service. It is the token ISSUER (D-012, D-023), and its
-// own routes sit behind a RequireJWT middleware that reads the Authorization
-// header; its api/openapi.yaml marks them `security: BearerAuth: []`. Under
-// New they answer 401, because the gateway had deleted the very header they
-// authenticate on.
-//
-// The credential is not being spread any wider than it already was: the token
-// was minted by user-service and this hands it back to the service that signed
-// it, not onward to a third party. Every other callee still gets New, so
-// supplier-, order- and credit-service never see a bearer token.
-//
-// Recorded as D-022's one exception in ai/decisions.md (D-030), which also
-// marks D-022 amended. Every other callee keeps New.
+// NewRetainingToken returns a Proxy like New that also forwards the
+// Authorization header, for user-service, which verifies the access token
+// itself. Client-supplied claim headers are still stripped and the verified
+// ones injected. Only user-service's route may use it; every other callee uses
+// New and never receives the bearer token (D-030 in ai/decisions.md).
 func NewRetainingToken(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: true, injectClaims: true})
 }
 
-// NewPassthrough returns a Proxy for a PUBLIC auth route — login, register,
-// refresh, logout.
-//
-// These carry credentials rather than a verified identity, so the Authorization
-// header is preserved: logout needs the access token to reach user-service so
-// it can blocklist that jti. No claim headers are injected, because nothing
-// has been verified here — user-service authenticates these itself.
+// NewPassthrough returns a Proxy for a public route with no verified identity
+// and no refresh cookie, such as POST /auth/register. Authorization is
+// forwarded unchanged and no claim headers are injected.
 func NewPassthrough(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: true, injectClaims: false})
 }
 
-// NewSessionIssuing returns a Proxy for POST /auth/login.
-//
-// user-service answers with {accessToken, refreshToken}. The refresh token is
-// lifted out of that body into an HttpOnly cookie and never reaches the page,
-// so a script that compromises the tab gets the access token -- which expires
-// in minutes -- and not the durable credential.
+// NewSessionIssuing returns a Proxy for POST /auth/login. It moves
+// refreshToken from user-service's response body into the HttpOnly refresh
+// cookie, so the page never receives it.
 func NewSessionIssuing(route Route, ttl time.Duration) (*Proxy, error) {
 	return build(route, behaviour{
 		forwardToken: true,
@@ -172,30 +130,26 @@ func NewSessionIssuing(route Route, ttl time.Duration) (*Proxy, error) {
 	})
 }
 
-// NewSessionRotating returns a Proxy for POST /auth/refresh.
-//
-// Both directions. user-service's RefreshRequest requires refreshToken in the
-// body and the browser can no longer read it, so the gateway puts the cookie's
-// value back in on the way out; the rotated token in the reply is lifted into
-// a new cookie on the way back. user-service rotates on every exchange and
-// treats a replay as a compromised session, so the cookie MUST be replaced
-// here -- leaving the old one is a self-inflicted session revocation.
+// NewSessionRotating returns a Proxy for POST /auth/refresh. It copies the
+// refresh cookie into the request body's refreshToken field and replaces the
+// cookie with the rotated token from a successful response. user-service
+// revokes all of a user's sessions when an old refresh token is reused, so the
+// cookie must be replaced on every refresh, and expired when user-service
+// rejects it with 401. A 5xx leaves the cookie in place.
 func NewSessionRotating(route Route, ttl time.Duration) (*Proxy, error) {
 	return build(route, behaviour{
 		forwardToken: true,
-		session:      sessionBehaviour{bodyFromCookie: true, cookieFromBody: true, ttl: ttl},
+		session:      sessionBehaviour{bodyFromCookie: true, cookieFromBody: true, clearOnReject: true, ttl: ttl},
 	})
 }
 
-// NewSessionEnding returns a Proxy for POST /auth/logout.
-//
-// Injects the cookie's token into the body, because LogoutRequest requires it
-// and the browser cannot supply it, then expires the cookie. The bearer token
-// is forwarded too: user-service blocklists that access token's jti.
-//
-// This route is why the cookie's Path is /auth and not /auth/refresh -- the
-// browser would not send it here otherwise, and logout would silently stop
-// revoking anything.
+// NewSessionEnding returns a Proxy for POST /auth/logout. It copies the
+// refresh cookie into the request body's refreshToken field, forwards
+// Authorization so user-service can revoke the access token, and expires the
+// cookie whatever user-service answers, including when it cannot be reached.
+// A logout rejected because the access token expired while the user was idle
+// must still leave the browser without the cookie; otherwise the next page
+// load refreshes and signs the user back in.
 func NewSessionEnding(route Route) (*Proxy, error) {
 	return build(route, behaviour{
 		forwardToken: true,
@@ -216,34 +170,24 @@ func build(route Route, how behaviour) (*Proxy, error) {
 	p.reverse = &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
 			r.SetURL(target)
-			// SetXForwarded sets X-Forwarded-For/Host/Proto and, importantly,
-			// drops whatever the client sent for them.
+			// The client's X-Forwarded-* headers are removed before Rewrite runs;
+			// SetXForwarded sets fresh ones from the inbound request.
 			r.SetXForwarded()
 
-			// Applies to every route, including the passthrough ones — the
-			// whole point of /auth/login is that it reaches user-service as
-			// /api/v1/users/login.
 			r.Out.URL.Path = p.route.RewritePath(r.In.URL.Path)
 
-			// STRIP, unconditionally and on every route. Whatever the client
-			// sent for these is deleted before anything is injected. This is
-			// what D-022 rests on: a caller cannot assert its own identity.
+			// Delete client-supplied claim headers on every route before anything is
+			// injected. Downstream services trust these headers, so without this delete a
+			// caller could send X-User-Role: ADMIN and be believed (D-022 in ai/decisions.md).
 			r.Out.Header.Del(ClaimHeaderUserID)
 			r.Out.Header.Del(ClaimHeaderRole)
 
 			if !p.behaviour.forwardToken {
-				// Most downstream services do not parse JWTs (D-022), so
-				// forwarding the bearer token would spread a credential for no
-				// purpose. user-service is the exception — see
-				// NewRetainingToken.
 				r.Out.Header.Del("Authorization")
 			}
 
-			// The refresh token travels as a cookie now, so put it back in
-			// the body user-service's contract still asks for. Failure is
-			// deliberately silent: no cookie means no session, and
-			// user-service answers 401 on the missing field, which is the
-			// right answer and its to give.
+			// Copy the refresh cookie into the JSON body's refreshToken field. Without a
+			// cookie the body is forwarded unchanged and user-service rejects the request.
 			if p.behaviour.session.bodyFromCookie {
 				if c, err := r.In.Cookie(refreshCookieName); err == nil && c.Value != "" {
 					if raw, err := readAndClose(r.Out.Body); err == nil {
@@ -257,9 +201,8 @@ func build(route Route, how behaviour) (*Proxy, error) {
 				}
 			}
 
-			// INJECT. Only values derived from a verified token reach here.
-			// Skipped on the public auth routes, where nothing has been
-			// verified yet and there is no identity to assert.
+			// Inject the verified identity. Routes built without injectClaims (the
+			// public auth routes) send no claim headers.
 			if p.behaviour.injectClaims {
 				if id, ok := IdentityFrom(r.In.Context()); ok {
 					r.Out.Header.Set(ClaimHeaderUserID, id.UserID)
@@ -267,20 +210,8 @@ func build(route Route, how behaviour) (*Proxy, error) {
 				}
 			}
 		},
-		// Downstream services set their own CORS headers — supplier-service
-		// runs a permissive cors.Handler of its own, from when the browser
-		// reached it directly. ReverseProxy copies response headers through,
-		// so the browser would receive TWO Access-Control-Allow-Origin values
-		// and reject the response outright: "the header contains multiple
-		// values '*, *', but only one is allowed". fetch() then rejects, and
-		// the UI reports it as the service being unreachable.
-		//
-		// curl cannot catch this — it ignores CORS entirely. Only a browser
-		// sees it.
-		//
-		// The gateway is the public edge and owns the CORS policy alone
-		// (internal/httpapi's interimCORS), so whatever a callee said about
-		// origins is discarded here.
+		// Drop any Access-Control-* headers a downstream service sets; the gateway
+		// sends no CORS headers, so none reach the browser.
 		ModifyResponse: func(res *http.Response) error {
 			for name := range res.Header {
 				if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") {
@@ -288,9 +219,13 @@ func build(route Route, how behaviour) (*Proxy, error) {
 				}
 			}
 
-			// Only on success. An error reply carries no token to lift, and
-			// clearing the cookie on a failed logout would sign the user out
-			// of a session the server still considers live.
+			// AI-generated (edited by nigeltzy).
+			if p.behaviour.session.clearCookie ||
+				(p.behaviour.session.clearOnReject && res.StatusCode == http.StatusUnauthorized) {
+				res.Header.Add("Set-Cookie", expiredRefreshCookie().String())
+			}
+
+			// An error reply carries no token to lift.
 			if res.StatusCode < 200 || res.StatusCode > 299 {
 				return nil
 			}
@@ -309,16 +244,15 @@ func build(route Route, how behaviour) (*Proxy, error) {
 				}
 				res.Body, res.ContentLength = setJSONBody(res.Header, rest)
 			}
-
-			if p.behaviour.session.clearCookie {
-				res.Header.Add("Set-Cookie", expiredRefreshCookie().String())
-			}
 			return nil
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
-			// A downstream being unreachable is the gateway's problem to
-			// report, not a 500 from an unknown source.
+			// Answer 502 with a JSON error body when the downstream cannot be reached.
 			log.Printf("api-gateway: proxy %s %s: %v", r.Method, r.URL.Path, err)
+			// AI-generated (edited by nigeltzy).
+			if p.behaviour.session.clearCookie {
+				w.Header().Add("Set-Cookie", expiredRefreshCookie().String())
+			}
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = w.Write([]byte(`{"error":"upstream service unavailable"}`))
@@ -331,8 +265,6 @@ func build(route Route, how behaviour) (*Proxy, error) {
 }
 
 // RewritePath maps a public path to the downstream service's own path.
-// Exported because it is the observable contract of a Route, and the route
-// table in internal/httpapi is only correct if this is.
 func (r Route) RewritePath(path string) string {
 	trimmed := strings.TrimPrefix(path, r.StripPrefix)
 	if !strings.HasPrefix(trimmed, "/") {

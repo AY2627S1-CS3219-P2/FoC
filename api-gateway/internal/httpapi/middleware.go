@@ -10,6 +10,7 @@ package httpapi
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strings"
 
@@ -17,15 +18,13 @@ import (
 	"foc/api-gateway/internal/proxy"
 )
 
-// bearerPrefix is the scheme the frontend sends (frontend/src/lib/http.ts).
+// bearerPrefix is the Authorization scheme RequireToken accepts.
 const bearerPrefix = "Bearer "
 
-// RequireToken verifies the access token and puts the resulting identity on
-// the request context.
-//
-// It is the ONLY way an Identity comes into existence — proxy's context key is
-// unexported — so a request that reaches a downstream service with claim
-// headers set has necessarily passed through here (D-022).
+// RequireToken verifies the bearer access token and puts the resulting
+// identity on the request context, where the proxy reads it to set the claim
+// headers. It answers 401 when the token is missing or fails verification,
+// and 503 when the signing keys cannot be fetched.
 func RequireToken(verifier *auth.Verifier) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -43,15 +42,16 @@ func RequireToken(verifier *auth.Verifier) func(http.Handler) http.Handler {
 					// The gateway cannot verify anything right now. This is
 					// the gateway's failure, not the caller's, and it must
 					// not be reported as a bad token.
+					// AI-generated (edited by nigeltzy).
+					log.Printf("httpapi: %s %s: %v", r.Method, r.URL.Path, err)
 					writeError(w, http.StatusServiceUnavailable, "cannot verify tokens right now")
 				case errors.Is(err, auth.ErrExpired):
 					writeError(w, http.StatusUnauthorized, "token expired")
 				case errors.Is(err, auth.ErrWrongType):
 					writeError(w, http.StatusUnauthorized, "refresh token presented where an access token is required")
 				default:
-					// Malformed and bad-signature deliberately collapse into
-					// one message: telling a caller which one it was helps
-					// nobody but an attacker probing the format.
+					// Malformed and bad-signature tokens get the same message, so the
+					// response does not reveal which check failed.
 					writeError(w, http.StatusUnauthorized, "invalid token")
 				}
 				return

@@ -16,9 +16,8 @@
 
 // Package httpapi holds the gateway's router and its transport-only handlers.
 //
-// Adding a service to the gateway is meant to be a small, local change: give
-// it a base URL in internal/config, then add one entry to serviceRoutes below.
-// Nothing else in the gateway needs to know it exists (D-027).
+// Adding a downstream service takes a base URL in internal/config and one
+// entry in NewRouter's serviceRoutes table.
 package httpapi
 
 import (
@@ -35,24 +34,19 @@ import (
 	"foc/api-gateway/internal/proxy"
 )
 
-// userServiceAPIPrefix is where user-service actually mounts its routes. The
-// gateway's public /auth/* paths are rewritten onto it, so the browser never
-// sees the internal layout (D-027).
+// userServiceAPIPrefix is where user-service mounts its routes. Both the
+// public /auth/* routes and /api/users/* are rewritten onto it.
 const userServiceAPIPrefix = "/api/v1/users"
 
-// supplierServiceAPIPrefix is where supplier-service mounts its routes
-// (`r.Route("/suppliers", ...)` in its own router). Same arrangement as
-// user-service: the public /api/suppliers/* path is rewritten onto it.
+// supplierServiceAPIPrefix is where supplier-service mounts its routes; the
+// public /api/suppliers/* path is rewritten onto it.
 const supplierServiceAPIPrefix = "/suppliers"
 
-// authRoute is one of the four public routes the gateway terminates. They take
-// credentials rather than a verified identity, so they are NOT behind
-// RequireToken — user-service authenticates them itself.
-//
-// Each names its own credential handling rather than sharing one constructor,
-// because the refresh token's cookie makes them genuinely different: register
-// carries no token at all, login receives one, refresh both spends and
-// receives one, and logout spends one and ends it.
+// authRoute is one of the four public /auth routes. They carry credentials,
+// not a verified identity, so they are registered outside RequireToken and
+// user-service authenticates them. newProxy sets the route's refresh-cookie
+// handling: none for register, set on login, read and replaced on refresh,
+// read and cleared on logout.
 type authRoute struct {
 	name     string
 	newProxy func(proxy.Route, time.Duration) (*proxy.Proxy, error)
@@ -60,13 +54,9 @@ type authRoute struct {
 
 func authRoutes() []authRoute {
 	return []authRoute{
-		// 201, no body, no tokens — nothing to translate.
 		{"register", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
 			return proxy.NewPassthrough(r)
 		}},
-		// Where the refresh token is FIRST issued. Its AuthResponse carries
-		// one, so the cookie is set here as well as on refresh — the point
-		// that was missing when this change was specified.
 		{"login", proxy.NewSessionIssuing},
 		{"refresh", proxy.NewSessionRotating},
 		{"logout", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
@@ -75,27 +65,26 @@ func authRoutes() []authRoute {
 	}
 }
 
-// NewRouter builds the gateway's handler.
-//
-// It returns a ready-to-serve handler or an error; there is nothing to start
-// afterwards (root AGENTS.md §5).
+// NewRouter builds the gateway's handler: /healthz, the four public /auth
+// routes, the /api/<service> prefixes behind RequireToken and, when staticDir
+// is non-empty, the built frontend for every path no route matches. Clients
+// call these public paths, so renaming one, or moving one out of RequireToken,
+// changes the gateway's API (D-027 in ai/decisions.md).
 func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration, staticDir string) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
+	// AI-generated (edited by nigeltzy).
+	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	// The built frontend, served from "/" so the page and the API share one
-	// origin (D-033). Registered LAST, below, because it is the catch-all.
-	//
-	// The gateway's own liveness check. Not proxied anywhere.
+	// The gateway's own liveness check; not proxied.
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// ---- Public auth routes, rewritten onto user-service ----------------
+	// Public auth routes: outside RequireToken, rewritten onto user-service.
 	for _, route := range authRoutes() {
 		public := "/auth/" + route.name
 		p, err := route.newProxy(proxy.Route{
@@ -109,32 +98,18 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 		r.Method(http.MethodPost, public, p)
 	}
 
-	// ---- Authenticated service routes -----------------------------------
-	// THE EXTENSION POINT. One entry per service; the middleware, the header
-	// strip and the injection come for free.
-	//
-	// addPrefix is where the callee actually mounts its routes, and it is not
-	// guesswork: it is read off that service's committed api/openapi.yaml. An
-	// empty one means the service serves its resources at the root, which is
-	// what the public path maps to once its own prefix is stripped.
-	//
-	// newProxy is the callee's credential handling. A named constructor per
-	// row rather than a bool in the struct, so the table says what it wants
-	// instead of selecting a branch inside the proxy (root AGENTS.md §5).
+	// Authenticated service routes, each behind RequireToken. A row strips its
+	// public prefix and prepends addPrefix (empty forwards the rest unchanged);
+	// newProxy decides whether Authorization reaches the callee.
 	serviceRoutes := []struct {
 		prefix    string
 		baseURL   string
 		addPrefix string
 		newProxy  func(proxy.Route) (*proxy.Proxy, error)
 	}{
-		// user-service serves /api/v1/users/{uid} and authenticates on the
-		// bearer token itself, so this row differs from the others twice over.
+		// user-service verifies the bearer token itself, so its row keeps
+		// Authorization.
 		{"/api/users", downstream.User, userServiceAPIPrefix, proxy.NewRetainingToken},
-		// supplier-service mounts at /suppliers, with /{id} beneath it —
-		// read off its internal/httpapi/router.go, which is on main since
-		// PR #1 (f779ced), so this is its owner's committed contract and not
-		// an inference. Without the prefix, GET /api/suppliers/42 arrived as
-		// /42 and 404'd.
 		{"/api/suppliers", downstream.Supplier, supplierServiceAPIPrefix, proxy.New},
 		{"/api/orders", downstream.Order, "", proxy.New},
 		{"/api/credits", downstream.Credit, "", proxy.New},
@@ -158,10 +133,19 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 		})
 	}
 
-	// LAST. chi matches specific patterns before NotFound, so every route
-	// above still wins; only what is left over becomes a page. An empty
-	// staticDir leaves the default 404, which is what `go run ./cmd/api`
-	// wants — Vite serves the app in development.
+	// AI-generated (edited by nigeltzy).
+	// Unmatched paths under /api and /auth get a JSON 404 rather than the
+	// frontend, so a mistyped API call fails as one instead of returning a page.
+	apiNotFound := func(w http.ResponseWriter, _ *http.Request) {
+		writeError(w, http.StatusNotFound, "no such route")
+	}
+	for _, prefix := range []string{"/api", "/auth"} {
+		r.HandleFunc(prefix, apiNotFound)
+		r.HandleFunc(prefix+"/*", apiNotFound)
+	}
+
+	// Other paths no route matches get the built frontend; with an empty
+	// staticDir they get chi's default 404.
 	if staticDir != "" {
 		r.NotFound(newSPAHandler(staticDir).ServeHTTP)
 	}

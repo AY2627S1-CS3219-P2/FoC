@@ -35,8 +35,8 @@ import (
 
 const testKeyID = "test-key-1"
 
-// issuer stands in for user-service: it holds the private key and publishes
-// the matching public key as a JWKS, exactly as D-023 describes.
+// issuer stands in for user-service: it signs tokens with an RSA key and
+// publishes the public half as a JWKS.
 type issuer struct {
 	key *rsa.PrivateKey
 }
@@ -105,8 +105,8 @@ func (i *issuer) mint(t *testing.T, o tokenOpts) string {
 	return signed
 }
 
-// testRefreshTTL stands in for config's REFRESH_TOKEN_TTL, which must match
-// user-service's JWT_REFRESH_TOKEN_TTL (168h in .env.example).
+// testRefreshTTL stands in for config's REFRESH_TOKEN_TTL (168h, as in
+// .env.example).
 const testRefreshTTL = 168 * time.Hour
 
 // recorder captures what a downstream service actually received.
@@ -120,9 +120,8 @@ func stubService(rec *recorder) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.path = r.URL.Path
 		rec.header = r.Header.Clone()
-		// supplier-service runs its own permissive cors.Handler, from when the
-		// browser reached it directly. The stub does the same so the proxy is
-		// tested against what a real callee actually sends back.
+		// Sets a CORS header, as a real callee may, so tests can check the proxy
+		// strips it.
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -211,9 +210,6 @@ func TestServiceRouteForwardsVerifiedIdentity(t *testing.T) {
 	if got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
 	}
-	// Was "/42" until 2026-09-22, when the route gained supplier-service's
-	// own /suppliers prefix. This test is about the claim headers below;
-	// the path itself is covered by TestSupplierRouteReachesSupplierServicePrefix.
 	if h.suppRec.path != "/suppliers/42" {
 		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, "/suppliers/42")
 	}
@@ -225,8 +221,9 @@ func TestServiceRouteForwardsVerifiedIdentity(t *testing.T) {
 	}
 }
 
-// The whole of D-022 in one test: a caller with a legitimate STUDENT token
-// claiming ADMIN in a header must reach the service as a STUDENT.
+// TestClientCannotEscalateViaHeader checks that a caller with a valid STUDENT
+// token who also sends X-User-Role: ADMIN and another user's X-User-Id reaches
+// the service as itself, a STUDENT.
 func TestClientCannotEscalateViaHeader(t *testing.T) {
 	h := newHarness(t)
 	defer h.teardown()
@@ -326,9 +323,8 @@ func TestAuthRoutePreservesBearerForLogout(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by <name>).
-// The three tests below cover the /api/users route after it was pointed at
-// user-service's real prefix and allowed to keep the bearer token.
+// AI-generated (edited by nigeltzy).
+// Covers the three /api/users tests below.
 
 func TestUserRouteReachesUserServicePrefix(t *testing.T) {
 	h := newHarness(t)
@@ -341,8 +337,7 @@ func TestUserRouteReachesUserServicePrefix(t *testing.T) {
 	if got := h.do(req); got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
 	}
-	// Not "/uid-123": user-service mounts its profile route at
-	// /api/v1/users/{uid}, per its committed api/openapi.yaml.
+	// user-service mounts its profile route at /api/v1/users/{uid}.
 	if want := "/api/v1/users/uid-123"; h.userRec.path != want {
 		t.Errorf("user-service saw path %q, want %q", h.userRec.path, want)
 	}
@@ -361,11 +356,11 @@ func TestUserRouteRetainsBearerAndStillAssertsIdentity(t *testing.T) {
 	if got := h.do(req); got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", got.Code)
 	}
-	// user-service authenticates on this header itself (RequireJWT).
+	// user-service verifies this header itself.
 	if h.userRec.header.Get("Authorization") != "Bearer "+token {
 		t.Error("user-service did not receive the bearer token it authenticates on")
 	}
-	// D-022 still holds: the client's ADMIN claim is replaced, not honoured.
+	// The client's ADMIN claim is replaced by the verified role.
 	if role := h.userRec.header.Get(proxy.ClaimHeaderRole); role != "STUDENT" {
 		t.Errorf("%s = %q, want STUDENT — the client's own value must not survive",
 			proxy.ClaimHeaderRole, role)
@@ -386,16 +381,14 @@ func TestOtherServicesNeverReceiveTheBearerToken(t *testing.T) {
 	if got := h.do(req); got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", got.Code)
 	}
-	// Retaining the token is user-service's exception alone. Every other
-	// callee reads the claim headers and has no use for a credential.
+	// Only /api/users keeps Authorization; the other /api/ service routes strip it.
 	if authz := h.suppRec.header.Get("Authorization"); authz != "" {
 		t.Errorf("supplier-service received Authorization = %q, want it stripped", authz)
 	}
 }
 
-// AI-generated (edited by <name>).
-// The two tests below cover /api/suppliers after it was pointed at
-// supplier-service's real /suppliers prefix (PR #1, f779ced).
+// AI-generated (edited by nigeltzy).
+// Covers the two /api/suppliers prefix tests below.
 
 func TestSupplierRouteReachesSupplierServicePrefix(t *testing.T) {
 	h := newHarness(t)
@@ -408,8 +401,7 @@ func TestSupplierRouteReachesSupplierServicePrefix(t *testing.T) {
 	if got := h.do(req); got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
 	}
-	// Not "/42": supplier-service mounts its routes under /suppliers, so the
-	// bare id 404'd there before this prefix was added.
+	// supplier-service mounts its routes under /suppliers.
 	if want := "/suppliers/42"; h.suppRec.path != want {
 		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, want)
 	}
@@ -426,21 +418,16 @@ func TestSupplierCollectionRouteKeepsThePrefix(t *testing.T) {
 	if got := h.do(req); got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
 	}
-	// The bare prefix must not become "/suppliers/" — chi's r.Route mounts
-	// the list handler at "/suppliers" itself. This is Route.RewritePath's
-	// trailing-slash case.
+	// A bare public prefix maps to AddPrefix alone, with no trailing slash
+	// (Route.RewritePath).
 	if want := "/suppliers"; h.suppRec.path != want {
 		t.Errorf("supplier-service saw path %q, want %q", h.suppRec.path, want)
 	}
 }
 
-// AI-generated (edited by <name>).
-// The two tests below cover the interim permissive CORS policy. The first is
-// the one that matters: a preflight carries no Authorization header, so it
-// must be answered BEFORE RequireToken sees it, or the browser never sends the
-// real request and the whole frontend is dead against the gateway.
+// AI-generated (edited by nigeltzy).
 
-// AI-generated (edited by <name>).
+// AI-generated (edited by nigeltzy).
 func TestDownstreamCORSHeadersDoNotReachTheBrowser(t *testing.T) {
 	h := newHarness(t)
 	defer h.teardown()
@@ -454,24 +441,19 @@ func TestDownstreamCORSHeadersDoNotReachTheBrowser(t *testing.T) {
 	if got.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", got.Code)
 	}
-	// NONE. The browser is same-origin with the gateway now, so there is no
-	// CORS policy here to emit and nothing legitimate for the browser to
-	// check. supplier-service still sets its own header, and letting a
-	// callee's CORS opinion reach a browser is how the duplicate-header bug
-	// happened before the frontend was proxied; the strip stays.
+	// The gateway emits no CORS headers and strips any a downstream sets, so
+	// none may reach the browser.
 	if n := len(got.Header().Values("Access-Control-Allow-Origin")); n != 0 {
 		t.Errorf("Access-Control-Allow-Origin appears %d times, want none — "+
 			"the gateway emits no CORS policy and a callee's must be stripped", n)
 	}
 }
 
-// AI-generated (edited by <name>).
-// The refresh token's cookie. These are the tests that matter for the
-// credential: if the token leaks into a response body, or the cookie loses
-// HttpOnly, an XSS gets a seven-day credential instead of a fifteen-minute one.
+// AI-generated (edited by nigeltzy).
+// Covers the refresh-token cookie tests below.
 
-// authStub answers the four auth routes the way user-service does: login and
-// refresh return an AuthResponse pair, logout returns 204.
+// authStub records each request and answers /logout with 204 and every other
+// path with a token pair.
 func authStub(rec *recorder) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.path = r.URL.Path
@@ -534,8 +516,7 @@ func TestLoginPutsTheRefreshTokenInACookieAndNotTheBody(t *testing.T) {
 		t.Fatalf("status = %d, want 200", res.Code)
 	}
 
-	// THE point of the whole change: a page script must not be able to read
-	// the durable credential.
+	// The refresh token must not be in the body, where page scripts can read it.
 	if strings.Contains(res.Body.String(), "rt-value") {
 		t.Errorf("the refresh token is still in the response body: %s", res.Body.String())
 	}
@@ -577,8 +558,8 @@ func TestRefreshInjectsTheCookieIntoTheBodyUserServiceRequires(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", res.Code)
 	}
-	// user-service's RefreshRequest requires the field; its contract did not
-	// change, so the gateway has to put it back.
+	// user-service's RefreshRequest requires refreshToken, so the gateway copies
+	// it from the cookie into the body.
 	if !strings.Contains(rec.body, `"refreshToken":"rt-from-cookie"`) {
 		t.Errorf("user-service received body %q, want it to carry the cookie's token", rec.body)
 	}
@@ -615,16 +596,16 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 	h, _, done := newAuthHarness(t)
 	defer done()
 
-	// user-service answers 201 with no body; there is no token to translate.
+	// The stub returns a token pair here too; register must still set no cookie.
 	res := post(h, "/auth/register", `{"email":"a@u.nus.edu","username":"a","password":"Passw0rd"}`)
 	if c := refreshCookieFrom(t, res); c != nil {
 		t.Errorf("register set a refresh cookie (%+v); it issues no tokens", c)
 	}
 }
 
-// AI-generated (edited by <name>).
-// Serving the built frontend is what makes the browser same-origin with the
-// API (D-033), so these check it does not shadow the API.
+// AI-generated (edited by nigeltzy).
+// Covers the static-file tests below: the SPA handler must not shadow API
+// routes.
 
 func newStaticHarness(t *testing.T) (http.Handler, string, func()) {
 	t.Helper()
@@ -675,9 +656,8 @@ func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
 	h, _, done := newStaticHarness(t)
 	defer done()
 
-	// The catch-all is registered last, so an API path with no token must
-	// still get the API's 401 -- not a page with status 200, which would make
-	// every unauthenticated call look successful to the client.
+	// A path that matches an API route gets the API's answer (401 without a
+	// token), not index.html with 200.
 	if got := get(h, "/api/suppliers/42"); got.Code != http.StatusUnauthorized {
 		t.Errorf("GET /api/suppliers/42 = %d, want 401 from the API", got.Code)
 	}
@@ -687,12 +667,40 @@ func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by nigeltzy).
+// TestUnknownAPIPathsGetJSON404 checks that a mistyped /api or /auth path gets
+// a JSON 404 rather than the frontend's index.html with 200.
+func TestUnknownAPIPathsGetJSON404(t *testing.T) {
+	h, _, done := newStaticHarness(t)
+	defer done()
+
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/api"},
+		{http.MethodGet, "/api/unknown"},
+		{http.MethodPost, "/api/unknown"},
+		{http.MethodGet, "/api/supplier/42"},
+		{http.MethodGet, "/api/v1/users/login"},
+		{http.MethodGet, "/auth"},
+		{http.MethodPost, "/auth/typo"},
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != http.StatusNotFound || !strings.HasPrefix(w.Header().Get("Content-Type"), "application/json") {
+			t.Errorf("%s %s = %d %q, want 404 application/json", tc.method, tc.path, w.Code, w.Header().Get("Content-Type"))
+		}
+	}
+
+	// Client-side routes still load the app.
+	if got := get(h, "/profile"); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "APP") {
+		t.Errorf("GET /profile = %d, want index.html", got.Code)
+	}
+}
+
 func TestNoStaticDirLeavesTheDefault404(t *testing.T) {
 	h := newHarness(t)
 	defer h.teardown()
 
-	// `go run ./cmd/api` sets no STATIC_DIR: Vite serves the app and proxies
-	// here, so the gateway must not invent a page.
+	// With no static dir, unmatched paths get a plain 404, not a page.
 	if got := h.do(httptest.NewRequest(http.MethodGet, "/suppliers", nil)); got.Code != http.StatusNotFound {
 		t.Errorf("GET /suppliers = %d, want 404 when no static dir is configured", got.Code)
 	}
