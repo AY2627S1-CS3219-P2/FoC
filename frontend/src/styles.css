@@ -277,7 +277,7 @@ h3 {
   flex: 1;
 }
 
-/* Requesting / Delivering. Two named modes, not a boolean flag in disguise. */
+/* Requesting / Delivering mode toggle. */
 .mode-toggle {
   display: flex;
   gap: 2px;
