@@ -16,14 +16,13 @@ RUN npm ci
 COPY tsconfig*.json vite.config.ts index.html ./
 COPY src ./src
 
-# Vite inlines VITE_* variables at BUILD time, not at container start, so this
-# is a build arg rather than a runtime env var. Nothing secret may be passed
-# here — it ends up in the bundle that ships to the browser.
+# VITE_GATEWAY_BASE_URL is inlined into the bundle at build time, so it is a
+# build arg, not a runtime env var. Nothing secret may be passed here: it ships
+# to the browser.
 #
-# The default is http://localhost:8080 because the BROWSER resolves it, and the
-# browser runs on the host, where Compose publishes the gateway. It is NOT
-# http://api-gateway:8080 — that name only resolves inside the Compose network.
-# An empty value would build the fixture app instead (see src/App.tsx).
+# Read by src/lib/config.ts. Empty makes the app call the API with relative
+# paths on the page's own origin. The default below is a different origin from
+# the page this image serves.
 ARG VITE_GATEWAY_BASE_URL=http://localhost:8080
 ENV VITE_GATEWAY_BASE_URL=$VITE_GATEWAY_BASE_URL
 RUN npm run build

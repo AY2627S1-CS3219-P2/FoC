@@ -7,19 +7,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Port 3001 is the frontend's allocation in root AGENTS.md §3. In Compose the
-// built assets are served by nginx on :80 and published onto 3001; this port
-// only applies to `npm run dev`.
-//
-// THE PROXY IS WHAT MAKES D-033 WORK. The refresh token is an HttpOnly cookie
-// with SameSite=Strict, and the browser must see one origin for it to ride
-// along at all. Everything under /api and /auth is forwarded to the gateway,
-// so the page only ever addresses :3001 — no CORS, no preflight, and no
-// `credentials: "include"` anywhere in the app.
-//
-// The target is localhost:8080 because VITE runs it, on the host. Inside
-// Compose the gateway is api-gateway:8080, but this path is `npm run dev`
-// only; the built bundle is served by the gateway itself in Compose.
+// `npm run dev` only: serves the app on port 3001 (the frontend's port in root
+// AGENTS.md §3) and forwards /api and /auth to a gateway on localhost:8080, so
+// the page calls only its own origin and the refresh cookie is sent.
 export default defineConfig({
   plugins: [react()],
   server: {
