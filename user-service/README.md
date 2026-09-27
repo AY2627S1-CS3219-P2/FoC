@@ -35,6 +35,11 @@ python -m pip install cryptography
 python generate_jwks.py --out keys.json
 ```
 
+<!-- AI-generated (edited by PENDING). -->
+Keep `keys.json` local and out of version control. Before running Compose from
+the repository root, generate it at `user-service/keys.json`; Compose mounts it
+read-only at `/run/secrets/keys.json`, and the image never contains the file.
+
 2. Set environment variables
 You may do this via a `.env` file or directly in your terminal. 
 
@@ -64,7 +69,7 @@ of version control and production logs.
 
 You can start the service using either of the following methods:
 
-* Run `docker compose up --build` if you are running from the 
+* After generating `user-service/keys.json`, run `docker compose up --build` if you are running from the
 root directory, or `docker compose up --env-file ./.env up --build`
 if you are running from the `user-service/` directory.
 
