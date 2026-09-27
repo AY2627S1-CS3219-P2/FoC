@@ -89,21 +89,54 @@ describe("restoreSessionViaGateway", () => {
 });
 
 describe("logOutViaGateway", () => {
-  it("posts to /auth/logout with the access token and no body", async () => {
-    const fetchMock = stubFetch(jsonResponse(204, null));
+  // AI-generated (edited by nigeltzy).
+  it("refreshes first, then logs out with the new access token and no body", async () => {
+    const fetchMock = stubFetch(
+      jsonResponse(200, { accessToken: "at-2" }),
+      jsonResponse(204, null),
+    );
 
     await logOutViaGateway("at-1");
 
-    const { url, init, headers } = request(fetchMock);
+    expect(request(fetchMock, 0).url).toMatch(/\/auth\/refresh$/);
+    const { url, init, headers } = request(fetchMock, 1);
     expect(url).toMatch(/\/auth\/logout$/);
     expect(init.method).toBe("POST");
     // The gateway adds the refresh token from its cookie.
     expect(init.body).toBeUndefined();
-    expect(headers.get("Authorization")).toBe("Bearer at-1");
+    expect(headers.get("Authorization")).toBe("Bearer at-2");
+  });
+
+  it("still logs out, with the token it has, when the refresh fails", async () => {
+    const fetchMock = stubFetch(
+      jsonResponse(401, { error: "authentication required" }),
+      jsonResponse(204, null),
+    );
+
+    await logOutViaGateway("at-1");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(request(fetchMock, 1).headers.get("Authorization")).toBe("Bearer at-1");
+  });
+
+  it("logs out with no bearer when it has no token and the refresh fails", async () => {
+    const fetchMock = stubFetch(
+      jsonResponse(401, { error: "authentication required" }),
+      jsonResponse(401, { error: "authentication required" }),
+    );
+
+    await logOutViaGateway(null);
+
+    const { url, headers } = request(fetchMock, 1);
+    expect(url).toMatch(/\/auth\/logout$/);
+    expect(headers.has("Authorization")).toBe(false);
   });
 
   it("resolves when the gateway answers with an error", async () => {
-    stubFetch(jsonResponse(500, { error: "internal server error" }));
+    stubFetch(
+      jsonResponse(200, { accessToken: "at-2" }),
+      jsonResponse(500, { error: "internal server error" }),
+    );
 
     await expect(logOutViaGateway("at-1")).resolves.toBeUndefined();
   });

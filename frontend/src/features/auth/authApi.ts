@@ -196,6 +196,9 @@ export async function refreshAccessToken(): Promise<TokenPair> {
 // reads or sends one.
 // ---------------------------------------------------------------------------
 
+/** user-service's `error` text for a suspended account's login. */
+const SUSPENDED_ERROR = "account suspended";
+
 function decodeAuthError(body: unknown, status: number): AuthError {
   // Use the server's own message when the body has an `error` field.
   const message =
@@ -203,13 +206,11 @@ function decodeAuthError(body: unknown, status: number): AuthError {
       ? String((body as { error: unknown }).error)
       : null;
 
-  // F1.2.4: a suspended account gets its own error so the UI can name it.
-  const code =
-    body && typeof body === "object" && "code" in body
-      ? String((body as { code: unknown }).code).toUpperCase()
-      : "";
-  if (status === 403 || code.includes("SUSPEND")) {
-    return new SuspendedAccountError(message ?? undefined);
+  // AI-generated (edited by nigeltzy).
+  // F1.2.4: user-service answers a suspended account's login with 403 and
+  // SUSPENDED_ERROR. The UI names it with its own sentence, not the raw text.
+  if (status === 403 && message === SUSPENDED_ERROR) {
+    return new SuspendedAccountError();
   }
   if (message) return new AuthError(message);
   // F1.2.3 — a generic error for bad credentials, naming neither field.
@@ -443,13 +444,25 @@ export async function refreshAccessTokenViaGateway(): Promise<TokenPair> {
  * the gateway supplies the refresh token from its cookie. The response is not
  * checked: the caller clears its own state whatever the server answered.
  */
-export async function logOutViaGateway(accessToken: string): Promise<void> {
+export async function logOutViaGateway(accessToken: string | null): Promise<void> {
+  // AI-generated (edited by nigeltzy).
+  // Refresh first, under the refresh lock. After 15 idle minutes the token in
+  // memory has expired, user-service rejects the logout with 401, and the
+  // session is never revoked. If the refresh fails there is no live session to
+  // revoke, and the logout below still has the gateway clear the cookie.
+  let token = accessToken;
+  try {
+    token = (await underRefreshLock(refreshAccessTokenViaGateway)).accessToken;
+  } catch {
+    // Keep the token we have.
+  }
+
   try {
     await send({
       baseUrl: config.gatewayBaseUrl,
       path: ROUTES.logout,
       method: "POST",
-      accessToken,
+      accessToken: token,
     });
   } catch {
     // A network failure is ignored too; the caller clears its state either way.

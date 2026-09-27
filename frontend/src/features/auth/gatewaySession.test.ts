@@ -7,7 +7,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { logInViaGateway } from "./authApi";
+import { AuthError, logInViaGateway, SuspendedAccountError } from "./authApi";
 
 /**
  * These tests stub `fetch`. They cover how the gateway client maps a profile
@@ -137,5 +137,33 @@ describe("logInViaGateway", () => {
     const { session } = await logInViaGateway("nigeltzy@u.nus.edu", "Password1");
 
     expect(session.username).toBe("nigeltzy");
+  });
+});
+
+// AI-generated (edited by nigeltzy).
+describe("logInViaGateway with a refused login", () => {
+  it("names a suspended account from user-service's 403", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(jsonResponse(403, { error: "account suspended" })),
+    );
+
+    const error = await logInViaGateway("nigeltzy", "Password1").catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(SuspendedAccountError);
+    // The UI's own sentence, not the server's raw text.
+    expect((error as Error).message).toBe("This account is suspended. Contact an administrator.");
+  });
+
+  it("does not treat any other 403 as a suspension", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValueOnce(jsonResponse(403, { error: "forbidden" })),
+    );
+
+    const error = await logInViaGateway("nigeltzy", "Password1").catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(AuthError);
+    expect(error).not.toBeInstanceOf(SuspendedAccountError);
   });
 });

@@ -188,10 +188,9 @@ export function SuppliersView({
         <p className="status error">
           Could not load suppliers: {error}
           <br />
+          {/* AI-generated (edited by nigeltzy). */}
           <span className="status-hint">
-            The browser reaches suppliers through the API Gateway (D-010), so
-            this is the gateway not answering — which may mean the gateway
-            itself, or supplier-service behind it.
+            The server isn't responding. Try again in a moment.
           </span>
         </p>
       )}

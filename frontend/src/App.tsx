@@ -65,7 +65,7 @@ const authClient = usingGateway
       signUp: authApi.signUp,
       verifyRegistration: authApi.verifyRegistration,
       resendOtp: authApi.resendOtp,
-      logOut: (_accessToken: string) => authApi.logOut(),
+      logOut: (_accessToken: string | null) => authApi.logOut(),
     };
 
 export function App() {
@@ -179,10 +179,9 @@ export function App() {
   const handleLogOut = useCallback(async () => {
     // Read before the store is cleared. The gateway adds the refresh token
     // from its cookie, so only the access token is sent.
-    const accessToken = tokens.getAccessToken();
-    if (accessToken) {
-      await authClient.logOut(accessToken);
-    }
+    // AI-generated (edited by nigeltzy): called even with no token in memory,
+    // since the gateway client refreshes before logging out.
+    await authClient.logOut(tokens.getAccessToken());
     tokens.clear();
     clearLastView();
     setSession(null);

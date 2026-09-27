@@ -82,11 +82,9 @@ export function ProfileView({
             <dd>{session.role}</dd>
           </div>
         </dl>
+        {/* AI-generated (edited by nigeltzy). */}
         <p className="balance-label">
-          Editing your username and contact details (F1.4.2) is not built
-          here yet. user-service accepts it — its PUT profile route takes
-          username, password and phone_num — so what is missing is this
-          screen, not the service.
+          Editing your username and contact details isn't available yet.
         </p>
 
         <h2 className="section-label">Acting as</h2>
