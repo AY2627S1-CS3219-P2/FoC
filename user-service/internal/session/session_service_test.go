@@ -111,6 +111,9 @@ func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 	if pair.AccessToken != "access" || sessions.created == nil {
 		t.Fatalf("login result/session = %#v/%#v", pair, sessions.created)
 	}
+	if repo.lastLogin == nil || !repo.lastLogin.Equal(now) {
+		t.Fatalf("last login = %v, want %v", repo.lastLogin, now)
+	}
 	if sessions.created.TokenHash != HashRefreshToken(pair.RefreshToken) || sessions.created.TokenHash == pair.RefreshToken {
 		t.Fatalf("stored refresh token = %q, want hash", sessions.created.TokenHash)
 	}

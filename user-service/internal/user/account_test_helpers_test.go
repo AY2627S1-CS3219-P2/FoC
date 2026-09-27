@@ -36,6 +36,9 @@ func (f *fakeAccountRepository) Update(_ context.Context, account *User) error {
 	f.updated = account
 	return nil
 }
+func (f *fakeAccountRepository) UpdateLastLoginByID(context.Context, uuid.UUID, time.Time) error {
+	return nil
+}
 func (f *fakeAccountRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.UUID, status AccountStatus, _ time.Time) error {
 	if f.callOrder != nil {
 		*f.callOrder = append(*f.callOrder, "postgres")

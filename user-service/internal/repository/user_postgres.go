@@ -45,6 +45,7 @@ const (
 			password = $2,
 			phone_num = $3
 		WHERE uid = $4`
+	updateLastLoginQuery = `UPDATE users SET last_login_date = $1 WHERE uid = $2`
 	// AI-generated (edited by ZI YANG).
 	updateAccountStatusQuery = `
 		UPDATE users
@@ -115,6 +116,18 @@ func (r *PostgresRepository) Update(ctx context.Context, u *user.User) error {
 	)
 	if err != nil {
 		return fmt.Errorf("update user: %w", mapDatabaseError(err))
+	}
+	if result.RowsAffected() == 0 {
+		return user.ErrNotFound
+	}
+	return nil
+}
+
+// UpdateLastLoginByID records successful authentication without modifying profile or status fields.
+func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error {
+	result, err := r.pool.Exec(ctx, updateLastLoginQuery, timestamp, uid)
+	if err != nil {
+		return fmt.Errorf("update last login: %w", mapDatabaseError(err))
 	}
 	if result.RowsAffected() == 0 {
 		return user.ErrNotFound

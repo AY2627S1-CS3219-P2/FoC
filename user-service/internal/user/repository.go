@@ -19,6 +19,7 @@ type UserRepository interface {
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
 	// Update changes mutable user fields; UID and email are immutable.
 	Update(ctx context.Context, u *User) error
+	UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
 }
 

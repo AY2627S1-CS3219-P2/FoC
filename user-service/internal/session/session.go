@@ -16,6 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"foc/user-service/internal/user"
@@ -67,6 +68,10 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 	account, err := s.authenticator.authenticate(ctx, identifier, password)
 	if err != nil {
 		return TokenPair{}, err
+	}
+	if err := s.authenticator.repository.UpdateLastLoginByID(ctx, account.UID, s.now().UTC()); err != nil {
+		// AI-generated (edited by PENDING): login analytics must not make authentication unavailable.
+		log.Printf("record last login for user %s: %v", account.UID, err)
 	}
 	pair, err := s.authenticator.issuer.Issue(ctx, account)
 	if err != nil {

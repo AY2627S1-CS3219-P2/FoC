@@ -13,6 +13,7 @@ import (
 
 	"foc/user-service/internal/hash"
 	. "foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -22,6 +23,7 @@ type fakeAuthRepository struct {
 	identifier string
 	updated    *User
 	status     AccountStatus
+	lastLogin  *time.Time
 }
 
 func (f *fakeAuthRepository) Create(_ context.Context, account *User) error {
@@ -40,6 +42,11 @@ func (f *fakeAuthRepository) GetByIdentifier(_ context.Context, identifier strin
 
 func (f *fakeAuthRepository) Update(_ context.Context, got *User) error {
 	f.updated = got
+	return nil
+}
+
+func (f *fakeAuthRepository) UpdateLastLoginByID(_ context.Context, _ uuid.UUID, timestamp time.Time) error {
+	f.lastLogin = &timestamp
 	return nil
 }
 
@@ -154,7 +161,7 @@ func TestAuthenticatorAuthenticate(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): the dummy hash must remain a valid bcrypt value so unknown-account logins do comparable work.
+// AI-generated (edited by ZI YANG): the dummy hash must remain a valid bcrypt value so unknown-account logins do comparable work.
 func TestUnknownAccountDummyHashUsesBcrypt(t *testing.T) {
 	if hash.CheckPassword(dummyPasswordHash, "any-password") {
 		t.Fatal("dummy hash unexpectedly matched the test password")
