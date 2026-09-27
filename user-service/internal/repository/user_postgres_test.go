@@ -17,7 +17,7 @@ import (
 )
 
 func TestPrepareForCreateGeneratesRecordedDefaults(t *testing.T) {
-	now := time.Date(2026, 9, 18, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 9, 18, 12, 0, 0, 123456789, time.UTC)
 	got := prepareForCreate(user.User{}, now)
 
 	if got.UID == uuid.Nil {
@@ -31,6 +31,10 @@ func TestPrepareForCreateGeneratesRecordedDefaults(t *testing.T) {
 	}
 	if got.AccountStatus != user.AccountStatusActive {
 		t.Fatalf("AccountStatus = %q, want %q", got.AccountStatus, user.AccountStatusActive)
+	}
+	// AI-generated (edited by PENDING).
+	if want := now.Truncate(time.Second); !got.TokensValidAfter.Equal(want) {
+		t.Fatalf("TokensValidAfter = %s, want JWT-second boundary %s", got.TokensValidAfter, want)
 	}
 }
 

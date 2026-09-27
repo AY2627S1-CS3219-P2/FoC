@@ -187,7 +187,8 @@ func prepareForCreate(u user.User, now time.Time) user.User {
 		u.AccountStatus = user.AccountStatusActive
 	}
 	if u.TokensValidAfter.IsZero() {
-		u.TokensValidAfter = now
+		// AI-generated (edited by PENDING).
+		u.TokensValidAfter = now.Truncate(time.Second)
 	}
 	return u
 }

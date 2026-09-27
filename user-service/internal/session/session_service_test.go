@@ -118,13 +118,15 @@ func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 	}
 }
 
-func TestRefreshServiceRotatesValidSession(t *testing.T) {
+func TestRefreshServiceRotatesTokenIssuedDuringAccountCreationSecond(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	// AI-generated (edited by PENDING).
+	account.TokensValidAfter = now
 	oldToken := "old-refresh"
 	oldHash := HashRefreshToken(oldToken)
 	oldJTI := uuid.New()
 	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, ExpiresAt: now.Add(time.Hour)}
-	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
 	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
 
 	if _, err := service.Refresh(context.Background(), oldToken); err != nil {
