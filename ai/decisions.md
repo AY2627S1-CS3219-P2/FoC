@@ -68,17 +68,10 @@ few lines, write it up in `ai/decisions/<id>-<slug>.md` and link it.
 Named here so an agent can point at the gap instead of guessing. Each is
 graded at D2 or D3, so the answer needs a rationale written alongside it.
 
-**On the draft `user-service/AGENTS.md` Zi Yang circulated on 2026-09-19:** the
-team decided on 2026-09-19 to treat it as authoritative and build against it,
-even though it is not yet committed to a branch. It answers the header names
-(`X-User-ID`, `X-User-Role`), the signing algorithm (now D-023), the token
-lifetimes (15 minutes / 7 days) and the auth endpoint paths. Those rows are
-struck from the list below on that basis.
-
-**This is a deliberate exception to §1**, which counts a decision as made only
-once it is written somewhere the team can point at. It is recorded here so the
-exception is visible rather than silent. Pushing `feat/user-service` closes the
-gap and costs nothing.
+**On `user-service/AGENTS.md`:** the header names (`X-User-ID`, `X-User-Role`), the
+signing algorithm (now D-023), the token lifetimes (15 minutes / 7 days) and the auth
+endpoint paths come from `user-service/AGENTS.md` on `feat/user-service` (PR #5).
+Those rows are struck from the list below on that basis.
 
 | Question | Blocks | Milestone |
 | --- | --- | --- |
