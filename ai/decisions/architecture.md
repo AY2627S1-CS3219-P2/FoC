@@ -156,6 +156,7 @@ sequenceDiagram
     participant US as user-service
     participant DB as User DB
     participant RDS as Redis
+    Note over GW,US: HTTP today, gRPC decided (D-013)
 
     UI->>GW: POST /auth/refresh {refresh token}
     GW->>US: POST /api/v1/users/refresh
