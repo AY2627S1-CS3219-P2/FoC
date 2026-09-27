@@ -6,15 +6,9 @@
 // Requirements were decided upon by the team and is reflected in our product backlog.
 
 /**
- * The registration rules, in one place, as pure functions.
- *
- * These are a CONVENIENCE, not a control. Every rule here is also the User
- * Service's to enforce — a client check only saves the user a round trip, and
- * anything that matters is re-checked server-side. Never treat a pass here as
- * authorisation.
- *
- * The limits are transcribed from the D1 milestone backlog and the requirement
- * ID is named beside each, so a change to the backlog has one place to land.
+ * Client-side registration checks, as pure functions. They only save the user
+ * a round trip: user-service enforces the same rules, so a pass here is never
+ * authorisation. Each limit names its backlog requirement ID.
  */
 
 /** F1.1.2.1 — the campus domain registration is restricted to. */
@@ -61,11 +55,8 @@ export function validateEmail(email: string): string | null {
 }
 
 /**
- * F1.1.4.2 — alphanumeric only, at most USERNAME_MAX characters.
- *
- * Uniqueness (F1.1.4.1) is deliberately NOT checked here: only the User
- * Service can answer it, and guessing client-side would be wrong as often as
- * it was right.
+ * F1.1.4.2: alphanumeric only, at most USERNAME_MAX characters. Uniqueness
+ * (F1.1.4.1) is left to user-service, the only place that can check it.
  */
 export function validateUsername(username: string): string | null {
   const trimmed = username.trim();
@@ -120,10 +111,8 @@ export function validateOtp(code: string): string | null {
 }
 
 /**
- * F1.1.1 — every required registration field must be present.
- *
- * Returns the first problem found, field by field in the order the form
- * presents them, so focus lands somewhere sensible.
+ * F1.1.1: every required registration field must be present. Returns the
+ * first problem found, checking fields in the order the form shows them.
  */
 export function validateRegistration(fields: {
   email: string;

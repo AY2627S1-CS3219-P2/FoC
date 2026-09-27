@@ -8,13 +8,9 @@ import { mockDelay } from "../../lib/mock";
 import type { Balance, LedgerEntry } from "./types";
 
 /**
- * ███ MOCK — `credit-service` does not exist (M5 is unimplemented). ███
- *
- * Fixture data lifted from the owner's Credits mockup so the screen has
- * something faithful to render. It is NOT a ledger: nothing here enforces the
- * conservation invariant credit-service/AGENTS.md calls the single most
- * valuable property to test. Replace this file with the generated client; the
- * schema and API surface are that service owner's decisions (root §1).
+ * Mock client for credit-service, seeded from the Credits mockup. It returns
+ * the balance and ledger below and enforces nothing, so it is not a ledger.
+ * Replace this file with credit-service's generated client.
  */
 
 const LEDGER: LedgerEntry[] = [

@@ -4,27 +4,15 @@
 // Author review: Nigeltzy - AI used to generate the config and assign the types based on our team's planned architecture design (most types are intuitive and decided by me)
 
 /**
- * `order-service` does not exist yet, so the rest of this file is still a MOCK
- * shape invented by the frontend (see src/lib/mock.ts) — EXCEPT ErrandStatus,
- * which transcribes a decision the team has already recorded.
- *
- * Vocabulary (root AGENTS.md): an ERRAND is what a user asks for; the record
- * order-service stores for it is an ORDER; the two people on one are the
- * REQUESTER and the COURIER.
+ * Fixture shapes for the mock order-service, not a contract. ErrandStatus is
+ * the exception: it transcribes the state set the team recorded.
  */
 
 /**
- * The order state set, transcribed from the glossary in the team's milestone
- * report: an errand request is
- * in exactly one of these states, with CANCELLED and EXPIRED as terminal
- * alternatives.
- *
- * Which transitions are permitted is governed by requirement F3.8 and enforced
- * by order-service — never here. The frontend renders the state it is given and
- * reports what the service refuses (frontend/AGENTS.md).
- *
- * Casing follows the glossary. Whether the wire format carries "OPEN" or "open"
- * is order-service's serialisation decision; adjust when its spec lands.
+ * The order state set from the glossary in the team's milestone report, in
+ * the glossary's casing. CANCELLED and EXPIRED are the terminal alternatives.
+ * Which transitions are permitted (F3.8) is enforced by order-service, never
+ * here; the frontend renders the state it is given.
  */
 export type ErrandStatus =
   | "OPEN"
@@ -49,7 +37,7 @@ export interface Errand {
   status: ErrandStatus;
   /** Supplier IDs only — never a copy of the supplier record (root §5). */
   supplierId: string;
-  /** Resolved at the edge for display; not stored on the order. */
+  /** Copied from the chosen supplier when the errand is posted, for display. */
   supplierName: string;
   items: ErrandItem[];
   deliverTo: string;

@@ -10,11 +10,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { logInViaGateway } from "./authApi";
 
 /**
- * These tests stub `fetch` rather than run against a gateway. What they cover
- * is this folder's own mapping — which profile field lands on which Session
- * field, and what happens when the profile call cannot answer. Whether
- * user-service really returns `phone_num` is its own service's test to write;
- * here it is transcribed from its committed `api/openapi.yaml`.
+ * These tests stub `fetch`. They cover how the gateway client maps a profile
+ * response onto Session, and what happens when the profile call fails.
  */
 
 /** An unsigned token carrying just the two claims the UI reads (lib/jwt.ts). */
@@ -113,8 +110,8 @@ describe("logInViaGateway", () => {
 
     const { session, tokens } = await logInViaGateway("nigeltzy", "Password1");
 
-    // Only the access token reaches this code: the gateway lifts the refresh
-    // token into its HttpOnly cookie and strips it from the body (D-033).
+    // The stubbed body still carries a refreshToken; only the access token is
+    // kept.
     expect(typeof tokens.accessToken).toBe("string");
     expect(session.userId).toBe(UID);
     expect(session.username).toBe("nigeltzy");

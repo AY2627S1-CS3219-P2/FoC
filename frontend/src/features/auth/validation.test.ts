@@ -12,7 +12,6 @@ import {
   validateUsername,
 } from "./validation";
 
-// Table-driven, error paths first, per root AGENTS.md §7.
 
 describe("validateEmail (F1.1.2.1)", () => {
   const rejected: [string, string][] = [

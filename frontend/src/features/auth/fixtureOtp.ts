@@ -11,17 +11,10 @@ import { OTP_LENGTH } from "./validation";
 import type { PendingRegistration } from "./types";
 
 /**
- * A FIXTURE. Nothing here is security, and none of it survives a page reload.
- *
- * It exists because the OTP flow is five High-priority requirements
- * (F1.1.2.3-F1.1.2.7) that cannot otherwise be built or demonstrated: there is
- * no user-service to issue a code and no mail server to deliver one. The rules
- * are implemented faithfully so the screens meet real behaviour — a code that
- * actually expires, a resend that actually invalidates its predecessor, and a
- * limit that actually locks — rather than a stub that always says yes.
- *
- * The real enforcement is user-service's. Every rule below is re-checked
- * there, and this whole module is deleted when the gateway client takes over.
+ * In-browser OTP fixture for the registration flow (F1.1.2.3-F1.1.2.7), used
+ * only by the fixture auth client. It is not security: state lives in memory
+ * and is lost on reload. It applies the expiry, replacement and resend-limit
+ * rules so the OTP screens can be exercised without a mail server.
  */
 
 /** F1.1.2.5 — a code expires five minutes after it is issued. */
@@ -49,8 +42,8 @@ interface Record_ {
 const pending = new Map<string, Record_>();
 
 function sixDigits(): string {
-  // Math.random is fine and appropriate here: this is a development fixture,
-  // not a credential. user-service generates the real one.
+  // Math.random is enough here: this is a development fixture, not a real
+  // one-time code.
   return String(Math.floor(Math.random() * 10 ** OTP_LENGTH)).padStart(
     OTP_LENGTH,
     "0",
@@ -124,10 +117,10 @@ export function resend(handle: string): PendingRegistration {
 }
 
 /**
- * F1.1.2.7 — registration completes only on the correct, unexpired code.
+ * F1.1.2.7: registration completes only on the correct, unexpired code.
  *
- * Returns the username the registration was started with, so the caller can
- * build the session. Consumes the record: a code works once.
+ * Returns the username and email the registration was started with, so the
+ * caller can build the session. Consumes the record: a code works once.
  */
 export function verify(handle: string, code: string): { username: string; email: string } {
   const record = pending.get(handle);
@@ -137,7 +130,7 @@ export function verify(handle: string, code: string): { username: string; email:
     throw new AuthError("That code has expired. Ask for a new one.");
   }
   if (code.trim() !== record.code) {
-    // Deliberately not saying whether the code was wrong or merely stale.
+    // Same message for a wrong code and one replaced by a resend.
     throw new AuthError("That code is not right. Check it and try again.");
   }
 

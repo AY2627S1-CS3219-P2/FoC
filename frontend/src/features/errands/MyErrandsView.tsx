@@ -10,7 +10,7 @@ import * as errandsApi from "./errandsApi";
 import { TERMINAL_STATUSES, type Errand, type ErrandStatus } from "./types";
 
 interface MyErrandsViewProps {
-  /** Requesting shows errands you posted; Delivering, ones you could fulfil. */
+  /** Changes the subtitle only; both modes list the same errands. */
   mode: ActingMode;
 }
 

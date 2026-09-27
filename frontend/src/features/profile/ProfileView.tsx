@@ -14,7 +14,7 @@ import type { ActingMode, Session } from "../auth/types";
 
 interface ProfileViewProps {
   session: Session;
-  /** False once a gateway is configured — see App's `usingGateway`. */
+  /** True only when VITE_USE_FIXTURES=true; see App's `usingGateway`. */
   isMock: boolean;
   mode: ActingMode;
   onModeChange: (mode: ActingMode) => void;
@@ -22,10 +22,8 @@ interface ProfileViewProps {
 }
 
 /**
- * The requester/courier toggle is rendered here and in the top bar, but the
- * rule about when it may be switched belongs to user-service and order-service
- * (user-service/AGENTS.md: "you may not switch to requester while a delivery is
- * in flight" is an order-service question). This is presentation only.
+ * Profile screen for the signed-in account. The requester/courier toggle is
+ * presentation only: it does not check whether a switch is allowed.
  */
 export function ProfileView({
   session,
@@ -40,14 +38,6 @@ export function ProfileView({
         <h1>Profile</h1>
       </div>
 
-      {/*
-        Conditional since 2026-09-22. This was rendered unconditionally from
-        when the screen was written (17 Sep), because there was no
-        user-service then. There is now: against the gateway every field
-        below comes from the access token's claims plus
-        GET /api/v1/users/{uid}, so the badge was claiming invented data on a
-        page that has none. LoginPage has always gated it this way.
-      */}
       {isMock && <MockBadge service="user-service" />}
 
       <div className="card">
@@ -63,15 +53,10 @@ export function ProfileView({
           </div>
         </div>
 
-        {/* F1.4.1 - the account identifier, registered email, username and
-            contact information are all viewable. F1.4.3 makes the identifier
-            and the email unchangeable, so they are shown as plain text.
-
-            Email and contact render only when present. user-service supplies
-            both (`email` and `phone_num`, on the restricted response too), but
-            they arrive on the profile call that follows login rather than in a
-            token claim, so a failed call leaves them undefined while the
-            session itself stays valid. */}
+        {/* Every field here is view-only (F1.4.1), and the identifier and
+            email cannot be changed (F1.4.3). Email and contact come from the
+            profile call, not the token, so when that call fails the email
+            row is hidden and contact shows "Not set". */}
         <h2 className="section-label">Account</h2>
         <dl className="detail-list">
           <div>

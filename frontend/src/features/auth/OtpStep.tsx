@@ -20,7 +20,7 @@ interface OtpStepProps {
   resend: (
     pendingRegistration: PendingRegistration,
   ) => Promise<PendingRegistration>;
-  /** Carried through from the signup form; stored on the new account. */
+  /** The contact number from the signup form, passed through to verify. */
   contact: string;
   onVerified: (result: AuthResult) => void;
   onChanged: (pendingRegistration: PendingRegistration) => void;

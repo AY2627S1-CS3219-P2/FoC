@@ -9,9 +9,8 @@ interface MockBadgeProps {
 }
 
 /**
- * Renders on every screen whose data comes from src/lib/mock.ts fixtures. A
- * graded demo must not show invented figures as if they were live, so this is
- * deliberately visible rather than a code comment.
+ * Visible label for a screen whose data comes from a fixture module rather
+ * than a real service, so fixture figures are not read as live data.
  */
 export function MockBadge({ service }: MockBadgeProps) {
   return (

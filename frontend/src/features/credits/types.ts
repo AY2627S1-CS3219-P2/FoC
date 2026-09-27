@@ -4,13 +4,8 @@
 // Author review: Nigeltzy - AI was used to create the implementation for the mock client scaffolding and for testing. Checked and is valid and works as mock.
 
 /**
- * MOCK SHAPES — invented by the frontend, not a contract. `credit-service`
- * does not exist; how balances and the ledger are modelled is explicitly its
- * owner's decision (credit-service/AGENTS.md). See src/lib/mock.ts.
- *
- * Credits are whole numbers here on purpose: credit-service/AGENTS.md says to
- * flag any float representation of a credit amount, because rounding drift in
- * a ledger is silent and unrecoverable.
+ * Balance and ledger shapes for the mock credit-service, invented by the
+ * frontend and not a contract. Amounts are whole credits.
  */
 export interface Balance {
   /** Spendable now. */

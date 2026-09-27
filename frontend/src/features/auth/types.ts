@@ -10,18 +10,11 @@
 // Update was made according to changes in teammate's architecture and framework. Changes made are valid and intended.
 
 /**
- * The signed-in user, as far as the UI can actually know them.
+ * The signed-in user. Fields follow F1.4.1 (identifier, email, username,
+ * contact) and F1.5 (role).
  *
- * The FIELDS are taken from the backlog rather than invented: F1.4.1 says a
- * user can view their account identifier, registered email, username and
- * contact information, and F1.5 makes the role STUDENT or ADMIN.
- *
- * `email` and `contact` are optional because of where they come from, not
- * because the service lacks them: user-service carries both — `email` and
- * `phone_num` — on `UserResponse` and on the `RestrictedUserResponse` that any
- * authenticated caller gets. Neither is a token claim, so both arrive on the
- * profile call that follows login, and a profile call that fails leaves them
- * undefined while the session stays valid. Every view must still render
+ * `email` and `contact` come from the profile call after login, not from the
+ * token, so they are undefined when that call fails. Every view must render
  * without them.
  */
 export interface Session {
@@ -40,18 +33,12 @@ export interface Session {
 }
 
 /**
- * F1.5 — the account authorisation role.
- *
- * Deliberately NOT the requester/courier distinction: the backlog glossary
- * calls that the "errand participation role" and says it is not a permanent
- * account role. ActingMode below carries that instead.
+ * F1.5: the account authorisation role. Requester and courier are not account
+ * roles (the backlog's "errand participation role"); ActingMode carries that.
  */
 export type AccountRole = "STUDENT" | "ADMIN";
 
-/**
- * Which side of an errand the user is currently acting as. Two named modes
- * rather than a boolean, per the control-coupling rule in root AGENTS.md §5.
- */
+/** Which side of an errand the user is currently acting as. */
 export type ActingMode = "requesting" | "delivering";
 
 /**
@@ -63,8 +50,8 @@ export type ActingMode = "requesting" | "delivering";
  */
 export interface PendingRegistration {
   /**
-   * Opaque handle for the in-progress registration. The client never
-   * constructs or interprets it — user-service decides what it is.
+   * Opaque handle for the in-progress registration. The UI only passes it
+   * back and never reads it.
    */
   handle: string;
   /** Shown back to the user so they know where to look for the code. */
@@ -79,10 +66,8 @@ export interface PendingRegistration {
    */
   blockedUntil: number | null;
   /**
-   * FIXTURE ONLY, and never present against a real service. There is no mail
-   * server in development, so the fixture surfaces the code it generated
-   * rather than leaving the flow impossible to exercise. The UI renders it
-   * only inside the mock badge.
+   * Fixture only: the generated code, shown on the OTP step when the fixture
+   * client is in use, since there is no mail server in development.
    */
   fixtureCode?: string;
 }

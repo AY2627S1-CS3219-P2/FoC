@@ -23,16 +23,7 @@ interface NewErrandViewProps {
   onPosted: () => void;
 }
 
-/**
- * Composes two services in one view, which frontend/AGENTS.md explicitly
- * allows: suppliers are read from supplier-service through its own client
- * (injected as a prop since 2026-09-22, because it now carries a token),
- * the errand is posted through order-service's. Each call goes through that
- * service's module; neither knows about the other.
- *
- * Campus delivery locations are hard-coded here because no service owns them
- * yet. Where they should live is an open question for the team.
- */
+/** Campus delivery locations, hard-coded because no service owns them yet. */
 const DELIVERY_LOCATIONS = [
   "COM1 Level 1 study benches",
   "COM3 Lobby",

@@ -20,17 +20,16 @@ import {
 
 interface LoginPageProps {
   /**
-   * Receives the session AND the token pair from D-011 — App puts the tokens
-   * in the TokenStore. This screen never touches token storage itself.
+   * Receives the session and the access token. App stores the token, so this
+   * screen never touches token storage.
    */
   onAuthenticated: (result: AuthResult) => void;
   /**
-   * Injected by App, which chooses the fixture client or the gateway client
-   * once at wiring time. Passing the functions beats passing a `useMock`
-   * boolean the callee branches on (root AGENTS.md §5, control coupling).
+   * Injected by App, which picks the fixture or gateway client once at
+   * startup.
    */
   logIn: (identifier: string, password: string) => Promise<AuthResult>;
-  /** F1.1.2.7 — opens a registration; it is NOT complete until verified. */
+  /** F1.1.2.7: opens a registration, which is not complete until verified. */
   signUp: (
     email: string,
     username: string,
@@ -45,16 +44,16 @@ interface LoginPageProps {
   resendOtp: (
     pendingRegistration: PendingRegistration,
   ) => Promise<PendingRegistration>;
-  /** Hides the mock notice once a real user-service is behind the gateway. */
+  /** True when the fixture client is in use; shows the mock notice. */
   isMock: boolean;
 }
 
 type Tab = "login" | "signup";
 
 /**
- * The initial credit allocation quoted below comes from the backlog's
- * configurable parameter X (100 credits at registration, F4.1). It is copy
- * here, not a rule — credit-service owns the number.
+ * Sign-in and registration screen. The 100-credit starting allocation it
+ * quotes is the backlog's parameter X (F4.1); it is display copy, not a rule
+ * this screen applies.
  */
 export function LoginPage({
   onAuthenticated,

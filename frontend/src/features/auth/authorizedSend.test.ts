@@ -33,8 +33,8 @@ describe("createAuthorizedSend (D-033)", () => {
   });
 
   it("refreshes on demand when no access token is in memory", async () => {
-    // Exactly the state after a page reload: the cookie is live, the closure
-    // is empty. The session must come back without the user logging in again.
+    // No access token in memory: the first request exchanges the refresh
+    // cookie and goes out with the new token.
     const tokens = createTokenStore();
     const refresh = vi.fn(async () => ({ accessToken: "fresh" }));
     const calls = stubFetch([200]);
@@ -53,7 +53,7 @@ describe("createAuthorizedSend (D-033)", () => {
   });
 
   it("does not refresh when a token is already in memory", async () => {
-    // "On demand, not on every page load" — a live token means no round trip.
+    // A token already in memory is used as is, with no refresh.
     const tokens = createTokenStore();
     tokens.setPair({ accessToken: "live" });
     const refresh = vi.fn(async () => ({ accessToken: "fresh" }));
@@ -75,10 +75,8 @@ describe("createAuthorizedSend (D-033)", () => {
     // session, revoking every session for that user. Three parallel requests
     // must not become three exchanges.
     //
-    // NOTE: this covers the in-page in-flight promise, not the Web Lock. The
-    // CROSS-TAB guarantee cannot be exercised here — vitest runs one context
-    // and `navigator.locks` is absent in it, so underRefreshLock falls back to
-    // calling through. Two real tabs are still untested.
+    // The in-page in-flight promise dedupes these before the lock is reached.
+    // The cross-tab guarantee needs two real tabs and is not covered here.
     const tokens = createTokenStore();
     let issued = 0;
     const refresh = vi.fn(async () => {
@@ -118,8 +116,8 @@ describe("createAuthorizedSend (D-033)", () => {
     expect(refresh).toHaveBeenCalledTimes(1);
     expect(calls).toHaveLength(2);
     expect(calls[1].authorization).toBe("Bearer fresh");
-    // A second 401 is a real authorization failure, not an expiry. Returning
-    // it rather than looping is the point.
+    // A second 401 is a real authorization failure, so it is returned rather
+    // than retried.
     expect(res.status).toBe(401);
   });
 

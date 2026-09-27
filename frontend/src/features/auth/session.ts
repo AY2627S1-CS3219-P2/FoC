@@ -17,39 +17,15 @@ import { send, type HttpResponse, type SendOptions } from "../../lib/http";
 import type { TokenPair, TokenStore } from "../../lib/tokens";
 
 /**
- * Steps 2 and 3 of the recorded token lifecycle, in one place:
- *
- *   2. The UI attaches the access token to every request (D-011).
- *   3. When the access token has expired, the UI exchanges the refresh token
- *      for a fresh one — through the gateway, not direct to user-service
- *      (D-015) — and retries.
- *
- * "The UI detects an expired access token" is implemented as *the gateway said
- * 401*, not as the client reading `exp` itself. Reading `exp` client-side means
- * trusting an unverified token and racing clock skew; the gateway is the thing
- * that actually decides. The cost is one extra round trip on expiry, which is
- * the cheap direction to err.
- *
- * CORRECTED 2026-09-22: this comment used to claim the gateway's 401 also
- * catches D-014's revocation cases (logout, suspension). It does not. Under
- * D-024 the gateway is not a Redis client and reads no blocklist, so an
- * access token that has been logged out or suspended stays valid to it until
- * `exp` — up to 15 minutes (D-025a). Revocation bites at REFRESH, where
- * user-service checks PostgreSQL: a killed session cannot be renewed, but the
- * access token already in this browser keeps working. So the retry below
- * recovers from expiry, and from nothing else.
- *
- * NOT RECORDED: that the gateway signals an expired token with 401 is an
- * interface detail nobody has written down (ai/decisions.md, Open table).
- * It is isolated to `isUnauthorized` below.
+ * Attaches the access token to every request and, when the gateway answers
+ * 401, exchanges the refresh cookie for a new access token and retries once.
+ * Expiry is detected from the 401 alone (see isUnauthorized); the client
+ * never reads `exp`.
  */
 
 /**
- * Exchanges a refresh token for a fresh PAIR. Supplied by authApi.
- *
- * A pair rather than a lone access token because user-service rotates the
- * refresh token on every exchange and treats a replayed one as a compromised
- * session (`ErrSessionCompromised`). Whatever comes back must replace both.
+ * Exchanges the refresh cookie for a new access token. Supplied by authApi;
+ * takes no argument because the browser attaches the cookie.
  */
 export type RefreshExchange = () => Promise<TokenPair>;
 
@@ -70,23 +46,17 @@ function isUnauthorized(response: HttpResponse): boolean {
 }
 
 /**
- * The Web Locks name the refresh is serialised under.
- *
- * Locks are scoped to the origin and shared across every tab on it, which is
- * the point: user-service rotates the refresh token on each exchange and
- * treats a replayed one as a stolen session, revoking ALL of that user's
- * sessions. Two tabs waking together would otherwise present the same cookie
- * and sign the user out everywhere (D-033).
+ * The Web Locks name for refreshes made through createAuthorizedSend. The lock
+ * is shared by every tab on the origin, so two tabs cannot spend the same
+ * refresh cookie at once; user-service treats a reused refresh token as theft
+ * and revokes all of that user's sessions.
  */
 const REFRESH_LOCK = "foc.auth.refresh";
 
 /**
- * Runs `fn` under the cross-tab refresh lock, or directly where Web Locks are
- * unavailable.
- *
- * `navigator.locks` needs a secure context, so it is absent over plain HTTP on
- * anything but localhost. Falling back keeps the app working; it just loses
- * the cross-tab guarantee, which is no worse than before this existed.
+ * Runs `fn` under the cross-tab refresh lock. Where Web Locks are missing
+ * (`navigator.locks` needs a secure context, so plain HTTP other than
+ * localhost), it runs `fn` directly, without the cross-tab guarantee.
  */
 async function underRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
   if (typeof navigator === "undefined" || !navigator.locks) return fn();
@@ -98,9 +68,8 @@ export function createAuthorizedSend({
   refresh,
   onSessionExpired,
 }: AuthorizedSendDeps): AuthorizedSend {
-  // One shared in-flight refresh WITHIN this page. The Web Lock covers other
-  // tabs; this covers three requests fired by one screen, without making two
-  // of them queue on a lock they do not need.
+  // One shared in-flight refresh per page, so requests fired together cause
+  // one exchange. The Web Lock covers other tabs.
   let inFlight: Promise<string | null> | null = null;
 
   async function refreshOnce(): Promise<string | null> {
@@ -109,21 +78,18 @@ export function createAuthorizedSend({
     inFlight = (async () => {
       try {
         return await underRefreshLock(async () => {
-          // Re-read inside the lock. Another tab may have refreshed while we
-          // waited, in which case the cookie it left is the live one and
-          // spending ours would look like a replay.
+          // Re-read inside the lock: if another refresh in this page stored a
+          // token while this one waited, use it instead of spending the cookie.
           const existing = tokens.getAccessToken();
           if (existing) return existing;
 
-          // No argument: the refresh token is an HttpOnly cookie the browser
-          // attaches itself (D-033). There is nothing here to pass.
           const pair = await refresh();
           tokens.setPair(pair);
           return pair.accessToken;
         });
       } catch {
-        // A refresh the gateway rejects is the end of the session: the cookie
-        // is gone, expired, or was already spent. Nothing to retry.
+        // Any failed refresh ends the session, whether the gateway refused the
+        // cookie or the request never got through.
         tokens.clear();
         onSessionExpired();
         return null;
@@ -136,9 +102,7 @@ export function createAuthorizedSend({
   }
 
   return async function authorizedSend(options) {
-    // ON DEMAND, not on page load (D-033). After a reload there is no access
-    // token in memory but the cookie is still live, so the first authenticated
-    // request exchanges it rather than every page load paying a round trip.
+    // No access token in memory: exchange the refresh cookie before sending.
     let accessToken = tokens.getAccessToken();
     if (!accessToken) {
       accessToken = await refreshOnce();
@@ -150,9 +114,9 @@ export function createAuthorizedSend({
     const response = await send({ ...options, accessToken });
     if (!isUnauthorized(response)) return response;
 
-    // The token was live in memory but the server refused it — expired
-    // between the read and the send. Clear it so refreshOnce does not return
-    // the same dead one from inside the lock.
+    // The server refused the in-memory token, usually because it expired.
+    // Clear it so refreshOnce does not hand the same token back from inside
+    // the lock.
     tokens.clear();
     const renewed = await refreshOnce();
     if (!renewed) return response;

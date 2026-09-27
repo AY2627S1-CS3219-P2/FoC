@@ -7,16 +7,10 @@ import { mockDelay, nextErrandId } from "../../lib/mock";
 import type { Errand, NewErrand } from "./types";
 
 /**
- * ███ MOCK — `order-service` does not exist (M4 is unimplemented). ███
- *
- * An in-memory array, reset on every page reload. It decides nothing: not
- * whether an errand may be accepted, not who may accept it, not what happens
- * when one expires. order-service/AGENTS.md lists all of that as its owner's
- * decisions, and frontend/AGENTS.md forbids the frontend re-implementing a
- * rule a service owns — so this fixture stores and returns, nothing more.
- *
- * The two-hour expiry quoted in the UI is copy from the owner's mockup, not a
- * rule enforced here.
+ * Mock client for order-service: an in-memory list, reset on every page
+ * reload. It stores and returns errands and enforces no rule; acceptance,
+ * expiry and state changes belong to order-service. EXPIRY_HOURS only fills
+ * in `expiresAt` to match the two hours quoted in the UI.
  */
 
 const EXPIRY_HOURS = 2;

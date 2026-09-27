@@ -31,10 +31,8 @@ const EMPTY: SupplierInput = {
 };
 
 /**
- * Validation here is UX only — required fields and formats. The authoritative
- * rules (duplicate name+location, coordinate ranges, HH:MM) live in the
- * supplier-service service layer, and its rejections are surfaced as a toast.
- * frontend/AGENTS.md: do not re-implement a rule a service owns.
+ * Client-side checks are UX only: required fields, and number inputs for the
+ * coordinates. supplier-service's rejections are shown as a toast.
  */
 export function SupplierForm({
   existing,
