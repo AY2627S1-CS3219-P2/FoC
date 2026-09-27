@@ -40,9 +40,7 @@ below is theirs, not an agent's.
 
 ## Layout
 
-Mirror `supplier-service` package for package (root §6 and that folder's
-`AGENTS.md`); module path `foc/user-service`; migrations named
-`NNNNNN_<name>.{up,down}.sql`.
+Migrations named `NNNNNN_<name>.{up,down}.sql`.
 
 Which domain packages exist under `internal/`, and what each contains, is the
 owner's to decide — `supplier-service` has exactly one (`internal/supplier`)

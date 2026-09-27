@@ -6,8 +6,9 @@
 package user
 
 import (
-	"github.com/google/uuid"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type AccountRole string
@@ -17,6 +18,7 @@ const (
 	AccountRoleAdmin   AccountRole = "ADMIN"
 )
 
+// AccountStatus values match the account_status database enum.
 type AccountStatus string
 
 const (
@@ -24,6 +26,7 @@ const (
 	AccountStatusSuspended AccountStatus = "SUSPENDED"
 )
 
+// User is an account as stored in the users table.
 type User struct {
 	UID              uuid.UUID     `json:"uid"`
 	Username         string        `json:"username"`

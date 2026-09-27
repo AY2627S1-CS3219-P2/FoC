@@ -12,7 +12,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// UserRepository persists users without exposing the underlying database adapter.
+// UserRepository stores and looks up user accounts
 type UserRepository interface {
 	Create(ctx context.Context, u *User) error
 	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
@@ -22,12 +22,12 @@ type UserRepository interface {
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
 }
 
-// SuspensionWriter persists the invalidation marker for a suspended account.
+// SuspensionWriter writes the invalidation marker to Redis for a suspended account.
 type SuspensionWriter interface {
 	WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error
 }
 
-// SessionRepository persists refresh-token sessions and their revocation state.
+// SessionRepository stores refresh-token sessions and their revocation state.
 type SessionRepository interface {
 	CreateSession(ctx context.Context, session *Session) error
 	GetSessionByHash(ctx context.Context, hash string) (*Session, error)
