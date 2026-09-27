@@ -14,6 +14,8 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	ErrInvalidPassword    = errors.New("invalid password")
 	ErrInvalidUsername    = errors.New("invalid username")
+	ErrInvalidEmail       = errors.New("invalid email")
+	ErrInvalidPhone       = errors.New("invalid phone number")
 	ErrAccountSuspended   = errors.New("account is suspended")
 	ErrSessionNotFound    = errors.New("session not found")
 	ErrSessionCompromised = errors.New("session compromised")

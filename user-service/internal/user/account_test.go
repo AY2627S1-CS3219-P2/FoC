@@ -8,6 +8,7 @@ package user
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,6 +76,21 @@ func TestAccountServiceRegisterRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING): database-width validation belongs before persistence.
+func TestAccountServiceRegisterRejectsEmailLongerThanDatabaseWidth(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+	email := strings.Repeat("a", 246) + "@u.nus.edu"
+
+	_, err := service.Register(context.Background(), email, "student", "ValidPass1")
+	if !errors.Is(err, ErrInvalidEmail) {
+		t.Fatalf("error = %v, want ErrInvalidEmail", err)
+	}
+	if repository.user != nil {
+		t.Fatal("repository should not persist an overlong email")
+	}
+}
+
 func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	uid := uuid.New()
 	oldHash, err := hash.HashPassword("OldPass1")
@@ -124,6 +140,21 @@ func TestAccountServiceUpdateProfileRejectsInvalidPassword(t *testing.T) {
 	}
 	if repository.updated != nil {
 		t.Fatal("repository should not persist an invalid password")
+	}
+}
+
+// AI-generated (edited by PENDING): database-width validation belongs before persistence.
+func TestAccountServiceUpdateProfileRejectsPhoneLongerThanDatabaseWidth(t *testing.T) {
+	uid := uuid.New()
+	repository := &fakeAccountRepository{user: &User{UID: uid, PhoneNum: "91234567"}}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	_, err := service.UpdateProfile(context.Background(), uid, "", strings.Repeat("1", 21), "")
+	if !errors.Is(err, ErrInvalidPhone) {
+		t.Fatalf("error = %v, want ErrInvalidPhone", err)
+	}
+	if repository.updated != nil {
+		t.Fatal("repository should not persist an overlong phone number")
 	}
 }
 

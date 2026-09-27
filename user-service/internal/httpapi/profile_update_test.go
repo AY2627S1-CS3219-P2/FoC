@@ -112,7 +112,28 @@ func TestUpdateProfileHandlerRejectsInvalidUsername(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by PENDING): database-width validation must be reported as a client error.
+func TestUpdateProfileHandlerRejectsPhoneLongerThanDatabaseWidth(t *testing.T) {
+	id := uuid.New()
+	r := newTestRouter(routes.Dependencies{
+		TokenVerifier: &fakeTokenVerifier{principal: handlers.Principal{UserID: id, Role: user.AccountRoleStudent}},
+		Profile:       handlers.ProfileDependencies{ProfileUpdater: &fakeProfileUpdater{err: user.ErrInvalidPhone}},
+	})
+	q := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+id.String(), strings.NewReader(`{"phone_num":"123456789012345678901"}`))
+	q.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+
+	r.ServeHTTP(w, q)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "phone number must be at most 20 characters") {
+		t.Fatalf("body = %q, want phone-width error", w.Body.String())
+	}
+}
+
+// AI-generated (edited by ZI YANG).
 func TestUpdateProfileHandlerReturnsNotFoundForMissingAccount(t *testing.T) {
 	id := uuid.New()
 	r := newTestRouter(routes.Dependencies{

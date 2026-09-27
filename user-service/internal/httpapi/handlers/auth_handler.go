@@ -74,6 +74,9 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.deps.Registrar.Register(r.Context(), request.Email, request.Username, request.Password); err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
+			// AI-generated (edited by PENDING): report the recorded database-width validation as a client error.
+		} else if errors.Is(err, user.ErrInvalidEmail) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must be at most 255 characters"})
 		} else if errors.Is(err, user.ErrInvalidPassword) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {

@@ -148,11 +148,14 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
+			// AI-generated (edited by PENDING): report the recorded database-width validation as a client error.
+		} else if errors.Is(err, user.ErrInvalidPhone) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phone number must be at most 20 characters"})
 		} else if errors.Is(err, user.ErrInvalidPassword) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "username already taken"})
-			// AI-generated (edited by PENDING): expose a missing account as the recorded 404 response.
+			// AI-generated (edited by ZI YANG): expose a missing account as the recorded 404 response.
 		} else if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		} else {

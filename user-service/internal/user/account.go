@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"foc/user-service/internal/hash"
 	"github.com/google/uuid"
@@ -25,6 +26,11 @@ type AccountService struct {
 	sessions         SessionRepository
 	suspensionTTL    time.Duration
 }
+
+const (
+	maxEmailCharacters = 255
+	maxPhoneCharacters = 20
+)
 
 // NewAccountService constructs an account service with the dependencies
 // required to invalidate suspended accounts before persistence.
@@ -42,6 +48,11 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
+	email = normalizeEmail(email)
+	// AI-generated (edited by PENDING): match the recorded PostgreSQL VARCHAR(255) limit before persistence.
+	if utf8.RuneCountInString(email) > maxEmailCharacters {
+		return nil, ErrInvalidEmail
+	}
 	if err := ValidateUsername(username); err != nil {
 		return nil, fmt.Errorf("validate registration username: %w", err)
 	}
@@ -53,7 +64,7 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 		return nil, fmt.Errorf("hash registration password: %w", err)
 	}
 	account := &User{
-		Email:         normalizeEmail(email),
+		Email:         email,
 		Username:      username,
 		PasswordHash:  passwordHash,
 		AccountRole:   AccountRoleStudent,
@@ -75,6 +86,10 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 		if err := ValidateUsername(username); err != nil {
 			return nil, fmt.Errorf("validate profile username: %w", err)
 		}
+	}
+	// AI-generated (edited by PENDING): match the recorded PostgreSQL VARCHAR(20) limit without imposing phone syntax.
+	if phone != "" && utf8.RuneCountInString(phone) > maxPhoneCharacters {
+		return nil, ErrInvalidPhone
 	}
 	account, err := s.repository.GetByID(ctx, uid)
 	if err != nil {
