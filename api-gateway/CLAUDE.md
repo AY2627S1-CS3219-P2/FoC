@@ -1,0 +1,3 @@
+# API Gateway
+
+@AGENTS.md
