@@ -114,7 +114,6 @@ contract change and needs its owner. Flag any touch of a shared file
 Ports and database env vars are allocated **here, once**; a service file may
 state its own port but must not restate this table.
 
-<!-- AI-generated (edited by PENDING). -->
 | Folder | Port | Database URL env var |
 | --- | --- | --- |
 | `user-service` | 8081 | `USER_DB_URL` |
