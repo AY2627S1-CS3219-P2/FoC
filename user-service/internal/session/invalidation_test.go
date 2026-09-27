@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -38,6 +40,13 @@ type orderedSessionRepository struct {
 	err       error
 }
 
+func (f *orderedSessionRepository) GetSessionByHash(ctx context.Context, hash string) (*user.Session, error) {
+	if f.callOrder != nil {
+		*f.callOrder = append(*f.callOrder, "postgres-read")
+	}
+	return f.fakeSessionRepository.GetSessionByHash(ctx, hash)
+}
+
 func (f *orderedSessionRepository) RevokeSessionByHash(ctx context.Context, hash string) error {
 	if f.callOrder != nil {
 		*f.callOrder = append(*f.callOrder, "postgres")
@@ -51,35 +60,60 @@ func (f *orderedSessionRepository) RevokeSessionByHash(ctx context.Context, hash
 func TestLogoutServiceBlocksAccessBeforeRevokingRefreshSession(t *testing.T) {
 	now := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
 	order := []string{}
-	sessions := &orderedSessionRepository{callOrder: &order}
+	userID := uuid.New()
+	refreshToken := "refresh"
+	sessions := &orderedSessionRepository{fakeSessionRepository: fakeSessionRepository{sessions: map[string]*user.Session{HashRefreshToken(refreshToken): {UID: userID}}}, callOrder: &order}
 	blocklist := &fakeBlocklistWriter{callOrder: &order}
 	service := NewLogoutService(sessions, blocklist, func() time.Time { return now })
 	jti := uuid.New()
 
-	if err := service.Logout(context.Background(), AccessTokenClaims{JTI: jti, ExpiresAt: now.Add(15 * time.Minute)}, "refresh"); err != nil {
+	if err := service.Logout(context.Background(), AccessTokenClaims{UserID: userID, JTI: jti, ExpiresAt: now.Add(15 * time.Minute)}, refreshToken); err != nil {
 		t.Fatal(err)
 	}
-	if len(order) != 2 || order[0] != "redis" || order[1] != "postgres" {
-		t.Fatalf("call order = %#v, want redis then postgres", order)
+	if got, want := order, []string{"postgres-read", "redis", "postgres"}; !equalStrings(got, want) {
+		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
 	if blocklist.jti != jti || blocklist.ttl != 15*time.Minute {
 		t.Fatalf("blocklist request = %#v, want exact remaining TTL", blocklist)
 	}
 }
 
+// AI-generated (edited by PENDING): a refresh session must belong to the verified access-token subject.
+func TestLogoutServiceRejectsRefreshSessionOwnedByAnotherAccount(t *testing.T) {
+	now := time.Date(2026, 9, 27, 21, 30, 0, 0, time.UTC)
+	order := []string{}
+	ownerID := uuid.New()
+	sessions := &orderedSessionRepository{fakeSessionRepository: fakeSessionRepository{sessions: map[string]*user.Session{HashRefreshToken("other-user-refresh"): {UID: ownerID}}}, callOrder: &order}
+	blocklist := &fakeBlocklistWriter{callOrder: &order}
+	service := NewLogoutService(sessions, blocklist, func() time.Time { return now })
+
+	err := service.Logout(context.Background(), AccessTokenClaims{UserID: uuid.New(), JTI: uuid.New(), ExpiresAt: now.Add(time.Minute)}, "other-user-refresh")
+	if !errors.Is(err, ErrSessionOwnershipMismatch) {
+		t.Fatalf("error = %v, want ErrSessionOwnershipMismatch", err)
+	}
+	if got, want := order, []string{"postgres-read"}; !equalStrings(got, want) {
+		t.Fatalf("call order = %#v, want %#v", got, want)
+	}
+	if blocklist.called {
+		t.Fatal("mismatched session must not block the access token")
+	}
+}
+
 func TestLogoutServiceDoesNotRevokeSessionWhenRedisFails(t *testing.T) {
 	redisFailure := errors.New("redis unavailable")
 	order := []string{}
-	sessions := &orderedSessionRepository{callOrder: &order}
+	userID := uuid.New()
+	refreshToken := "refresh"
+	sessions := &orderedSessionRepository{fakeSessionRepository: fakeSessionRepository{sessions: map[string]*user.Session{HashRefreshToken(refreshToken): {UID: userID}}}, callOrder: &order}
 	blocklist := &fakeBlocklistWriter{err: redisFailure, callOrder: &order}
 	service := NewLogoutService(sessions, blocklist, time.Now)
 
-	err := service.Logout(context.Background(), AccessTokenClaims{JTI: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}, "refresh")
+	err := service.Logout(context.Background(), AccessTokenClaims{UserID: userID, JTI: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}, refreshToken)
 	if !errors.Is(err, redisFailure) {
 		t.Fatalf("error = %v, want Redis failure", err)
 	}
-	if len(order) != 1 || order[0] != "redis" {
-		t.Fatalf("call order = %#v, want Redis only", order)
+	if got, want := order, []string{"postgres-read", "redis"}; !equalStrings(got, want) {
+		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
 }
 
@@ -89,10 +123,22 @@ func TestLogoutServiceRejectsExpiredAccessTokenWithoutSideEffects(t *testing.T) 
 	blocklist := &fakeBlocklistWriter{callOrder: &order}
 	service := NewLogoutService(sessions, blocklist, func() time.Time { return time.Unix(100, 0) })
 
-	if err := service.Logout(context.Background(), AccessTokenClaims{JTI: uuid.New(), ExpiresAt: time.Unix(99, 0)}, "refresh"); err == nil {
+	if err := service.Logout(context.Background(), AccessTokenClaims{UserID: uuid.New(), JTI: uuid.New(), ExpiresAt: time.Unix(99, 0)}, "refresh"); err == nil {
 		t.Fatal("expired access token was accepted")
 	}
 	if len(order) != 0 {
 		t.Fatalf("call order = %#v, want no side effects", order)
 	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

@@ -299,7 +299,7 @@ func (s *Service) VerifyAccess(ctx context.Context, rawToken string) (session.Ac
 	if verified.Type != AccessToken {
 		return session.AccessTokenClaims{}, errors.New("JWT is not an access token")
 	}
-	return session.AccessTokenClaims{JTI: verified.JTI, ExpiresAt: verified.ExpiresAt}, nil
+	return session.AccessTokenClaims{UserID: verified.Subject, JTI: verified.JTI, ExpiresAt: verified.ExpiresAt}, nil
 }
 
 // JWKS returns the public keys in a self-contained JSON Web Key Set document.

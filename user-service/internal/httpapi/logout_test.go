@@ -45,7 +45,7 @@ func (f *fakeLogoutter) Logout(_ context.Context, access session.AccessTokenClai
 }
 
 func TestLogoutHandler(t *testing.T) {
-	claims := session.AccessTokenClaims{JTI: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}
+	claims := session.AccessTokenClaims{UserID: uuid.New(), JTI: uuid.New(), ExpiresAt: time.Now().Add(time.Minute)}
 	tests := map[string]struct {
 		header     string
 		body       string
@@ -99,6 +99,15 @@ func TestLogoutHandler(t *testing.T) {
 			logoutter:  &fakeLogoutter{err: errors.New("Redis unavailable")},
 			wantStatus: http.StatusInternalServerError,
 			wantError:  "logout failed",
+		},
+		// AI-generated (edited by PENDING): a refresh session owned by another account is a recorded client error.
+		"rejects mismatched refresh session": {
+			header:     "Bearer access-token",
+			body:       `{"refreshToken":"other-user-refresh"}`,
+			verifier:   &fakeAccessVerifier{claims: claims},
+			logoutter:  &fakeLogoutter{err: session.ErrSessionOwnershipMismatch},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "mismatched session",
 		},
 	}
 

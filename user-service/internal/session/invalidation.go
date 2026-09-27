@@ -18,9 +18,14 @@ import (
 // AccessTokenClaims contains the access-token data required for logout
 // invalidation without exposing JWT library types to the domain service.
 type AccessTokenClaims struct {
+	UserID    uuid.UUID
 	JTI       uuid.UUID
 	ExpiresAt time.Time
 }
+
+// ErrSessionOwnershipMismatch indicates that a refresh session belongs to a
+// different account than the verified access token.
+var ErrSessionOwnershipMismatch = errors.New("mismatched session")
 
 // AccessTokenVerifier verifies a bearer access token and returns only the
 // claims required for logout invalidation.
@@ -56,12 +61,26 @@ func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, re
 	if s.sessions == nil || s.blocklist == nil {
 		return errors.New("logout dependencies are required")
 	}
-	if access.JTI == uuid.Nil || access.ExpiresAt.IsZero() {
+	if access.UserID == uuid.Nil || access.JTI == uuid.Nil || access.ExpiresAt.IsZero() {
 		return errors.New("access token claims are required")
 	}
 	ttl := access.ExpiresAt.Sub(s.now())
 	if ttl <= 0 {
 		return errors.New("access token is expired")
+	}
+	// AI-generated (edited by PENDING): verify session ownership before Redis invalidation or revocation.
+	refreshSession, err := s.sessions.GetSessionByHash(ctx, HashRefreshToken(refreshToken))
+	if errors.Is(err, user.ErrSessionNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("get refresh session for logout: %w", err)
+	}
+	if refreshSession == nil || refreshSession.RevokedAt != nil {
+		return nil
+	}
+	if refreshSession.UID != access.UserID {
+		return ErrSessionOwnershipMismatch
 	}
 	if err := s.blocklist.BlockAccessToken(ctx, access.JTI, ttl); err != nil {
 		return fmt.Errorf("block access token: %w", err)

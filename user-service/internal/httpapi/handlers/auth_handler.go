@@ -175,7 +175,12 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.deps.Logoutter.Logout(r.Context(), accessClaims, request.RefreshToken); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "logout failed"})
+		// AI-generated (edited by PENDING): expose the recorded mismatched-session client error.
+		if errors.Is(err, session.ErrSessionOwnershipMismatch) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mismatched session"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "logout failed"})
+		}
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
