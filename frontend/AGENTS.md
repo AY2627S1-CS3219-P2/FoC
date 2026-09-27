@@ -145,26 +145,24 @@ allocation quoted on the login screen.
 
 ## Local development
 
-- **Port 3001**, which `compose.yaml` publishes onto nginx's :80 in the
-  prototype (root §3). Backend ports are allocated in that same table —
+- **Port 3001** (root §3) is where the browser loads the app: `npm run dev`
+  serves it there, and `compose.yaml` publishes 3001 for the container that
+  serves the build. Backend ports are allocated in that same table —
   8081-8084 — so read them there rather than inventing or assuming one.
 - **Env vars:** resolved in `src/lib/config.ts`, never read inline, and every
   one goes into the root `.env.example` with a placeholder (root §9) plus this
   folder's own. **D-010 makes this one URL, not one per service:** the gateway
   is the only publicly reachable process, so `VITE_GATEWAY_BASE_URL` replaces
   the per-service variables. The gateway is on **8080**, provisional (D-018).
-  The variable is left unset on purpose: `App.tsx` reads empty as "run the
-  fixture auth", so setting it is what switches the app onto the real flow —
-  do that once `api-gateway` can serve the auth routes.
-  `VITE_SUPPLIER_BASE_URL` survives as a marked transitional entry only
-  because `api-gateway/internal/proxy` is still an empty scaffold; delete it
-  the day the gateway forwards.
+  Leave `VITE_GATEWAY_BASE_URL` empty: requests then use relative paths on
+  the page's own origin, and `npm run dev` proxies `/api` and `/auth` to
+  `localhost:8080` (`vite.config.ts`). `VITE_USE_FIXTURES=true` switches the
+  app onto the in-browser fixtures; nothing else does.
 - **Commands:** `npm install`, then `npm run dev` (Vite on 3001),
   `npm run build` (typecheck + production build), `npm run preview`, and
   `npm test` (vitest, D-029) or `npm run test:watch`. There is still no
   `Makefile` in the repo (root §10) and no lint target — adding one means
-  choosing a linter, which is a stack decision, so ask. Under Compose this
-  folder is the `frontend` service.
+  choosing a linter, which is a stack decision, so ask.
 
 ## Gotchas
 
