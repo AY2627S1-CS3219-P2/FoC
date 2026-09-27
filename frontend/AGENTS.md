@@ -169,16 +169,12 @@ allocation quoted on the login screen.
 - **Nothing shipped to the browser is secret.** Not a build-time env var,
   not an inlined constant, not a "hidden" field. No `JWT_SECRET`, no
   database URL, no admin key ever appears in this folder.
-- **The "Admin mode" checkbox is not auth.** It makes `suppliersApi.ts`
-  send `X-User-Role: ADMIN`, which `supplier-service` currently trusts
-  verbatim as an interim measure (its `internal/middleware/auth.go`). Do not
-  build real UI on that pattern or present it as access control. **D-013 ends
-  this:** the gateway derives `role` from the verified access token and sets
-  the header itself, so the browser must stop sending it — and the gateway has
-  to strip any claim header a client supplies, or the checkbox becomes a
-  privilege escalation. Removing the checkbox is this folder's change;
-  stripping headers is `api-gateway`'s; neither touches `supplier-service`,
-  whose middleware is its owner's (root §3).
+- **The admin checkbox is not auth.** On the Suppliers screen it only shows or
+  hides the admin controls; `suppliersApi.ts` sends no role header. The
+  gateway derives `role` from the verified access token (D-013) and strips
+  any claim header a client supplies, so a write succeeds only for an ADMIN
+  account. Do not build real UI on the checkbox or present it as access
+  control.
 - **Tokens never go in component state or storage.** `lib/tokens.ts` keeps the
   access token in a closure created once in `App.tsx`, and nothing writes it
   to `localStorage`, `sessionStorage` or a cookie. The refresh token is an

@@ -45,12 +45,9 @@ const ROUTES = {
   logout: "/auth/logout",
   /** Placeholder for F1.1.2.7: no endpoint exists and nothing calls it. */
   verify: "/auth/register/verify",
-  /** UNRECORDED — behaviour is required by F1.1.2.4, the call is not specced. */
+  /** Placeholder for F1.1.2.4: no endpoint exists and nothing calls it. */
   resend: "/auth/register/resend",
-  /**
-   * D-027's prefix proxy. `{uid}` is appended; the gateway rewrites this onto
-   * user-service's `/api/v1/users/{uid}`.
-   */
+  /** The profile route; `/{uid}` is appended. */
   profile: "/api/users",
 } as const;
 
@@ -62,10 +59,8 @@ export class AuthError extends Error {
 }
 
 /**
- * F1.2.4 — a suspended account must be told it is suspended, which is a
- * different outcome from bad credentials (F1.2.3, a deliberately generic
- * error). The caller renders these differently, so the distinction survives
- * as a type rather than as string matching.
+ * F1.2.4: a suspended account is told it is suspended, a different outcome
+ * from bad credentials (F1.2.3). LoginPage checks for this type to show it.
  */
 export class SuspendedAccountError extends AuthError {
   constructor(message = "This account is suspended. Contact an administrator.") {
@@ -74,7 +69,7 @@ export class SuspendedAccountError extends AuthError {
   }
 }
 
-/** What a successful login yields: who you are, plus the pair from D-011. */
+/** What a successful login yields: the session and the access token. */
 export interface AuthResult {
   session: Session;
   tokens: TokenPair;
@@ -97,13 +92,8 @@ function usernameFromEmail(email: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Fixtures — OPT-IN, and dead code unless asked for
-//
-// Reached only when VITE_USE_FIXTURES=true (lib/config.ts). Until 2026-09-22
-// this half ran whenever no gateway URL was set, which D-033 turned into the
-// normal value — so the whole stack quietly served mock accounts. The switch
-// is explicit now, and with it off Vite drops everything below from the
-// bundle.
+// Fixture client, used only when VITE_USE_FIXTURES=true (lib/config.ts).
+// Otherwise Vite leaves these functions out of the bundle.
 // ---------------------------------------------------------------------------
 
 function fixtureSession(
@@ -131,19 +121,16 @@ function fixtureResult(session: Session): AuthResult {
 }
 
 /**
- * MOCK. Authenticates nothing. Accepts any identifier, ignores the password
- * entirely, and hands back a fixture session with obviously-fake tokens. No
- * credential is transmitted, stored or checked.
- *
- * F1.2.1 — the identifier is a username OR an NUS email, so this takes
- * whichever the user typed and does not insist on an email.
+ * Fixture login. Accepts any non-empty username or NUS email (F1.2.1), never
+ * sees the password, and returns a fixture session with a fake access token.
+ * Nothing is sent to a server.
  */
 export async function logIn(identifier: string): Promise<AuthResult> {
   const trimmed = identifier.trim();
   if (!trimmed) throw new AuthError("Enter your username or NUS email.");
 
-  // A reserved identifier so the suspended-account path (F1.2.4) can actually
-  // be seen and styled before user-service exists.
+  // The identifier "suspended" returns the suspended-account error (F1.2.4),
+  // so that screen can be seen with fixtures.
   if (trimmed.toLowerCase() === "suspended") {
     throw new SuspendedAccountError();
   }
@@ -155,8 +142,8 @@ export async function logIn(identifier: string): Promise<AuthResult> {
 }
 
 /**
- * MOCK. F1.1.2.7 — this does NOT produce a session. It opens a registration
- * and returns the pending state; only verifyRegistration completes it.
+ * Fixture signup (F1.1.2.7). Returns a pending registration, not a session;
+ * only verifyRegistration completes it.
  */
 export async function signUp(
   email: string,
@@ -169,7 +156,7 @@ export async function signUp(
   return mockDelay(fixtureOtp.startRegistration(email.trim(), username.trim()));
 }
 
-/** MOCK. F1.1.2.7 — completes registration against the issued code. */
+/** Fixture: completes registration against the issued code (F1.1.2.7). */
 export async function verifyRegistration(
   pendingRegistration: PendingRegistration,
   code: string,
@@ -184,47 +171,38 @@ export async function verifyRegistration(
   return mockDelay(fixtureResult(fixtureSession(email, username, contact)));
 }
 
-/** MOCK. F1.1.2.4-F1.1.2.6 — replacement code, with the limits applied. */
+/** Fixture: issues a replacement code with the resend limits (F1.1.2.4-F1.1.2.6). */
 export async function resendOtp(
   pendingRegistration: PendingRegistration,
 ): Promise<PendingRegistration> {
   return mockDelay(fixtureOtp.resend(pendingRegistration.handle));
 }
 
-/** MOCK. No token was ever real, so there is nothing to revoke. */
+/** Fixture logout. The tokens are fake, so there is nothing to revoke. */
 export async function logOut(): Promise<void> {
   return mockDelay(undefined);
 }
 
-/**
- * MOCK. The fixture access token never expires, so this is never reached in
- * practice. It exists so the fixture and gateway clients have the same
- * surface and App.tsx can swap one for the other in a single line.
- */
+/** Fixture refresh: returns a new fake access token. */
 export async function refreshAccessToken(): Promise<TokenPair> {
   return mockDelay({ accessToken: "mock-access-token" });
 }
 
 // ---------------------------------------------------------------------------
-// Gateway-backed — the default, and what actually runs
+// Gateway client, used unless VITE_USE_FIXTURES=true
 //
-// api-gateway serves these routes: it terminates /auth/* onto user-service's
-// /api/v1/users/*, and owns the refresh token's cookie (D-033), which is why
-// nothing here reads or sends a refresh token.
+// The gateway keeps the refresh token in an HttpOnly cookie, so nothing here
+// reads or sends one.
 // ---------------------------------------------------------------------------
 
 function decodeAuthError(body: unknown, status: number): AuthError {
-  // Not assuming a shared error envelope (frontend/AGENTS.md, Gotchas):
-  // supplier-service returns {"error": "..."}, and whether user-service and
-  // the gateway match is their owners' decision. Read it if it is there.
+  // Use the server's own message when the body has an `error` field.
   const message =
     body && typeof body === "object" && "error" in body
       ? String((body as { error: unknown }).error)
       : null;
 
-  // F1.2.4 — suspension is a distinct outcome the UI must name. How
-  // user-service signals it is not recorded, so this reads the two signals it
-  // could plausibly send and falls back to the generic error otherwise.
+  // F1.2.4: a suspended account gets its own error so the UI can name it.
   const code =
     body && typeof body === "object" && "code" in body
       ? String((body as { code: unknown }).code).toUpperCase()
@@ -239,13 +217,9 @@ function decodeAuthError(body: unknown, status: number): AuthError {
 }
 
 /**
- * Reads what the gateway passes on from user-service's AuthResponse.
- *
- * user-service sends `{accessToken, refreshToken}`; the gateway lifts the
- * refresh token into its HttpOnly cookie and strips it from the body (D-033),
- * so only the access token arrives here. A body that still carried a refresh
- * token would mean the gateway's translation had been bypassed — worth
- * noticing, not worth failing on, so it is ignored rather than rejected.
+ * Reads the access token from a login response. The gateway moves the refresh
+ * token into its cookie before the body arrives, so a refreshToken field here
+ * is ignored.
  */
 function decodeTokenPair(body: unknown): TokenPair {
   if (!body || typeof body !== "object") {
@@ -261,13 +235,8 @@ function decodeTokenPair(body: unknown): TokenPair {
 }
 
 /**
- * A profile field that may be absent, blank, or not a string at all.
- *
- * Returns undefined rather than an empty string so a view can test one thing
- * — `session.email ? ... : ...` — instead of also guarding against "". The
- * schema marks these required, but a user who has not filled in a phone number
- * still has one stored as empty, and that is absent as far as the UI is
- * concerned.
+ * A profile string, trimmed, or undefined when it is missing or blank. A user
+ * with no phone number comes back with "", which the UI treats as absent.
  */
 function optionalText(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -282,15 +251,11 @@ function asAccountRole(value: unknown): AccountRole {
 }
 
 /**
- * Fetches the signed-in user's profile through the gateway's prefix proxy.
+ * Fetches a user's profile through the gateway. The login response carries
+ * only tokens, so this is where username, email and contact come from.
  *
- * Separate from login because user-service's login response is the token pair
- * and nothing else — `AuthResponse` has exactly two fields. Who you are lives
- * behind `GET /api/v1/users/{uid}`, and the uid comes from the token's `sub`.
- *
- * Returns null rather than throwing on any failure. A profile we could not
- * read is a degraded display, not a failed login: the tokens are already valid
- * and the user is already authenticated.
+ * Returns null on any failure: the tokens are already valid, so a missing
+ * profile degrades the display rather than failing the login.
  */
 async function fetchProfile(
   uid: string,
@@ -312,15 +277,11 @@ async function fetchProfile(
 }
 
 /**
- * Turns a verified token pair into a session.
+ * Builds a session from an access token plus the profile it points at.
  *
- * `fallbackUsername` is what the user typed at the login form. It is used only
- * when the profile call could not answer, so the avatar and greeting have
- * something truthful-ish to show rather than an empty chip.
- *
- * `email` and `contact` come from the profile call, not from the token: no
- * claim carries either. They stay undefined when that call could not answer,
- * which is why both are optional on Session.
+ * `fallbackUsername` is used only when the profile call fails: the typed
+ * identifier at login, or "" on a page-load restore. `email` and `contact`
+ * come only from the profile, so they stay undefined when it fails.
  */
 async function sessionFromTokens(
   tokens: TokenPair,
@@ -336,17 +297,13 @@ async function sessionFromTokens(
     session: {
       userId: String(profile?.["uid"] ?? userId),
       username,
-      // F1.4.1 — both are on every profile response now, RestrictedUserResponse
-      // included, so an ordinary STUDENT viewing their own account gets them.
-      // `phone_num` is user-service's name for what the backlog calls contact
-      // information; the rename happens here so no view has to know it.
+      // F1.4.1: user-service calls the contact field `phone_num`; it is renamed
+      // here so no view needs to know.
       email: optionalText(profile?.["email"]),
       contact: optionalText(profile?.["phone_num"]),
-      // The role the GATEWAY will act on is the one in the token, so show
-      // that rather than the profile's column — if they ever disagree, the
-      // claim is what governs every authorization decision downstream.
-      // The fallback is now unreachable for a non-admin caller:
-      // RestrictedUserResponse omits `account_role` entirely.
+      // Prefer the token's role claim: it is what the gateway acts on. The
+      // profile's account_role is only a fallback, and non-admin profiles
+      // omit it.
       role: asAccountRole(claims.role ?? profile?.["account_role"]),
       initials: initialsOf(username),
     },
@@ -377,19 +334,11 @@ async function post(path: string, body: unknown) {
   }
 }
 
-/** D-027: credentials go to the gateway, which rewrites onto user-service. */
+
 /**
- * Rebuilds the session after a page load, or returns null when there is none.
- *
- * This is the "no access token in memory" case of D-033, not a blanket
- * refresh on every load: the closure is empty because the page is new, and the
- * app cannot render anything until it knows who the user is. The refresh
- * cookie is what answers that — the browser attaches it, the gateway turns it
- * into the body user-service wants, and a fresh access token comes back.
- *
- * Returns null rather than throwing for the ordinary case of a visitor who is
- * simply not signed in: no cookie, an expired one, or one already spent at
- * logout. That is the login page, not an error.
+ * Rebuilds the session from the refresh cookie after a page load, or returns
+ * null when there is no live session: no cookie, an expired one, or one spent
+ * at logout. Null means the login page, not an error.
  */
 export async function restoreSessionViaGateway(): Promise<AuthResult | null> {
   let tokens: TokenPair;
@@ -421,30 +370,11 @@ export async function logInViaGateway(
 }
 
 /**
- * F1.1 + F1.1.2.3 — opens a registration; the OTP step completes it.
+ * F1.1 and F1.1.2.3: opens a registration for the OTP step to complete.
  *
- * BLOCKED, deliberately, and it does not call anything.
- *
- * user-service has no OTP. Its `POST /api/v1/users/register` takes email,
- * username and password, answers `201` with an empty body, and the account is
- * live immediately — there is no pending registration, no code, no handle,
- * and no `verify`/`resend` endpoint behind D-027's four auth routes.
- *
- * Calling it anyway would be worse than refusing: the account would really be
- * created, then `decodePending` would fail for want of a handle, and the user
- * would be told registration failed while holding an account they can log into
- * — with no way to discover that. So this stops before the request.
- *
- * F1.1.2.3-F1.1.2.7 are user-service's to build: the code and its five-minute
- * expiry, the three-per-ten-minutes resend limit and the ten-minute block are
- * all server-side rules, and enforcing them in the browser would make them
- * bypassable (frontend/AGENTS.md). The two gateway routes are a small change
- * here once their spec names the endpoints.
- *
- * Until then registration cannot complete through the UI at all. The fixture
- * client used to carry this flow, but it is opt-in since 2026-09-22 and does
- * not run by default — so the demo path is the bootstrapped admin account,
- * not signing up.
+ * Refuses before sending anything. The gateway has no OTP endpoints, and
+ * user-service's register creates a live account with no verification step,
+ * so calling it here would skip F1.1.2.7.
  */
 export async function signUpViaGateway(
   email: string,
@@ -459,10 +389,8 @@ export async function signUpViaGateway(
 }
 
 /**
- * F1.1.2.7 — registration completes only on the correct OTP.
- *
- * BLOCKED for the same reason as signUpViaGateway: there is no endpoint behind
- * it. Unreachable in practice, since registration never gets this far.
+ * F1.1.2.7: completes registration on the correct OTP. Always throws after
+ * validating the code: there is no endpoint for it.
  */
 export async function verifyRegistrationViaGateway(
   _pendingRegistration: PendingRegistration,
@@ -474,9 +402,8 @@ export async function verifyRegistrationViaGateway(
 }
 
 /**
- * F1.1.2.4 — a replacement code. The server applies the F1.1.2.6 limits.
- *
- * BLOCKED for the same reason as signUpViaGateway.
+ * F1.1.2.4: requests a replacement code. Always throws: there is no endpoint
+ * for it.
  */
 export async function resendOtpViaGateway(
   _pendingRegistration: PendingRegistration,
@@ -485,20 +412,12 @@ export async function resendOtpViaGateway(
 }
 
 /**
- * D-015: the refresh exchange goes through the gateway, not direct to
- * user-service.
- *
- * Returns the whole PAIR, not just the access token. user-service rotates the
- * refresh token on every exchange — its `POST /api/v1/users/refresh` responds
- * with an `AuthResponse` carrying both fields — and it detects reuse of a
- * spent one, answering 401 `ErrSessionCompromised`. Keeping the old refresh
- * token would therefore not merely be stale: presenting it again looks like a
- * stolen-token replay and kills the session. The caller must store both.
+ * Exchanges the refresh cookie for a new access token. The browser attaches
+ * the cookie and the gateway replaces it with the rotated one, so the caller
+ * stores only the returned access token. Throws when the exchange fails.
  */
 export async function refreshAccessTokenViaGateway(): Promise<TokenPair> {
-  // No body and no argument. The refresh token is an HttpOnly cookie the
-  // browser attaches by itself (D-033); this code cannot read it, and the
-  // gateway puts it into the body user-service still requires.
+
   const response = await send({
     baseUrl: config.gatewayBaseUrl,
     path: ROUTES.refresh,
@@ -512,23 +431,14 @@ export async function refreshAccessTokenViaGateway(): Promise<TokenPair> {
   if (typeof accessToken !== "string") {
     throw new AuthError("The server did not return a new access token.");
   }
-  // The rotated refresh token is deliberately NOT here — the gateway strips
-  // it from the body and replaces its cookie instead.
+
   return { accessToken };
 }
 
 /**
- * D-014 logout: user-service drops the refresh token from the User DB and
- * blocklists the access token's jti in Redis. The UI cannot do either — it can
- * only ask, then forget its own copies regardless of the answer.
- *
- * user-service still revokes one token of each kind, and they still arrive by
- * different routes — the access token in the Authorization header, whose
- * `jti` it blocklists, and the refresh token in the body, whose session row it
- * deletes. `LogoutRequest` still makes `refreshToken` required. What changed
- * in D-033 is who supplies it: this function sends NO body, and the gateway
- * injects the token from its cookie and then clears it. That is also why the
- * cookie's Path is /auth and not /auth/refresh.
+ * Asks the gateway to end the session. Sends the access token and no body;
+ * the gateway supplies the refresh token from its cookie. The response is not
+ * checked: the caller clears its own state whatever the server answered.
  */
 export async function logOutViaGateway(accessToken: string): Promise<void> {
   try {
@@ -539,8 +449,6 @@ export async function logOutViaGateway(accessToken: string): Promise<void> {
       accessToken,
     });
   } catch {
-    // A failed logout call still clears the client. The server-side token
-    // stays live until it expires (D-025a), which is not a reason to keep the
-    // user signed in here.
+    // A network failure is ignored too; the caller clears its state either way.
   }
 }

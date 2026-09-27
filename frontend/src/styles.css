@@ -1234,7 +1234,7 @@ button.service-card:hover {
   list-style: none;
   margin: 0 0 14px;
   padding: 10px 12px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface-2, rgba(255, 255, 255, 0.02));
   font-size: 13px;
@@ -1242,7 +1242,7 @@ button.service-card:hover {
 
 .password-rules li {
   padding: 2px 0;
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 .password-rules li.met {
@@ -1250,7 +1250,7 @@ button.service-card:hover {
 }
 
 .password-rules li.unmet {
-  color: var(--muted);
+  color: var(--text-muted);
 }
 
 /* F1.2.4: a suspended account must not read like a failed password, so it is
@@ -1271,7 +1271,7 @@ button.service-card:hover {
   justify-content: space-between;
   gap: 16px;
   padding: 6px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
 }
 
 .detail-list > div:last-child {
@@ -1279,7 +1279,7 @@ button.service-card:hover {
 }
 
 .detail-list dt {
-  color: var(--muted);
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -1290,9 +1290,7 @@ button.service-card:hover {
 }
 
 /* AI-generated (edited by <name>). */
-/* Shown for the one round trip it takes to exchange the refresh cookie for an
-   access token on page load (ai/decisions.md D-033). Deliberately blank: the
-   login form flashing up and disappearing reads as a bug. */
+/* Blank placeholder shown while App restores the session on page load. */
 .app-loading {
   min-height: 100vh;
 }
