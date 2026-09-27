@@ -153,3 +153,10 @@ func TestAuthenticatorAuthenticate(t *testing.T) {
 		})
 	}
 }
+
+// AI-generated (edited by PENDING): the dummy hash must remain a valid bcrypt value so unknown-account logins do comparable work.
+func TestUnknownAccountDummyHashUsesBcrypt(t *testing.T) {
+	if hash.CheckPassword(dummyPasswordHash, "any-password") {
+		t.Fatal("dummy hash unexpectedly matched the test password")
+	}
+}

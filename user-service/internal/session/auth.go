@@ -9,8 +9,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 	"strings"
+	"time"
 
 	"foc/user-service/internal/hash"
 	"foc/user-service/internal/user"
@@ -36,6 +36,8 @@ type Authenticator struct {
 	issuer     TokenIssuer
 }
 
+const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+
 // NewAuthenticator constructs an authenticator with its persistence and JWT
 // dependencies ready for use.
 func NewAuthenticator(repository user.UserRepository, issuer TokenIssuer) *Authenticator {
@@ -60,12 +62,14 @@ func (a *Authenticator) Authenticate(ctx context.Context, identifier, password s
 // authenticate verifies credentials and returns the active account for flows
 // that need its identity in addition to issued credentials.
 func (a *Authenticator) authenticate(ctx context.Context, identifier, password string) (*user.User, error) {
-    if strings.Contains(identifier, "@") {
-        identifier = normalizeEmail(identifier)
-    }
+	if strings.Contains(identifier, "@") {
+		identifier = normalizeEmail(identifier)
+	}
 	account, err := a.repository.GetByIdentifier(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, user.ErrNotFound) {
+			// AI-generated (edited by PENDING): equalize unknown-account and wrong-password bcrypt work.
+			_ = hash.CheckPassword(dummyPasswordHash, password)
 			return nil, user.ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("look up credentials: %w", err)
@@ -80,5 +84,5 @@ func (a *Authenticator) authenticate(ctx context.Context, identifier, password s
 }
 
 func normalizeEmail(email string) string {
-    return strings.ToLower(strings.TrimSpace(email))
+	return strings.ToLower(strings.TrimSpace(email))
 }
