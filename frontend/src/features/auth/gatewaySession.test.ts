@@ -33,11 +33,17 @@ function jsonResponse(status: number, body: unknown) {
 
 /**
  * Answers the login POST with a token pair, then the profile GET with
- * whatever `profile` is — or a failure status when it is null.
+ * whatever `profile` is — or a failure status when it is null. `tokenRole`
+ * is the role claim in the access token.
  */
-function stubGateway(profile: Record<string, unknown> | null, profileStatus = 200) {
+// AI-generated (edited by nigeltzy).
+function stubGateway(
+  profile: Record<string, unknown> | null,
+  profileStatus = 200,
+  tokenRole = "STUDENT",
+) {
   const tokens = {
-    accessToken: fakeAccessToken({ sub: UID, role: "STUDENT" }),
+    accessToken: fakeAccessToken({ sub: UID, role: tokenRole }),
     refreshToken: "refresh-token",
   };
   const fetchMock = vi
@@ -74,19 +80,25 @@ describe("logInViaGateway", () => {
     expect(session.contact).toBe("+6591234567");
   });
 
+  // AI-generated (edited by nigeltzy).
   it("takes the role from the token, not the profile", async () => {
-    // RestrictedUserResponse omits account_role entirely, which is what an
-    // ordinary STUDENT receives. The claim has to carry it.
-    stubGateway({
-      uid: UID,
-      username: "nigeltzy",
-      email: "nigeltzy@u.nus.edu",
-      phone_num: "+6591234567",
-    });
+    // The two disagree, and neither is the STUDENT default, so the test fails
+    // if the profile wins or if neither is read.
+    stubGateway(
+      {
+        uid: UID,
+        username: "nigeltzy",
+        email: "nigeltzy@u.nus.edu",
+        phone_num: "+6591234567",
+        account_role: "STUDENT",
+      },
+      200,
+      "ADMIN",
+    );
 
     const { session } = await logInViaGateway("nigeltzy", "Password1");
 
-    expect(session.role).toBe("STUDENT");
+    expect(session.role).toBe("ADMIN");
   });
 
   it("treats a blank phone_num as absent rather than empty", async () => {
