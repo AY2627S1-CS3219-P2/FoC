@@ -128,22 +128,26 @@ func stubService(rec *recorder) *httptest.Server {
 	}))
 }
 
+// AI-generated (edited by PENDING).
 type harness struct {
-	router   http.Handler
-	issuer   *issuer
-	userRec  *recorder
-	suppRec  *recorder
-	teardown func()
+	router  http.Handler
+	issuer  *issuer
+	userRec *recorder
+	suppRec *recorder
 }
 
+// AI-generated (edited by PENDING).
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	iss := newIssuer(t)
 	jwks := httptest.NewServer(iss.jwksHandler())
+	t.Cleanup(jwks.Close)
 
 	userRec, suppRec := &recorder{}, &recorder{}
 	userSvc := stubService(userRec)
+	t.Cleanup(userSvc.Close)
 	suppSvc := stubService(suppRec)
+	t.Cleanup(suppSvc.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
 	router, err := httpapi.NewRouter(config.Downstream{
@@ -161,11 +165,6 @@ func newHarness(t *testing.T) *harness {
 		issuer:  iss,
 		userRec: userRec,
 		suppRec: suppRec,
-		teardown: func() {
-			jwks.Close()
-			userSvc.Close()
-			suppSvc.Close()
-		},
 	}
 }
 
@@ -177,7 +176,6 @@ func (h *harness) do(req *http.Request) *httptest.ResponseRecorder {
 
 func TestHealthz(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	got := h.do(httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if got.Code != http.StatusOK {
@@ -185,22 +183,46 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
-func TestServiceRouteRejectsMissingToken(t *testing.T) {
-	h := newHarness(t)
-	defer h.teardown()
-
-	got := h.do(httptest.NewRequest(http.MethodGet, "/api/suppliers/1", nil))
-	if got.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401", got.Code)
+// AI-generated (edited by PENDING).
+func TestServiceRouteRequiresAValidAccessToken(t *testing.T) {
+	tests := []struct {
+		name string
+		// token returns the bearer token to send; "" sends no Authorization header.
+		token func(t *testing.T, iss *issuer) string
+	}{
+		{"missing token", func(*testing.T, *issuer) string { return "" }},
+		{"refresh token presented as bearer", func(t *testing.T, iss *issuer) string {
+			return iss.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT", typ: "refresh"})
+		}},
+		{"expired token", func(t *testing.T, iss *issuer) string {
+			return iss.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT", expires: time.Now().Add(-time.Hour)})
+		}},
+		{"token signed by another key", func(t *testing.T, _ *issuer) string {
+			// A different issuer entirely — right shape, wrong key.
+			return newIssuer(t).mint(t, tokenOpts{subject: "uid-123", role: "ADMIN"})
+		}},
 	}
-	if h.suppRec.path != "" {
-		t.Errorf("request reached supplier-service at %q despite having no token", h.suppRec.path)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/suppliers/1", nil)
+			if token := tt.token(t, h.issuer); token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+
+			if got := h.do(req); got.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", got.Code)
+			}
+			if h.suppRec.path != "" {
+				t.Errorf("request reached supplier-service at %q, want it stopped at the gateway", h.suppRec.path)
+			}
+		})
 	}
 }
 
 func TestServiceRouteForwardsVerifiedIdentity(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
@@ -226,7 +248,6 @@ func TestServiceRouteForwardsVerifiedIdentity(t *testing.T) {
 // the service as itself, a STUDENT.
 func TestClientCannotEscalateViaHeader(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
@@ -245,54 +266,8 @@ func TestClientCannotEscalateViaHeader(t *testing.T) {
 	}
 }
 
-func TestRejectsRefreshTokenOnServiceRoute(t *testing.T) {
-	h := newHarness(t)
-	defer h.teardown()
-
-	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT", typ: "refresh"})
-	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/1", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	if got := h.do(req); got.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401 for a refresh token", got.Code)
-	}
-}
-
-func TestRejectsExpiredToken(t *testing.T) {
-	h := newHarness(t)
-	defer h.teardown()
-
-	token := h.issuer.mint(t, tokenOpts{
-		subject: "uid-123",
-		role:    "STUDENT",
-		expires: time.Now().Add(-time.Hour),
-	})
-	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/1", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	if got := h.do(req); got.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401 for an expired token", got.Code)
-	}
-}
-
-func TestRejectsTokenSignedByAnotherKey(t *testing.T) {
-	h := newHarness(t)
-	defer h.teardown()
-
-	// A different issuer entirely — right shape, wrong key.
-	attacker := newIssuer(t)
-	token := attacker.mint(t, tokenOpts{subject: "uid-123", role: "ADMIN"})
-	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/1", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-
-	if got := h.do(req); got.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want 401 for a foreign signature", got.Code)
-	}
-}
-
 func TestAuthRouteIsPublicAndRewritten(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	req := httptest.NewRequest(http.MethodPost, "/auth/login", nil)
 	got := h.do(req)
@@ -306,7 +281,6 @@ func TestAuthRouteIsPublicAndRewritten(t *testing.T) {
 
 func TestAuthRoutePreservesBearerForLogout(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
@@ -328,7 +302,6 @@ func TestAuthRoutePreservesBearerForLogout(t *testing.T) {
 
 func TestUserRouteReachesUserServicePrefix(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/users/uid-123", nil)
@@ -345,7 +318,6 @@ func TestUserRouteReachesUserServicePrefix(t *testing.T) {
 
 func TestUserRouteRetainsBearerAndStillAssertsIdentity(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/users/uid-123", nil)
@@ -372,7 +344,6 @@ func TestUserRouteRetainsBearerAndStillAssertsIdentity(t *testing.T) {
 
 func TestOtherServicesNeverReceiveTheBearerToken(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
@@ -392,7 +363,6 @@ func TestOtherServicesNeverReceiveTheBearerToken(t *testing.T) {
 
 func TestSupplierRouteReachesSupplierServicePrefix(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
@@ -409,7 +379,6 @@ func TestSupplierRouteReachesSupplierServicePrefix(t *testing.T) {
 
 func TestSupplierCollectionRouteKeepsThePrefix(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/suppliers", nil)
@@ -430,7 +399,6 @@ func TestSupplierCollectionRouteKeepsThePrefix(t *testing.T) {
 // AI-generated (edited by nigeltzy).
 func TestDownstreamCORSHeadersDoNotReachTheBrowser(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
 	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
@@ -470,12 +438,15 @@ func authStub(rec *recorder) *httptest.Server {
 	}))
 }
 
-func newAuthHarness(t *testing.T) (http.Handler, *recorder, func()) {
+// AI-generated (edited by PENDING).
+func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 	t.Helper()
 	iss := newIssuer(t)
 	jwks := httptest.NewServer(iss.jwksHandler())
+	t.Cleanup(jwks.Close)
 	rec := &recorder{}
 	svc := authStub(rec)
+	t.Cleanup(svc.Close)
 
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
@@ -483,7 +454,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder, func()) {
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
-	return router, rec, func() { jwks.Close(); svc.Close() }
+	return router, rec
 }
 
 func post(h http.Handler, path, body string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
@@ -508,8 +479,8 @@ func refreshCookieFrom(t *testing.T, res *httptest.ResponseRecorder) *http.Cooki
 }
 
 func TestLoginPutsTheRefreshTokenInACookieAndNotTheBody(t *testing.T) {
-	h, _, done := newAuthHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, _ := newAuthHarness(t)
 
 	res := post(h, "/auth/login", `{"identifier":"a@u.nus.edu","password":"Passw0rd"}`)
 	if res.Code != http.StatusOK {
@@ -550,8 +521,8 @@ func TestLoginPutsTheRefreshTokenInACookieAndNotTheBody(t *testing.T) {
 }
 
 func TestRefreshInjectsTheCookieIntoTheBodyUserServiceRequires(t *testing.T) {
-	h, rec, done := newAuthHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, rec := newAuthHarness(t)
 
 	// The browser sends no body — it cannot read the token to send one.
 	res := post(h, "/auth/refresh", "", &http.Cookie{Name: "foc_refresh", Value: "rt-from-cookie"})
@@ -571,8 +542,8 @@ func TestRefreshInjectsTheCookieIntoTheBodyUserServiceRequires(t *testing.T) {
 }
 
 func TestLogoutReceivesTheTokenAndClearsTheCookie(t *testing.T) {
-	h, rec, done := newAuthHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, rec := newAuthHarness(t)
 
 	res := post(h, "/auth/logout", "", &http.Cookie{Name: "foc_refresh", Value: "rt-from-cookie"})
 	if res.Code != http.StatusNoContent {
@@ -593,8 +564,8 @@ func TestLogoutReceivesTheTokenAndClearsTheCookie(t *testing.T) {
 }
 
 func TestRegisterCarriesNoCookie(t *testing.T) {
-	h, _, done := newAuthHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, _ := newAuthHarness(t)
 
 	// The stub returns a token pair here too; register must still set no cookie.
 	res := post(h, "/auth/register", `{"email":"a@u.nus.edu","username":"a","password":"Passw0rd"}`)
@@ -607,7 +578,8 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 // Covers the static-file tests below: the SPA handler must not shadow API
 // routes.
 
-func newStaticHarness(t *testing.T) (http.Handler, string, func()) {
+// AI-generated (edited by PENDING).
+func newStaticHarness(t *testing.T) (http.Handler, string) {
 	t.Helper()
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>APP"), 0o600); err != nil {
@@ -619,15 +591,17 @@ func newStaticHarness(t *testing.T) (http.Handler, string, func()) {
 
 	iss := newIssuer(t)
 	jwks := httptest.NewServer(iss.jwksHandler())
+	t.Cleanup(jwks.Close)
 	rec := &recorder{}
 	svc := stubService(rec)
+	t.Cleanup(svc.Close)
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
 	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL, dir)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
-	return router, dir, func() { jwks.Close(); svc.Close() }
+	return router, dir
 }
 
 func get(h http.Handler, path string) *httptest.ResponseRecorder {
@@ -637,8 +611,8 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 }
 
 func TestStaticFilesAndSPAFallback(t *testing.T) {
-	h, _, done := newStaticHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, _ := newStaticHarness(t)
 
 	if got := get(h, "/app.js"); got.Code != http.StatusOK ||
 		!strings.Contains(got.Body.String(), "console.log") {
@@ -657,8 +631,8 @@ func TestStaticFilesAndSPAFallback(t *testing.T) {
 // starts with ".." is served, while a path that climbs out of the static dir
 // is still refused.
 func TestStaticServesNamesStartingWithDotDot(t *testing.T) {
-	h, dir, done := newStaticHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, dir := newStaticHarness(t)
 
 	if err := os.WriteFile(filepath.Join(dir, "..foo"), []byte("DOTDOT"), 0o600); err != nil {
 		t.Fatalf("write ..foo: %v", err)
@@ -679,8 +653,8 @@ func TestStaticServesNamesStartingWithDotDot(t *testing.T) {
 }
 
 func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
-	h, _, done := newStaticHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, _ := newStaticHarness(t)
 
 	// A path that matches an API route gets the API's answer (401 without a
 	// token), not index.html with 200.
@@ -697,8 +671,8 @@ func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
 // TestUnknownAPIPathsGetJSON404 checks that a mistyped /api or /auth path gets
 // a JSON 404 rather than the frontend's index.html with 200.
 func TestUnknownAPIPathsGetJSON404(t *testing.T) {
-	h, _, done := newStaticHarness(t)
-	defer done()
+	// AI-generated (edited by PENDING).
+	h, _ := newStaticHarness(t)
 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api"},
@@ -724,7 +698,6 @@ func TestUnknownAPIPathsGetJSON404(t *testing.T) {
 
 func TestNoStaticDirLeavesTheDefault404(t *testing.T) {
 	h := newHarness(t)
-	defer h.teardown()
 
 	// With no static dir, unmatched paths get a plain 404, not a page.
 	if got := h.do(httptest.NewRequest(http.MethodGet, "/suppliers", nil)); got.Code != http.StatusNotFound {

@@ -36,6 +36,9 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PORT", "JWKS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
 		"REFRESH_TOKEN_TTL",
+		// AI-generated (edited by PENDING).
+		// Optional, so all() omits it; cleared here so a value in the shell can't reach Load.
+		"STATIC_DIR",
 	} {
 		t.Setenv(name, vars[name])
 	}
@@ -57,9 +60,11 @@ func TestLoadSucceedsWithEverythingSet(t *testing.T) {
 }
 
 func TestLoadReportsMissingVariables(t *testing.T) {
+	// AI-generated (edited by PENDING).
 	tests := []struct {
 		name        string
 		unset       []string
+		set         map[string]string
 		wantInError []string
 	}{
 		{
@@ -74,7 +79,7 @@ func TestLoadReportsMissingVariables(t *testing.T) {
 		},
 		{
 			name:        "whitespace counts as missing",
-			unset:       []string{},
+			set:         map[string]string{"USER_BASE_URL": "   "},
 			wantInError: []string{"USER_BASE_URL"},
 		},
 	}
@@ -85,8 +90,9 @@ func TestLoadReportsMissingVariables(t *testing.T) {
 			for _, name := range tt.unset {
 				vars[name] = ""
 			}
-			if tt.name == "whitespace counts as missing" {
-				vars["USER_BASE_URL"] = "   "
+			// AI-generated (edited by PENDING).
+			for name, value := range tt.set {
+				vars[name] = value
 			}
 			setEnv(t, vars)
 
