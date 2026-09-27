@@ -43,7 +43,7 @@ const ROUTES = {
   register: "/auth/register",
   refresh: "/auth/refresh",
   logout: "/auth/logout",
-  /** UNRECORDED — behaviour is required by F1.1.2.7, the call is not specced. */
+  /** Placeholder for F1.1.2.7: no endpoint exists and nothing calls it. */
   verify: "/auth/register/verify",
   /** UNRECORDED — behaviour is required by F1.1.2.4, the call is not specced. */
   resend: "/auth/register/resend",
