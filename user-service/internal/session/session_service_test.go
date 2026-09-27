@@ -173,3 +173,46 @@ func TestRefreshServiceRejectsUnknownSession(t *testing.T) {
 		t.Fatalf("error = %v, want missing session", err)
 	}
 }
+
+// AI-generated (edited by PENDING): refresh must enforce account status, token boundaries, session expiry, and rotation replay.
+func TestRefreshServiceRejectsRecordedInvalidStates(t *testing.T) {
+	for name, configure := range map[string]func(*User, *fakeSessionRepository, *fakeRefreshVerifier, time.Time){
+		"suspended account": func(account *User, _ *fakeSessionRepository, _ *fakeRefreshVerifier, _ time.Time) {
+			account.AccountStatus = AccountStatusSuspended
+		},
+		"token before validity boundary": func(account *User, _ *fakeSessionRepository, verifier *fakeRefreshVerifier, now time.Time) {
+			account.TokensValidAfter = now
+			verifier.claims.IssuedAt = now.Add(-time.Second)
+		},
+		"expired session": func(_ *User, sessions *fakeSessionRepository, _ *fakeRefreshVerifier, now time.Time) {
+			for _, session := range sessions.sessions {
+				session.ExpiresAt = now
+			}
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+			token, hash := "refresh", HashRefreshToken("refresh")
+			jti := uuid.New()
+			sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+			verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+			configure(account, sessions, verifier, now)
+			if _, err := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now }).Refresh(context.Background(), token); err == nil {
+				t.Fatal("Refresh accepted invalid state")
+			}
+		})
+	}
+}
+
+func TestRefreshServiceRevokesAllSessionsWhenRotationReportsCompromise(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	token, hash := "refresh", HashRefreshToken("refresh")
+	jti := uuid.New()
+	sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+	sessions.rotateErr = ErrSessionCompromised
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+	_, err := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now }).Refresh(context.Background(), token)
+	if !errors.Is(err, ErrSessionCompromised) || sessions.revokedAllFor != account.UID {
+		t.Fatalf("error/revocation = %v/%v", err, sessions.revokedAllFor)
+	}
+}
