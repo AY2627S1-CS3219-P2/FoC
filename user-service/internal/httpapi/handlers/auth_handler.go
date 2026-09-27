@@ -74,7 +74,7 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	if _, err := h.deps.Registrar.Register(r.Context(), request.Email, request.Username, request.Password); err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
-			// AI-generated (edited by PENDING): report the recorded database-width validation as a client error.
+			// AI-generated (edited by ZI YANG): report the recorded database-width validation as a client error.
 		} else if errors.Is(err, user.ErrInvalidEmail) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must be at most 255 characters"})
 		} else if errors.Is(err, user.ErrInvalidPassword) {
@@ -141,8 +141,11 @@ func (h AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, user.ErrSessionCompromised) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "ErrSessionCompromised"})
-		} else {
+		} else if errors.Is(err, user.ErrSessionNotFound) || errors.Is(err, user.ErrAccountSuspended) {
+			// AI-generated (edited by PENDING): only recorded authentication outcomes receive 401.
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "refresh unavailable"})
 		}
 		return
 	}
@@ -175,7 +178,7 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.deps.Logoutter.Logout(r.Context(), accessClaims, request.RefreshToken); err != nil {
-		// AI-generated (edited by PENDING): expose the recorded mismatched-session client error.
+		// AI-generated (edited by ZI YANG): expose the recorded mismatched-session client error.
 		if errors.Is(err, session.ErrSessionOwnershipMismatch) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mismatched session"})
 		} else {

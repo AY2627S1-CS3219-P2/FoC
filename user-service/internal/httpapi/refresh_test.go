@@ -67,11 +67,24 @@ func TestRefreshHandler(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 			wantError:  "authentication required",
 		},
-		"rejects verifier failure": {
-			body:       `{"refreshToken":"invalid"}`,
-			refresher:  &fakeRefresher{err: errors.New("JWT invalid")},
+		"rejects expired refresh token": {
+			body:       `{"refreshToken":"expired"}`,
+			refresher:  &fakeRefresher{err: user.ErrSessionNotFound},
 			wantStatus: http.StatusUnauthorized,
 			wantError:  "authentication required",
+		},
+		// AI-generated (edited by PENDING): outages must remain distinguishable from ended credentials.
+		"reports database failure": {
+			body:       `{"refreshToken":"valid"}`,
+			refresher:  &fakeRefresher{err: errors.New("database unavailable")},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "refresh unavailable",
+		},
+		"reports session-store failure": {
+			body:       `{"refreshToken":"valid"}`,
+			refresher:  &fakeRefresher{err: errors.New("session store unavailable")},
+			wantStatus: http.StatusInternalServerError,
+			wantError:  "refresh unavailable",
 		},
 	}
 
