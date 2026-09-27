@@ -108,13 +108,13 @@ Every feature folder maps to one backend service. `suppliers/`, `auth/` and
 built and demoed, `errands/` and `credits/` talk to fixture modules in their
 own folders instead (`src/lib/mock.ts` has the full note).
 
-`auth/` is now half-out of that state. `authApi.ts` holds **two** clients —
-the fixtures, and a gateway-backed one implementing D-010..D-015 — and
-`App.tsx` picks between them once, on whether `VITE_GATEWAY_BASE_URL` is set.
-The lifecycle is recorded and implemented; the **endpoint paths and payloads
-in `ROUTES` and the decoders are still invented** and carry the same "replace,
-do not reconcile" rule as any other fixture. `<MockBadge />` on the login
-screen hides itself once a gateway URL is configured.
+`authApi.ts` holds **two** clients — the fixtures, and a gateway-backed one
+implementing D-010..D-015 — and `App.tsx` picks between them once: the
+gateway, unless `VITE_USE_FIXTURES=true`. The login, register, refresh and
+logout paths in `ROUTES` are recorded; the two OTP paths (`verify`,
+`resend`) are still invented and carry the same "replace, do not reconcile"
+rule as any other fixture. `<MockBadge />` on the login and profile screens
+shows only in a fixture build.
 
 **Those shapes are not a contract.** They were invented here to have something
 to render. An API interface belongs to its service's owner (root §1), and a
