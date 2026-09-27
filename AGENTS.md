@@ -114,14 +114,15 @@ contract change and needs its owner. Flag any touch of a shared file
 Ports and database env vars are allocated **here, once**; a service file may
 state its own port but must not restate this table.
 
+<!-- AI-generated (edited by PENDING). -->
 | Folder | Port | Database URL env var |
 | --- | --- | --- |
 | `user-service` | 8081 | `USER_DB_URL` |
 | `supplier-service` | 8082 | `SUPPLIER_DB_URL` |
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
-| `frontend` | 3001, published by Compose onto nginx's :80 | — |
-| `api-gateway` | 8080 (provisional, D-018) | — (no database of any kind: D-024 keeps it out of Redis entirely) |
+| `frontend` | 3001: where the browser loads the app (in Compose, `api-gateway` holds it) | — |
+| `api-gateway` | 8080 inside the container (provisional, D-018); Compose publishes it on host 3001 | — (no database of any kind: D-024 keeps it out of Redis entirely) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
