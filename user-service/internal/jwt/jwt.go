@@ -254,6 +254,10 @@ func (s *Service) Verify(raw string) (VerifiedToken, error) {
 	}
 
 	keyID, _ := token.Header["kid"].(string)
+	// AI-generated (edited by PENDING): signed tokens may still omit required time claims.
+	if parsed.IssuedAt == nil || parsed.ExpiresAt == nil {
+		return VerifiedToken{}, errors.New("JWT is missing required timing claims")
+	}
 	return VerifiedToken{
 		Subject:   subject,
 		Role:      parsed.Role,

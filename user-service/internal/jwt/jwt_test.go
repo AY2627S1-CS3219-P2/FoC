@@ -68,6 +68,28 @@ func TestJWTServiceIssuesAndVerifiesAccessAndRefreshTokens(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING): signed tokens missing exp or iat must be rejected without a panic.
+func TestJWTServiceRejectsMissingTimingClaims(t *testing.T) {
+	key := testKey(t, "active")
+	service := NewService(mustKeySet(t, []Key{key}, key.ID), time.Now)
+	for name, registered := range map[string]jwt.RegisteredClaims{
+		"missing expiry":    {Issuer: Issuer, Subject: uuid.NewString(), ID: uuid.NewString(), IssuedAt: jwt.NewNumericDate(time.Now())},
+		"missing issued at": {Issuer: Issuer, Subject: uuid.NewString(), ID: uuid.NewString(), ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Minute))},
+	} {
+		t.Run(name, func(t *testing.T) {
+			token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims{RegisteredClaims: registered, Type: AccessToken, Role: user.AccountRoleStudent})
+			token.Header["kid"] = key.ID
+			raw, err := token.SignedString(key.PrivateKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Verify(raw); err == nil {
+				t.Fatal("Verify accepted token without required timing claim")
+			}
+		})
+	}
+}
+
 func TestJWTServiceVerifyRefreshHonorsContextCancellation(t *testing.T) {
 	key := testKey(t, "active")
 	service := NewService(mustKeySet(t, []Key{key}, key.ID), time.Now)
