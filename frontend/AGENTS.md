@@ -180,10 +180,10 @@ allocation quoted on the login screen.
   stripping headers is `api-gateway`'s; neither touches `supplier-service`,
   whose middleware is its owner's (root §3).
 - **Tokens never go in component state or storage.** `lib/tokens.ts` keeps the
-  access and refresh tokens in a closure created once in `App.tsx`. Where they
-  *should* live is an open question in `ai/decisions.md`; until it is answered,
-  nothing writes them to `localStorage`, `sessionStorage` or a cookie, and the
-  visible cost is that a page reload signs the user out.
+  access token in a closure created once in `App.tsx`, and nothing writes it
+  to `localStorage`, `sessionStorage` or a cookie. The refresh token is an
+  HttpOnly cookie the gateway sets (D-033), so no code here can read it, and a
+  page reload restores the session by exchanging that cookie.
 - **Do not assume a shared error envelope.** `supplier-service` today returns
   `{"error": "..."}` with a non-2xx status; whether the others match is an
   interface decision for their owners, not one to standardise from here. Every
