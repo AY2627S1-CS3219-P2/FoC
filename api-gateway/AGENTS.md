@@ -12,7 +12,7 @@
 The single public entry point (**D-010**). Every request from the UI arrives
 here; `user-service`, `supplier-service`, `order-service` and `credit-service`
 are not publicly reachable. The gateway verifies the access token's RS256
-signature, translates claims into HTTP headers, and forwards the request.
+signature, passes the verified identity on, and forwards the request.
 **D-013** records gRPC for this hop, decided but not built yet; until it is,
 the code here forwards over HTTP. Do not build new REST-specific forwarding on
 the assumption that HTTP is the rule.
