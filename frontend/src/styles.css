@@ -388,8 +388,7 @@ h3 {
 /* ------------------------------------------------------------ mock flag --- */
 
 /*
- * Every screen backed by a fixture instead of a real service carries this, so
- * a demo cannot mistake invented numbers for live data.
+ * Label rendered by <MockBadge /> on screens that show fixture data.
  */
 .mock-flag {
   display: inline-flex;
