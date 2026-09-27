@@ -83,3 +83,4 @@ Those rows are struck from the list below on that basis.
 | Which interactions are asynchronous. The broker technology is answered by D-032 (Kafka) | Async workflow (M6) | D3 |
 | The event schema, and how duplicate events are handled | Order + Credit Services | D3 |
 | AWS compute target (ECS Fargate / EKS / other) and IaC tool | Cloud deployment | D3–D4 |
+| How identity travels over gRPC: forwarding the user's token, service identity, and the metadata key names | API Gateway + all services | D3 |
