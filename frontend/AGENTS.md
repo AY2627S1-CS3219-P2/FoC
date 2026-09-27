@@ -24,7 +24,8 @@ rest of the frontend stack, but this file wrongly listed it as unchosen until
 transform, so there is no second build pipeline to keep in step. Tests live
 beside the code as `*.test.ts`. Only logic is covered today: validation rules,
 the OTP fixture's timing, the authorized transport's refresh and retry, the
-gateway login path, and the remembered view. There is no component testing
+gateway login, refresh, restore and logout calls, the suppliers fixture, and
+the remembered view. There is no component testing
 library, so rendering is still unverified; adding one is a separate stack
 decision and still needs asking.
 
@@ -70,7 +71,8 @@ src/
 │   ├── auth/          LoginPage, authApi (fixture + gateway clients),
 │   │                  session.ts (AT attach + refresh retry)
 │   ├── home/          landing view
-│   ├── suppliers/     view + components + suppliersApi.ts + types.ts
+│   ├── suppliers/     view + components + suppliersApi.ts + types.ts,
+│   │                  suppliersFixture.ts (fixture builds only)
 │   ├── errands/       NewErrandView, MyErrandsView    [MOCK]
 │   ├── credits/       CreditsView                     [MOCK]
 │   └── profile/       ProfileView
@@ -84,7 +86,10 @@ src/
 
 Every feature folder maps to one backend service. `suppliers/`, `auth/` and
 `profile/` are backed by real services through the gateway; `errands/` and
-`credits/` still use fixtures.
+`credits/` still use fixtures. A fixture build (`VITE_USE_FIXTURES=true`)
+puts `auth/` and `suppliers/` on fixtures too, so it makes no gateway call;
+the suppliers fixture is supplier-service's seed CSV, loaded the way its
+`seed.go` loads it.
 
 `index.html` is the Vite entry document; the D1 prototype it replaced
 (`app.js` plus hand-written markup) is in this branch's history. The

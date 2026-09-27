@@ -17,6 +17,9 @@ import * as errandsApi from "./errandsApi";
 interface NewErrandViewProps {
   /** Injected by App, which owns the token store the transport reads. */
   suppliersApi: SuppliersApi;
+  // AI-generated (edited by nigeltzy).
+  /** True when `suppliersApi` is the fixture rather than supplier-service. */
+  suppliersMock: boolean;
   /** Spendable credits, for the "leaves you N available" hint. */
   available: number;
   onNotify: (message: ToastMessage) => void;
@@ -35,6 +38,7 @@ const DELIVERY_LOCATIONS = [
 
 export function NewErrandView({
   suppliersApi,
+  suppliersMock,
   available,
   onNotify,
   onPosted,
@@ -117,6 +121,7 @@ export function NewErrandView({
       </div>
 
       <MockBadge service="order-service" />
+      {suppliersMock && <MockBadge service="supplier-service" />}
 
       <div className="two-col">
         <div>

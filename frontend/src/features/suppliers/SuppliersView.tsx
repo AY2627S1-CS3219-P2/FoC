@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SuppliersApi } from "./suppliersApi";
 import type { Supplier, SupplierInput } from "./types";
+import { MockBadge } from "../../components/MockBadge";
 import { Modal } from "../../components/Modal";
 import { SupplierCard } from "./SupplierCard";
 import { SupplierDetail } from "./SupplierDetail";
@@ -19,6 +20,9 @@ import type { ToastMessage } from "../../components/Toast";
 interface SuppliersViewProps {
   /** Injected by App, which owns the token store the transport reads. */
   api: SuppliersApi;
+  // AI-generated (edited by nigeltzy).
+  /** True when `api` is the fixture rather than supplier-service. */
+  isMock: boolean;
   isAdmin: boolean;
   onAdminChange: (isAdmin: boolean) => void;
   onNotify: (message: ToastMessage) => void;
@@ -33,6 +37,7 @@ type ModalState =
 
 export function SuppliersView({
   api,
+  isMock,
   isAdmin,
   onAdminChange,
   onNotify,
@@ -122,6 +127,8 @@ export function SuppliersView({
           This is the one screen backed by a real service.
         </p>
       </div>
+
+      {isMock && <MockBadge service="supplier-service" />}
 
       <div className="controls">
         <input

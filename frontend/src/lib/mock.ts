@@ -5,8 +5,9 @@
 
 /**
  * Shared helpers for the fixture modules that stand in for services the app
- * cannot call: order-service and credit-service, and user-service when
- * VITE_USE_FIXTURES=true. Each fixture lives in its feature's *Api.ts.
+ * cannot call: order-service and credit-service, and user-service and
+ * supplier-service when VITE_USE_FIXTURES=true. Each fixture lives in its
+ * feature folder.
  *
  * The fixture shapes are not a contract. When a service's api/openapi.yaml
  * lands, its fixture module is replaced by that service's client, not
@@ -14,7 +15,7 @@
  */
 
 /** Services that have a fixture module in this app. */
-export const MOCK_SERVICES = ["user", "order", "credit"] as const;
+export const MOCK_SERVICES = ["user", "supplier", "order", "credit"] as const;
 
 /**
  * Simulated latency, so loading and disabled states are exercised in

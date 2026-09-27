@@ -405,6 +405,20 @@ h3 {
   border-radius: var(--radius-pill);
 }
 
+/* AI-generated (edited by nigeltzy). */
+.mock-flag + .mock-flag {
+  margin-left: 8px;
+}
+
+/* The top-bar balance is fixture data too; this marks it where a full badge
+   will not fit. */
+.credit-pill .credit-pill-mock {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* ---------------------------------------------------------------- cards --- */
 
 .card {
@@ -1226,7 +1240,7 @@ button.service-card:hover {
   }
 }
 
-/* AI-generated (edited by PENDING) — styles for the registration rules
+/* AI-generated (edited by nigeltzy) — styles for the registration rules
    checklist (F1.1.3.1), the suspended-account notice (F1.2.4) and the
    profile detail list (F1.4.1). */
 
@@ -1289,7 +1303,7 @@ button.service-card:hover {
   word-break: break-all;
 }
 
-/* AI-generated (edited by <name>). */
+/* AI-generated (edited by nigeltzy). */
 /* Blank placeholder shown while App restores the session on page load. */
 .app-loading {
   min-height: 100vh;

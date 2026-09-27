@@ -30,6 +30,7 @@ import { createTokenStore } from "./lib/tokens";
 import { clearLastView, readLastView, writeLastView } from "./lib/lastView";
 import { createAuthorizedSend } from "./features/auth/session";
 import { createSuppliersApi } from "./features/suppliers/suppliersApi";
+import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
 import * as creditsApi from "./features/credits/creditsApi";
 import { CreditsView } from "./features/credits/CreditsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
@@ -87,6 +88,10 @@ export function App() {
    * local state.
    */
   const suppliers = useMemo(() => {
+    // AI-generated (edited by nigeltzy).
+    // A fixture build has no real token to send, so suppliers come from the
+    // fixture too rather than from the gateway.
+    if (!usingGateway) return createSuppliersFixture();
     const authorizedSend = createAuthorizedSend({
       tokens,
       refresh: authApi.refreshAccessTokenViaGateway,
@@ -218,6 +223,7 @@ export function App() {
         {view === "new-errand" && (
           <NewErrandView
             suppliersApi={suppliers}
+            suppliersMock={!usingGateway}
             available={available ?? 0}
             onNotify={setToast}
             onPosted={() => setView("my-errands")}
@@ -229,6 +235,7 @@ export function App() {
         {view === "suppliers" && (
           <SuppliersView
             api={suppliers}
+            isMock={!usingGateway}
             isAdmin={isAdmin}
             onAdminChange={setIsAdmin}
             onNotify={setToast}

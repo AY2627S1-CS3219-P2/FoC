@@ -7,6 +7,7 @@
 // Code wise and UI looks wise, seems valid and as intended.
 
 import type { ReactNode } from "react";
+import { MockBadge } from "./MockBadge";
 import type { ActingMode, Session } from "../features/auth/types";
 import { NAV_ITEMS, type ViewName } from "../views";
 import {
@@ -84,6 +85,9 @@ export function AppShell({
 
         <div className="sidebar-foot">
           <div className="sidebar-balance">
+            {/* AI-generated (edited by nigeltzy). The balance is the
+                credit-service fixture on every screen. */}
+            <MockBadge service="credit-service" />
             <div className="sidebar-balance-value">
               {available === null ? "—" : available}
             </div>
@@ -125,9 +129,14 @@ export function AppShell({
             </button>
           </div>
 
-          <span className="credit-pill">
+          {/* AI-generated (edited by nigeltzy). */}
+          <span
+            className="credit-pill"
+            title="Mock data · credit-service is not implemented yet"
+          >
             <strong>{available === null ? "—" : available}</strong>
             <span>cr</span>
+            <span className="credit-pill-mock">mock</span>
           </span>
         </header>
 
