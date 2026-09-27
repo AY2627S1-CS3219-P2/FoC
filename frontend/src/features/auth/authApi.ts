@@ -25,22 +25,16 @@ import type { AccountRole, PendingRegistration, Session } from "./types";
 import { validateOtp, validateRegistration } from "./validation";
 
 /**
- * Two clients live here, and App.tsx picks one at wiring time — deliberately
- * not a `useMock` flag passed into a single function, which would be the
- * control coupling root AGENTS.md §5 calls out.
+ * Two auth clients with the same surface. App.tsx picks one at startup:
  *
- *   - logIn / signUp / verifyRegistration / ...   fixtures. Active today.
- *   - logInViaGateway / ...                       the real flow. Inert until
- *                                                 the gateway serves auth.
+ *   - logIn / signUp / verifyRegistration / ...   in-browser fixtures, used
+ *                                                 only when VITE_USE_FIXTURES=true.
+ *   - logInViaGateway / ...                       the gateway client, used
+ *                                                 otherwise.
  *
- * THE REQUEST AND RESPONSE SHAPES BELOW ARE NOT A CONTRACT.
- *
- * The gateway's public auth paths ARE now recorded (ai/decisions.md D-027), so
- * ROUTES below is no longer guesswork for login, register, refresh and logout.
- * The OTP endpoints are a different matter: the D1 backlog requires the
- * behaviour (F1.1.2.3-F1.1.2.7) but no spec defines the calls, so those two
- * paths remain placeholders with the right surface, to be REPLACED by the
- * generated client once user-service's owner writes them.
+ * The gateway has no OTP endpoints, so signUpViaGateway,
+ * verifyRegistrationViaGateway and resendOtpViaGateway refuse before sending
+ * anything.
  */
 
 /** Recorded in D-027, except where marked. */
