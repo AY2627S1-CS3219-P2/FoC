@@ -47,11 +47,12 @@ const (
 			account_role = $5,
 			account_status = $6
 		WHERE uid = $7`
+	// AI-generated (edited by PENDING).
 	updateAccountStatusQuery = `
 		UPDATE users
-		SET account_status = $1,
+		SET account_status = $1::account_status,
 			tokens_valid_after = CASE
-				WHEN $1 = 'SUSPENDED' THEN $2
+				WHEN $1::account_status = 'SUSPENDED' THEN $2
 				ELSE tokens_valid_after
 			END
 		WHERE uid = $3`

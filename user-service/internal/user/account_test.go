@@ -198,6 +198,34 @@ func TestAccountServiceSuspensionStopsWhenSessionRevocationFails(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING).
+func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testing.T) {
+	uid := uuid.New()
+	timestamp := time.Date(2026, 9, 27, 10, 30, 0, 0, time.UTC)
+	order := []string{}
+	repository := &fakeAccountRepository{
+		callOrder:  &order,
+		statusErrs: []error{errors.New("database unavailable"), nil},
+	}
+	writer := &fakeSuspensionWriter{callOrder: &order}
+	sessions := &fakeAccountSessionRepository{callOrder: &order}
+	service := NewAccountService(repository, writer, sessions, 15*time.Minute)
+
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended, timestamp); err == nil {
+		t.Fatal("PostgreSQL failure was ignored")
+	}
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended, timestamp); err != nil {
+		t.Fatalf("retry suspension: %v", err)
+	}
+
+	if got, want := order, []string{"redis", "sessions", "postgres", "redis", "sessions", "postgres"}; !equalStrings(got, want) {
+		t.Fatalf("call order = %#v, want %#v", got, want)
+	}
+	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute {
+		t.Fatalf("retried suspension write = %#v, want identical account, timestamp, and TTL", writer)
+	}
+}
+
 func TestAccountServiceReactivationSkipsInvalidation(t *testing.T) {
 	order := []string{}
 	repository := &fakeAccountRepository{callOrder: &order}
