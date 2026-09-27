@@ -50,7 +50,7 @@ flowchart TB
     GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| SUP
     GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| ORD
     GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| CRE
-    GW -->|"/auth/* rewritten to /api/v1/users/*"| US
+    GW -->|"HTTP today, gRPC decided (D-013)<br/>/auth/* rewritten to /api/v1/users/*"| US
     GW -.->|"GET /.well-known/jwks.json<br/>public keys only, fetched lazily"| US
 
     US --> UDB
