@@ -90,6 +90,7 @@ sequenceDiagram
     participant GW as API Gateway
     participant US as user-service
     participant DB as User DB
+    Note over GW,US: HTTP today, gRPC decided (D-013)
 
     UI->>GW: POST /auth/login {identifier, password}
     Note over GW: Public route, no token required.<br/>Authorization preserved, claim<br/>headers stripped regardless.
