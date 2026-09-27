@@ -43,11 +43,8 @@ const (
 		UPDATE users
 		SET username = $1,
 			password = $2,
-			phone_num = $3,
-			last_login_date = $4,
-			account_role = $5,
-			account_status = $6
-		WHERE uid = $7`
+			phone_num = $3
+		WHERE uid = $4`
 	// AI-generated (edited by ZI YANG).
 	updateAccountStatusQuery = `
 		UPDATE users
@@ -114,9 +111,6 @@ func (r *PostgresRepository) Update(ctx context.Context, u *user.User) error {
 		u.Username,
 		u.PasswordHash,
 		u.PhoneNum,
-		u.LastLoginDate,
-		u.AccountRole,
-		u.AccountStatus,
 		u.UID,
 	)
 	if err != nil {

@@ -90,12 +90,15 @@ func TestPostgresRepositories(t *testing.T) {
 			account := createIntegrationAccount(t, ctx, users, "update", user.AccountRoleStudent)
 			originalEmail := account.Email
 			originalBoundary := account.TokensValidAfter
-			lastLogin := time.Date(2026, 9, 27, 11, 45, 0, 123456000, time.UTC)
+			originalLastLogin := account.LastLoginDate
+			originalRole := account.AccountRole
+			originalStatus := account.AccountStatus
 			account.Username = "updated-username"
 			account.Email = "must-not-change@example.com"
 			account.PasswordHash = "updated-password-hash"
 			account.PhoneNum = "+6587654321"
-			account.LastLoginDate = &lastLogin
+			changedLastLogin := time.Date(2026, 9, 27, 11, 45, 0, 123456000, time.UTC)
+			account.LastLoginDate = &changedLastLogin
 			account.AccountRole = user.AccountRoleAdmin
 			account.AccountStatus = user.AccountStatusSuspended
 
@@ -109,11 +112,8 @@ func TestPostgresRepositories(t *testing.T) {
 			if got.Username != account.Username || got.PasswordHash != account.PasswordHash || got.PhoneNum != account.PhoneNum {
 				t.Fatalf("updated account fields = %#v, want values from %#v", got, account)
 			}
-			if got.LastLoginDate == nil || !got.LastLoginDate.Equal(lastLogin) {
-				t.Fatalf("last login = %v, want %v", got.LastLoginDate, lastLogin)
-			}
-			if got.AccountRole != account.AccountRole || got.AccountStatus != account.AccountStatus {
-				t.Fatalf("role/status = %q/%q, want %q/%q", got.AccountRole, got.AccountStatus, account.AccountRole, account.AccountStatus)
+			if got.LastLoginDate != originalLastLogin || got.AccountRole != originalRole || got.AccountStatus != originalStatus {
+				t.Fatalf("protected fields = %#v, want original login/role/status", got)
 			}
 			if got.Email != originalEmail || !equalPostgresTime(got.TokensValidAfter, originalBoundary) {
 				t.Fatalf("immutable email/boundary = %q/%v, want %q/%v", got.Email, got.TokensValidAfter, originalEmail, originalBoundary)
