@@ -117,6 +117,7 @@ sequenceDiagram
     participant GW as API Gateway
     participant US as user-service
     participant SVC as supplier / order / credit
+    Note over GW,SVC: HTTP today, gRPC decided (D-013)
 
     UI->>GW: GET /api/suppliers/42<br/>Authorization: Bearer AT<br/>X-User-Role: ADMIN (forged)
 
