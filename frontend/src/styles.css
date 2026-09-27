@@ -1253,8 +1253,8 @@ button.service-card:hover {
   color: var(--muted);
 }
 
-/* F1.2.4 — a suspended account is not a failed password, and must not read
-   like one. Distinct from .status.error on purpose. */
+/* F1.2.4: a suspended account must not read like a failed password, so it is
+   styled apart from plain .status.error. */
 .status.error.suspended {
   border-left: 3px solid var(--warn, #ef6c00);
   padding-left: 10px;
