@@ -1,3 +1,8 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5), date: 2026-09-17
+// Scope: TypeScript compiler options for src/, written with the React port.
+// Author review: nigeltzy - generated simple tsconfig file
+
 {
   "compilerOptions": {
     "target": "ES2022",

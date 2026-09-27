@@ -39,7 +39,7 @@ export interface SendOptions {
   /** Serialised as JSON; the Content-Type header is set for you. */
   body?: unknown;
   headers?: Record<string, string>;
-  // AI-generated (edited by <name>).
+  // AI-generated (edited by nigeltzy).
   /**
    * Sent as `Authorization: Bearer <token>`. Null or omitted sends no
    * Authorization header, as for login. Most callers go through
@@ -59,7 +59,7 @@ export async function send({
 }: SendOptions): Promise<HttpResponse> {
   const requestHeaders = new Headers(headers);
   if (body !== undefined) requestHeaders.set("Content-Type", "application/json");
-  // AI-generated (edited by <name>).
+  // AI-generated (edited by nigeltzy).
   if (accessToken) requestHeaders.set("Authorization", `Bearer ${accessToken}`);
 
   let response: Response;
