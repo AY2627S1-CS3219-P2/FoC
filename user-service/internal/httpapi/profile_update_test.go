@@ -111,3 +111,23 @@ func TestUpdateProfileHandlerRejectsInvalidUsername(t *testing.T) {
 		t.Fatalf("body = %q, want username validation error", w.Body.String())
 	}
 }
+
+// AI-generated (edited by PENDING).
+func TestUpdateProfileHandlerReturnsNotFoundForMissingAccount(t *testing.T) {
+	id := uuid.New()
+	r := newTestRouter(routes.Dependencies{
+		TokenVerifier: &fakeTokenVerifier{principal: handlers.Principal{UserID: id, Role: user.AccountRoleStudent}},
+		Profile:       handlers.ProfileDependencies{ProfileUpdater: &fakeProfileUpdater{err: user.ErrNotFound}},
+	})
+	q := httptest.NewRequest(http.MethodPut, "/api/v1/users/"+id.String(), strings.NewReader(`{"phone_num":"91234567"}`))
+	q.Header.Set("Authorization", "Bearer token")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, q)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body = %s", w.Code, http.StatusNotFound, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "user not found") {
+		t.Fatalf("body = %q, want not-found error", w.Body.String())
+	}
+}

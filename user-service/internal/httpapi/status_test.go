@@ -116,6 +116,15 @@ func TestUpdateStatusHandlerCoversRecordedStatusTransitionsAndFailures(t *testin
 			wantStatus: http.StatusInternalServerError,
 			wantError:  "account status unavailable",
 		},
+		// AI-generated (edited by PENDING): missing accounts must have no successful status response.
+		"returns not found for missing account": {
+			body:       `{"status":"SUSPENDED"}`,
+			path:       "/api/v1/users/" + uid.String() + "/status",
+			updater:    &fakeStatusUpdater{err: user.ErrNotFound},
+			withUpdate: true,
+			wantStatus: http.StatusNotFound,
+			wantError:  "user not found",
+		},
 	}
 
 	for name, tt := range tests {

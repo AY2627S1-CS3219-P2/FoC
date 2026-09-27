@@ -17,7 +17,7 @@ import (
 )
 
 func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
-	repository := &fakeAccountRepository{}
+	repository := &fakeAccountRepository{user: &User{}}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
 	account, err := service.Register(context.Background(), "student@example.com", "student", "ValidPass1")
@@ -128,7 +128,7 @@ func TestAccountServiceUpdateProfileRejectsInvalidPassword(t *testing.T) {
 }
 
 func TestAccountServiceUpdateStatusDelegatesRecordedTransitions(t *testing.T) {
-	repository := &fakeAccountRepository{}
+	repository := &fakeAccountRepository{user: &User{}}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 	timestamp := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
 
@@ -150,7 +150,7 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 	uid := uuid.New()
 	timestamp := time.Date(2026, 9, 22, 5, 30, 12, 0, time.UTC)
 	order := []string{}
-	repository := &fakeAccountRepository{callOrder: &order}
+	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
 	service := NewAccountService(repository, writer, sessions, 15*time.Minute)
@@ -171,7 +171,7 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 
 func TestAccountServiceSuspensionStopsWhenRedisFails(t *testing.T) {
 	order := []string{}
-	repository := &fakeAccountRepository{callOrder: &order}
+	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order, err: errors.New("Redis unavailable")}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
 	service := NewAccountService(repository, writer, sessions, time.Minute)
@@ -186,7 +186,7 @@ func TestAccountServiceSuspensionStopsWhenRedisFails(t *testing.T) {
 
 func TestAccountServiceSuspensionStopsWhenSessionRevocationFails(t *testing.T) {
 	order := []string{}
-	repository := &fakeAccountRepository{callOrder: &order}
+	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order, err: errors.New("database unavailable")}
 	service := NewAccountService(repository, writer, sessions, time.Minute)
@@ -199,12 +199,30 @@ func TestAccountServiceSuspensionStopsWhenSessionRevocationFails(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING).
+func TestAccountServiceDoesNotInvalidateUnknownSuspension(t *testing.T) {
+	order := []string{}
+	repository := &fakeAccountRepository{lookupErr: ErrNotFound, callOrder: &order}
+	writer := &fakeSuspensionWriter{callOrder: &order}
+	sessions := &fakeAccountSessionRepository{callOrder: &order}
+	service := NewAccountService(repository, writer, sessions, time.Minute)
+
+	err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended, time.Now())
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("error = %v, want ErrNotFound", err)
+	}
+	if len(order) != 0 {
+		t.Fatalf("side-effect order = %#v, want no Redis, session, or PostgreSQL calls", order)
+	}
+}
+
 // AI-generated (edited by ZI YANG).
 func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testing.T) {
 	uid := uuid.New()
 	timestamp := time.Date(2026, 9, 27, 10, 30, 0, 0, time.UTC)
 	order := []string{}
 	repository := &fakeAccountRepository{
+		user:       &User{},
 		callOrder:  &order,
 		statusErrs: []error{errors.New("database unavailable"), nil},
 	}
@@ -229,7 +247,7 @@ func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testi
 
 func TestAccountServiceReactivationSkipsInvalidation(t *testing.T) {
 	order := []string{}
-	repository := &fakeAccountRepository{callOrder: &order}
+	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
 	service := NewAccountService(repository, writer, sessions, time.Minute)

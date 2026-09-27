@@ -108,7 +108,12 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.deps.StatusUpdater.UpdateAccountStatus(r.Context(), uid, request.Status, time.Now().UTC()); err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account status unavailable"})
+		// AI-generated (edited by PENDING): expose a missing account as the recorded 404 response.
+		if errors.Is(err, user.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		} else {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account status unavailable"})
+		}
 		return
 	}
 	w.WriteHeader(http.StatusOK)
@@ -147,6 +152,9 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "username already taken"})
+			// AI-generated (edited by PENDING): expose a missing account as the recorded 404 response.
+		} else if errors.Is(err, user.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		} else {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "profile unavailable"})
 		}

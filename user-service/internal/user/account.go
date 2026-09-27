@@ -115,6 +115,14 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	if status == AccountStatusSuspended && tokensValidAfter.IsZero() {
 		return errors.New("suspension timestamp is required")
 	}
+	// AI-generated (edited by PENDING): verify the account exists before invalidating its sessions.
+	account, err := s.repository.GetByID(ctx, uid)
+	if err != nil {
+		return fmt.Errorf("get account for status update: %w", err)
+	}
+	if account == nil {
+		return ErrNotFound
+	}
 	if status == AccountStatusSuspended {
 		if s.suspensionWriter == nil || s.sessions == nil {
 			return errors.New("suspension invalidation dependencies are required")
