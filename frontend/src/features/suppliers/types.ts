@@ -4,11 +4,9 @@
 // Author review: Nigeltzy - Checked the simple generated converted file based on the team's architecture decisions made and requirements provided.
 
 /**
- * Mirrors `supplierResponse` in
- * supplier-service/internal/httpapi/dto.go. That Go struct is the contract
- * until an OpenAPI spec exists (root AGENTS.md §8); when it does, this file is
- * replaced by generated types. Field names are snake_case because the wire
- * format is — do not "fix" them.
+ * A supplier as supplier-service returns it through the gateway. Field names
+ * are snake_case because the JSON is; generated types replace this file once
+ * supplier-service has an OpenAPI spec.
  */
 export interface Supplier {
   id: string;
@@ -28,13 +26,13 @@ export interface Supplier {
   updated_at: string;
 }
 
-/** Mirrors `supplierRequest` — the body accepted by create and update. */
+/** The body sent to create and update: a Supplier without its server-set fields. */
 export type SupplierInput = Omit<
   Supplier,
   "id" | "created_at" | "updated_at"
 >;
 
-/** Query parameters accepted by `GET /suppliers`. */
+/** Filters for listSuppliers; `search` is sent as the `q` query parameter. */
 export interface SupplierFilter {
   category?: string;
   search?: string;

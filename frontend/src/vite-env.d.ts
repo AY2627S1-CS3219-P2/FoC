@@ -7,11 +7,12 @@
 
 interface ImportMetaEnv {
   /**
-   * Base URL of supplier-service. Follows the repo's <SERVICE>_BASE_URL naming
-   * with Vite's required VITE_ prefix (root AGENTS.md §3). Nothing secret may
-   * go in a VITE_ variable — it is inlined into the bundle the browser gets.
+   * Origin of the API Gateway. Empty sends API calls to the page's own origin.
+   * Inlined into the bundle at build time, so nothing secret may go here.
    */
-  readonly VITE_SUPPLIER_BASE_URL?: string;
+  readonly VITE_GATEWAY_BASE_URL?: string;
+  /** `"true"` runs the in-browser fixtures instead of calling a gateway. */
+  readonly VITE_USE_FIXTURES?: string;
 }
 
 interface ImportMeta {

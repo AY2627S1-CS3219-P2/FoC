@@ -40,13 +40,8 @@ import { SuppliersView } from "./features/suppliers/SuppliersView";
 import type { ViewName } from "./views";
 
 /**
- * D-010 routes everything through the gateway and D-033 makes it same-origin,
- * so the gateway's base URL is EMPTY in normal operation and cannot be what
- * distinguishes a real backend from the fixtures. The gateway is the default;
- * fixtures are opt-in with VITE_USE_FIXTURES=true.
- *
- * Chosen once, here, rather than by a flag threaded into the auth functions
- * (root AGENTS.md §5, control coupling).
+ * True unless the build sets VITE_USE_FIXTURES=true, in which case the auth
+ * flow runs against in-browser fixtures instead of the gateway.
  */
 const usingGateway = !config.useFixtures;
 
@@ -54,8 +49,8 @@ const authClient = usingGateway
   ? {
       logIn: authApi.logInViaGateway,
       signUp: authApi.signUpViaGateway,
-      // The gateway client reads the contact off the registration it already
-      // holds, so the argument is accepted and ignored to keep one signature.
+      // The gateway client takes no contact, so the argument is accepted and
+      // ignored to keep one signature for both clients.
       verifyRegistration: (
         pendingRegistration: PendingRegistration,
         code: string,
@@ -80,21 +75,16 @@ export function App() {
   // even when the restore succeeds.
   const [restoring, setRestoring] = useState(usingGateway);
 
-  // Created once and never replaced. The tokens live in its closure, not in
-  // component state, so a re-render cannot leak them into a React DevTools
-  // tree and nothing outside lib/tokens.ts reads the values.
+  // Created once and never replaced. The access token lives in the store's
+  // closure, not in component state.
   const [tokens] = useState(createTokenStore);
 
   /**
-   * The authorized transport, and the one client built over it.
+   * The authorized transport and the suppliers client built over it, made
+   * once per TokenStore so concurrent requests share one in-flight refresh.
    *
-   * Created here because App owns the TokenStore, and passed down rather than
-   * reached for: a module-level token would be exactly the global coupling
-   * root AGENTS.md §5 rules out. One instance for the app's lifetime, so the
-   * shared in-flight refresh inside it actually dedupes.
-   *
-   * onSessionExpired only clears local state — the refresh token is already
-   * dead server-side, so there is nothing to revoke and no call to make.
+   * onSessionExpired runs when a refresh fails for any reason and clears only
+   * local state.
    */
   const suppliers = useMemo(() => {
     const authorizedSend = createAuthorizedSend({
@@ -117,19 +107,15 @@ export function App() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
-  // Balance lives here because both the sidebar and the top bar show it, and
-  // NewErrandView needs it for the "leaves you N available" hint. From the
-  // mock credit-service until that service exists.
+  // Balance lives here because the sidebar, the top bar and NewErrandView all
+  // show it. It comes from the credit-service fixture (creditsApi.ts).
   const [available, setAvailable] = useState<number | null>(null);
   const [held, setHeld] = useState<number | null>(null);
 
   /**
-   * D-033: the access token lives only in this page's memory, so a reload
-   * starts with none — but the HttpOnly refresh cookie survives. Spend it
-   * once, here, to find out whether there is still a session.
-   *
-   * Runs once on mount. A visitor who is not signed in costs one 401, which
-   * is the price of not asking them to log in again after every refresh.
+   * A reload drops the in-memory access token but keeps the HttpOnly refresh
+   * cookie. On mount, exchange the cookie for a new access token and profile;
+   * with no live cookie the exchange fails and the login page shows.
    */
   useEffect(() => {
     if (!usingGateway) return;
@@ -174,7 +160,7 @@ export function App() {
 
   const handleAuthenticated = useCallback(
     (result: AuthResult) => {
-      // The pair goes to the store; only the profile reaches component state.
+      // The access token goes to the store; only the profile reaches component state.
       tokens.setPair(result.tokens);
       setSession(result.session);
     },
@@ -182,16 +168,12 @@ export function App() {
   );
 
   /**
-   * D-014: the server revokes — user-service deletes the refresh token and
-   * blocklists the access token's jti. The client can only ask and then forget
-   * its own copies, which it does either way.
+   * Sends the logout when an access token is in memory, then clears the token,
+   * the remembered view and the session whatever the answer.
    */
   const handleLogOut = useCallback(async () => {
-    // Both, and before the store is cleared: user-service blocklists the
-    // access token's jti and deletes the refresh token's session row, so it
-    // needs each one. Its LogoutRequest makes refreshToken required.
-    // No refresh token to pass: the gateway holds it in its cookie, injects
-    // it into the body user-service requires, and clears it (D-033).
+    // Read before the store is cleared. The gateway adds the refresh token
+    // from its cookie, so only the access token is sent.
     const accessToken = tokens.getAccessToken();
     if (accessToken) {
       await authClient.logOut(accessToken);
@@ -203,8 +185,6 @@ export function App() {
   }, [tokens]);
 
   if (restoring) {
-    // Deliberately bare. A spinner that flashes for 200ms is worse than a
-    // blank frame, and this is one round trip.
     return <div className="app-loading" aria-busy="true" />;
   }
 

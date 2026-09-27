@@ -22,10 +22,11 @@ the answer here before building on it (root §1).
 rest of the frontend stack, but this file wrongly listed it as unchosen until
 2026-09-20 — which cost an agent a wrong turn. It shares Vite's config and
 transform, so there is no second build pipeline to keep in step. Tests live
-beside the code as `*.test.ts`. Only pure logic is covered today — validation
-rules and the OTP fixture's timing. There is no component testing library, so
-rendering is still unverified; adding one is a separate stack decision and
-still needs asking.
+beside the code as `*.test.ts`. Only logic is covered today: validation rules,
+the OTP fixture's timing, the authorized transport's refresh and retry, the
+gateway login path, and the remembered view. There is no component testing
+library, so rendering is still unverified; adding one is a separate stack
+decision and still needs asking.
 
 ## Owner
 
@@ -72,17 +73,18 @@ src/
 │   ├── suppliers/     view + components + suppliersApi.ts + types.ts
 │   ├── errands/       NewErrandView, MyErrandsView    [MOCK]
 │   ├── credits/       CreditsView                     [MOCK]
-│   └── profile/       ProfileView                     [MOCK]
+│   └── profile/       ProfileView
 ├── components/        shared only — AppShell, Modal, Toast, MockBadge, icons
 ├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
-│                      tokens.ts (AT/RT store)
+│                      tokens.ts (AT store), jwt.ts, lastView.ts
 ├── App.tsx            session gate, view switching, acting mode, balance
 ├── views.ts           view names + the nav model, until a router is chosen
 └── main.tsx
 ```
 
-Every feature folder maps to one backend service. `suppliers/` is the only one
-with a real service behind it.
+Every feature folder maps to one backend service. `suppliers/`, `auth/` and
+`profile/` are backed by real services through the gateway; `errands/` and
+`credits/` still use fixtures.
 
 `index.html` is the Vite entry document; the D1 prototype it replaced
 (`app.js` plus hand-written markup) is in this branch's history. The
@@ -102,10 +104,9 @@ with a real service behind it.
 
 ## Mock services — read before touching them
 
-`user-service`, `order-service` and `credit-service` do not exist. So the
-frontend can be built and demoed, `auth/`, `errands/`, `credits/` and
-`profile/` talk to fixture modules in their own folders instead
-(`src/lib/mock.ts` has the full note).
+`order-service` and `credit-service` do not exist. So the frontend can be
+built and demoed, `errands/` and `credits/` talk to fixture modules in their
+own folders instead (`src/lib/mock.ts` has the full note).
 
 `auth/` is now half-out of that state. `authApi.ts` holds **two** clients —
 the fixtures, and a gateway-backed one implementing D-010..D-015 — and

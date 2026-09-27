@@ -4,9 +4,8 @@
 // Author review: Nigeltzy - Boilerplate view template for ts.
 
 /**
- * No router is chosen yet (frontend/AGENTS.md), so views are switched by state
- * rather than by URL. Keeping the names and the nav model in one place means
- * adopting a router later touches this file and App.tsx, not every component.
+ * Every view the shell can show. Views are switched by state in App.tsx
+ * rather than by URL, since no router is chosen yet (frontend/AGENTS.md).
  */
 export const VIEW_NAMES = [
   "home",
@@ -36,7 +35,6 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "suppliers", label: "Suppliers", enabled: true, inTabBar: false },
   { view: "credits", label: "Credits", enabled: true, inTabBar: true },
   { view: "profile", label: "Profile", enabled: true, inTabBar: true },
-  // Nothing publishes notifications yet, so this stays visibly inert rather
-  // than showing an invented feed.
+  // Disabled: nothing publishes notifications yet.
   { view: "notifications", label: "Notifications", enabled: false, inTabBar: false },
 ];

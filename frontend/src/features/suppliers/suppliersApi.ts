@@ -15,24 +15,20 @@ import { NetworkError, queryString } from "../../lib/http";
 import type { Supplier, SupplierFilter, SupplierInput } from "./types";
 
 /**
- * The only module that knows how to talk to supplier-service. frontend/AGENTS.md
- * requires one per backend service, with the same surface a generated OpenAPI
- * client would have, so swapping in the generated one later is a single-file
- * change. No component calls send() or fetch() directly.
- *
- * Every request goes to the **gateway**, never to supplier-service's own port
- * (D-010). The gateway proxies `/api/suppliers/*` onto supplier-service's own
- * `/suppliers` prefix, verifies the access token, strips any claim headers the
- * browser sent and injects its own (D-022, D-027).
+ * The only module that talks to supplier-service, with the surface a
+ * generated OpenAPI client would have, so swapping one in is a one-file
+ * change. Components never call send() or fetch() themselves. Every request
+ * goes to the gateway under PREFIX, never to supplier-service's own port.
  */
 
-/** The gateway's public prefix for supplier-service (D-027). */
+/** The gateway's public prefix for supplier-service. */
 const PREFIX = "/api/suppliers";
 
 /**
- * supplier-service's error shape: `{"error": "..."}` with a non-2xx status.
- * Decoded here rather than in lib/http because the other services have not
- * committed to this envelope — that is each owner's interface decision.
+ * An error from a supplier call. supplier-service answers `{"error": "..."}`
+ * with a non-2xx status; that is decoded here, not in lib/http, because the
+ * other services have not settled on the same envelope. `status` is 0 when
+ * no response arrived.
  */
 export class SupplierApiError extends Error {
   readonly status: number;
@@ -62,28 +58,19 @@ export interface SuppliersApi {
 }
 
 /**
- * Builds the client over an authorized transport.
+ * Builds the client over an authorized transport. App.tsx creates it once per
+ * token store and passes it down.
  *
- * A factory rather than module-level functions because the access token is
- * per-session state: threading it through a package-level variable would be
- * the global coupling root AGENTS.md §5 rules out. App.tsx constructs this
- * once and passes it down.
- *
- * ADMIN IS NO LONGER ASSERTED HERE. Until 2026-09-22 the write calls sent
- * `X-User-Role: ADMIN` themselves, which worked only because the browser
- * reached supplier-service directly. Through the gateway that header is
- * deleted on every route and replaced with the role from the verified token
- * (D-022) — so sending it is at best ignored, and reading this file should not
- * suggest a client can choose its own role. An admin action now succeeds
- * exactly when the logged-in account's `role` claim is ADMIN.
+ * No call sends a role header: an admin write succeeds only when the signed-in
+ * account's access token carries the ADMIN role.
  */
 export function createSuppliersApi(authorizedSend: AuthorizedSend): SuppliersApi {
   async function call<T>(
     path: string,
     init: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown } = {},
   ): Promise<T> {
-    // No guard on an empty base URL: under D-033 that is the normal value and
-    // means "same origin", so a relative path is exactly right.
+    // An empty base URL is the default and makes `path` a same-origin
+    // relative URL, so there is no guard for it.
     let response;
     try {
       response = await authorizedSend({

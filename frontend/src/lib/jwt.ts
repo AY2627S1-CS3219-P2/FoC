@@ -6,29 +6,19 @@
 // system design, seems like a valid implementation of the code, and the changes made are correct based on the updated requirements.
 
 /**
- * Reads the payload of an access token WITHOUT verifying it.
+ * Reads the payload of an access token without verifying its signature.
  *
- * THIS IS NOT AUTHENTICATION, and nothing in this folder may treat it as
- * such. A JWT's payload is base64url, not ciphertext: anyone can write one.
- * The only thing that decides whether a token is real is the gateway, which
- * checks the RS256 signature against user-service's JWKS (D-023) and refuses
- * the request if it does not hold.
- *
- * What this is for: user-service's `POST /api/v1/users/login` answers with
- * `{accessToken, refreshToken}` and nothing else — no user object. The `sub`
- * and `role` claims are therefore the only place the UI can learn who it just
- * logged in, and it needs them to address `GET /api/v1/users/{uid}` at all.
- * Reading them to fill an avatar and a nav is safe precisely because none of
- * it is a permission: hiding a button is an affordance, not access control
- * (frontend/AGENTS.md, Gotchas), and every real check happens server-side on
- * the verified token.
+ * For display only. Anyone can write a JWT payload, so nothing in the UI may
+ * treat these claims as a permission; only the server verifies the token.
+ * Login and refresh responses carry no profile, so `sub` is also what the UI
+ * uses to request one.
  */
 
-/** The subset of D-011's claims the UI reads. Both may be absent. */
+/** The claims the UI reads from an access token. Either may be null. */
 export interface AccessTokenClaims {
   /** `sub` — the user's UUID. */
   subject: string | null;
-  /** `role` — STUDENT or ADMIN (D-019). */
+  /** `role` — STUDENT or ADMIN. */
   role: string | null;
 }
 

@@ -7,25 +7,19 @@
 // the contents of my teammates' system design decisions.
 
 /**
- * Transport only: URL joining, headers, JSON parsing, and the one failure mode
- * that is the same everywhere — the server not answering at all.
+ * Transport only: URL joining, headers, JSON parsing, and turning a request
+ * that never reached the server into a NetworkError.
  *
- * DELIBERATELY NOT HERE: turning a non-2xx response into an error message.
- * supplier-service returns `{"error": "..."}`, but whether the other services
- * match is an interface decision owned by each service, and standardising one
- * envelope from the frontend would be making that decision for them
- * (frontend/AGENTS.md, Gotchas). Each feature's api module inspects `body` and
- * `status` itself and throws its own error type.
+ * A non-2xx response is returned, not thrown. Each feature's api module reads
+ * `status` and `body` and throws its own error type.
  */
 
 /** Thrown when the request never reached the server. */
 export class NetworkError extends Error {
   constructor(baseUrl: string) {
-    // baseUrl is the gateway for every caller now (D-010). "Could not
-    // reach" also covers a response the BROWSER refused — a CORS failure
-    // surfaces here as a rejected fetch, indistinguishable from the host
-    // being down, so the wording does not promise which it was.
-    super(`No usable response from ${baseUrl}`);
+    // A CORS refusal also rejects fetch(), indistinguishable from the host
+    // being down, so the message does not say which it was.
+    super(`No usable response from ${baseUrl || "the server"}`);
     this.name = "NetworkError";
   }
 }
@@ -47,17 +41,10 @@ export interface SendOptions {
   headers?: Record<string, string>;
   // AI-generated (edited by <name>).
   /**
-   * The access token to attach, per ai/decisions.md D-011 ("the UI attaches
-   * the access token to subsequent requests"). Null or omitted sends nothing,
-   * which is correct for login and for any endpoint the gateway leaves open.
-   *
-   * NOT RECORDED: the diagram says "attach AT w any request" without naming
-   * the scheme. `Authorization: Bearer <token>` is the conventional reading
-   * for a JWT and is what this sends; if the gateway expects something else,
-   * this is the one line to change.
-   *
-   * Callers do not normally pass this by hand — features/auth/session wraps
-   * send() so the token and the refresh-on-expiry retry stay in one place.
+   * Sent as `Authorization: Bearer <token>`. Null or omitted sends no
+   * Authorization header, as for login. Most callers go through
+   * features/auth/session, which supplies the token and retries once after a
+   * refresh.
    */
   accessToken?: string | null;
 }
@@ -83,8 +70,7 @@ export async function send({
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
-    // fetch() rejects only on network failure. In development that is almost
-    // always the service simply not running.
+    // No response arrived: the host is down, or the browser refused it (CORS).
     throw new NetworkError(baseUrl);
   }
 

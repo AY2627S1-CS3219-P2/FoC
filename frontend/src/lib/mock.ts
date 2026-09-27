@@ -4,30 +4,16 @@
 // Author review: Nigeltzy - AI built this for use when mock was needed, may not be used anymore depending on services implementation. Worked as intended previously. Deprecated.
 
 /**
- * ============================ READ THIS FIRST ============================
+ * Shared helpers for the fixture modules that stand in for services the app
+ * cannot call: order-service and credit-service, and user-service when
+ * VITE_USE_FIXTURES=true. Each fixture lives in its feature's *Api.ts.
  *
- * `user-service`, `order-service` and `credit-service` DO NOT EXIST YET. To let
- * the UI be built and demoed, every feature whose backend is missing talks to a
- * fixture module in its own folder (`*Api.ts`, marked MOCK at the top) instead
- * of a real service.
- *
- * THE SHAPES IN THOSE FIXTURES ARE NOT A CONTRACT. They were invented by the
- * frontend to have something to render. Under root AGENTS.md §1 an API
- * interface is a design decision belonging to the service's owner, and §3 says
- * a change that reaches into another service needs that owner. So:
- *
- *   - Nobody may treat these shapes as the spec for their service.
- *   - When a real service lands, its owner's `api/openapi.yaml` wins, and the
- *     fixture module is REPLACED — not reconciled, not extended.
- *   - Because every component goes through the feature's api module and never
- *     touches these fixtures directly, that replacement is a one-file change.
- *
- * Any screen backed by one of these renders <MockBadge /> so a demo cannot read
- * invented numbers as live data.
- * =======================================================================
+ * The fixture shapes are not a contract. When a service's api/openapi.yaml
+ * lands, its fixture module is replaced by that service's client, not
+ * reconciled with it.
  */
 
-/** True while any feature is still served by a fixture. */
+/** Services that have a fixture module in this app. */
 export const MOCK_SERVICES = ["user", "order", "credit"] as const;
 
 /**

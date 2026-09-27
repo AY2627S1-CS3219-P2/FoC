@@ -7,21 +7,8 @@
 import { VIEW_NAMES, type ViewName } from "../views";
 
 /**
- * Where the current tab was last looking.
- *
- * `sessionStorage`, not `localStorage`, and the distinction is the whole
- * point: this is per-TAB. Two tabs on different screens should each come back
- * to their own, and closing a tab should forget it. localStorage would make
- * them fight over one value.
- *
- * This is a view name, never anything sensitive. D-033 keeps tokens out of
- * browser storage; "profile" is a UI convenience and carries nothing an
- * attacker could use.
- *
- * No router is chosen yet (frontend/AGENTS.md), so there is no URL to read
- * this from. When one is, the URL becomes the source of truth and this file
- * goes away — which is why it is one file and not a hook threaded through the
- * tree.
+ * The view this tab was last on. sessionStorage keeps it per tab and forgets
+ * it when the tab closes. Only a view name is stored, never a token.
  */
 const KEY = "foc.lastView";
 

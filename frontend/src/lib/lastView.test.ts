@@ -7,12 +7,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { clearLastView, readLastView, writeLastView } from "./lastView";
 
 /**
- * A minimal sessionStorage.
- *
- * vitest runs in node here and frontend/AGENTS.md scopes the test tier to pure
- * logic, so there is no DOM and no jsdom dependency. Stubbing the one API
- * under test keeps it that way — and it is what lets the "storage throws"
- * case below be written at all, which no real browser would let us stage.
+ * An in-memory stand-in for sessionStorage. These tests run in vitest's node
+ * environment, which has no DOM.
  */
 function fakeStorage() {
   const map = new Map<string, string>();

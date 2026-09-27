@@ -48,7 +48,7 @@ export function SuppliersView({
   /**
    * The category dropdown is populated from the unfiltered listing and then
    * held steady, so narrowing the results cannot remove the option you would
-   * need to widen them again. Same intent as the prototype's state.allCategories.
+   * need to widen them again.
    */
   const [categories, setCategories] = useState<string[]>([]);
   const categoriesLoaded = useRef(false);
@@ -156,15 +156,9 @@ export function SuppliersView({
       </div>
 
       {/*
-        A VIEW switch only, as of 2026-09-22. It shows and hides the admin
-        controls; it no longer makes the client assert anything. suppliersApi
-        used to send `X-User-Role: ADMIN` itself, which worked only while the
-        browser reached supplier-service directly. Through the gateway that
-        header is stripped and replaced with the role from the verified token
-        (D-022), so ticking this box on a STUDENT account now surfaces the
-        buttons and the writes come back 403 from supplier-service.
-        Drive it from session.role and delete the checkbox once someone
-        decides that is the behaviour they want.
+        View switch only: it shows or hides the admin controls and adds
+        nothing to the requests. Whether a write is allowed is decided from
+        the role in the signed-in account's access token.
       */}
       <label
         className="checkbox-row"
