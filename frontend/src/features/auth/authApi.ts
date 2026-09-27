@@ -21,6 +21,7 @@ import { mockDelay } from "../../lib/mock";
 import { readAccessTokenClaims } from "../../lib/jwt";
 import type { TokenPair } from "../../lib/tokens";
 import * as fixtureOtp from "./fixtureOtp";
+import { underRefreshLock } from "./session";
 import type { AccountRole, PendingRegistration, Session } from "./types";
 import { validateOtp, validateRegistration } from "./validation";
 
@@ -343,7 +344,10 @@ async function post(path: string, body: unknown) {
 export async function restoreSessionViaGateway(): Promise<AuthResult | null> {
   let tokens: TokenPair;
   try {
-    tokens = await refreshAccessTokenViaGateway();
+    // AI-generated (edited by nigeltzy).
+    // Under the same lock as createAuthorizedSend: a second tab, or StrictMode's
+    // second mount, would otherwise present the cookie this one is spending.
+    tokens = await underRefreshLock(refreshAccessTokenViaGateway);
   } catch {
     return null;
   }
@@ -417,7 +421,6 @@ export async function resendOtpViaGateway(
  * stores only the returned access token. Throws when the exchange fails.
  */
 export async function refreshAccessTokenViaGateway(): Promise<TokenPair> {
-
   const response = await send({
     baseUrl: config.gatewayBaseUrl,
     path: ROUTES.refresh,

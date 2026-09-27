@@ -58,7 +58,7 @@ const REFRESH_LOCK = "foc.auth.refresh";
  * (`navigator.locks` needs a secure context, so plain HTTP other than
  * localhost), it runs `fn` directly, without the cross-tab guarantee.
  */
-async function underRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+export async function underRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
   if (typeof navigator === "undefined" || !navigator.locks) return fn();
   return navigator.locks.request(REFRESH_LOCK, fn);
 }
