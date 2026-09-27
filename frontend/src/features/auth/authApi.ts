@@ -37,7 +37,7 @@ import { validateOtp, validateRegistration } from "./validation";
  * anything.
  */
 
-/** Recorded in D-027, except where marked. */
+/** Gateway paths used by the gateway client. */
 const ROUTES = {
   login: "/auth/login",
   register: "/auth/register",
