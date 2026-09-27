@@ -36,7 +36,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PORT", "JWKS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
 		"REFRESH_TOKEN_TTL",
-		// AI-generated (edited by PENDING).
+		// AI-generated (edited by nigeltzy).
 		// Optional, so all() omits it; cleared here so a value in the shell can't reach Load.
 		"STATIC_DIR",
 	} {
@@ -60,7 +60,7 @@ func TestLoadSucceedsWithEverythingSet(t *testing.T) {
 }
 
 func TestLoadReportsMissingVariables(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	tests := []struct {
 		name        string
 		unset       []string
@@ -90,7 +90,7 @@ func TestLoadReportsMissingVariables(t *testing.T) {
 			for _, name := range tt.unset {
 				vars[name] = ""
 			}
-			// AI-generated (edited by PENDING).
+			// AI-generated (edited by nigeltzy).
 			for name, value := range tt.set {
 				vars[name] = value
 			}

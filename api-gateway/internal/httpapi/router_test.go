@@ -128,7 +128,7 @@ func stubService(rec *recorder) *httptest.Server {
 	}))
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 type harness struct {
 	router  http.Handler
 	issuer  *issuer
@@ -136,7 +136,7 @@ type harness struct {
 	suppRec *recorder
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	iss := newIssuer(t)
@@ -183,7 +183,7 @@ func TestHealthz(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func TestServiceRouteRequiresAValidAccessToken(t *testing.T) {
 	tests := []struct {
 		name string
@@ -438,7 +438,7 @@ func authStub(rec *recorder) *httptest.Server {
 	}))
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 	t.Helper()
 	iss := newIssuer(t)
@@ -479,7 +479,7 @@ func refreshCookieFrom(t *testing.T, res *httptest.ResponseRecorder) *http.Cooki
 }
 
 func TestLoginPutsTheRefreshTokenInACookieAndNotTheBody(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, _ := newAuthHarness(t)
 
 	res := post(h, "/auth/login", `{"identifier":"a@u.nus.edu","password":"Passw0rd"}`)
@@ -521,7 +521,7 @@ func TestLoginPutsTheRefreshTokenInACookieAndNotTheBody(t *testing.T) {
 }
 
 func TestRefreshInjectsTheCookieIntoTheBodyUserServiceRequires(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, rec := newAuthHarness(t)
 
 	// The browser sends no body — it cannot read the token to send one.
@@ -542,7 +542,7 @@ func TestRefreshInjectsTheCookieIntoTheBodyUserServiceRequires(t *testing.T) {
 }
 
 func TestLogoutReceivesTheTokenAndClearsTheCookie(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, rec := newAuthHarness(t)
 
 	res := post(h, "/auth/logout", "", &http.Cookie{Name: "foc_refresh", Value: "rt-from-cookie"})
@@ -564,7 +564,7 @@ func TestLogoutReceivesTheTokenAndClearsTheCookie(t *testing.T) {
 }
 
 func TestRegisterCarriesNoCookie(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, _ := newAuthHarness(t)
 
 	// The stub returns a token pair here too; register must still set no cookie.
@@ -578,7 +578,7 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 // Covers the static-file tests below: the SPA handler must not shadow API
 // routes.
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func newStaticHarness(t *testing.T) (http.Handler, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -611,7 +611,7 @@ func get(h http.Handler, path string) *httptest.ResponseRecorder {
 }
 
 func TestStaticFilesAndSPAFallback(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, _ := newStaticHarness(t)
 
 	if got := get(h, "/app.js"); got.Code != http.StatusOK ||
@@ -631,7 +631,7 @@ func TestStaticFilesAndSPAFallback(t *testing.T) {
 // starts with ".." is served, while a path that climbs out of the static dir
 // is still refused.
 func TestStaticServesNamesStartingWithDotDot(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, dir := newStaticHarness(t)
 
 	if err := os.WriteFile(filepath.Join(dir, "..foo"), []byte("DOTDOT"), 0o600); err != nil {
@@ -653,7 +653,7 @@ func TestStaticServesNamesStartingWithDotDot(t *testing.T) {
 }
 
 func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, _ := newStaticHarness(t)
 
 	// A path that matches an API route gets the API's answer (401 without a
@@ -671,7 +671,7 @@ func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
 // TestUnknownAPIPathsGetJSON404 checks that a mistyped /api or /auth path gets
 // a JSON 404 rather than the frontend's index.html with 200.
 func TestUnknownAPIPathsGetJSON404(t *testing.T) {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	h, _ := newStaticHarness(t)
 
 	for _, tc := range []struct{ method, path string }{
