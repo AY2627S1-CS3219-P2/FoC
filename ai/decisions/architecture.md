@@ -195,6 +195,7 @@ sequenceDiagram
     participant SUP as supplier-service
     participant RDS as Redis
     participant DB as User DB
+    Note over GW,SUP: HTTP today, gRPC decided (D-013)
 
     Note over UI,DB: LOGOUT
     UI->>GW: POST /auth/logout (Bearer AT + RT)
