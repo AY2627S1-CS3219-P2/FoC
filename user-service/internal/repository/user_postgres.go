@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -47,7 +48,7 @@ const (
 			account_role = $5,
 			account_status = $6
 		WHERE uid = $7`
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by ZI YANG).
 	updateAccountStatusQuery = `
 		UPDATE users
 		SET account_status = $1::account_status,
@@ -187,7 +188,7 @@ func prepareForCreate(u user.User, now time.Time) user.User {
 		u.AccountStatus = user.AccountStatusActive
 	}
 	if u.TokensValidAfter.IsZero() {
-		// AI-generated (edited by PENDING).
+		// AI-generated (edited by ZI YANG).
 		u.TokensValidAfter = now.Truncate(time.Second)
 	}
 	return u

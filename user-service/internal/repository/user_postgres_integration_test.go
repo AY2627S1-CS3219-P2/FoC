@@ -3,7 +3,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-27
 // Scope: Added PostgreSQL integration coverage for account-status transitions.
-// Author review: PENDING — reviewer to complete
+// Author review: ZI YANG - validated correctness of tests
 
 package repository
 
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/testcontainers/testcontainers-go"

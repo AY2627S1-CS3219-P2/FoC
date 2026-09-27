@@ -34,7 +34,7 @@ services:
       PORT: 8081
       USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
       REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
-      # AI-generated (edited by PENDING).
+      # AI-generated (edited by ZI YANG).
       JWT_KEYSET_PATH: /run/secrets/keys.json
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-15m}
       JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
@@ -49,7 +49,7 @@ services:
     ports:
       - "8081:8081"
     volumes:
-      # AI-generated (edited by PENDING).
+      # AI-generated (edited by ZI YANG).
       - ./user-service/keys.json:/run/secrets/keys.json:ro
     restart: on-failure
 

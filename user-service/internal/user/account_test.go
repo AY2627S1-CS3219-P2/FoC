@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/hash"
+
 	"github.com/google/uuid"
 )
 
@@ -198,7 +199,7 @@ func TestAccountServiceSuspensionStopsWhenSessionRevocationFails(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by ZI YANG).
 func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testing.T) {
 	uid := uuid.New()
 	timestamp := time.Date(2026, 9, 27, 10, 30, 0, 0, time.UTC)

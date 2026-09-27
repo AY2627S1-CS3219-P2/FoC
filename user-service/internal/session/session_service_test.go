@@ -13,6 +13,7 @@ import (
 
 	"foc/user-service/internal/hash"
 	. "foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -120,7 +121,7 @@ func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 
 func TestRefreshServiceRotatesTokenIssuedDuringAccountCreationSecond(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by ZI YANG).
 	account.TokensValidAfter = now
 	oldToken := "old-refresh"
 	oldHash := HashRefreshToken(oldToken)

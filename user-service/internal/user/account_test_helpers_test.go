@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-21
 // Scope: Kept account-service tests independent after authentication tests moved to the session package.
-// Author review: Validated tests reflects intended behaviour
+// Author review: ZI YANG - Validated tests reflects intended behaviour
 
 package user
 
@@ -19,7 +19,7 @@ type fakeAccountRepository struct {
 	status     AccountStatus
 	callOrder  *[]string
 	statusErr  error
-	statusErrs []error // AI-generated (edited by PENDING).
+	statusErrs []error // AI-generated (edited by ZI YANG).
 }
 
 func (f *fakeAccountRepository) Create(_ context.Context, account *User) error {

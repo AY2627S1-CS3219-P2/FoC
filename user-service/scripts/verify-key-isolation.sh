@@ -2,7 +2,7 @@
 # AI Assistance Disclosure:
 # Tool: Codex (GPT-5), date: 2026-09-27
 # Scope: Added a container regression check for JWT key build isolation.
-# Author review: PENDING — reviewer to complete
+# Author review: ZI YANG - verified correctness
 
 set -eu
 

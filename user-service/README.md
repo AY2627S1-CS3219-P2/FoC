@@ -35,7 +35,7 @@ python -m pip install cryptography
 python generate_jwks.py --out keys.json
 ```
 
-<!-- AI-generated (edited by PENDING). -->
+<!-- AI-generated (edited by ZI YANG). -->
 Keep `keys.json` local and out of version control. Before running Compose from
 the repository root, generate it at `user-service/keys.json`; Compose mounts it
 read-only at `/run/secrets/keys.json`, and the image never contains the file.

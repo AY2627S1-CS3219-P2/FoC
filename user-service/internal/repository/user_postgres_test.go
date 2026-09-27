@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,7 +33,7 @@ func TestPrepareForCreateGeneratesRecordedDefaults(t *testing.T) {
 	if got.AccountStatus != user.AccountStatusActive {
 		t.Fatalf("AccountStatus = %q, want %q", got.AccountStatus, user.AccountStatusActive)
 	}
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by ZI YANG).
 	if want := now.Truncate(time.Second); !got.TokensValidAfter.Equal(want) {
 		t.Fatalf("TokensValidAfter = %s, want JWT-second boundary %s", got.TokensValidAfter, want)
 	}

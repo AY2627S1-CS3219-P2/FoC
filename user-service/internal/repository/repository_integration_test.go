@@ -3,7 +3,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-27
 // Scope: Added real-PostgreSQL integration coverage for every user and session repository method.
-// Author review: PENDING — reviewer to complete
+// Author review: ZI YANG - validated correctness of tests
 
 package repository
 
