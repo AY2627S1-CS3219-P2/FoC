@@ -100,7 +100,7 @@ func TestLogoutHandler(t *testing.T) {
 			wantStatus: http.StatusInternalServerError,
 			wantError:  "logout failed",
 		},
-		// AI-generated (edited by PENDING): a refresh session owned by another account is a recorded client error.
+		// AI-generated (edited by ZI YANG): a refresh session owned by another account is a recorded client error.
 		"rejects mismatched refresh session": {
 			header:     "Bearer access-token",
 			body:       `{"refreshToken":"other-user-refresh"}`,

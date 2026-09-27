@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-19
 // Scope: Added focused tests for the recorded RS256 JWT and JWKS boundary.
-// Author review: PENDING — reviewer to complete
+// Author review: ZI YANG - validated correctness of tests
 
 package jwt
 
@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -68,7 +69,7 @@ func TestJWTServiceIssuesAndVerifiesAccessAndRefreshTokens(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): signed tokens missing exp or iat must be rejected without a panic.
+// AI-generated (edited by ZI YANG): signed tokens missing exp or iat must be rejected without a panic.
 func TestJWTServiceRejectsMissingTimingClaims(t *testing.T) {
 	key := testKey(t, "active")
 	service := NewService(mustKeySet(t, []Key{key}, key.ID), time.Now)

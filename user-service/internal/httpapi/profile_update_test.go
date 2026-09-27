@@ -7,11 +7,12 @@ package httpapi
 import (
 	"context"
 	"foc/user-service/internal/user"
-	"github.com/google/uuid"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/routes"
@@ -112,7 +113,7 @@ func TestUpdateProfileHandlerRejectsInvalidUsername(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): database-width validation must be reported as a client error.
+// AI-generated (edited by ZI YANG): database-width validation must be reported as a client error.
 func TestUpdateProfileHandlerRejectsPhoneLongerThanDatabaseWidth(t *testing.T) {
 	id := uuid.New()
 	r := newTestRouter(routes.Dependencies{

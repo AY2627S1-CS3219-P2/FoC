@@ -78,7 +78,7 @@ func TestLogoutServiceBlocksAccessBeforeRevokingRefreshSession(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): a refresh session must belong to the verified access-token subject.
+// AI-generated (edited by ZI YANG): a refresh session must belong to the verified access-token subject.
 func TestLogoutServiceRejectsRefreshSessionOwnedByAnotherAccount(t *testing.T) {
 	now := time.Date(2026, 9, 27, 21, 30, 0, 0, time.UTC)
 	order := []string{}

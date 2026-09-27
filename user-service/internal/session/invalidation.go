@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -68,7 +69,7 @@ func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, re
 	if ttl <= 0 {
 		return errors.New("access token is expired")
 	}
-	// AI-generated (edited by PENDING): verify session ownership before Redis invalidation or revocation.
+	// AI-generated (edited by ZI YANG): verify session ownership before Redis invalidation or revocation.
 	refreshSession, err := s.sessions.GetSessionByHash(ctx, HashRefreshToken(refreshToken))
 	if errors.Is(err, user.ErrSessionNotFound) {
 		return nil

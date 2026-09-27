@@ -19,6 +19,7 @@ import (
 
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
+
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -254,7 +255,7 @@ func (s *Service) Verify(raw string) (VerifiedToken, error) {
 	}
 
 	keyID, _ := token.Header["kid"].(string)
-	// AI-generated (edited by PENDING): signed tokens may still omit required time claims.
+	// AI-generated (edited by ZI YANG): signed tokens may still omit required time claims.
 	if parsed.IssuedAt == nil || parsed.ExpiresAt == nil {
 		return VerifiedToken{}, errors.New("JWT is missing required timing claims")
 	}

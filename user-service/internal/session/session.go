@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -70,7 +71,7 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 		return TokenPair{}, err
 	}
 	if err := s.authenticator.repository.UpdateLastLoginByID(ctx, account.UID, s.now().UTC()); err != nil {
-		// AI-generated (edited by PENDING): login analytics must not make authentication unavailable.
+		// AI-generated (edited by ZI YANG): login analytics must not make authentication unavailable.
 		log.Printf("record last login for user %s: %v", account.UID, err)
 	}
 	pair, err := s.authenticator.issuer.Issue(ctx, account)

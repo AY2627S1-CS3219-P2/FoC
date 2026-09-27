@@ -76,7 +76,7 @@ func TestAccountServiceRegisterRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): database-width validation belongs before persistence.
+// AI-generated (edited by ZI YANG): database-width validation belongs before persistence.
 func TestAccountServiceRegisterRejectsEmailLongerThanDatabaseWidth(t *testing.T) {
 	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
@@ -143,7 +143,7 @@ func TestAccountServiceUpdateProfileRejectsInvalidPassword(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): database-width validation belongs before persistence.
+// AI-generated (edited by ZI YANG): database-width validation belongs before persistence.
 func TestAccountServiceUpdateProfileRejectsPhoneLongerThanDatabaseWidth(t *testing.T) {
 	uid := uuid.New()
 	repository := &fakeAccountRepository{user: &User{UID: uid, PhoneNum: "91234567"}}
@@ -230,7 +230,7 @@ func TestAccountServiceSuspensionStopsWhenSessionRevocationFails(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by ZI YANG).
 func TestAccountServiceDoesNotInvalidateUnknownSuspension(t *testing.T) {
 	order := []string{}
 	repository := &fakeAccountRepository{lookupErr: ErrNotFound, callOrder: &order}

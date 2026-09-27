@@ -62,9 +62,9 @@ func TestRegisterHandler(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 			wantError:  "username must be at most 128 characters",
 		},
-		// AI-generated (edited by PENDING): database-width validation must be reported as a client error.
+		// AI-generated (edited by ZI YANG): database-width validation must be reported as a client error.
 		"rejects email longer than database width": {
-			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
+			body:       `{"email":"studenttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{err: user.ErrInvalidEmail},
 			wantStatus: http.StatusBadRequest,
 			wantError:  "email must be at most 255 characters",

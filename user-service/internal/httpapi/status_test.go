@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -116,7 +117,7 @@ func TestUpdateStatusHandlerCoversRecordedStatusTransitionsAndFailures(t *testin
 			wantStatus: http.StatusInternalServerError,
 			wantError:  "account status unavailable",
 		},
-		// AI-generated (edited by PENDING): missing accounts must have no successful status response.
+		// AI-generated (edited by ZI YANG): missing accounts must have no successful status response.
 		"returns not found for missing account": {
 			body:       `{"status":"SUSPENDED"}`,
 			path:       "/api/v1/users/" + uid.String() + "/status",

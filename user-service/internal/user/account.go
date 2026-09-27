@@ -14,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"foc/user-service/internal/hash"
+
 	"github.com/google/uuid"
 )
 
@@ -49,7 +50,7 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 		return nil, errors.New("user repository is required")
 	}
 	email = normalizeEmail(email)
-	// AI-generated (edited by PENDING): match the recorded PostgreSQL VARCHAR(255) limit before persistence.
+	// AI-generated (edited by ZI YANG): match the recorded PostgreSQL VARCHAR(255) limit before persistence.
 	if utf8.RuneCountInString(email) > maxEmailCharacters {
 		return nil, ErrInvalidEmail
 	}
@@ -87,7 +88,7 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 			return nil, fmt.Errorf("validate profile username: %w", err)
 		}
 	}
-	// AI-generated (edited by PENDING): match the recorded PostgreSQL VARCHAR(20) limit without imposing phone syntax.
+	// AI-generated (edited by ZI YANG): match the recorded PostgreSQL VARCHAR(20) limit without imposing phone syntax.
 	if phone != "" && utf8.RuneCountInString(phone) > maxPhoneCharacters {
 		return nil, ErrInvalidPhone
 	}
@@ -130,7 +131,7 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	if status == AccountStatusSuspended && tokensValidAfter.IsZero() {
 		return errors.New("suspension timestamp is required")
 	}
-	// AI-generated (edited by PENDING): verify the account exists before invalidating its sessions.
+	// AI-generated (edited by ZI YANG): verify the account exists before invalidating its sessions.
 	account, err := s.repository.GetByID(ctx, uid)
 	if err != nil {
 		return fmt.Errorf("get account for status update: %w", err)

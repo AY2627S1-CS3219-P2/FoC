@@ -14,6 +14,7 @@ import (
 
 	"foc/user-service/internal/hash"
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -36,7 +37,7 @@ type Authenticator struct {
 	issuer     TokenIssuer
 }
 
-const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy"
+const dummyPasswordHash = "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJ1dL17l3Wy"
 
 // NewAuthenticator constructs an authenticator with its persistence and JWT
 // dependencies ready for use.
@@ -68,7 +69,7 @@ func (a *Authenticator) authenticate(ctx context.Context, identifier, password s
 	account, err := a.repository.GetByIdentifier(ctx, identifier)
 	if err != nil {
 		if errors.Is(err, user.ErrNotFound) {
-			// AI-generated (edited by PENDING): equalize unknown-account and wrong-password bcrypt work.
+			// AI-generated (edited by ZI YANG): equalize unknown-account and wrong-password bcrypt work.
 			_ = hash.CheckPassword(dummyPasswordHash, password)
 			return nil, user.ErrInvalidCredentials
 		}

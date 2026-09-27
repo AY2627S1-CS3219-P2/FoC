@@ -73,7 +73,7 @@ func TestRefreshHandler(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 			wantError:  "authentication required",
 		},
-		// AI-generated (edited by PENDING): outages must remain distinguishable from ended credentials.
+		// AI-generated (edited by ZI YANG): outages must remain distinguishable from ended credentials.
 		"reports database failure": {
 			body:       `{"refreshToken":"valid"}`,
 			refresher:  &fakeRefresher{err: errors.New("database unavailable")},

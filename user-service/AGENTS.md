@@ -111,6 +111,7 @@ The `users` repository interface should include these actions:
 3. GetByIdentifier (get user by username/email), 
 4. Update (update user's mutable fields, which should not allow updating uid or email), 
 5. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
+6. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
 
 Example repository method signatures:
 ```Go
@@ -119,6 +120,7 @@ Example repository method signatures:
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
 	Update(ctx context.Context, u *User) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus) error
+    UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
 ```
 
 The `sessions` repository interface should include these actions: 
@@ -165,6 +167,7 @@ Use Go Chi router for handling API calls. The API should handle these calls:
 1. GET /api/v1/health : Returns health status of the whole user microservice (includes Go logic layer and database health)
 2. POST /api/v1/users/register : Accepts email, username, and plaintext password. Triggers the repository Create method and publishes an event to the message broker so the Credit Service can allocate the initial credits
 3. POST /api/v1/users/login : Accepts an identifier (username or email) and plaintext password. Uses GetByIdentifier to verify credentials and returns JWT authentication/session tokens
+   - When a user successfully authenticates, the application service must call `UpdateLastLoginByID`. If this database operation fails, the service must **log the error** (preserving the underlying PostgreSQL failure details and user ID) but **must not fail the login request**. The user must still receive a `200 OK` and their token pair. Tracking login analytics is secondary and must never compromise the availability of the core authentication flow.
 4. GET /api/v1/users/{uid} : Uses GetByID to fetch public profile data for a specific user (e.g., when a requester views a courier's profile. Any authenticated user may view another user's `username`, `email`, and `phone_num`, but not `account_role`, `account_status`, or `date_created`, unless the authenticated user is an admin)
 5. PUT /api/v1/users/{uid} : Uses Update to modify mutable user profile fields, such as the username or password.
 6. PATCH /api/v1/users/{uid}/status: An ADMIN-only endpoint to transition an account status between ACTIVE and SUSPENDED
@@ -173,13 +176,26 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - Response: 200 OK with JSON {"accessToken": "string", "refreshToken": "string"}.
    - Errors: 401 Unauthorized for an invalid or expired token. If the replay-detection mechanism triggers, return a 401 Unauthorized with a standardized error shape: {"error": "ErrSessionCompromised"}.
 8. POST /api/v1/users/logout : Accepts the current access token and refresh token. Pushes the access token's jti to the Redis blocklist and revokes the refresh token in PostgreSQL (by populating the `revoked_at` field). This must be done in the specified order strictly. If Redis fails, the service must abort the PostgreSQL transaction and return a `500 Internal Server Error`. Do not use `DELETE` on the table (uses `RevokeSessionByHash` of the Session Repository's interface)
+   - **Execution Sequence & Ownership Verification:**
+     1. Hash the incoming refresh token and query PostgreSQL to read the session. If the session is missing or already has a populated `revoked_at` field, immediately return `204 No Content` (idempotent success).
+     2. Verify that the session's `uid` matches the verified access token's `sub` claim. If they do not match, reject the request with a `400 Bad Request` (e.g., `{"error": "mismatched session"}`).
+     3. Push the access token's `jti` to the Redis blocklist. If the access token is in the 5-second clock-skew window (meaning its theoretical remaining lifetime is ≤ 0), set the Redis TTL to exactly 5 seconds. If the Redis `SET` operation fails, abort the transaction and return a `500 Internal Server Error`.
+     4. Revoke the refresh session in PostgreSQL by setting the `revoked_at` field to the current timestamp. Do not use `DELETE`.
    - Request: Standard Authorization: Bearer <access_token> header, plus a JSON body {"refreshToken": "string"}.
-   - Response: 204 No Content (empty body) on success.
+   - Response: 204 No Content (empty body) on success, and response should be idempotent should with 204 in case session is already revoked, or when the supplied refresh token does not exist
    - Errors: 500 Internal Server Error if the Redis invalidation fails.
+   - Write a minimum-TTL Redis key. Set the Redis TTL to exactly the skew allowance (5 seconds) to guarantee the token is blocked for the remainder of its theoretical accepted life without crashing the Redis SET operation with a negative duration
 9. GET /.well-known/jwks.json : the token header and the JWKS payload must include a kid (Key ID) field. The User Service must support loading multiple keys simultaneously: one designated "active" key for signing new tokens, and multiple "retired" keys kept in the JWKS to verify existing tokens until their respective TTLs expire
    - Request: Unauthenticated GET request.
    - Response: 200 OK with the standard JWKS JSON payload containing active and retired public keys.
    - This API endpoint should not be reachable beyond the API gateway. Only the API gateway should be able to reach this endpoint and verify the signatures of incoming JWTs.
+
+Request bodies should enforce a strict 10KB (10 * 1024 bytes) limit using Go's `http.MaxBytesReader(w, r.Body, 10240)`, and return `413 Payload Too Large` and drop the connection if a client exceeds the limit.
+
+Additionally, the HTTP behaviour below should be observed:
+* Timeouts: Configure the http.Server with explicit defensive timeouts: ReadHeaderTimeout: 5s, ReadTimeout: 10s, WriteTimeout: 10s, and IdleTimeout: 120s.
+* Logging: Log all 500 Internal Server Error events with the underlying Go error message, a stack trace, and a unique Request ID. Never log plaintext passwords, bearer tokens, or PII.
+* Health Check: The /api/v1/health endpoint must fail (503 Service Unavailable) if Redis is unreachable. Because the API Gateway strictly depends on the User Service to populate the Redis blocklist and suspension keys, a disconnected Redis instance compromises the platform's security boundary.
 
 Handlers should be grouped according to functions. For example:
 1. AuthHandler (includes register, login, refresh, logout)
@@ -253,11 +269,14 @@ The username policy as stated in the product backlog is:
 - only contains alphanumeric characters
 - maximum 128 characters
 The password policy as stated in the product backlog is:
-- 8 – 128 characters
+- 8 – 128 characters (pre-hash the password with SHA-256 before passing to bcrypt to fit the 72 bytes limit)
 - at least one uppercase letter
 - at least one lowercase letter
 - at least one digit
 This policy should be checked during registration and updating profile of a user.
+
+### Email Policy
+Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddress()` to prevent malformed inputs
 
 ### First Admin creation
 `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` should be configured in `.env` 
@@ -277,19 +296,13 @@ The `main.go` file should construct its dependencies in the following order:
 7. Instantiate the Domain Service (injecting repos, redis client, and JWT manager).
 8. Instantiate the HTTP Handlers and mount them to the Chi router.
 
-### Project sequencing decision
-
-Suspension Redis invalidation is explicitly deferred to the final implementation
-iteration of the project. Until that iteration, account suspension may update
-PostgreSQL but must not be treated as fully effective for already-issued access
-tokens; the gateway-side Redis suspension check remains incomplete. No earlier
-iteration should silently substitute a different invalidation mechanism.
+### Miscellaneous details
 
 In the case where the PostgreSQL fails after the Redis operation completes the invalidation, the user service should:
 1. Returns a 500 Internal Server Error.
 2. The frontend (which still holds the valid refresh token) automatically retries the logout request. The Go service overwrites the exact same Redis key with the same TTL, and the database eventually commits.
 
-Event sending to an event service shall also be deferred
+Implementation for event sending to an event service shall also be deferred
 
 ## Local development
 

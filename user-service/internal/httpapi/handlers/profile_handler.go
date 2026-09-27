@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -108,7 +109,7 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.deps.StatusUpdater.UpdateAccountStatus(r.Context(), uid, request.Status, time.Now().UTC()); err != nil {
-		// AI-generated (edited by PENDING): expose a missing account as the recorded 404 response.
+		// AI-generated (edited by ZI YANG): expose a missing account as the recorded 404 response.
 		if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		} else {
@@ -148,7 +149,7 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
-			// AI-generated (edited by PENDING): report the recorded database-width validation as a client error.
+			// AI-generated (edited by ZI YANG): report the recorded database-width validation as a client error.
 		} else if errors.Is(err, user.ErrInvalidPhone) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phone number must be at most 20 characters"})
 		} else if errors.Is(err, user.ErrInvalidPassword) {

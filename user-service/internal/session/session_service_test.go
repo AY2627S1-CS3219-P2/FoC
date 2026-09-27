@@ -174,7 +174,7 @@ func TestRefreshServiceRejectsUnknownSession(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): refresh must enforce account status, token boundaries, session expiry, and rotation replay.
+// AI-generated (edited by ZI YANG): refresh must enforce account status, token boundaries, session expiry, and rotation replay.
 func TestRefreshServiceRejectsRecordedInvalidStates(t *testing.T) {
 	for name, configure := range map[string]func(*User, *fakeSessionRepository, *fakeRefreshVerifier, time.Time){
 		"suspended account": func(account *User, _ *fakeSessionRepository, _ *fakeRefreshVerifier, _ time.Time) {

@@ -142,7 +142,7 @@ func (h AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, user.ErrSessionCompromised) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "ErrSessionCompromised"})
 		} else if errors.Is(err, user.ErrSessionNotFound) || errors.Is(err, user.ErrAccountSuspended) {
-			// AI-generated (edited by PENDING): only recorded authentication outcomes receive 401.
+			// AI-generated (edited by ZI YANG): only recorded authentication outcomes receive 401.
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		} else {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "refresh unavailable"})
