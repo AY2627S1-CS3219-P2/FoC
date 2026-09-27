@@ -108,7 +108,7 @@ passes the response back.
 
 ---
 
-## 3. An authenticated request (D-013 as amended by D-024, plus D-022)
+## 3. An authenticated request (D-013, D-022, D-024)
 
 ```mermaid
 sequenceDiagram
