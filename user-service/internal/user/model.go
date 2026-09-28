@@ -28,16 +28,16 @@ const (
 
 // User is an account as stored in the users table.
 type User struct {
-	UID              uuid.UUID     `json:"uid"`
-	Username         string        `json:"username"`
-	Email            string        `json:"email"`
-	PasswordHash     string        `json:"password"`
-	PhoneNum         string        `json:"phone_num"`
-	DateCreated      time.Time     `json:"date_created"`
-	LastLoginDate    *time.Time    `json:"last_login_date"`
-	AccountRole      AccountRole   `json:"account_role"`
-	AccountStatus    AccountStatus `json:"account_status"`
-	TokensValidAfter time.Time     `json:"-"`
+	UID              uuid.UUID
+	Username         string
+	Email            string
+	PasswordHash     string
+	PhoneNum         string
+	DateCreated      time.Time
+	LastLoginDate    *time.Time
+	AccountRole      AccountRole
+	AccountStatus    AccountStatus
+	TokensValidAfter time.Time
 }
 
 // Session stores the hashed refresh-token state owned by user-service.
