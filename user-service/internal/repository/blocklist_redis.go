@@ -53,8 +53,10 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 	return nil
 }
 
-// WriteSuspension records the account suspension timestamp for the configured
-// access-token lifetime so the API gateway can reject tokens issued before it.
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — updated this comment
+// to remove a stale cross-service reader assertion. Author review: PENDING.
+// WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt, with
+// the given TTL.
 func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error {
 	if w.client == nil {
 		return errors.New("Redis client is required")
