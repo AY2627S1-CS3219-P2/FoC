@@ -99,6 +99,29 @@ func TestLogoutServiceRejectsRefreshSessionOwnedByAnotherAccount(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING): missing and already-revoked refresh sessions are recorded idempotent logout successes.
+func TestLogoutServiceTreatsMissingAndRevokedSessionsAsIdempotent(t *testing.T) {
+	now := time.Date(2026, 9, 28, 0, 15, 0, 0, time.UTC)
+	userID := uuid.New()
+	for name, sessions := range map[string]*orderedSessionRepository{
+		"missing session error":   {fakeSessionRepository: fakeSessionRepository{getErr: user.ErrSessionNotFound}},
+		"already revoked session": {fakeSessionRepository: fakeSessionRepository{sessions: map[string]*user.Session{HashRefreshToken("refresh"): {UID: userID, RevokedAt: &now}}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			order := []string{}
+			sessions.callOrder = &order
+			blocklist := &fakeBlocklistWriter{callOrder: &order}
+			err := NewLogoutService(sessions, blocklist, func() time.Time { return now }).Logout(context.Background(), AccessTokenClaims{UserID: userID, JTI: uuid.New(), ExpiresAt: now.Add(time.Minute)}, "refresh")
+			if err != nil {
+				t.Fatalf("Logout() error = %v, want nil", err)
+			}
+			if got, want := order, []string{"postgres-read"}; !equalStrings(got, want) {
+				t.Fatalf("call order = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
 func TestLogoutServiceDoesNotRevokeSessionWhenRedisFails(t *testing.T) {
 	redisFailure := errors.New("redis unavailable")
 	order := []string{}
