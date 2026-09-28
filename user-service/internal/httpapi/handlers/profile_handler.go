@@ -8,6 +8,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -37,6 +38,7 @@ type ProfileDependencies struct {
 	ProfileGetter  ProfileGetter
 	StatusUpdater  AccountStatusUpdater
 	ProfileUpdater ProfileUpdater
+	Logger         *slog.Logger
 }
 
 // ProfileHandler serves profile and account-status endpoints.
@@ -58,7 +60,7 @@ func (h ProfileHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.ProfileGetter == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "profile unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("profile getter is required"), "profile unavailable")
 		return
 	}
 	account, err := h.deps.ProfileGetter.GetByID(r.Context(), uid)
@@ -66,7 +68,7 @@ func (h ProfileHandler) Profile(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "profile unavailable"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "profile unavailable")
 		}
 		return
 	}
@@ -103,7 +105,7 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.StatusUpdater == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account status unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("account status updater is required"), "account status unavailable")
 		return
 	}
 	if err := h.deps.StatusUpdater.UpdateAccountStatus(r.Context(), uid, request.Status, time.Now().UTC()); err != nil {
@@ -111,7 +113,7 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "account status unavailable"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "account status unavailable")
 		}
 		return
 	}
@@ -139,7 +141,7 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.ProfileUpdater == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "profile unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("profile updater is required"), "profile unavailable")
 		return
 	}
 	account, err := h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, request.PhoneNum, request.Password)
@@ -157,7 +159,7 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		} else if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "profile unavailable"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "profile unavailable")
 		}
 		return
 	}

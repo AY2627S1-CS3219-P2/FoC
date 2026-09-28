@@ -6,9 +6,11 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -164,6 +166,35 @@ func TestLoginHandlerDoesNotApplyNewPasswordPolicy(t *testing.T) {
 	}
 	if loginService.password != "weakpass" {
 		t.Fatalf("login password = %q, want weakpass passed through for authentication", loginService.password)
+	}
+}
+
+// AI-generated (edited by PENDING): internal failures retain request-correlated diagnostics without exposing them to clients.
+func TestLoginHandlerLogsInternalFailureWithRequestIDAndStack(t *testing.T) {
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	router := newTestRouter(routes.Dependencies{
+		Auth: handlers.AuthDependencies{
+			LoginService: &fakeLoginService{err: errors.New("database unavailable")},
+			Logger:       logger,
+		},
+		System: handlers.SystemDependencies{HealthCheck: func(context.Context) error { return nil }},
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", strings.NewReader(`{"identifier":"student","password":"ValidPass1"}`))
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusInternalServerError)
+	}
+	for _, want := range []string{`"request_id":"`, `"error":"database unavailable"`, `"stack_trace":"`} {
+		if !strings.Contains(logs.String(), want) {
+			t.Fatalf("logs = %q, want %q", logs.String(), want)
+		}
+	}
+	if strings.Contains(response.Body.String(), "database unavailable") {
+		t.Fatalf("response leaked internal error: %s", response.Body.String())
 	}
 }
 

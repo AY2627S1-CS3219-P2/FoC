@@ -7,6 +7,8 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 )
 
@@ -20,6 +22,7 @@ type HealthCheck func(context.Context) error
 type SystemDependencies struct {
 	JWKSProvider JWKSProvider
 	HealthCheck  HealthCheck
+	Logger       *slog.Logger
 }
 
 // SystemHandler serves service-health and key-distribution endpoints.
@@ -38,14 +41,14 @@ func (h SystemHandler) Health(w http.ResponseWriter, r *http.Request) {
 }
 
 // JWKS handles public key-set distribution.
-func (h SystemHandler) JWKS(w http.ResponseWriter, _ *http.Request) {
+func (h SystemHandler) JWKS(w http.ResponseWriter, r *http.Request) {
 	if h.deps.JWKSProvider == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "JWKS unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("JWKS provider is required"), "JWKS unavailable")
 		return
 	}
 	payload, err := h.deps.JWKSProvider.JWKS()
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "JWKS unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "JWKS unavailable")
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

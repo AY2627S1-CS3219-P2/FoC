@@ -34,9 +34,9 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			router.Post("/users/login", authHandler.Login)
 			router.Post("/users/refresh", authHandler.Refresh)
 			router.Post("/users/logout", authHandler.Logout)
-			router.With(handlers.RequireJWT(deps.TokenVerifier)).Get("/users/{uid}", profileHandler.Profile)
-			router.With(handlers.RequireJWT(deps.TokenVerifier)).Put("/users/{uid}", profileHandler.UpdateProfile)
-			router.With(handlers.RequireJWT(deps.TokenVerifier)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
 		})
 	}
 }

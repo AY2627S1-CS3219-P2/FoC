@@ -9,8 +9,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
+	"os"
 	"time"
 
 	"foc/user-service/internal/config"
@@ -21,6 +22,7 @@ import (
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
+
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -28,13 +30,15 @@ import (
 func main() {
 	cfg := config.Load()
 	ctx := context.Background()
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
-	if err := run(ctx, cfg); err != nil {
-		log.Fatal(err)
+	if err := run(ctx, cfg, logger); err != nil {
+		logger.Error("user service stopped", "error", err)
+		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, cfg config.Config) error {
+func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := repository.Apply(cfg.UserDBURL, "file://migrations"); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
@@ -98,15 +102,18 @@ func run(ctx context.Context, cfg config.Config) error {
 			Refresher:      refreshService,
 			AccessVerifier: jwtService,
 			Logoutter:      logoutService,
+			Logger:         logger,
 		},
 		Profile: handlers.ProfileDependencies{
 			ProfileGetter:  userRepository,
 			StatusUpdater:  accountService,
 			ProfileUpdater: accountService,
+			Logger:         logger,
 		},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,
 			HealthCheck:  pool.Ping,
+			Logger:       logger,
 		},
 		TokenVerifier: jwtPrincipalVerifier{service: jwtService},
 	})

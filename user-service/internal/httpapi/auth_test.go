@@ -89,7 +89,7 @@ func TestRequireJWT(t *testing.T) {
 			request.Header.Set("Authorization", tt.authorize)
 			response := httptest.NewRecorder()
 
-			handlers.RequireJWT(tt.verifier)(next).ServeHTTP(response, request)
+			handlers.RequireJWT(tt.verifier, nil)(next).ServeHTTP(response, request)
 
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", response.Code, tt.wantStatus)

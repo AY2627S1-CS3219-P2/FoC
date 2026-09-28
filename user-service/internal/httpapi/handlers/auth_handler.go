@@ -8,6 +8,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/mail"
 	"strings"
@@ -43,6 +44,7 @@ type AuthDependencies struct {
 	Refresher      Refresher
 	AccessVerifier session.AccessTokenVerifier
 	Logoutter      Logoutter
+	Logger         *slog.Logger
 }
 
 // AuthHandler serves account-registration and session endpoints.
@@ -66,7 +68,7 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.Registrar == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("registrar is required"), "registration unavailable")
 		return
 	}
 	request.Email = normalizeEmail(request.Email)
@@ -81,7 +83,7 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "registration unavailable"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "registration unavailable")
 		}
 		return
 	}
@@ -99,7 +101,7 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.LoginService == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "authentication unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("login service is required"), "authentication unavailable")
 		return
 	}
 	request.Identifier = strings.TrimSpace(request.Identifier)
@@ -113,7 +115,7 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		} else if errors.Is(err, user.ErrAccountSuspended) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "account suspended"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "authentication unavailable"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "authentication unavailable")
 		}
 		return
 	}
@@ -131,7 +133,7 @@ func (h AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.Refresher == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "refresh unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("refresh service is required"), "refresh unavailable")
 		return
 	}
 	pair, err := h.deps.Refresher.Refresh(r.Context(), request.RefreshToken)
@@ -142,7 +144,7 @@ func (h AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 			// AI-generated (edited by ZI YANG): only recorded authentication outcomes receive 401.
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "refresh unavailable"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "refresh unavailable")
 		}
 		return
 	}
@@ -157,7 +159,7 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if h.deps.AccessVerifier == nil || h.deps.Logoutter == nil {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "logout unavailable"})
+		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("logout dependencies are required"), "logout unavailable")
 		return
 	}
 	accessClaims, err := h.deps.AccessVerifier.VerifyAccess(r.Context(), rawAccessToken)
@@ -178,7 +180,7 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, session.ErrSessionOwnershipMismatch) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "mismatched session"})
 		} else {
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "logout failed"})
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "logout failed")
 		}
 		return
 	}

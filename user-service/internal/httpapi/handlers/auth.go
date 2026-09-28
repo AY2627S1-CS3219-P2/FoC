@@ -7,6 +7,8 @@ package handlers
 
 import (
 	"context"
+	"errors"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -33,11 +35,11 @@ type SessionInvalidator interface {
 }
 
 // RequireJWT protects an HTTP handler with an injected JWT verifier.
-func RequireJWT(verifier TokenVerifier) func(http.Handler) http.Handler {
+func RequireJWT(verifier TokenVerifier, logger *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if verifier == nil {
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "authentication unavailable"})
+				writeError(r.Context(), w, logger, http.StatusInternalServerError, errors.New("token verifier is required"), "authentication unavailable")
 				return
 			}
 			rawToken, ok := bearerToken(r.Header.Get("Authorization"))
