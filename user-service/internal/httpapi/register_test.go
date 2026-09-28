@@ -76,6 +76,19 @@ func TestRegisterHandler(t *testing.T) {
 			wantStatus: http.StatusBadRequest,
 			wantError:  "email must end with '@u.nus.edu'",
 		},
+		// AI-generated (edited by PENDING): domain suffix alone must not accept malformed email syntax.
+		"rejects multiple at signs": {
+			body:       `{"email":"student@@u.nus.edu","username":"student","password":"ValidPass1"}`,
+			registrar:  &fakeRegistrar{},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "email must end with '@u.nus.edu'",
+		},
+		"rejects whitespace in address": {
+			body:       `{"email":"student name@u.nus.edu","username":"student","password":"ValidPass1"}`,
+			registrar:  &fakeRegistrar{},
+			wantStatus: http.StatusBadRequest,
+			wantError:  "email must end with '@u.nus.edu'",
+		},
 		"reports duplicate email": {
 			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{err: user.ErrDuplicateEmail},

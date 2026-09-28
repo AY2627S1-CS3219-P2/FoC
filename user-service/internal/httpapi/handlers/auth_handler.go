@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
 	"strings"
 
 	"foc/user-service/internal/session"
@@ -191,8 +192,12 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 func isNUSStudentEmail(email string) bool {
 	email = strings.TrimSpace(email)
-	at := strings.LastIndexByte(email, '@')
-	return at > 0 && strings.EqualFold(email[at:], "@u.nus.edu")
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return false
+	}
+	at := strings.LastIndexByte(parsed.Address, '@')
+	return at > 0 && strings.EqualFold(parsed.Address[at:], "@u.nus.edu")
 }
 
 func normalizeEmail(email string) string {
