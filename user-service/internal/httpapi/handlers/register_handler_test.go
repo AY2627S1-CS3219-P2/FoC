@@ -3,7 +3,7 @@
 // Scope: Added focused HTTP tests transcribed from the recorded registration OpenAPI contract.
 // Author review: Validated tests
 
-package httpapi
+package handlers_test
 
 import (
 	"context"

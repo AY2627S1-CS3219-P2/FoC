@@ -3,7 +3,7 @@
 // Scope: Added focused HTTP tests for the recorded authenticated public-profile endpoint.
 // Author review: Validated tests reflects intended behaviour
 
-package httpapi
+package handlers_test
 
 import (
 	"context"

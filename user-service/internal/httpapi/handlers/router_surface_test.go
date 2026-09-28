@@ -3,7 +3,7 @@
 // Scope: Added route and handler tests for the user-service HTTP scaffold.
 // Author review: Verified correctness
 
-package httpapi
+package handlers_test
 
 import (
 	"bytes"

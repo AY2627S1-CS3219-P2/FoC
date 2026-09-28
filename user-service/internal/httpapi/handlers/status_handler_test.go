@@ -3,7 +3,7 @@
 // Scope: Added focused tests for the recorded ADMIN-only account-status endpoint.
 // Author review: Validated tests reflects intended behaviour
 
-package httpapi
+package handlers_test
 
 import (
 	"context"
