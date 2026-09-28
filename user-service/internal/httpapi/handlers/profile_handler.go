@@ -7,7 +7,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
@@ -96,8 +95,7 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request UpdateStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if request.Status != user.AccountStatusActive && request.Status != user.AccountStatusSuspended {
@@ -137,8 +135,7 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request UpdateProfileRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if h.deps.ProfileUpdater == nil {

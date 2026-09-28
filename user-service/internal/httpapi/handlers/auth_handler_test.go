@@ -17,10 +17,14 @@ import (
 )
 
 type loginServiceStub struct {
-	pair session.TokenPair
+	pair   session.TokenPair
+	called *bool
 }
 
 func (s loginServiceStub) Login(context.Context, string, string) (session.TokenPair, error) {
+	if s.called != nil {
+		*s.called = true
+	}
 	return s.pair, nil
 }
 
@@ -42,5 +46,25 @@ func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
 	}
 	if payload != (AuthResponse{AccessToken: "access", RefreshToken: "refresh"}) {
 		t.Fatalf("payload = %#v, want token pair", payload)
+	}
+}
+
+// AI-generated (edited by PENDING): the recorded body limit rejects oversized credentials before authentication.
+func TestAuthHandlerLoginRejectsOversizedRequest(t *testing.T) {
+	called := false
+	handler := NewAuthHandler(AuthDependencies{
+		LoginService: loginServiceStub{called: &called},
+	})
+	body := `{"identifier":"student","password":"` + strings.Repeat("a", 10*1024) + `"}`
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", strings.NewReader(body))
+	response := httptest.NewRecorder()
+
+	handler.Login(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
+	if called {
+		t.Fatal("login service was called for an oversized request")
 	}
 }

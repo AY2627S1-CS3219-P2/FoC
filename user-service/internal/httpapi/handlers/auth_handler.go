@@ -7,7 +7,6 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/mail"
@@ -55,8 +54,7 @@ func NewAuthHandler(deps AuthDependencies) AuthHandler { return AuthHandler{deps
 // Register handles account registration.
 func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var request RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if request.Email == "" || request.Username == "" || request.Password == "" {
@@ -93,8 +91,7 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 // Login handles credential login.
 func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var request LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if request.Identifier == "" || request.Password == "" {
@@ -126,8 +123,7 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 // Refresh handles refresh-token rotation.
 func (h AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	var request RefreshRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if request.RefreshToken == "" {
@@ -170,8 +166,7 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request LogoutRequest
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	if !decodeJSONBody(w, r, &request) {
 		return
 	}
 	if request.RefreshToken == "" {
