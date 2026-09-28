@@ -64,6 +64,35 @@ func TestAccountServiceRegisterCanonicalizesEmail(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by PENDING): bootstrap sends raw admin credentials to the domain service for canonical validation.
+func TestAccountServiceBootstrapInitialAdminCanonicalizesEmail(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	if err := service.BootstrapInitialAdmin(context.Background(), " Admin@U.NUS.EDU ", "initialadmin", "StrongAdmin1"); err != nil {
+		t.Fatal(err)
+	}
+	if repository.user == nil {
+		t.Fatal("initial admin was not created")
+	}
+	if repository.user.Email != "admin@u.nus.edu" || repository.user.AccountRole != AccountRoleAdmin || repository.user.AccountStatus != AccountStatusActive {
+		t.Fatalf("created account = %#v", repository.user)
+	}
+}
+
+// AI-generated (edited by PENDING): bootstrap must leave configured credentials unused once any administrator exists.
+func TestAccountServiceBootstrapInitialAdminSkipsWhenAdminExists(t *testing.T) {
+	repository := &fakeAccountRepository{hasAdmin: true}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	if err := service.BootstrapInitialAdmin(context.Background(), "", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if repository.user != nil {
+		t.Fatal("existing administrator should prevent bootstrap creation")
+	}
+}
+
 func TestAccountServiceRegisterRejectsInvalidUsername(t *testing.T) {
 	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)

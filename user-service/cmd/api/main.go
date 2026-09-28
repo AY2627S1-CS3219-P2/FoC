@@ -82,9 +82,6 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
-	if err := bootstrapInitialAdmin(ctx, userRepository, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
-		return fmt.Errorf("bootstrap initial admin: %w", err)
-	}
 	accountService := user.NewAccountServiceWithClock(
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),
@@ -92,6 +89,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		accessTokenTTL,
 		time.Now,
 	)
+	if err := bootstrapInitialAdmin(ctx, accountService, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
+		return fmt.Errorf("bootstrap initial admin: %w", err)
+	}
 	authenticator := session.NewAuthenticator(userRepository, jwtService)
 	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)
 	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, time.Now)

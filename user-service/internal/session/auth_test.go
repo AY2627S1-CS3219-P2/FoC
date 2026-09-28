@@ -31,6 +31,10 @@ func (f *fakeAuthRepository) Create(_ context.Context, account *User) error {
 	return nil
 }
 
+func (f *fakeAuthRepository) HasAdmin(context.Context) (bool, error) {
+	return false, nil
+}
+
 func (f *fakeAuthRepository) GetByID(context.Context, uuid.UUID) (*User, error) {
 	return f.user, f.lookupErr
 }

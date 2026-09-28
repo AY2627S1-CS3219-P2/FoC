@@ -14,12 +14,17 @@ import (
 
 type fakeAccountRepository struct {
 	user       *User
+	hasAdmin   bool
 	lookupErr  error
 	updated    *User
 	status     AccountStatus
 	callOrder  *[]string
 	statusErr  error
 	statusErrs []error // AI-generated (edited by ZI YANG).
+}
+
+func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
+	return f.hasAdmin, f.lookupErr
 }
 
 func (f *fakeAccountRepository) Create(_ context.Context, account *User) error {

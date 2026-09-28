@@ -14,6 +14,7 @@ import (
 
 // UserRepository stores and looks up user accounts
 type UserRepository interface {
+	HasAdmin(ctx context.Context) (bool, error)
 	Create(ctx context.Context, u *User) error
 	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)

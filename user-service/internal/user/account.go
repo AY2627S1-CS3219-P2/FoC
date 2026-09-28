@@ -92,6 +92,48 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 	return account, nil
 }
 
+// BootstrapInitialAdmin creates the configured administrator only when none exists.
+func (s *AccountService) BootstrapInitialAdmin(ctx context.Context, email, username, password string) error {
+	if s.repository == nil {
+		return errors.New("user repository is required")
+	}
+	hasAdmin, err := s.repository.HasAdmin(ctx)
+	if err != nil {
+		return fmt.Errorf("check for existing admin: %w", err)
+	}
+	if hasAdmin {
+		return nil
+	}
+	if strings.TrimSpace(email) == "" || strings.TrimSpace(username) == "" || password == "" {
+		return errors.New("initial admin credentials are required")
+	}
+	email, err = normalizeAndValidateNUSEmail(email)
+	if err != nil {
+		return err
+	}
+	if err := ValidateUsername(username); err != nil {
+		return fmt.Errorf("validate initial admin username: %w", err)
+	}
+	if err := ValidatePassword(password); err != nil {
+		return fmt.Errorf("validate initial admin password: %w", err)
+	}
+	passwordHash, err := hash.HashPassword(password)
+	if err != nil {
+		return fmt.Errorf("hash initial admin password: %w", err)
+	}
+	// AI-generated (edited by PENDING): the domain owns the only bootstrap-specific administrator creation path.
+	if err := s.repository.Create(ctx, &User{
+		Email:         email,
+		Username:      username,
+		PasswordHash:  passwordHash,
+		AccountRole:   AccountRoleAdmin,
+		AccountStatus: AccountStatusActive,
+	}); err != nil {
+		return fmt.Errorf("create initial admin: %w", err)
+	}
+	return nil
+}
+
 // GetByID retrieves an account through the domain boundary.
 func (s *AccountService) GetByID(ctx context.Context, uid uuid.UUID) (*User, error) {
 	if s.repository == nil {
