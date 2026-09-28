@@ -111,11 +111,24 @@ func run(ctx context.Context, cfg config.Config) error {
 		TokenVerifier: jwtPrincipalVerifier{service: jwtService},
 	})
 
-	server := &http.Server{Addr: ":" + cfg.Port, Handler: httpHandler}
+	server := newHTTPServer(":"+cfg.Port, httpHandler)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	}
 	return nil
+}
+
+// newHTTPServer constructs the API server with the recorded defensive timeouts.
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	// AI-generated (edited by PENDING): apply the owner-recorded HTTP timeout policy at server construction.
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 }
 
 type jwtPrincipalVerifier struct{ service *jwt.Service }

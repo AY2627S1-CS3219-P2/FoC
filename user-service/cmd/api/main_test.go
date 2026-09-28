@@ -6,6 +6,7 @@
 package main
 
 import (
+	"net/http"
 	"testing"
 	"time"
 )
@@ -33,5 +34,23 @@ func TestParseTokenTTL(t *testing.T) {
 				t.Fatalf("parseTokenTTL() = %v, want %v", got, tt.want)
 			}
 		})
+	}
+}
+
+// AI-generated (edited by PENDING): the server timeouts match the recorded defensive policy.
+func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
+	server := newHTTPServer(":8081", http.NotFoundHandler())
+
+	if server.ReadHeaderTimeout != 5*time.Second {
+		t.Fatalf("ReadHeaderTimeout = %s, want 5s", server.ReadHeaderTimeout)
+	}
+	if server.ReadTimeout != 10*time.Second {
+		t.Fatalf("ReadTimeout = %s, want 10s", server.ReadTimeout)
+	}
+	if server.WriteTimeout != 10*time.Second {
+		t.Fatalf("WriteTimeout = %s, want 10s", server.WriteTimeout)
+	}
+	if server.IdleTimeout != 120*time.Second {
+		t.Fatalf("IdleTimeout = %s, want 120s", server.IdleTimeout)
 	}
 }
