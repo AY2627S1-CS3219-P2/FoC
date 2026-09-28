@@ -112,8 +112,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,
-			HealthCheck:  pool.Ping,
-			Logger:       logger,
+			HealthCheck: newHealthCheck(
+				pool.Ping,
+				func(ctx context.Context) error { return redisClient.Ping(ctx).Err() },
+			),
+			Logger: logger,
 		},
 		TokenVerifier: jwtPrincipalVerifier{service: jwtService},
 	})
@@ -135,6 +138,19 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       120 * time.Second,
+	}
+}
+
+// newHealthCheck reports failure when any required service dependency is unavailable.
+func newHealthCheck(checks ...func(context.Context) error) handlers.HealthCheck {
+	// AI-generated (edited by PENDING): Redis and PostgreSQL are both required for the recorded health boundary.
+	return func(ctx context.Context) error {
+		for _, check := range checks {
+			if err := check(ctx); err != nil {
+				return err
+			}
+		}
+		return nil
 	}
 }
 

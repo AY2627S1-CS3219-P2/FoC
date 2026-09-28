@@ -6,6 +6,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -52,5 +54,34 @@ func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
 	}
 	if server.IdleTimeout != 120*time.Second {
 		t.Fatalf("IdleTimeout = %s, want 120s", server.IdleTimeout)
+	}
+}
+
+// AI-generated (edited by PENDING): health must fail when either required persistence dependency is unavailable.
+func TestNewHealthCheckIncludesRedis(t *testing.T) {
+	databaseFailure := errors.New("database unavailable")
+	redisFailure := errors.New("redis unavailable")
+	tests := map[string]struct {
+		databaseErr error
+		redisErr    error
+		wantErr     error
+	}{
+		"healthy dependencies": {},
+		"database unavailable": {databaseErr: databaseFailure, wantErr: databaseFailure},
+		"redis unavailable":    {redisErr: redisFailure, wantErr: redisFailure},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			check := newHealthCheck(
+				func(context.Context) error { return tt.databaseErr },
+				func(context.Context) error { return tt.redisErr },
+			)
+
+			err := check(context.Background())
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("health check error = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }
