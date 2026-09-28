@@ -15,7 +15,6 @@ import (
 
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/routes"
-	"time"
 
 	"foc/user-service/internal/user"
 
@@ -25,12 +24,11 @@ import (
 type fakeStatusUpdater struct {
 	uid    uuid.UUID
 	status user.AccountStatus
-	at     time.Time
 	err    error
 }
 
-func (f *fakeStatusUpdater) UpdateAccountStatus(_ context.Context, uid uuid.UUID, status user.AccountStatus, at time.Time) error {
-	f.uid, f.status, f.at = uid, status, at
+func (f *fakeStatusUpdater) UpdateAccountStatus(_ context.Context, uid uuid.UUID, status user.AccountStatus) error {
+	f.uid, f.status = uid, status
 	return f.err
 }
 
@@ -55,7 +53,7 @@ func TestUpdateStatusHandler(t *testing.T) {
 			if res.Code != tt.want {
 				t.Fatalf("status = %d, want %d", res.Code, tt.want)
 			}
-			if tt.want == http.StatusOK && (updater.uid != uid || updater.status != user.AccountStatusSuspended || updater.at.IsZero()) {
+			if tt.want == http.StatusOK && (updater.uid != uid || updater.status != user.AccountStatusSuspended) {
 				t.Fatal("missing status update")
 			}
 		})
@@ -150,7 +148,7 @@ func TestUpdateStatusHandlerCoversRecordedStatusTransitionsAndFailures(t *testin
 			if tt.wantError != "" && !strings.Contains(res.Body.String(), tt.wantError) {
 				t.Fatalf("body = %s, want error containing %q", res.Body.String(), tt.wantError)
 			}
-			if tt.withUpdate && tt.wantStatus == http.StatusOK && (tt.updater.uid != uid || tt.updater.status != user.AccountStatusActive || tt.updater.at.IsZero()) {
+			if tt.withUpdate && tt.wantStatus == http.StatusOK && (tt.updater.uid != uid || tt.updater.status != user.AccountStatusActive) {
 				t.Fatalf("status update = %#v, want active account update", tt.updater)
 			}
 		})

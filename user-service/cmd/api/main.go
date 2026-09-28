@@ -85,11 +85,12 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := bootstrapInitialAdmin(ctx, userRepository, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
 		return fmt.Errorf("bootstrap initial admin: %w", err)
 	}
-	accountService := user.NewAccountService(
+	accountService := user.NewAccountServiceWithClock(
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),
 		sessionRepository,
 		accessTokenTTL,
+		time.Now,
 	)
 	authenticator := session.NewAuthenticator(userRepository, jwtService)
 	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)

@@ -190,19 +190,31 @@ func TestAccountServiceUpdateProfileRejectsPhoneLongerThanDatabaseWidth(t *testi
 func TestAccountServiceUpdateStatusDelegatesRecordedTransitions(t *testing.T) {
 	repository := &fakeAccountRepository{user: &User{}}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
-	timestamp := time.Date(2026, 9, 19, 8, 0, 0, 0, time.UTC)
 
-	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended, timestamp); err != nil {
+	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended); err != nil {
 		t.Fatal(err)
 	}
 	if repository.status != AccountStatusSuspended {
 		t.Fatalf("status = %q, want suspended", repository.status)
 	}
-	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatus("UNKNOWN"), timestamp); err == nil {
+	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatus("UNKNOWN")); err == nil {
 		t.Fatal("invalid status was accepted")
 	}
-	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended, time.Time{}); err == nil {
-		t.Fatal("suspension without timestamp was accepted")
+}
+
+// AI-generated (edited by PENDING): suspension invalidation uses the domain service's injected clock.
+func TestAccountServiceUpdateAccountStatusUsesInjectedClock(t *testing.T) {
+	uid := uuid.New()
+	timestamp := time.Date(2026, 9, 28, 2, 30, 0, 0, time.UTC)
+	repository := &fakeAccountRepository{user: &User{UID: uid}}
+	writer := &fakeSuspensionWriter{}
+	service := NewAccountServiceWithClock(repository, writer, &fakeAccountSessionRepository{}, time.Minute, func() time.Time { return timestamp })
+
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
+		t.Fatal(err)
+	}
+	if !writer.at.Equal(timestamp) {
+		t.Fatalf("suspension timestamp = %s, want %s", writer.at, timestamp)
 	}
 }
 
@@ -213,9 +225,9 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
-	service := NewAccountService(repository, writer, sessions, 15*time.Minute)
+	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute, func() time.Time { return timestamp })
 
-	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended, timestamp); err != nil {
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := order, []string{"redis", "sessions", "postgres"}; !equalStrings(got, want) {
@@ -236,7 +248,7 @@ func TestAccountServiceSuspensionStopsWhenRedisFails(t *testing.T) {
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
 	service := NewAccountService(repository, writer, sessions, time.Minute)
 
-	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended, time.Now()); err == nil {
+	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended); err == nil {
 		t.Fatal("Redis failure was ignored")
 	}
 	if got, want := order, []string{"redis"}; !equalStrings(got, want) {
@@ -251,7 +263,7 @@ func TestAccountServiceSuspensionStopsWhenSessionRevocationFails(t *testing.T) {
 	sessions := &fakeAccountSessionRepository{callOrder: &order, err: errors.New("database unavailable")}
 	service := NewAccountService(repository, writer, sessions, time.Minute)
 
-	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended, time.Now()); err == nil {
+	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended); err == nil {
 		t.Fatal("session revocation failure was ignored")
 	}
 	if got, want := order, []string{"redis", "sessions"}; !equalStrings(got, want) {
@@ -267,7 +279,7 @@ func TestAccountServiceDoesNotInvalidateUnknownSuspension(t *testing.T) {
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
 	service := NewAccountService(repository, writer, sessions, time.Minute)
 
-	err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended, time.Now())
+	err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusSuspended)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("error = %v, want ErrNotFound", err)
 	}
@@ -288,12 +300,12 @@ func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testi
 	}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
-	service := NewAccountService(repository, writer, sessions, 15*time.Minute)
+	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute, func() time.Time { return timestamp })
 
-	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended, timestamp); err == nil {
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err == nil {
 		t.Fatal("PostgreSQL failure was ignored")
 	}
-	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended, timestamp); err != nil {
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
 		t.Fatalf("retry suspension: %v", err)
 	}
 
@@ -312,7 +324,7 @@ func TestAccountServiceReactivationSkipsInvalidation(t *testing.T) {
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
 	service := NewAccountService(repository, writer, sessions, time.Minute)
 
-	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusActive, time.Now()); err != nil {
+	if err := service.UpdateAccountStatus(context.Background(), uuid.New(), AccountStatusActive); err != nil {
 		t.Fatal(err)
 	}
 	if got, want := order, []string{"postgres"}; !equalStrings(got, want) {

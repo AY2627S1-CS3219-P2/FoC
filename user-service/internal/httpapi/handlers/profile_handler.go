@@ -10,7 +10,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"time"
 
 	"foc/user-service/internal/user"
 
@@ -23,9 +22,9 @@ type ProfileGetter interface {
 	GetByID(context.Context, uuid.UUID) (*user.User, error)
 }
 
-// AccountStatusUpdater changes an account status at a supplied time.
+// AccountStatusUpdater changes an account status.
 type AccountStatusUpdater interface {
-	UpdateAccountStatus(context.Context, uuid.UUID, user.AccountStatus, time.Time) error
+	UpdateAccountStatus(context.Context, uuid.UUID, user.AccountStatus) error
 }
 
 // ProfileUpdater changes mutable profile fields.
@@ -108,7 +107,7 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("account status updater is required"), "account status unavailable")
 		return
 	}
-	if err := h.deps.StatusUpdater.UpdateAccountStatus(r.Context(), uid, request.Status, time.Now().UTC()); err != nil {
+	if err := h.deps.StatusUpdater.UpdateAccountStatus(r.Context(), uid, request.Status); err != nil {
 		// AI-generated (edited by ZI YANG): expose a missing account as the recorded 404 response.
 		if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})

@@ -27,6 +27,7 @@ type AccountService struct {
 	suspensionWriter SuspensionWriter
 	sessions         SessionRepository
 	suspensionTTL    time.Duration
+	now              func() time.Time
 }
 
 const (
@@ -37,11 +38,21 @@ const (
 // NewAccountService constructs an account service with the dependencies
 // required to invalidate suspended accounts before persistence.
 func NewAccountService(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration) *AccountService {
+	return NewAccountServiceWithClock(repository, suspensionWriter, sessions, suspensionTTL, time.Now)
+}
+
+// NewAccountServiceWithClock constructs an account service with an injected
+// clock for account-status invalidation.
+func NewAccountServiceWithClock(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time) *AccountService {
+	if now == nil {
+		now = time.Now
+	}
 	return &AccountService{
 		repository:       repository,
 		suspensionWriter: suspensionWriter,
 		sessions:         sessions,
 		suspensionTTL:    suspensionTTL,
+		now:              now,
 	}
 }
 
@@ -138,15 +149,12 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 }
 
 // UpdateAccountStatus applies the recorded active/suspended account transition.
-func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error {
+func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")
 	}
 	if status != AccountStatusActive && status != AccountStatusSuspended {
 		return fmt.Errorf("invalid account status %q", status)
-	}
-	if status == AccountStatusSuspended && tokensValidAfter.IsZero() {
-		return errors.New("suspension timestamp is required")
 	}
 	// AI-generated (edited by ZI YANG): verify the account exists before invalidating its sessions.
 	account, err := s.repository.GetByID(ctx, uid)
@@ -156,7 +164,10 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	if account == nil {
 		return ErrNotFound
 	}
+	var tokensValidAfter time.Time
 	if status == AccountStatusSuspended {
+		// AI-generated (edited by PENDING): the domain owns the timestamp shared by suspension invalidation and persistence.
+		tokensValidAfter = s.now().UTC()
 		if s.suspensionWriter == nil || s.sessions == nil {
 			return errors.New("suspension invalidation dependencies are required")
 		}
