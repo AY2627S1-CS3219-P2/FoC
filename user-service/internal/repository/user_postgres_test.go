@@ -46,14 +46,18 @@ func TestMapDatabaseErrorDistinguishesNotFound(t *testing.T) {
 }
 
 func TestMapDatabaseErrorDistinguishesDuplicateEmail(t *testing.T) {
-	pgErr := &pgconn.PgError{Code: "23505", ConstraintName: "users_email_key"}
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the
+	// recorded case-insensitive email index. Author review: PENDING.
+	pgErr := &pgconn.PgError{Code: "23505", ConstraintName: "idx_users_email_lower"}
 	if got := mapDatabaseError(pgErr); !errors.Is(got, user.ErrDuplicateEmail) {
 		t.Fatalf("mapDatabaseError() = %v, want ErrDuplicateEmail", got)
 	}
 }
 
 func TestMapDatabaseErrorDistinguishesDuplicateUsername(t *testing.T) {
-	pgErr := &pgconn.PgError{Code: "23505", ConstraintName: "users_username_key"}
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the
+	// recorded case-insensitive username index. Author review: PENDING.
+	pgErr := &pgconn.PgError{Code: "23505", ConstraintName: "idx_users_username_lower"}
 	if got := mapDatabaseError(pgErr); !errors.Is(got, user.ErrDuplicateUsername) {
 		t.Fatalf("mapDatabaseError() = %v, want ErrDuplicateUsername", got)
 	}

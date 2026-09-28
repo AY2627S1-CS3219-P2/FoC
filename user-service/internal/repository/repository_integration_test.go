@@ -39,8 +39,11 @@ func TestPostgresRepositories(t *testing.T) {
 			assertIntegrationAccount(t, byID, account)
 
 			for name, identifier := range map[string]string{
-				"username": account.Username,
-				"email":    account.Email,
+				// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies
+				// case-insensitive retrieval for the recorded identifier policy.
+				// Author review: PENDING.
+				"username": "INTEGRATION-LOOKUP",
+				"email":    "INTEGRATION-LOOKUP@EXAMPLE.COM",
 			} {
 				t.Run(name, func(t *testing.T) {
 					got, err := users.GetByIdentifier(ctx, identifier)
@@ -61,15 +64,19 @@ func TestPostgresRepositories(t *testing.T) {
 
 		t.Run("maps duplicate account fields", func(t *testing.T) {
 			resetIntegrationDatabase(t, ctx, pool)
-			account := createIntegrationAccount(t, ctx, users, "duplicate", user.AccountRoleStudent)
+			createIntegrationAccount(t, ctx, users, "duplicate", user.AccountRoleStudent)
 
 			duplicateEmail := integrationAccount("other-username", user.AccountRoleStudent)
-			duplicateEmail.Email = account.Email
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies the
+			// recorded case-insensitive email uniqueness. Author review: PENDING.
+			duplicateEmail.Email = "INTEGRATION-DUPLICATE@EXAMPLE.COM"
 			if err := users.Create(ctx, duplicateEmail); !errors.Is(err, user.ErrDuplicateEmail) {
 				t.Fatalf("duplicate email error = %v, want ErrDuplicateEmail", err)
 			}
 
-			duplicateUsername := integrationAccount("duplicate", user.AccountRoleStudent)
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies the
+			// recorded case-insensitive username uniqueness. Author review: PENDING.
+			duplicateUsername := integrationAccount("DUPLICATE", user.AccountRoleStudent)
 			duplicateUsername.Email = "other-email@example.com"
 			if err := users.Create(ctx, duplicateUsername); !errors.Is(err, user.ErrDuplicateUsername) {
 				t.Fatalf("duplicate username error = %v, want ErrDuplicateUsername", err)

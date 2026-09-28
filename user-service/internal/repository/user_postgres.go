@@ -34,7 +34,9 @@ const (
 		SELECT uid, username, email, password, phone_num, date_created,
 			last_login_date, account_role, account_status, tokens_valid_after
 		FROM users
-		WHERE username = $1 OR email = $1`
+		-- AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — matches the
+		-- recorded case-insensitive identifier policy. Author review: PENDING.
+		WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)`
 	hasAdminQuery = `
 		SELECT EXISTS (
 			SELECT 1 FROM users WHERE account_role = 'ADMIN'
@@ -211,9 +213,12 @@ func mapDatabaseError(err error) error {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 		switch pgErr.ConstraintName {
-		case "users_email_key":
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — maps the
+		// recorded case-insensitive index names to existing domain errors.
+		// Author review: PENDING.
+		case "idx_users_email_lower":
 			return user.ErrDuplicateEmail
-		case "users_username_key":
+		case "idx_users_username_lower":
 			return user.ErrDuplicateUsername
 		}
 	}
