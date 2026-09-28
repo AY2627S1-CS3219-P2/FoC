@@ -150,7 +150,8 @@ func TestRefreshServiceRevokesAllSessionsOnReplay(t *testing.T) {
 	oldHash := HashRefreshToken(oldToken)
 	oldJTI := uuid.New()
 	revokedAt := now.Add(-time.Minute)
-	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ExpiresAt: now.Add(time.Hour)}
+	replacement := "replacement-session-hash"
+	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ReplacedByTokenHash: &replacement, ExpiresAt: now.Add(time.Hour)}
 	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
 	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
 
@@ -160,6 +161,27 @@ func TestRefreshServiceRevokesAllSessionsOnReplay(t *testing.T) {
 	}
 	if sessions.revokedAllFor != account.UID {
 		t.Fatalf("revoked user = %v, want %v", sessions.revokedAllFor, account.UID)
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the recorded
+// stale-tab behavior after a normal logout. Author review: PENDING.
+func TestRefreshServiceDoesNotRevokeAllSessionsForNormallyRevokedToken(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	oldToken := "logged-out-refresh"
+	oldHash := HashRefreshToken(oldToken)
+	oldJTI := uuid.New()
+	revokedAt := now.Add(-time.Minute)
+	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ExpiresAt: now.Add(time.Hour)}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
+	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
+
+	_, err := service.Refresh(context.Background(), oldToken)
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("error = %v, want ErrSessionNotFound", err)
+	}
+	if sessions.revokedAllFor != uuid.Nil {
+		t.Fatalf("revoked all sessions for %s after ordinary logout", sessions.revokedAllFor)
 	}
 }
 

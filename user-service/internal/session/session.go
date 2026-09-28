@@ -172,11 +172,17 @@ func (s *RefreshService) activeSession(ctx context.Context, rawToken string, cla
 	if session == nil || session.UID != claims.UserID || session.JTI != claims.JTI {
 		return nil, "", user.ErrSessionNotFound
 	}
-	if session.RevokedAt != nil || session.ReplacedByTokenHash != nil {
+	if session.ReplacedByTokenHash != nil {
 		if err := s.revokeCompromisedSessions(ctx, session.UID); err != nil {
 			return nil, "", err
 		}
 		return nil, "", user.ErrSessionCompromised
+	}
+	if session.RevokedAt != nil {
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — preserves the
+		// recorded distinction between normal logout and rotated-token replay.
+		// Author review: PENDING.
+		return nil, "", user.ErrSessionNotFound
 	}
 	if !session.ExpiresAt.After(s.now()) {
 		return nil, "", user.ErrSessionNotFound
