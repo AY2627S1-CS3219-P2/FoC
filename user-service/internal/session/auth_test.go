@@ -35,6 +35,10 @@ func (f *fakeAuthRepository) HasAdmin(context.Context) (bool, error) {
 	return false, nil
 }
 
+func (f *fakeAuthRepository) CountActiveAdmins(context.Context) (int, error) {
+	return 0, nil
+}
+
 func (f *fakeAuthRepository) GetByID(context.Context, uuid.UUID) (*User, error) {
 	return f.user, f.lookupErr
 }

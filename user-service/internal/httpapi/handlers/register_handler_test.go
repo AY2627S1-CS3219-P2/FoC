@@ -135,7 +135,7 @@ func TestRegisterHandler(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): transport forwards unprocessed registration email input to the domain service.
+// AI-generated (edited by ZI YANG): transport forwards unprocessed registration email input to the domain service.
 func TestRegisterHandlerPassesRawEmailToRegistrar(t *testing.T) {
 	registrar := &fakeRegistrar{}
 	router := newTestRouter(routes.Dependencies{Auth: handlers.AuthDependencies{Registrar: registrar}})

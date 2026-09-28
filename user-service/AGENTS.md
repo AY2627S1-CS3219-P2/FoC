@@ -8,8 +8,6 @@ issues and stores only a user ID alongside its own data. In return, this
 service knows nothing about errands, credit balances, or the supplier
 catalogue, and never stores or reasons about them.
 
-**Status: Implementing on `feat/user-service` branch.**
-
 ## Owner
 
 Zi Yang — one developer owns this folder (root §3); every decision flagged open
@@ -73,14 +71,22 @@ internal/
 
 The handlers will be imported by `routes.go` so as a package and instantiated in `GetRoutes()` instead of being passed as instantiations.
 
+All HTTP handler tests must reside directly inside the internal/httpapi/handlers/ directory. They must use package `handlers_test` (black-box testing) to prevent import cycles with the router and to ensure accurate code coverage reporting.
+
+## Bootstrap Admin Decision
+The bootstrap.go script must only execute if the users table contains zero admins of any status. Changing INITIAL_ADMIN_* environment variables after the first boot will safely do nothing.
+
+## Networking Decisions
+The user-service must only be accessible within the internal Docker network. All external traffic must route exclusively through the API Gateway. (`compose.yaml` should reflect this behaviour)
+
 ## Database Decisions
 
 ### PostgreSQL DB
 - Table Name: `users`
 - Fields:
   - uid: UUID, PRIMARY KEY, unique, not null
-  - username: VARCHAR(128), unique, not null
-  - email: VARCHAR(255), unique, not null
+  - username: VARCHAR(128), not null
+  - email: VARCHAR(255), not null
   - password: VARCHAR(255), not null
   - phone_num: VARCHAR(20), not null
   - date_created: TIMESTAMPTZ, not null
@@ -88,6 +94,9 @@ The handlers will be imported by `routes.go` so as a package and instantiated in
   - account_role: ENUM ('STUDENT' / 'ADMIN'), defaults to STUDENT
   - account_status: ENUM ('ACTIVE' / 'SUSPENDED'), defaults to ACTIVE
   - tokens_valid_after: TIMESTAMPTZ, not null, default NOW()
+- Indexes:
+    - `CREATE UNIQUE INDEX idx_users_email_lower ON users (LOWER(email));`
+    - `CREATE UNIQUE INDEX idx_users_username_lower ON users (LOWER(username));`
 
 - Table Name: `sessions`
 - Fields:
@@ -112,6 +121,7 @@ The `users` repository interface should include these actions:
 4. Update (update user's mutable fields, which should not allow updating uid or email), 
 5. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
 6. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
+7. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
 
 Example repository method signatures:
 ```Go
@@ -121,6 +131,7 @@ Example repository method signatures:
 	Update(ctx context.Context, u *User) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus) error
     UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
+    CountActiveAdmins(ctx context.Context) (int, error)
 ```
 
 The `sessions` repository interface should include these actions: 
@@ -161,6 +172,7 @@ Example repository method signatures:
   - JTI Blocklist: `jti:<jti-uuid>`
   - Suspension: `suspended:uid:<user-uuid>`
 - Unavailable Behavior: Fail-closed. If a `Set` operation to Redis fails during logout, the application must immediately return a 500 Internal Server Error and abort the subsequent PostgreSQL transaction, forcing the frontend client to retry.
+- The user-service should adopt the Gateway's Redis configuration: redis:7-alpine (or 8-alpine depending on Gateway) with `--appendonly yes` and a persistent volume. This guarantees state recovery across container restarts.
 
 ## User Service API Endpoints
 Use Go Chi router for handling API calls. The API should handle these calls:
@@ -170,7 +182,13 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - When a user successfully authenticates, the application service must call `UpdateLastLoginByID`. If this database operation fails, the service must **log the error** (preserving the underlying PostgreSQL failure details and user ID) but **must not fail the login request**. The user must still receive a `200 OK` and their token pair. Tracking login analytics is secondary and must never compromise the availability of the core authentication flow.
 4. GET /api/v1/users/{uid} : Uses GetByID to fetch public profile data for a specific user (e.g., when a requester views a courier's profile. Any authenticated user may view another user's `username`, `email`, and `phone_num`, but not `account_role`, `account_status`, or `date_created`, unless the authenticated user is an admin)
 5. PUT /api/v1/users/{uid} : Uses Update to modify mutable user profile fields, such as the username or password.
+   - For password changes, the endpoint must require the user's currentPassword in the request body alongside the newPassword. Upon a successful password change, the service must immediately revoke all of the user's active sessions (pushing existing JTIs to Redis and revoking refresh tokens in PostgreSQL) to neutralize hijacked sessions.
+   - If a user provides an incorrect currentPassword during a profile update, the service must return a 401 Unauthorized with a standardized payload (e.g., {"error": "invalid current password"}). It must not bubble up as a 500 Internal Server Error.
+   - If the authenticated principal has the ADMIN role and is modifying a different user's account, the currentPassword requirement must be bypassed. Admins are authorized to force-reset passwords without knowing the target's existing credentials. If an admin is changing their own password, the currentPassword rule still applies.
+   - a password change should utilize a mechanism similar to the existing suspension mechanism: the service updates the user's tokens_valid_after field in the users table to the current timestamp. The API Gateway will subsequently reject any existing access tokens where the iat (Issued At) claim is older than this new timestamp. The service must also call RevokeAllUserSessions to immediately invalidate all refresh tokens in PostgreSQL
 6. PATCH /api/v1/users/{uid}/status: An ADMIN-only endpoint to transition an account status between ACTIVE and SUSPENDED
+   - must reject any attempt to suspend an admin if they are the last ACTIVE admin in the system.
+   - Errors: 409 conflict if attempting to suspend the last remaining active admin ({"error": "cannot suspend the last active admin"})
 7. POST /api/v1/users/refresh : Accepts a valid refresh token. Issues a new access/refresh token pair and rotates the old refresh token in the database (uses `RotateSession` of the Session Repository's interface)
    - Request: JSON body {"refreshToken": "string"}. No HTTP Authorization header required.
    - Response: 200 OK with JSON {"accessToken": "string", "refreshToken": "string"}.
@@ -236,6 +254,10 @@ Implementation:
 The database transaction used to check the token in the `sessions` database should use Row-level locking (e.g.
 using `SELECT ... FOR UPDATE` when checking the token.
 
+A normal logout (where a token is manually revoked) must not trigger a full account lockout if that specific token is accidentally submitted again (e.g., by a stale browser tab). ErrSessionCompromised should only fire if a token was rotated (i.e., replaced_by_token_hash is populated) and then reused.
+
+To prevent race conditions where simultaneous refresh requests from the same client cause one to succeed and the other to falsely trigger replay detection, the refresh endpoint must acquire a short-lived Redis lock on the session hash before executing the rotation.
+
 ### Implementation of Access and Refresh Tokens
 The Access/Refresh Token Claims should include:
 - jti (unique uuid of the token for targeted revocation)
@@ -262,11 +284,12 @@ When the user logs out, the frontend will send a request (containing access and 
 When an `ADMIN` suspends an account, the user service shall push a Redis key (e.g., `suspended:uid:<user-uuid>`) containing the current time, and then update a `tokens_valid_after` field containing the same timestamp. The API Gateway will check if a suspended key exists for the incoming `sub`. If it does, and the token's `iat` (Issued At) claim is older (earlier) than the `tokens_valid_after` timestamp, the token is rejected.
 
 The API Gateway is a reader of the Redis blocklist, and the user service shall be the sole writer to the Redis blocklist.
+(The API Gateway code should fit to this behaviour)
 The TTL for a specific `jti` in Redis must exactly match the remaining time until that access token's exp timestamp. The TTL for a suspended:uid:<uuid> key must match the JWT_ACCESS_TOKEN_TTL duration.
 
 ### Username/Password Policy
 The username policy as stated in the product backlog is:
-- only contains alphanumeric characters
+- only contains alphanumeric characters (Explicitly restrict "alphanumeric" to strictly ASCII characters (^[a-zA-Z0-9]+$) to prevent Unicode homoglyph spoofing (e.g., Cyrillic 'а'). Uniqueness must be case-insensitive, though display casing can be preserved)
 - maximum 128 characters
 The password policy as stated in the product backlog is:
 - 8 – 128 characters (pre-hash the password with SHA-256 before passing to bcrypt to fit the 72 bytes limit)
@@ -291,7 +314,7 @@ To ensure secure and traceable operational logging, the service must not rely on
 ### First Admin creation
 `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` should be configured in `.env` 
 for user service to read. There should be a `bootstrap.go` file in `cmd/api/` alongside `main.go` to
-initialise the `users` table with a default admin. This bootstrap step shall be done after user repository
+initialise the `users` table with a default admin. This bootstrap step shall be done after user repository and account service
 initialisation and before the Chi router is configured. Ensure that the admin credentials will not be leaked
 into production.
 
@@ -335,11 +358,7 @@ The JSON file should contain a single root with a keys array. Here is an example
 ```bash
 go run ./cmd/api      # migrations run on startup via golang-migrate
 go test ./...
-go test -tags=integration ./...
 ```
-
-A `user-service` / `user-db` pair in the root `compose.yaml` does not exist
-yet; adding it edits a shared file, so flag it (root §3).
 
 ## Gotchas
 
@@ -354,6 +373,3 @@ yet; adding it edits a shared file, so flag it (root §3).
   `SetRole(ctx, id, isAdmin bool)`-shaped API is control coupling (root §5);
   the requester/courier toggle and any admin grant are separate, separately
   authorised functions.
-- **How the first admin comes into existence is an open decision** for the
-  owner. If a task implies one, stop and ask rather than picking. Flag the
-  security implications to the human; do not settle them yourself.

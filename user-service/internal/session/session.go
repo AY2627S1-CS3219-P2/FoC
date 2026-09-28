@@ -181,7 +181,7 @@ func (s *RefreshService) activeSession(ctx context.Context, rawToken string, cla
 	if session.RevokedAt != nil {
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — preserves the
 		// recorded distinction between normal logout and rotated-token replay.
-		// Author review: PENDING.
+		// Author review: ZI YANG - validated correctness.
 		return nil, "", user.ErrSessionNotFound
 	}
 	if !session.ExpiresAt.After(s.now()) {

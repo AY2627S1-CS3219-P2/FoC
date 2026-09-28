@@ -121,7 +121,7 @@ func (s *AccountService) BootstrapInitialAdmin(ctx context.Context, email, usern
 	if err != nil {
 		return fmt.Errorf("hash initial admin password: %w", err)
 	}
-	// AI-generated (edited by PENDING): the domain owns the only bootstrap-specific administrator creation path.
+	// AI-generated (edited by ZI YANG): the domain owns the only bootstrap-specific administrator creation path.
 	if err := s.repository.Create(ctx, &User{
 		Email:         email,
 		Username:      username,
@@ -139,7 +139,7 @@ func (s *AccountService) GetByID(ctx context.Context, uid uuid.UUID) (*User, err
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
-	// AI-generated (edited by PENDING): keep HTTP consumers independent of the persistence adapter.
+	// AI-generated (edited by ZI YANG): keep HTTP consumers independent of the persistence adapter.
 	account, err := s.repository.GetByID(ctx, uid)
 	if err != nil {
 		return nil, fmt.Errorf("get account by ID: %w", err)
@@ -205,7 +205,7 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 		}
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — applies the
 		// recorded access-token validity boundary after a password reset.
-		// Author review: PENDING.
+		// Author review: ZI YANG - validated correctness
 		account.TokensValidAfter = s.now().UTC()
 	}
 	if err := s.repository.Update(ctx, account); err != nil {
@@ -240,7 +240,19 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	}
 	var tokensValidAfter time.Time
 	if status == AccountStatusSuspended {
-		// AI-generated (edited by PENDING): the domain owns the timestamp shared by suspension invalidation and persistence.
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — checks the
+		// recorded last-active-admin guard before invalidating any sessions.
+		// Author review: ZI YANG - validate correctness.
+		if account.AccountRole == AccountRoleAdmin {
+			activeAdmins, err := s.repository.CountActiveAdmins(ctx)
+			if err != nil {
+				return fmt.Errorf("count active admins: %w", err)
+			}
+			if activeAdmins == 1 {
+				return ErrLastAdmin
+			}
+		}
+		// AI-generated (edited by ZI YANG): the domain owns the timestamp shared by suspension invalidation and persistence.
 		tokensValidAfter = s.now().UTC()
 		if s.suspensionWriter == nil || s.sessions == nil {
 			return errors.New("suspension invalidation dependencies are required")
@@ -266,7 +278,7 @@ func normalizeEmail(email string) string {
 }
 
 func normalizeAndValidateNUSEmail(email string) (string, error) {
-	// AI-generated (edited by PENDING): the domain owns canonical NUS-email validation for all registration callers.
+	// AI-generated (edited by ZI YANG): the domain owns canonical NUS-email validation for all registration callers.
 	email = normalizeEmail(email)
 	parsed, err := mail.ParseAddress(email)
 	if err != nil || parsed.Address != email {

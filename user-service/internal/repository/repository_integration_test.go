@@ -41,7 +41,7 @@ func TestPostgresRepositories(t *testing.T) {
 			for name, identifier := range map[string]string{
 				// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies
 				// case-insensitive retrieval for the recorded identifier policy.
-				// Author review: PENDING.
+				// Author review: ZI YANG - validated correctness.
 				"username": "INTEGRATION-LOOKUP",
 				"email":    "INTEGRATION-LOOKUP@EXAMPLE.COM",
 			} {
@@ -68,14 +68,14 @@ func TestPostgresRepositories(t *testing.T) {
 
 			duplicateEmail := integrationAccount("other-username", user.AccountRoleStudent)
 			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies the
-			// recorded case-insensitive email uniqueness. Author review: PENDING.
+			// recorded case-insensitive email uniqueness. Author review: ZI YANG - Validated correctness.
 			duplicateEmail.Email = "INTEGRATION-DUPLICATE@EXAMPLE.COM"
 			if err := users.Create(ctx, duplicateEmail); !errors.Is(err, user.ErrDuplicateEmail) {
 				t.Fatalf("duplicate email error = %v, want ErrDuplicateEmail", err)
 			}
 
 			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies the
-			// recorded case-insensitive username uniqueness. Author review: PENDING.
+			// recorded case-insensitive username uniqueness. Author review: ZI YANG - Validated correctness.
 			duplicateUsername := integrationAccount("DUPLICATE", user.AccountRoleStudent)
 			duplicateUsername.Email = "other-email@example.com"
 			if err := users.Create(ctx, duplicateUsername); !errors.Is(err, user.ErrDuplicateUsername) {
@@ -86,10 +86,15 @@ func TestPostgresRepositories(t *testing.T) {
 		t.Run("detects an administrator", func(t *testing.T) {
 			resetIntegrationDatabase(t, ctx, pool)
 			assertHasAdmin(t, ctx, users, false)
+			assertActiveAdminCount(t, ctx, users, 0)
 			createIntegrationAccount(t, ctx, users, "student", user.AccountRoleStudent)
 			assertHasAdmin(t, ctx, users, false)
+			assertActiveAdminCount(t, ctx, users, 0)
 			createIntegrationAccount(t, ctx, users, "admin", user.AccountRoleAdmin)
 			assertHasAdmin(t, ctx, users, true)
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies the
+			// recorded count of active administrator accounts. Author review: ZI YANG - validated correctness.
+			assertActiveAdminCount(t, ctx, users, 1)
 		})
 
 		t.Run("updates mutable account fields", func(t *testing.T) {
@@ -341,6 +346,17 @@ func assertHasAdmin(t *testing.T, ctx context.Context, repository *PostgresRepos
 	}
 	if got != want {
 		t.Fatalf("HasAdmin() = %t, want %t", got, want)
+	}
+}
+
+func assertActiveAdminCount(t *testing.T, ctx context.Context, repository *PostgresRepository, want int) {
+	t.Helper()
+	got, err := repository.CountActiveAdmins(ctx)
+	if err != nil {
+		t.Fatalf("count active administrators: %v", err)
+	}
+	if got != want {
+		t.Fatalf("CountActiveAdmins() = %d, want %d", got, want)
 	}
 }
 

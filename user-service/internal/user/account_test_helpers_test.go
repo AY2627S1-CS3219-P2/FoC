@@ -13,18 +13,24 @@ import (
 )
 
 type fakeAccountRepository struct {
-	user       *User
-	hasAdmin   bool
-	lookupErr  error
-	updated    *User
-	status     AccountStatus
-	callOrder  *[]string
-	statusErr  error
-	statusErrs []error // AI-generated (edited by ZI YANG).
+	user                 *User
+	hasAdmin             bool
+	activeAdmins         int
+	countActiveAdminsErr error
+	lookupErr            error
+	updated              *User
+	status               AccountStatus
+	callOrder            *[]string
+	statusErr            error
+	statusErrs           []error // AI-generated (edited by ZI YANG).
 }
 
 func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
 	return f.hasAdmin, f.lookupErr
+}
+
+func (f *fakeAccountRepository) CountActiveAdmins(context.Context) (int, error) {
+	return f.activeAdmins, f.countActiveAdminsErr
 }
 
 func (f *fakeAccountRepository) Create(_ context.Context, account *User) error {
@@ -49,7 +55,7 @@ func (f *fakeAccountRepository) UpdateAccountStatusByID(_ context.Context, _ uui
 		*f.callOrder = append(*f.callOrder, "postgres")
 	}
 	f.status = status
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by ZI YANG).
 	if len(f.statusErrs) > 0 {
 		err := f.statusErrs[0]
 		f.statusErrs = f.statusErrs[1:]

@@ -53,7 +53,7 @@ func TestUserAllowsUnsetLastLoginDate(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): the domain model does not define an HTTP JSON representation.
+// AI-generated (edited by ZI YANG): the domain model does not define an HTTP JSON representation.
 func TestUserHasNoJSONTags(t *testing.T) {
 	userType := reflect.TypeFor[User]()
 	for i := 0; i < userType.NumField(); i++ {

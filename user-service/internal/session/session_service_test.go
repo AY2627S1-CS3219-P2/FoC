@@ -165,7 +165,7 @@ func TestRefreshServiceRevokesAllSessionsOnReplay(t *testing.T) {
 }
 
 // AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the recorded
-// stale-tab behavior after a normal logout. Author review: PENDING.
+// stale-tab behavior after a normal logout. Author review: ZI YANG - validated correctness.
 func TestRefreshServiceDoesNotRevokeAllSessionsForNormallyRevokedToken(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
 	oldToken := "logged-out-refresh"

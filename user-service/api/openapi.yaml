@@ -30,7 +30,7 @@ components:
           description: Must contain only alphanumeric characters.
         # AI-generated (edited by ZI YANG): recorded password policy constraints.
         # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — transcribed
-        # the recorded password-change contract. Author review: PENDING.
+        # the recorded password-change contract. Author review: ZI YANG - validated correctness.
         currentPassword:
           type: string
           format: password
@@ -328,6 +328,12 @@ paths:
       responses:
         '200':
           description: Status updated
+        '409':
+          description: Conflict. The last active administrator cannot be suspended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /.well-known/jwks.json:
     get:

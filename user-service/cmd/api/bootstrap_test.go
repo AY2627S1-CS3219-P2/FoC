@@ -23,7 +23,7 @@ func (f *fakeInitialAdminBootstrapper) BootstrapInitialAdmin(_ context.Context, 
 	return f.err
 }
 
-// AI-generated (edited by PENDING): bootstrap forwards raw configuration input to the domain service.
+// AI-generated (edited by ZI YANG): bootstrap forwards raw configuration input to the domain service.
 func TestBootstrapInitialAdminPassesRawCredentialsToService(t *testing.T) {
 	service := &fakeInitialAdminBootstrapper{}
 

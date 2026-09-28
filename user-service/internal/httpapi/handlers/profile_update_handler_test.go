@@ -114,7 +114,7 @@ func TestUpdateProfileHandlerRejectsInvalidPassword(t *testing.T) {
 }
 
 // AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the recorded
-// current-password failure response. Author review: PENDING.
+// current-password failure response. Author review: ZI YANG - validated correctness.
 func TestUpdateProfileHandlerRejectsIncorrectCurrentPassword(t *testing.T) {
 	id := uuid.New()
 	r := newTestRouter(routes.Dependencies{

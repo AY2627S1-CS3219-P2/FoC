@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/session"
+
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 )
@@ -54,7 +55,8 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 }
 
 // AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — updated this comment
-// to remove a stale cross-service reader assertion. Author review: PENDING.
+// to remove a stale cross-service reader assertion. Author review: ZI YANG.
+
 // WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt, with
 // the given TTL.
 func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error {

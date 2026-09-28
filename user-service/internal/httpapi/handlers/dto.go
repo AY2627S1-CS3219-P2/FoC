@@ -70,7 +70,7 @@ type UpdateStatusRequest struct {
 type UpdateProfileRequest struct {
 	Username string `json:"username"`
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — transcribes the
-	// recorded password-change request contract. Author review: PENDING.
+	// recorded password-change request contract. Author review: ZI YANG.
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`
 	PhoneNum        string `json:"phone_num"`

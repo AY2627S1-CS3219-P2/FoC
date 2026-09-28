@@ -30,17 +30,20 @@ const (
 			last_login_date, account_role, account_status, tokens_valid_after
 		FROM users
 		WHERE uid = $1`
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — matches the
+	// recorded case-insensitive identifier policy. Author review: ZI YANG - validated correctness.
 	getUserByIdentifierQuery = `
 		SELECT uid, username, email, password, phone_num, date_created,
 			last_login_date, account_role, account_status, tokens_valid_after
 		FROM users
-		-- AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — matches the
-		-- recorded case-insensitive identifier policy. Author review: PENDING.
 		WHERE LOWER(username) = LOWER($1) OR LOWER(email) = LOWER($1)`
 	hasAdminQuery = `
 		SELECT EXISTS (
 			SELECT 1 FROM users WHERE account_role = 'ADMIN'
 		)`
+	countActiveAdminsQuery = `
+		SELECT COUNT(*) FROM users
+		WHERE account_role = 'ADMIN' AND account_status = 'ACTIVE'`
 	updateUserQuery = `
 		UPDATE users
 		SET username = $1,
@@ -107,6 +110,17 @@ func (r *PostgresRepository) HasAdmin(ctx context.Context) (bool, error) {
 		return false, fmt.Errorf("check for admin: %w", err)
 	}
 	return exists, nil
+}
+
+// CountActiveAdmins reports the number of active administrator accounts.
+func (r *PostgresRepository) CountActiveAdmins(ctx context.Context) (int, error) {
+	var count int
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — implements the
+	// recorded last-active-admin guard query. Author review: ZI YANG - validated correctness.
+	if err := r.pool.QueryRow(ctx, countActiveAdminsQuery).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count active admins: %w", err)
+	}
+	return count, nil
 }
 
 // Update updates mutable user fields without changing UID or email.
@@ -215,7 +229,7 @@ func mapDatabaseError(err error) error {
 		switch pgErr.ConstraintName {
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — maps the
 		// recorded case-insensitive index names to existing domain errors.
-		// Author review: PENDING.
+		// Author review: ZI YANG - validated correctness.
 		case "idx_users_email_lower":
 			return user.ErrDuplicateEmail
 		case "idx_users_username_lower":

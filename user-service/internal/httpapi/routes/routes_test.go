@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-21
 // Scope: Added route-registration coverage for the dedicated routes package.
-// Author review: COMPLETED BY ZI YANG
+// Author review: COMPLETED BY ZI YANG - validate correctness of test implementation
 
 package routes
 
@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// AI-generated (edited by PENDING): exact statuses expose an incorrectly registered HTTP method as a test failure.
+// AI-generated (edited by ZI YANG): exact statuses expose an incorrectly registered HTTP method as a test failure.
 func TestGetRoutesRegistersRecordedEndpoints(t *testing.T) {
 	router := chi.NewRouter()
 	router.Group(GetRoutes(Dependencies{}))

@@ -14,7 +14,7 @@ var (
 	ErrInvalidCredentials = errors.New("invalid credentials")
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — distinguishes the
 	// recorded current-password failure from invalid new-password policy.
-	// Author review: PENDING.
+	// Author review: ZI YANG - validated correctness.
 	ErrInvalidCurrentPassword = errors.New("invalid current password")
 	ErrInvalidPassword        = errors.New("invalid password")
 	ErrInvalidUsername        = errors.New("invalid username")
@@ -22,6 +22,9 @@ var (
 	ErrEmailTooLong           = errors.New("email exceeds maximum length")
 	ErrInvalidPhone           = errors.New("invalid phone number")
 	ErrAccountSuspended       = errors.New("account is suspended")
-	ErrSessionNotFound        = errors.New("session not found")
-	ErrSessionCompromised     = errors.New("session compromised")
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — distinguishes the
+	// recorded last-active-admin suspension guard. Author review: ZI YANG - validated correcness.
+	ErrLastAdmin          = errors.New("cannot suspend the last active admin")
+	ErrSessionNotFound    = errors.New("session not found")
+	ErrSessionCompromised = errors.New("session compromised")
 )

@@ -8,8 +8,8 @@ CREATE TYPE account_status AS ENUM ('ACTIVE', 'SUSPENDED');
 
 CREATE TABLE users (
     uid UUID PRIMARY KEY,
-    username VARCHAR(128) NOT NULL UNIQUE,
-    email VARCHAR(255) NOT NULL UNIQUE,
+    username VARCHAR(128) NOT NULL,
+    email VARCHAR(255) NOT NULL,
     password VARCHAR(255) NOT NULL,
     phone_num VARCHAR(20) NOT NULL,
     date_created TIMESTAMPTZ NOT NULL,
@@ -18,3 +18,8 @@ CREATE TABLE users (
     account_status account_status NOT NULL DEFAULT 'ACTIVE',
     tokens_valid_after TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — creates the recorded
+-- case-insensitive identifier indexes with the initial users schema. Author review: ZI YANG - validated correctness.
+CREATE UNIQUE INDEX idx_users_email_lower ON users (LOWER(email));
+CREATE UNIQUE INDEX idx_users_username_lower ON users (LOWER(username));

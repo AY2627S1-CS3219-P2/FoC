@@ -36,7 +36,7 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): NUS email validation is enforced by the domain service for every caller.
+// AI-generated (edited by ZI YANG): NUS email validation is enforced by the domain service for every caller.
 func TestAccountServiceRegisterRejectsNonNUSEmail(t *testing.T) {
 	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
@@ -64,7 +64,7 @@ func TestAccountServiceRegisterCanonicalizesEmail(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): bootstrap sends raw admin credentials to the domain service for canonical validation.
+// AI-generated (edited by ZI YANG): bootstrap sends raw admin credentials to the domain service for canonical validation.
 func TestAccountServiceBootstrapInitialAdminCanonicalizesEmail(t *testing.T) {
 	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
@@ -80,7 +80,7 @@ func TestAccountServiceBootstrapInitialAdminCanonicalizesEmail(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): bootstrap must leave configured credentials unused once any administrator exists.
+// AI-generated (edited by ZI YANG): bootstrap must leave configured credentials unused once any administrator exists.
 func TestAccountServiceBootstrapInitialAdminSkipsWhenAdminExists(t *testing.T) {
 	repository := &fakeAccountRepository{hasAdmin: true}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
@@ -134,7 +134,7 @@ func TestAccountServiceRegisterRejectsEmailLongerThanDatabaseWidth(t *testing.T)
 	}
 }
 
-// AI-generated (edited by PENDING): profile reads cross the domain boundary before reaching persistence.
+// AI-generated (edited by ZI YANG): profile reads cross the domain boundary before reaching persistence.
 func TestAccountServiceGetByIDReturnsRepositoryAccount(t *testing.T) {
 	uid := uuid.New()
 	want := &User{UID: uid, Username: "student"}
@@ -222,7 +222,7 @@ func TestAccountServiceUpdateProfileRejectsPhoneLongerThanDatabaseWidth(t *testi
 
 // AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the recorded
 // password confirmation, access-token boundary, and refresh-session revocation.
-// Author review: PENDING.
+// Author review: ZI YANG - validated correctness
 func TestAccountServiceUpdateProfileChangesPasswordAndRevokesSessions(t *testing.T) {
 	uid := uuid.New()
 	oldHash, err := hash.HashPassword("OldPass1")
@@ -301,7 +301,7 @@ func TestAccountServiceUpdateStatusDelegatesRecordedTransitions(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): suspension invalidation uses the domain service's injected clock.
+// AI-generated (edited by ZI YANG): suspension invalidation uses the domain service's injected clock.
 func TestAccountServiceUpdateAccountStatusUsesInjectedClock(t *testing.T) {
 	uid := uuid.New()
 	timestamp := time.Date(2026, 9, 28, 2, 30, 0, 0, time.UTC)
@@ -314,6 +314,27 @@ func TestAccountServiceUpdateAccountStatusUsesInjectedClock(t *testing.T) {
 	}
 	if !writer.at.Equal(timestamp) {
 		t.Fatalf("suspension timestamp = %s, want %s", writer.at, timestamp)
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies that the
+// recorded last-active-admin guard has no invalidation side effects. Author review: ZI YANG - validate correctness.
+func TestAccountServiceDoesNotSuspendLastActiveAdmin(t *testing.T) {
+	uid := uuid.New()
+	order := []string{}
+	repository := &fakeAccountRepository{
+		user:         &User{UID: uid, AccountRole: AccountRoleAdmin, AccountStatus: AccountStatusActive},
+		activeAdmins: 1,
+		callOrder:    &order,
+	}
+	service := NewAccountService(repository, &fakeSuspensionWriter{callOrder: &order}, &fakeAccountSessionRepository{callOrder: &order}, time.Minute)
+
+	err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended)
+	if !errors.Is(err, ErrLastAdmin) {
+		t.Fatalf("error = %v, want ErrLastAdmin", err)
+	}
+	if len(order) != 0 {
+		t.Fatalf("side-effect order = %#v, want no Redis, session, or PostgreSQL calls", order)
 	}
 }
 

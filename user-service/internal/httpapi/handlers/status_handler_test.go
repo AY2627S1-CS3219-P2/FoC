@@ -124,6 +124,16 @@ func TestUpdateStatusHandlerCoversRecordedStatusTransitionsAndFailures(t *testin
 			wantStatus: http.StatusNotFound,
 			wantError:  "user not found",
 		},
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — verifies the
+		// recorded conflict response for the last active administrator. Author review: ZI YANG - validate correctness.
+		"rejects suspension of last active admin": {
+			body:       `{"status":"SUSPENDED"}`,
+			path:       "/api/v1/users/" + uid.String() + "/status",
+			updater:    &fakeStatusUpdater{err: user.ErrLastAdmin},
+			withUpdate: true,
+			wantStatus: http.StatusConflict,
+			wantError:  "cannot suspend the last active admin",
+		},
 	}
 
 	for name, tt := range tests {
