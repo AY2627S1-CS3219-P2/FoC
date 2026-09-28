@@ -65,27 +65,27 @@ func TestRegisterHandler(t *testing.T) {
 		// AI-generated (edited by ZI YANG): database-width validation must be reported as a client error.
 		"rejects email longer than database width": {
 			body:       `{"email":"studenttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt@u.nus.edu","username":"student","password":"ValidPass1"}`,
-			registrar:  &fakeRegistrar{err: user.ErrInvalidEmail},
+			registrar:  &fakeRegistrar{err: user.ErrEmailTooLong},
 			wantStatus: http.StatusBadRequest,
 			wantError:  "email must be at most 255 characters",
 		},
 		// AI-generated (edited by ZI YANG).
 		"rejects non-NUS email": {
 			body:       `{"email":"student@example.com","username":"student","password":"ValidPass1"}`,
-			registrar:  &fakeRegistrar{},
+			registrar:  &fakeRegistrar{err: user.ErrInvalidEmail},
 			wantStatus: http.StatusBadRequest,
 			wantError:  "email must end with '@u.nus.edu'",
 		},
 		// AI-generated (edited by ZI YANG): domain suffix alone must not accept malformed email syntax.
 		"rejects multiple at signs": {
 			body:       `{"email":"student@@u.nus.edu","username":"student","password":"ValidPass1"}`,
-			registrar:  &fakeRegistrar{},
+			registrar:  &fakeRegistrar{err: user.ErrInvalidEmail},
 			wantStatus: http.StatusBadRequest,
 			wantError:  "email must end with '@u.nus.edu'",
 		},
 		"rejects whitespace in address": {
 			body:       `{"email":"student name@u.nus.edu","username":"student","password":"ValidPass1"}`,
-			registrar:  &fakeRegistrar{},
+			registrar:  &fakeRegistrar{err: user.ErrInvalidEmail},
 			wantStatus: http.StatusBadRequest,
 			wantError:  "email must end with '@u.nus.edu'",
 		},
@@ -132,5 +132,22 @@ func TestRegisterHandler(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// AI-generated (edited by PENDING): transport forwards unprocessed registration email input to the domain service.
+func TestRegisterHandlerPassesRawEmailToRegistrar(t *testing.T) {
+	registrar := &fakeRegistrar{}
+	router := newTestRouter(routes.Dependencies{Auth: handlers.AuthDependencies{Registrar: registrar}})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/register", strings.NewReader(`{"email":" Student@U.NUS.EDU ","username":"student","password":"ValidPass1"}`))
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusCreated)
+	}
+	if registrar.email != " Student@U.NUS.EDU " {
+		t.Fatalf("registrar email = %q, want raw request value", registrar.email)
 	}
 }

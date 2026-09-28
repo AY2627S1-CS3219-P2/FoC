@@ -15,6 +15,7 @@ var (
 	ErrInvalidPassword    = errors.New("invalid password")
 	ErrInvalidUsername    = errors.New("invalid username")
 	ErrInvalidEmail       = errors.New("invalid email")
+	ErrEmailTooLong       = errors.New("email exceeds maximum length")
 	ErrInvalidPhone       = errors.New("invalid phone number")
 	ErrAccountSuspended   = errors.New("account is suspended")
 	ErrSessionNotFound    = errors.New("session not found")

@@ -10,7 +10,6 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/mail"
 	"strings"
 
 	"foc/user-service/internal/session"
@@ -63,21 +62,18 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email, username, and password are required"})
 		return
 	}
-	if !isNUSStudentEmail(request.Email) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must end with '@u.nus.edu'"})
-		return
-	}
 	if h.deps.Registrar == nil {
 		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("registrar is required"), "registration unavailable")
 		return
 	}
-	request.Email = normalizeEmail(request.Email)
 	if _, err := h.deps.Registrar.Register(r.Context(), request.Email, request.Username, request.Password); err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
 			// AI-generated (edited by ZI YANG): report the recorded database-width validation as a client error.
-		} else if errors.Is(err, user.ErrInvalidEmail) {
+		} else if errors.Is(err, user.ErrEmailTooLong) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must be at most 255 characters"})
+		} else if errors.Is(err, user.ErrInvalidEmail) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "email must end with '@u.nus.edu'"})
 		} else if errors.Is(err, user.ErrInvalidPassword) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
@@ -185,16 +181,6 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-func isNUSStudentEmail(email string) bool {
-	email = strings.TrimSpace(email)
-	parsed, err := mail.ParseAddress(email)
-	if err != nil || parsed.Address != email {
-		return false
-	}
-	at := strings.LastIndexByte(parsed.Address, '@')
-	return at > 0 && strings.EqualFold(parsed.Address[at:], "@u.nus.edu")
 }
 
 func normalizeEmail(email string) string {

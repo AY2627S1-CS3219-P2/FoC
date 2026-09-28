@@ -21,18 +21,32 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	repository := &fakeAccountRepository{user: &User{}}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	account, err := service.Register(context.Background(), "student@example.com", "student", "ValidPass1")
+	account, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if repository.user != account {
 		t.Fatalf("created account pointer = %p, want %p", repository.user, account)
 	}
-	if account.Email != "student@example.com" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusActive {
+	if account.Email != "student@u.nus.edu" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusActive {
 		t.Fatalf("created account = %#v", account)
 	}
 	if account.PasswordHash == "ValidPass1" || !hash.CheckPassword(account.PasswordHash, "ValidPass1") {
 		t.Fatal("registration password was not stored as a valid hash")
+	}
+}
+
+// AI-generated (edited by PENDING): NUS email validation is enforced by the domain service for every caller.
+func TestAccountServiceRegisterRejectsNonNUSEmail(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	_, err := service.Register(context.Background(), "student@example.com", "student", "ValidPass1")
+	if !errors.Is(err, ErrInvalidEmail) {
+		t.Fatalf("error = %v, want ErrInvalidEmail", err)
+	}
+	if repository.user != nil {
+		t.Fatal("repository should not persist a non-NUS email")
 	}
 }
 
@@ -54,7 +68,7 @@ func TestAccountServiceRegisterRejectsInvalidUsername(t *testing.T) {
 	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	_, err := service.Register(context.Background(), "student@example.com", "student_user", "ValidPass1")
+	_, err := service.Register(context.Background(), "student@u.nus.edu", "student_user", "ValidPass1")
 	if !errors.Is(err, ErrInvalidUsername) {
 		t.Fatalf("error = %v, want ErrInvalidUsername", err)
 	}
@@ -67,7 +81,7 @@ func TestAccountServiceRegisterRejectsInvalidPassword(t *testing.T) {
 	repository := &fakeAccountRepository{}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	_, err := service.Register(context.Background(), "student@example.com", "student", "weakpass")
+	_, err := service.Register(context.Background(), "student@u.nus.edu", "student", "weakpass")
 	if !errors.Is(err, ErrInvalidPassword) {
 		t.Fatalf("error = %v, want ErrInvalidPassword", err)
 	}
@@ -83,8 +97,8 @@ func TestAccountServiceRegisterRejectsEmailLongerThanDatabaseWidth(t *testing.T)
 	email := strings.Repeat("a", 246) + "@u.nus.edu"
 
 	_, err := service.Register(context.Background(), email, "student", "ValidPass1")
-	if !errors.Is(err, ErrInvalidEmail) {
-		t.Fatalf("error = %v, want ErrInvalidEmail", err)
+	if !errors.Is(err, ErrEmailTooLong) {
+		t.Fatalf("error = %v, want ErrEmailTooLong", err)
 	}
 	if repository.user != nil {
 		t.Fatal("repository should not persist an overlong email")

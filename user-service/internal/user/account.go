@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -49,10 +50,13 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
-	email = normalizeEmail(email)
+	email, err := normalizeAndValidateNUSEmail(email)
+	if err != nil {
+		return nil, err
+	}
 	// AI-generated (edited by ZI YANG): match the recorded PostgreSQL VARCHAR(255) limit before persistence.
 	if utf8.RuneCountInString(email) > maxEmailCharacters {
-		return nil, ErrInvalidEmail
+		return nil, ErrEmailTooLong
 	}
 	if err := ValidateUsername(username); err != nil {
 		return nil, fmt.Errorf("validate registration username: %w", err)
@@ -161,4 +165,18 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
+}
+
+func normalizeAndValidateNUSEmail(email string) (string, error) {
+	// AI-generated (edited by PENDING): the domain owns canonical NUS-email validation for all registration callers.
+	email = normalizeEmail(email)
+	parsed, err := mail.ParseAddress(email)
+	if err != nil || parsed.Address != email {
+		return "", ErrInvalidEmail
+	}
+	at := strings.LastIndexByte(parsed.Address, '@')
+	if at <= 0 || !strings.EqualFold(parsed.Address[at:], "@u.nus.edu") {
+		return "", ErrInvalidEmail
+	}
+	return email, nil
 }
