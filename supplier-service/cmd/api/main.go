@@ -4,7 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"log"
-	"net/http"
+	"net"
 	"os"
 	"path/filepath"
 
@@ -15,7 +15,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"foc/supplier-service/internal/config"
-	"foc/supplier-service/internal/httpapi"
+	"foc/supplier-service/internal/grpcapi"
 	"foc/supplier-service/internal/repository"
 	"foc/supplier-service/internal/supplier"
 	"foc/supplier-service/seed"
@@ -42,10 +42,17 @@ func main() {
 	}
 
 	svc := supplier.NewService(repo)
-	router := httpapi.NewRouter(svc)
+	// AI-generated (edited by PENDING) — swapped from httpapi.NewRouter +
+	// http.ListenAndServe to grpcapi.NewGRPCServer + net.Listen/srv.Serve.
+	srv := grpcapi.NewGRPCServer(svc)
 
-	log.Printf("supplier-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
+	lis, err := net.Listen("tcp", ":"+cfg.Port)
+	if err != nil {
+		log.Fatalf("listen on :%s: %v", cfg.Port, err)
+	}
+
+	log.Printf("supplier-service (gRPC) listening on :%s", cfg.Port)
+	if err := srv.Serve(lis); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }

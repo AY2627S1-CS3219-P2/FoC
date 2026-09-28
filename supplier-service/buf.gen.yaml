@@ -1,0 +1,16 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Sonnet 5), date: 2026-09-28
+# Scope: New file. `buf generate` config for supplier-service (D-039): runs the
+#   locally installed protoc-gen-go and protoc-gen-go-grpc, writing into
+#   internal/gen/ exactly where the old protoc command did. Local plugins
+#   (not Buf's remote plugins), so the protos are not sent to a hosted service.
+# Author review: PENDING — <reviewer to complete>
+
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: .
+    opt: module=foc/supplier-service
+  - local: protoc-gen-go-grpc
+    out: .
+    opt: module=foc/supplier-service

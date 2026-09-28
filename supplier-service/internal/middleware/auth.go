@@ -1,38 +1,69 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-09-22
+// Scope: Rewritten from the HTTP-header version (>half the file changed):
+//   RoleExtractor and HeaderRoleExtractor became MetadataRoleExtractor for
+//   gRPC metadata, and a RequireAdmin unary interceptor replaced the
+//   former http.Handler middleware chain.
+//   2026-09-28: comments and behavior brought in line with D-038 (trust the
+//   gateway-injected role); a missing or repeated value now counts as no role.
+// Author review: PENDING — <reviewer to complete>
+
 // Package middleware provides request-level guards for the Supplier
-// Service's admin-only endpoints (FR F2.2).
+// Service's admin-only RPCs (FR F2.2).
 //
-// INTERIM DESIGN: the team has not yet decided how identity/role is
-// propagated between services (e.g. a JWT issued by the User Service vs.
-// a header set by a gateway). Until that's settled, RoleExtractor reads a
-// plain "X-User-Role" header. Swap the body of headerRoleExtractor (or
-// provide a different RoleExtractor) once the real auth mechanism is
-// agreed — no other code in this service needs to change.
+// Identity model (D-038, which applies D-022 and D-030 to gRPC): the API
+// Gateway verifies the user's access token, discards any identity the client
+// sent, and injects the verified role as the "x-user-role" metadata key — the
+// gRPC form of D-022's X-User-Role header. This service never sees the token
+// and trusts that value. The role itself originates in user-service
+// (users.account_role, put in the token's "role" claim at login).
+//
+// That trust is sound only while both of D-022's conditions hold: the gateway
+// strips client-supplied identity, and nothing but the gateway can reach this
+// service. Neither is true yet — see supplier-service/AGENTS.md.
 package middleware
 
-import "net/http"
+import (
+	"context"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
+)
 
 const AdminRole = "ADMIN"
 
-// RoleExtractor pulls the caller's role out of an incoming request.
-type RoleExtractor func(r *http.Request) string
+// RoleExtractor pulls the caller's role out of an incoming RPC context.
+type RoleExtractor func(ctx context.Context) string
 
-// HeaderRoleExtractor is the interim implementation: it trusts an
-// "X-User-Role" header verbatim. This is NOT secure for production use —
-// it exists only so the admin endpoints have a role check to develop and
-// test against before the real auth mechanism is decided.
-func HeaderRoleExtractor(r *http.Request) string {
-	return r.Header.Get("X-User-Role")
+// MetadataRoleExtractor returns the gateway-injected "x-user-role" value. It
+// returns "" — meaning no role — when the key is absent or appears more than
+// once: the gateway injects exactly one value, so a repeated key means a copy
+// got through from somewhere else, and this service does not pick between
+// them.
+func MetadataRoleExtractor(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	vals := md.Get("x-user-role")
+	if len(vals) != 1 {
+		return ""
+	}
+	return vals[0]
 }
 
-// RequireAdmin rejects any request whose role (per extract) isn't ADMIN.
-func RequireAdmin(extract RoleExtractor) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if extract(r) != AdminRole {
-				http.Error(w, `{"error":"admin role required"}`, http.StatusForbidden)
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
+// RequireAdmin returns a unary interceptor that rejects any call to a
+// method in adminMethods (full gRPC method names, e.g.
+// "/foc.supplier.v1.SupplierService/CreateSupplier") whose role (per
+// extract) isn't ADMIN. Calls to methods not in the set pass through
+// unchecked — the equivalent of the REST router's public route.Group.
+func RequireAdmin(extract RoleExtractor, adminMethods map[string]bool) grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if adminMethods[info.FullMethod] && extract(ctx) != AdminRole {
+			return nil, status.Error(codes.PermissionDenied, "admin role required")
+		}
+		return handler(ctx, req)
 	}
 }

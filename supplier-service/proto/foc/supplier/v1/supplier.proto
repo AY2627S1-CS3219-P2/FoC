@@ -1,0 +1,170 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-09-22
+// Scope: New file. Proto contract transcoding the REST DTOs/routes that
+//   were in internal/httpapi (removed this same session) field-for-field.
+//   2026-09-28: json_name pins (D-036) and google.api.http annotations (D-037),
+//   both transcribing the owner's decisions.
+//   2026-09-28: moved to proto/foc/supplier/v1/ and given per-RPC response
+//   messages, to satisfy `buf lint` (D-040).
+// Author review: PENDING — <reviewer to complete>
+
+// D-005 successor for supplier-service (root AGENTS.md §4.3, §8): this file
+// is the spec-first contract. Go server/client code is generated from it
+// into internal/gen/; never hand-edit that output.
+//
+// Transcodes the REST surface that was on main (internal/httpapi, now
+// removed) field-for-field and RPC-for-RPC — no new capability, no field
+// added or dropped. See supplier-service/AGENTS.md for what changed and why.
+syntax = "proto3";
+
+package foc.supplier.v1;
+
+option go_package = "foc/supplier-service/internal/gen/supplier/v1;supplierv1";
+
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+
+// JSON names (D-036): every multi-word field pins its JSON name to the
+// snake_case proto name with json_name, so the browser-facing JSON keeps the
+// shape the gateway and frontend already use (location_description, not
+// locationDescription) without depending on gateway marshaler settings.
+
+// Supplier is a campus store, facility, or landmark that can be selected as
+// the pickup location of an errand request (FR F2.1.1). Field-for-field
+// match of supplier.Supplier / the former httpapi.supplierResponse.
+message Supplier {
+  string id = 1;
+  string name = 2;
+  string type = 3;
+  string building = 4;
+  string floor = 5;
+  string location_description = 6 [json_name = "location_description"];
+  double latitude = 7;
+  double longitude = 8;
+  string opening_time = 9 [json_name = "opening_time"];  // "HH:MM", 24h
+  string closing_time = 10 [json_name = "closing_time"]; // "HH:MM", 24h
+  string image_url = 11 [json_name = "image_url"];
+  string description = 12;
+  bool is_available = 13 [json_name = "is_available"];
+  google.protobuf.Timestamp created_at = 14 [json_name = "created_at"];
+  google.protobuf.Timestamp updated_at = 15 [json_name = "updated_at"];
+}
+
+// SupplierWrite is the field set accepted by Create/Update — matches the
+// former httpapi.supplierRequest. is_available is a plain bool (D-035,
+// confirmed by the owner): proto3 gives it no presence bit, so a caller must
+// send it explicitly and an omitted value is indistinguishable from false.
+// This differs from the former REST DTO's *bool, which defaulted to true.
+message SupplierWrite {
+  string name = 1;
+  string type = 2;
+  string building = 3;
+  string floor = 4;
+  string location_description = 5 [json_name = "location_description"];
+  double latitude = 6;
+  double longitude = 7;
+  string opening_time = 8 [json_name = "opening_time"];
+  string closing_time = 9 [json_name = "closing_time"];
+  string image_url = 10 [json_name = "image_url"];
+  string description = 11;
+  bool is_available = 12 [json_name = "is_available"];
+}
+
+message ListSuppliersRequest {
+  string category = 1; // FR F2.1.3
+  // FR F2.1.3, matched against name. Public query parameter is `q` (D-037):
+  // the frontend sends ?q=, and grpc-gateway matches a query parameter to a
+  // field by proto name and then by JSON name.
+  string search = 2 [json_name = "q"];
+}
+
+message ListSuppliersResponse {
+  repeated Supplier suppliers = 1;
+}
+
+message GetSupplierRequest {
+  string id = 1;
+}
+
+// Each RPC has its own response message (D-040, `buf lint`). The three that
+// return a supplier wrap it in `supplier`, and their google.api.http rules use
+// response_body: "supplier" so the browser-facing JSON stays the flat object
+// the frontend reads.
+message GetSupplierResponse {
+  Supplier supplier = 1;
+}
+
+message CreateSupplierRequest {
+  SupplierWrite supplier = 1;
+}
+
+message CreateSupplierResponse {
+  Supplier supplier = 1;
+}
+
+message UpdateSupplierRequest {
+  string id = 1;
+  SupplierWrite supplier = 2;
+}
+
+message UpdateSupplierResponse {
+  Supplier supplier = 1;
+}
+
+message DeleteSupplierRequest {
+  string id = 1;
+}
+
+// DeleteSupplierResponse is empty: a soft delete returns nothing (FR F2.2.3).
+message DeleteSupplierResponse {}
+
+// SupplierService is supplier-service's entire contract: the gateway and
+// other services all call this over gRPC — supplier serves no REST itself
+// (root AGENTS.md §2/§4.3, D-035).
+//
+// The google.api.http options below are the public REST URLs the gateway
+// exposes for each RPC (D-037). They are metadata for the gateway's
+// generator, not routes this service serves. All five are reachable from the
+// browser; Create/Update/Delete are admin-only (FR F2.2), enforced here by
+// middleware.RequireAdmin, which requires metadata key "x-user-role: ADMIN"
+// — still the interim, not-secure mechanism documented in
+// internal/middleware/auth.go pending the open "identity over gRPC" decision.
+service SupplierService {
+  // response_body makes the HTTP body the bare JSON array the frontend reads,
+  // not {"suppliers": [...]}.
+  rpc ListSuppliers(ListSuppliersRequest) returns (ListSuppliersResponse) {
+    option (google.api.http) = {
+      get: "/api/suppliers"
+      response_body: "suppliers"
+    };
+  }
+
+  rpc GetSupplier(GetSupplierRequest) returns (GetSupplierResponse) {
+    option (google.api.http) = {
+      get: "/api/suppliers/{id}"
+      response_body: "supplier"
+    };
+  }
+
+  rpc CreateSupplier(CreateSupplierRequest) returns (CreateSupplierResponse) {
+    option (google.api.http) = {
+      post: "/api/suppliers"
+      body: "supplier"
+      response_body: "supplier"
+    };
+  }
+
+  rpc UpdateSupplier(UpdateSupplierRequest) returns (UpdateSupplierResponse) {
+    option (google.api.http) = {
+      put: "/api/suppliers/{id}"
+      body: "supplier"
+      response_body: "supplier"
+    };
+  }
+
+  rpc DeleteSupplier(DeleteSupplierRequest) returns (DeleteSupplierResponse) {
+    option (google.api.http) = {
+      delete: "/api/suppliers/{id}"
+    };
+  }
+}

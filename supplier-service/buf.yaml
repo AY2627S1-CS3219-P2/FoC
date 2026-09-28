@@ -1,0 +1,12 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Sonnet 5), date: 2026-09-28
+# Scope: New file. buf module config for supplier-service (D-039): the proto/
+#   directory is the module, and the googleapis protos that google.api.http
+#   needs come from a pinned buf.build dependency (see buf.lock).
+# Author review: PENDING — <reviewer to complete>
+
+version: v2
+modules:
+  - path: proto
+deps:
+  - buf.build/googleapis/googleapis
