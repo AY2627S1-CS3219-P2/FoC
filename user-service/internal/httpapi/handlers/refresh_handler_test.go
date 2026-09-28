@@ -77,6 +77,7 @@ func TestRefreshHandler(t *testing.T) {
 			body:       `{"refreshToken":"in-progress"}`,
 			refresher:  &fakeRefresher{err: user.ErrRefreshInProgress},
 			wantStatus: http.StatusTooManyRequests,
+			wantError:  "refresh already in progress",
 		},
 		// AI-generated (edited by ZI YANG): outages must remain distinguishable from ended credentials.
 		"reports database failure": {

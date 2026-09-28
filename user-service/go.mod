@@ -1,3 +1,8 @@
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-28
+// Scope: Added the missing attribution disclosure for the generated module definition.
+// Author review: ZI YANG - ensured correctness of dependencies
+
 module foc/user-service
 
 go 1.26

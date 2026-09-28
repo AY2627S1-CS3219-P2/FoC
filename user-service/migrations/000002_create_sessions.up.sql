@@ -1,7 +1,12 @@
 -- AI Assistance Disclosure:
 -- Tool: Codex (GPT-5), date: 2026-09-19
--- Scope: Added the recorded token-validity field and refresh-session table.
+-- Scope: Added the refresh-session table.
 -- Author review: COMPLETED BY ZI YANG
+
+-- AI Assistance Disclosure:
+-- Tool: Codex (GPT-5), date: 2026-09-28
+-- Scope: Corrected the stale scope; this migration creates only the refresh-session table.
+-- Author review: ZI YANG - verrified correctness
 
 CREATE TABLE sessions (
     jti UUID PRIMARY KEY,
