@@ -105,6 +105,21 @@ func TestAccountServiceRegisterRejectsEmailLongerThanDatabaseWidth(t *testing.T)
 	}
 }
 
+// AI-generated (edited by PENDING): profile reads cross the domain boundary before reaching persistence.
+func TestAccountServiceGetByIDReturnsRepositoryAccount(t *testing.T) {
+	uid := uuid.New()
+	want := &User{UID: uid, Username: "student"}
+	service := NewAccountService(&fakeAccountRepository{user: want}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	got, err := service.GetByID(context.Background(), uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("account = %p, want %p", got, want)
+	}
+}
+
 func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	uid := uuid.New()
 	oldHash, err := hash.HashPassword("OldPass1")

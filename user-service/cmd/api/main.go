@@ -105,7 +105,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			Logger:         logger,
 		},
 		Profile: handlers.ProfileDependencies{
-			ProfileGetter:  userRepository,
+			// AI-generated (edited by PENDING): profile reads enter through the domain service, not the repository adapter.
+			ProfileGetter:  accountService,
 			StatusUpdater:  accountService,
 			ProfileUpdater: accountService,
 			Logger:         logger,

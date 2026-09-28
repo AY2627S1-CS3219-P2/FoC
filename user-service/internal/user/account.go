@@ -81,6 +81,19 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 	return account, nil
 }
 
+// GetByID retrieves an account through the domain boundary.
+func (s *AccountService) GetByID(ctx context.Context, uid uuid.UUID) (*User, error) {
+	if s.repository == nil {
+		return nil, errors.New("user repository is required")
+	}
+	// AI-generated (edited by PENDING): keep HTTP consumers independent of the persistence adapter.
+	account, err := s.repository.GetByID(ctx, uid)
+	if err != nil {
+		return nil, fmt.Errorf("get account by ID: %w", err)
+	}
+	return account, nil
+}
+
 // UpdateProfile changes the recorded mutable profile fields. An empty password
 // leaves the existing password unchanged.
 func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, username, phone, password string) (*User, error) {
