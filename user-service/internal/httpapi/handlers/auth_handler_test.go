@@ -3,7 +3,7 @@
 // Scope: Added focused regression coverage for the relocated authentication handler.
 // Author review: COMPLETED BY ZI YANG
 
-package handlers
+package handlers_test
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/session"
 )
 
@@ -29,7 +30,7 @@ func (s loginServiceStub) Login(context.Context, string, string) (session.TokenP
 }
 
 func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
-	handler := NewAuthHandler(AuthDependencies{
+	handler := handlers.NewAuthHandler(handlers.AuthDependencies{
 		LoginService: loginServiceStub{pair: session.TokenPair{AccessToken: "access", RefreshToken: "refresh"}},
 	})
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", strings.NewReader(`{"identifier":"student","password":"ValidPass1"}`))
@@ -40,11 +41,11 @@ func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", response.Code, http.StatusOK)
 	}
-	var payload AuthResponse
+	var payload handlers.AuthResponse
 	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if payload != (AuthResponse{AccessToken: "access", RefreshToken: "refresh"}) {
+	if payload != (handlers.AuthResponse{AccessToken: "access", RefreshToken: "refresh"}) {
 		t.Fatalf("payload = %#v, want token pair", payload)
 	}
 }
@@ -52,7 +53,7 @@ func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
 // AI-generated (edited by ZI YANG): the recorded body limit rejects oversized credentials before authentication.
 func TestAuthHandlerLoginRejectsOversizedRequest(t *testing.T) {
 	called := false
-	handler := NewAuthHandler(AuthDependencies{
+	handler := handlers.NewAuthHandler(handlers.AuthDependencies{
 		LoginService: loginServiceStub{called: &called},
 	})
 	body := `{"identifier":"student","password":"` + strings.Repeat("a", 10*1024) + `"}`
