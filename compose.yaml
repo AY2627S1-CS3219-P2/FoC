@@ -57,7 +57,7 @@ services:
     environment:
       PORT: 8081
       USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
-      REDIS_URL: ${REDIS_URL:?REDIS_URL must be set}
+      REDIS_URL: redis://redis:6379
       # AI-generated (edited by ZI YANG).
       JWT_KEYSET_PATH: /run/secrets/keys.json
       JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-15m}
