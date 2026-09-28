@@ -92,9 +92,10 @@ the suppliers fixture is supplier-service's seed CSV, loaded the way its
 `seed.go` loads it.
 
 `index.html` is the Vite entry document; the D1 prototype it replaced
-(`app.js` plus hand-written markup) is in this branch's history. The
-`Dockerfile` builds with Node and serves the output from nginx via
-`nginx.conf`. These rules apply:
+(`app.js` plus hand-written markup) is in this branch's history. There is no
+Dockerfile: `npm run dev` serves the app locally, and in production a static
+host (Amplify or Vercel, not yet chosen) serves the `npm run build` output and
+forwards `/auth` and `/api` to the gateway (D-033). These rules apply:
 
 - **One API client per backend service, in one dedicated directory**,
   generated from that service's `api/openapi.yaml` (root §8). Generated
@@ -150,9 +151,9 @@ allocation quoted on the login screen.
 
 ## Local development
 
-- **Port 3001** (root §3) is where the browser loads the app: `npm run dev`
-  serves it there, and `compose.yaml` publishes 3001 for the container that
-  serves the build. Backend ports are allocated in that same table —
+- **Port 3001** (root §3) is where `npm run dev` serves the app; it stops
+  rather than moving if 3001 is taken. `compose.yaml` runs only the backend,
+  with the gateway on 8080. Backend ports are allocated in that same table —
   8081-8084 — so read them there rather than inventing or assuming one.
 - **Env vars:** resolved in `src/lib/config.ts`, never read inline, and every
   one goes into the root `.env.example` with a placeholder (root §9) plus this

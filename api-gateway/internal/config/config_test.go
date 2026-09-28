@@ -36,9 +36,6 @@ func setEnv(t *testing.T, vars map[string]string) {
 		"PORT", "JWKS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
 		"REFRESH_TOKEN_TTL",
-		// AI-generated (edited by nigeltzy).
-		// Optional, so all() omits it; cleared here so a value in the shell can't reach Load.
-		"STATIC_DIR",
 	} {
 		t.Setenv(name, vars[name])
 	}

@@ -6,16 +6,6 @@
 
 # Build context is the repository root, matching the other services.
 
-# The browser app, served by the gateway from STATIC_DIR so the page and the
-# API share one origin. The bundle uses relative paths, so no build arg.
-FROM node:22-alpine AS frontend
-WORKDIR /app
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci
-COPY frontend/tsconfig*.json frontend/vite.config.ts frontend/index.html ./
-COPY frontend/src ./src
-RUN npm run build
-
 FROM golang:1.26-alpine AS builder
 WORKDIR /src
 
@@ -29,9 +19,8 @@ FROM alpine:3.20
 WORKDIR /app
 
 COPY --from=builder /out/api-gateway ./api-gateway
-COPY --from=frontend /app/dist ./web
 
-# Listens on PORT (8080 in compose.yaml); compose.yaml publishes it on host port 3001.
+# Listens on PORT (8080 in compose.yaml), which compose.yaml publishes on host port 8080.
 EXPOSE 8080
 
 ENTRYPOINT ["./api-gateway"]

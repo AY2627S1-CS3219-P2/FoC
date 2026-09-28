@@ -120,8 +120,8 @@ state its own port but must not restate this table.
 | `supplier-service` | 8082 | `SUPPLIER_DB_URL` |
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
-| `frontend` | 3001: where the browser loads the app (in Compose, `api-gateway` holds it) | — |
-| `api-gateway` | 8080 inside the container (provisional, D-018); Compose publishes it on host 3001 | — (no database of any kind: D-024 keeps it out of Redis entirely) |
+| `frontend` | 3001: where `npm run dev` serves the app; in production a static host serves it (D-033) | — |
+| `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of any kind: D-024 keeps it out of Redis entirely) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
@@ -267,5 +267,7 @@ What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
 and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
 carries Redis, the API Gateway, supplier-service and its database. Services
 with no code yet are absent. A service is reachable from the host only if it
-has a `ports:` key — that is how D-010's trust zones are enforced. Integration
-tests everywhere are spelled `go test -tags=integration ./...`.
+has a `ports:` key — that is how D-010's trust zones are enforced. The frontend
+is not in Compose: `npm run dev` in `frontend/` serves it on 3001 and forwards
+`/auth` and `/api` to the gateway on 8080. Integration tests everywhere are
+spelled `go test -tags=integration ./...`.
