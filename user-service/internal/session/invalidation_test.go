@@ -140,17 +140,25 @@ func TestLogoutServiceDoesNotRevokeSessionWhenRedisFails(t *testing.T) {
 	}
 }
 
-func TestLogoutServiceRejectsExpiredAccessTokenWithoutSideEffects(t *testing.T) {
+// AI-generated (edited by PENDING): logout blocklisting remains effective when a verified token is within clock skew.
+func TestLogoutServiceUsesMinimumTTLWithinClockSkew(t *testing.T) {
+	now := time.Unix(100, 0)
 	order := []string{}
-	sessions := &orderedSessionRepository{callOrder: &order}
+	userID := uuid.New()
+	refreshToken := "refresh"
+	sessions := &orderedSessionRepository{fakeSessionRepository: fakeSessionRepository{sessions: map[string]*user.Session{HashRefreshToken(refreshToken): {UID: userID}}}, callOrder: &order}
 	blocklist := &fakeBlocklistWriter{callOrder: &order}
-	service := NewLogoutService(sessions, blocklist, func() time.Time { return time.Unix(100, 0) })
+	service := NewLogoutService(sessions, blocklist, func() time.Time { return now })
 
-	if err := service.Logout(context.Background(), AccessTokenClaims{UserID: uuid.New(), JTI: uuid.New(), ExpiresAt: time.Unix(99, 0)}, "refresh"); err == nil {
-		t.Fatal("expired access token was accepted")
+	err := service.Logout(context.Background(), AccessTokenClaims{UserID: userID, JTI: uuid.New(), ExpiresAt: now.Add(-time.Second)}, refreshToken)
+	if err != nil {
+		t.Fatalf("Logout() error = %v, want nil", err)
 	}
-	if len(order) != 0 {
-		t.Fatalf("call order = %#v, want no side effects", order)
+	if got, want := order, []string{"postgres-read", "redis", "postgres"}; !equalStrings(got, want) {
+		t.Fatalf("call order = %#v, want %#v", got, want)
+	}
+	if blocklist.ttl != 5*time.Second {
+		t.Fatalf("blocklist TTL = %s, want 5s", blocklist.ttl)
 	}
 }
 

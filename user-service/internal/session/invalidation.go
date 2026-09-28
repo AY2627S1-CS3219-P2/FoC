@@ -28,6 +28,8 @@ type AccessTokenClaims struct {
 // different account than the verified access token.
 var ErrSessionOwnershipMismatch = errors.New("mismatched session")
 
+const minimumLogoutTTL = 5 * time.Second
+
 // AccessTokenVerifier verifies a bearer access token and returns only the
 // claims required for logout invalidation.
 type AccessTokenVerifier interface {
@@ -56,8 +58,9 @@ func NewLogoutService(sessions user.SessionRepository, blocklist BlocklistWriter
 	return &LogoutService{sessions: sessions, blocklist: blocklist, now: now}
 }
 
-// Logout blocks the access-token JTI with its exact remaining lifetime, then
-// revokes the hashed refresh token. PostgreSQL is not touched if Redis fails.
+// Logout blocks the access-token JTI with its remaining lifetime, or the
+// recorded clock-skew minimum, then revokes the hashed refresh token.
+// PostgreSQL is not touched if Redis fails.
 func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, refreshToken string) error {
 	if s.sessions == nil || s.blocklist == nil {
 		return errors.New("logout dependencies are required")
@@ -66,8 +69,9 @@ func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, re
 		return errors.New("access token claims are required")
 	}
 	ttl := access.ExpiresAt.Sub(s.now())
+	// AI-generated (edited by PENDING): retain blocklisting through the recorded JWT clock-skew window.
 	if ttl <= 0 {
-		return errors.New("access token is expired")
+		ttl = minimumLogoutTTL
 	}
 	// AI-generated (edited by ZI YANG): verify session ownership before Redis invalidation or revocation.
 	refreshSession, err := s.sessions.GetSessionByHash(ctx, HashRefreshToken(refreshToken))
