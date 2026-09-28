@@ -26,7 +26,7 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 // writeError logs internal diagnostics before writing a sanitized JSON error.
 func writeError(ctx context.Context, w http.ResponseWriter, logger *slog.Logger, status int, rawErr error, clientMessage string) {
-	// AI-generated (edited by PENDING): preserve request-correlated diagnostics only for recorded HTTP 500 responses.
+	// AI-generated (edited by ZI YANG): preserve request-correlated diagnostics only for recorded HTTP 500 responses.
 	if status == http.StatusInternalServerError && rawErr != nil && logger != nil {
 		logger.Error("internal server error",
 			"request_id", middleware.GetReqID(ctx),
@@ -39,7 +39,7 @@ func writeError(ctx context.Context, w http.ResponseWriter, logger *slog.Logger,
 
 // decodeJSONBody decodes one request body after enforcing the recorded size limit.
 func decodeJSONBody(w http.ResponseWriter, r *http.Request, value any) bool {
-	// AI-generated (edited by PENDING): use the recorded 10 KiB boundary before decoding JSON.
+	// AI-generated (edited by ZI YANG): use the recorded 10 KiB boundary before decoding JSON.
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
 	if err := json.NewDecoder(r.Body).Decode(value); err != nil {
 		var maxBytesErr *http.MaxBytesError

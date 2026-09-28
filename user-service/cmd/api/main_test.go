@@ -39,7 +39,7 @@ func TestParseTokenTTL(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): the server timeouts match the recorded defensive policy.
+// AI-generated (edited by ZI YANG): the server timeouts match the recorded defensive policy.
 func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
 	server := newHTTPServer(":8081", http.NotFoundHandler())
 
@@ -57,7 +57,7 @@ func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): health must fail when either required persistence dependency is unavailable.
+// AI-generated (edited by ZI YANG): health must fail when either required persistence dependency is unavailable.
 func TestNewHealthCheckIncludesRedis(t *testing.T) {
 	databaseFailure := errors.New("database unavailable")
 	redisFailure := errors.New("redis unavailable")

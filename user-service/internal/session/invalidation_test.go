@@ -99,7 +99,7 @@ func TestLogoutServiceRejectsRefreshSessionOwnedByAnotherAccount(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): missing and already-revoked refresh sessions are recorded idempotent logout successes.
+// AI-generated (edited by ZI YANG): missing and already-revoked refresh sessions are recorded idempotent logout successes.
 func TestLogoutServiceTreatsMissingAndRevokedSessionsAsIdempotent(t *testing.T) {
 	now := time.Date(2026, 9, 28, 0, 15, 0, 0, time.UTC)
 	userID := uuid.New()
@@ -140,7 +140,7 @@ func TestLogoutServiceDoesNotRevokeSessionWhenRedisFails(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): logout blocklisting remains effective when a verified token is within clock skew.
+// AI-generated (edited by ZI YANG): logout blocklisting remains effective when a verified token is within clock skew.
 func TestLogoutServiceUsesMinimumTTLWithinClockSkew(t *testing.T) {
 	now := time.Unix(100, 0)
 	order := []string{}

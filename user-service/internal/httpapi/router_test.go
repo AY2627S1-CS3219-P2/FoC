@@ -20,6 +20,7 @@ import (
 	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 )
 
@@ -169,7 +170,7 @@ func TestLoginHandlerDoesNotApplyNewPasswordPolicy(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): internal failures retain request-correlated diagnostics without exposing them to clients.
+// AI-generated (edited by ZI YANG): internal failures retain request-correlated diagnostics without exposing them to clients.
 func TestLoginHandlerLogsInternalFailureWithRequestIDAndStack(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))

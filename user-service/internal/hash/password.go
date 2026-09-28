@@ -14,7 +14,7 @@ import (
 
 // HashPassword returns a bcrypt hash for a plaintext password.
 func HashPassword(password string) (string, error) {
-	// AI-generated (edited by PENDING): preserve the recorded 128-character policy within bcrypt's 72-byte cap.
+	// AI-generated (edited by ZI YANG): preserve the recorded 128-character policy within bcrypt's 72-byte cap.
 	digest := sha256.Sum256([]byte(password))
 	hash, err := bcrypt.GenerateFromPassword(digest[:], bcrypt.DefaultCost)
 	if err != nil {

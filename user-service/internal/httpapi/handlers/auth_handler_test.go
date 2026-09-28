@@ -49,7 +49,7 @@ func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): the recorded body limit rejects oversized credentials before authentication.
+// AI-generated (edited by ZI YANG): the recorded body limit rejects oversized credentials before authentication.
 func TestAuthHandlerLoginRejectsOversizedRequest(t *testing.T) {
 	called := false
 	handler := NewAuthHandler(AuthDependencies{

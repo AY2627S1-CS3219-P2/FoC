@@ -278,6 +278,16 @@ This policy should be checked during registration and updating profile of a user
 ### Email Policy
 Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddress()` to prevent malformed inputs
 
+### Observability & Error Handling
+To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.
+
+- **Request IDs:** Use `github.com/go-chi/chi/v5/middleware.RequestID` globally in the Chi router. This automatically generates and propagates a unique request ID into every `http.Request` context.
+- **Logger Injection:** The application must use structured logging (e.g., Go 1.21's `log/slog.Logger`). The logger instance must be instantiated in `main.go` and explicitly injected into the handler constructors (e.g., `NewAuthHandler(..., logger *slog.Logger)`) to avoid mutable global state.
+- **Error Exposure & Stack Traces:** Handlers must never discard original errors. To standardize this, the HTTP transport layer must implement a centralized helper function (e.g., `writeError(ctx context.Context, w http.ResponseWriter, logger *slog.Logger, status int, rawErr error, clientMsg string)`).
+    - For `500 Internal Server Error` statuses, this helper must extract the Request ID from the context (`middleware.GetReqID(ctx)`) and capture the stack trace using `runtime/debug.Stack()`.
+    - The helper must structured-log the Request ID, the raw underlying error, and the stack trace directly to the standard output.
+    - After successfully logging the raw details, it must safely write the sanitized JSON response (e.g., `{"error": "Internal Server Error"}`) to the client.
+
 ### First Admin creation
 `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`, `INITIAL_ADMIN_PASSWORD` should be configured in `.env` 
 for user service to read. There should be a `bootstrap.go` file in `cmd/api/` alongside `main.go` to

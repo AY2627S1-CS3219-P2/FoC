@@ -69,7 +69,7 @@ func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, re
 		return errors.New("access token claims are required")
 	}
 	ttl := access.ExpiresAt.Sub(s.now())
-	// AI-generated (edited by PENDING): retain blocklisting through the recorded JWT clock-skew window.
+	// AI-generated (edited by ZI YANG): retain blocklisting through the recorded JWT clock-skew window.
 	if ttl <= 0 {
 		ttl = minimumLogoutTTL
 	}

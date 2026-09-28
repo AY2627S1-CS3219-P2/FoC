@@ -130,7 +130,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 // newHTTPServer constructs the API server with the recorded defensive timeouts.
 func newHTTPServer(addr string, handler http.Handler) *http.Server {
-	// AI-generated (edited by PENDING): apply the owner-recorded HTTP timeout policy at server construction.
+	// AI-generated (edited by ZI YANG): apply the owner-recorded HTTP timeout policy at server construction.
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -143,7 +143,7 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 
 // newHealthCheck reports failure when any required service dependency is unavailable.
 func newHealthCheck(checks ...func(context.Context) error) handlers.HealthCheck {
-	// AI-generated (edited by PENDING): Redis and PostgreSQL are both required for the recorded health boundary.
+	// AI-generated (edited by ZI YANG): Redis and PostgreSQL are both required for the recorded health boundary.
 	return func(ctx context.Context) error {
 		for _, check := range checks {
 			if err := check(ctx); err != nil {

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-21
 // Scope: Added direct regression coverage for the password-cryptography package.
-// Author review: Repackaged this file and validated tests
+// Author review: ZI YANG - Repackaged this file and validated tests
 
 package hash
 
@@ -41,7 +41,7 @@ func TestCheckPasswordRejectsMalformedHash(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING): the recorded 8–128-character policy must not be limited by bcrypt's 72-byte input cap.
+// AI-generated (edited by ZI YANG): the recorded 8–128-character policy must not be limited by bcrypt's 72-byte input cap.
 func TestHashPasswordSupportsRecordedLongAndMultibytePasswords(t *testing.T) {
 	for name, password := range map[string]string{
 		"128 ASCII characters":    strings.Repeat("Abcdef1x", 16),
