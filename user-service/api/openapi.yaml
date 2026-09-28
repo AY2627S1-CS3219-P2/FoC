@@ -207,6 +207,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        # AI-generated (edited by ZI YANG): documents the owner-recorded concurrent-refresh and Redis-lock outcomes.
+        '429':
+          description: A refresh for this credential is already being processed.
+        '500':
+          description: Internal Server Error (e.g., Redis refresh-lock failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/users/logout:
     post:

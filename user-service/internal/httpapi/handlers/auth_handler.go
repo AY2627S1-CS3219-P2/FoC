@@ -134,7 +134,10 @@ func (h AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	}
 	pair, err := h.deps.Refresher.Refresh(r.Context(), request.RefreshToken)
 	if err != nil {
-		if errors.Is(err, user.ErrSessionCompromised) {
+		if errors.Is(err, user.ErrRefreshInProgress) {
+			// AI-generated (edited by ZI YANG): the recorded Redis debounce lock reports active same-token work without touching PostgreSQL.
+			w.WriteHeader(http.StatusTooManyRequests)
+		} else if errors.Is(err, user.ErrSessionCompromised) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "ErrSessionCompromised"})
 		} else if errors.Is(err, user.ErrSessionNotFound) || errors.Is(err, user.ErrAccountSuspended) {
 			// AI-generated (edited by ZI YANG): only recorded authentication outcomes receive 401.

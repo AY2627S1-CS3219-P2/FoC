@@ -22,6 +22,7 @@ type fakeSessionRepository struct {
 	created        *Session
 	rotatedOldHash string
 	revokedAllFor  uuid.UUID
+	getCalls       int
 	getErr         error
 	rotateErr      error
 }
@@ -36,10 +37,29 @@ func (f *fakeSessionRepository) CreateSession(_ context.Context, session *Sessio
 }
 
 func (f *fakeSessionRepository) GetSessionByHash(_ context.Context, hash string) (*Session, error) {
+	f.getCalls++
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
 	return f.sessions[hash], nil
+}
+
+// AI-generated (edited by ZI YANG): records lock attempts so refresh tests can prove database access is skipped on contention.
+type fakeRefreshLock struct {
+	tokenHash string
+	ttl       time.Duration
+	acquired  bool
+	err       error
+}
+
+func (f *fakeRefreshLock) Acquire(_ context.Context, tokenHash string, ttl time.Duration) (bool, error) {
+	f.tokenHash = tokenHash
+	f.ttl = ttl
+	return f.acquired, f.err
+}
+
+func newRefreshService(repository *fakeAuthRepository, sessions *fakeSessionRepository, verifier *fakeRefreshVerifier, issuer *fakeTokenIssuer, lock *fakeRefreshLock, now func() time.Time) *RefreshService {
+	return NewRefreshService(repository, sessions, verifier, issuer, lock, now)
 }
 
 func (f *fakeSessionRepository) RotateSession(_ context.Context, oldHash string, newSession *Session) error {
@@ -131,13 +151,17 @@ func TestRefreshServiceRotatesTokenIssuedDuringAccountCreationSecond(t *testing.
 	oldJTI := uuid.New()
 	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, ExpiresAt: now.Add(time.Hour)}
 	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
-	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
+	lock := &fakeRefreshLock{acquired: true}
+	service := newRefreshService(repo, sessions, verifier, issuer, lock, func() time.Time { return now })
 
 	if _, err := service.Refresh(context.Background(), oldToken); err != nil {
 		t.Fatal(err)
 	}
 	if sessions.rotatedOldHash != oldHash {
 		t.Fatalf("rotated hash = %q, want %q", sessions.rotatedOldHash, oldHash)
+	}
+	if lock.tokenHash != oldHash || lock.ttl != 5*time.Second {
+		t.Fatalf("lock = hash %q with TTL %v, want %q with TTL 5s", lock.tokenHash, lock.ttl, oldHash)
 	}
 	if sessions.created != nil {
 		t.Fatalf("login session unexpectedly created during refresh: %#v", sessions.created)
@@ -153,7 +177,7 @@ func TestRefreshServiceRevokesAllSessionsOnReplay(t *testing.T) {
 	replacement := "replacement-session-hash"
 	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ReplacedByTokenHash: &replacement, ExpiresAt: now.Add(time.Hour)}
 	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
-	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
+	service := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now })
 
 	_, err := service.Refresh(context.Background(), oldToken)
 	if !errors.Is(err, ErrSessionCompromised) {
@@ -174,7 +198,7 @@ func TestRefreshServiceDoesNotRevokeAllSessionsForNormallyRevokedToken(t *testin
 	revokedAt := now.Add(-time.Minute)
 	sessions.sessions[oldHash] = &Session{UID: account.UID, JTI: oldJTI, TokenHash: oldHash, RevokedAt: &revokedAt, ExpiresAt: now.Add(time.Hour)}
 	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: oldJTI, IssuedAt: now.Add(-time.Minute), ExpiresAt: now.Add(time.Hour)}}
-	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
+	service := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now })
 
 	_, err := service.Refresh(context.Background(), oldToken)
 	if !errors.Is(err, ErrSessionNotFound) {
@@ -188,7 +212,7 @@ func TestRefreshServiceDoesNotRevokeAllSessionsForNormallyRevokedToken(t *testin
 func TestRefreshServiceRejectsUnknownSession(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
 	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: uuid.New()}}
-	service := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now })
+	service := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now })
 
 	_, err := service.Refresh(context.Background(), "missing-refresh")
 	if !errors.Is(err, ErrSessionNotFound) {
@@ -219,7 +243,7 @@ func TestRefreshServiceRejectsRecordedInvalidStates(t *testing.T) {
 			sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
 			verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
 			configure(account, sessions, verifier, now)
-			if _, err := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now }).Refresh(context.Background(), token); err == nil {
+			if _, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now }).Refresh(context.Background(), token); err == nil {
 				t.Fatal("Refresh accepted invalid state")
 			}
 		})
@@ -233,8 +257,40 @@ func TestRefreshServiceRevokesAllSessionsWhenRotationReportsCompromise(t *testin
 	sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
 	sessions.rotateErr = ErrSessionCompromised
 	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
-	_, err := NewRefreshService(repo, sessions, verifier, issuer, func() time.Time { return now }).Refresh(context.Background(), token)
+	_, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: true}, func() time.Time { return now }).Refresh(context.Background(), token)
 	if !errors.Is(err, ErrSessionCompromised) || sessions.revokedAllFor != account.UID {
 		t.Fatalf("error/revocation = %v/%v", err, sessions.revokedAllFor)
+	}
+}
+
+// AI-generated (edited by ZI YANG): concurrent refresh requests must stop before querying the session store.
+func TestRefreshServiceRejectsConcurrentRefreshBeforeDatabaseLookup(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	token, hash := "refresh", HashRefreshToken("refresh")
+	jti := uuid.New()
+	sessions.sessions[hash] = &Session{UID: account.UID, JTI: jti, TokenHash: hash, ExpiresAt: now.Add(time.Hour)}
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: jti, IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+
+	_, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{acquired: false}, func() time.Time { return now }).Refresh(context.Background(), token)
+	if !errors.Is(err, ErrRefreshInProgress) {
+		t.Fatalf("error = %v, want ErrRefreshInProgress", err)
+	}
+	if sessions.getCalls != 0 {
+		t.Fatalf("GetSessionByHash calls = %d, want 0", sessions.getCalls)
+	}
+}
+
+func TestRefreshServiceFailsClosedWhenRefreshLockIsUnavailable(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	token := "refresh"
+	lockFailure := errors.New("Redis unavailable")
+	verifier := &fakeRefreshVerifier{claims: RefreshClaims{UserID: account.UID, JTI: uuid.New(), IssuedAt: now, ExpiresAt: now.Add(time.Hour)}}
+
+	_, err := newRefreshService(repo, sessions, verifier, issuer, &fakeRefreshLock{err: lockFailure}, func() time.Time { return now }).Refresh(context.Background(), token)
+	if !errors.Is(err, lockFailure) {
+		t.Fatalf("error = %v, want Redis lock failure", err)
+	}
+	if sessions.getCalls != 0 {
+		t.Fatalf("GetSessionByHash calls = %d, want 0", sessions.getCalls)
 	}
 }

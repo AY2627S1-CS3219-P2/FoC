@@ -197,6 +197,18 @@ func TestPostgresRepositories(t *testing.T) {
 			if err := sessions.RotateSession(ctx, "missing-hash", replayReplacement); !errors.Is(err, user.ErrSessionNotFound) {
 				t.Fatalf("missing rotation source error = %v, want ErrSessionNotFound", err)
 			}
+
+			// AI-generated (edited by ZI YANG): an ordinary logout is not evidence that the credential was replayed.
+			normallyRevoked := integrationSession(account.UID, "normally-revoked-hash", replayReplacement.CreatedAt.Add(time.Minute))
+			if err := sessions.CreateSession(ctx, normallyRevoked); err != nil {
+				t.Fatalf("create normally revoked session: %v", err)
+			}
+			if err := sessions.RevokeSessionByHash(ctx, normallyRevoked.TokenHash); err != nil {
+				t.Fatalf("revoke normally revoked session: %v", err)
+			}
+			if err := sessions.RotateSession(ctx, normallyRevoked.TokenHash, integrationSession(account.UID, "normal-revoke-replacement-hash", normallyRevoked.CreatedAt.Add(time.Minute))); !errors.Is(err, user.ErrSessionNotFound) {
+				t.Fatalf("normally revoked rotation error = %v, want ErrSessionNotFound", err)
+			}
 		})
 
 		t.Run("revokes one session", func(t *testing.T) {

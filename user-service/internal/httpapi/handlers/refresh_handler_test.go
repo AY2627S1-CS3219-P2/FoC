@@ -73,6 +73,11 @@ func TestRefreshHandler(t *testing.T) {
 			wantStatus: http.StatusUnauthorized,
 			wantError:  "authentication required",
 		},
+		"rejects a concurrent refresh": {
+			body:       `{"refreshToken":"in-progress"}`,
+			refresher:  &fakeRefresher{err: user.ErrRefreshInProgress},
+			wantStatus: http.StatusTooManyRequests,
+		},
 		// AI-generated (edited by ZI YANG): outages must remain distinguishable from ended credentials.
 		"reports database failure": {
 			body:       `{"refreshToken":"valid"}`,

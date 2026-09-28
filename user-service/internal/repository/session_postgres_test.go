@@ -82,8 +82,41 @@ func TestMapSessionDatabaseErrorDistinguishesNotFound(t *testing.T) {
 	}
 }
 
-func TestGetSessionByHashQueryLocksRow(t *testing.T) {
-	if !strings.Contains(getSessionByHashQuery, "FOR UPDATE") {
-		t.Fatalf("getSessionByHashQuery must lock the session row with FOR UPDATE")
+func TestRotateSessionQueryLocksRow(t *testing.T) {
+	// AI-generated (edited by ZI YANG): refresh validation must occur in the same transaction that rotates the session.
+	if !strings.Contains(getSessionByHashForUpdateQuery, "FOR UPDATE") {
+		t.Fatalf("getSessionByHashForUpdateQuery must lock the session row with FOR UPDATE")
+	}
+}
+
+func TestRotationSessionStateDistinguishesReplayFromNormalLogout(t *testing.T) {
+	now := time.Now()
+	replacement := "replacement-hash"
+	tests := map[string]struct {
+		session *user.Session
+		want    error
+	}{
+		"active": {
+			session: &user.Session{ExpiresAt: now.Add(time.Minute)},
+		},
+		"normally revoked": {
+			session: &user.Session{ExpiresAt: now.Add(time.Minute), RevokedAt: &now},
+			want:    user.ErrSessionNotFound,
+		},
+		"rotated": {
+			session: &user.Session{ExpiresAt: now.Add(time.Minute), ReplacedByTokenHash: &replacement},
+			want:    user.ErrSessionCompromised,
+		},
+		"expired": {
+			session: &user.Session{ExpiresAt: now.Add(-time.Minute)},
+			want:    user.ErrSessionNotFound,
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := validateSessionForRotation(tt.session, now); !errors.Is(err, tt.want) {
+				t.Fatalf("validateSessionForRotation() error = %v, want %v", err, tt.want)
+			}
+		})
 	}
 }

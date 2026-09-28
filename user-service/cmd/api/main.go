@@ -94,7 +94,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	authenticator := session.NewAuthenticator(userRepository, jwtService)
 	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)
-	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, time.Now)
+	// AI-generated (edited by ZI YANG): supply the recorded Redis refresh lock through the composition root.
+	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, repository.NewRedisRefreshLock(redisClient), time.Now)
 	logoutService := session.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
 	httpHandler := router.Setup(routes.Dependencies{
 		Auth: handlers.AuthDependencies{

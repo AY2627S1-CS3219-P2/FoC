@@ -27,6 +27,11 @@ const (
 		SELECT jti, created_at, expires_at, revoked_at, token_hash,
 			replaced_by_token_hash, uid
 		FROM sessions
+		WHERE token_hash = $1`
+	getSessionByHashForUpdateQuery = `
+		SELECT jti, created_at, expires_at, revoked_at, token_hash,
+			replaced_by_token_hash, uid
+		FROM sessions
 		WHERE token_hash = $1
 		FOR UPDATE`
 	updateRotatedSessionQuery = `
@@ -78,21 +83,12 @@ func (r *PostgresSessionRepository) CreateSession(ctx context.Context, session *
 	return nil
 }
 
-// GetSessionByHash retrieves a session while taking a row lock for refresh
-// validation. The lock is held for the duration of this database transaction.
+// GetSessionByHash retrieves a session for validation outside a rotation
+// transaction. RotateSession owns the lock required for atomic rotation.
 func (r *PostgresSessionRepository) GetSessionByHash(ctx context.Context, hash string) (*user.Session, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin get session transaction: %w", err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	session, err := scanSession(tx.QueryRow(ctx, getSessionByHashQuery, hash))
+	session, err := scanSession(r.pool.QueryRow(ctx, getSessionByHashQuery, hash))
 	if err != nil {
 		return nil, fmt.Errorf("get session by hash: %w", mapSessionDatabaseError(err))
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit get session transaction: %w", err)
 	}
 	return session, nil
 }
@@ -108,8 +104,13 @@ func (r *PostgresSessionRepository) RotateSession(ctx context.Context, oldHash s
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
-	if _, err := scanSession(tx.QueryRow(ctx, getSessionByHashQuery, oldHash)); err != nil {
+	// AI-generated (edited by ZI YANG): lock and re-check session state in this transaction so a concurrent rotation cannot bypass replay detection.
+	oldSession, err := scanSession(tx.QueryRow(ctx, getSessionByHashForUpdateQuery, oldHash))
+	if err != nil {
 		return fmt.Errorf("lock session for rotation: %w", mapSessionDatabaseError(err))
+	}
+	if err := validateSessionForRotation(oldSession, time.Now()); err != nil {
+		return err
 	}
 
 	result, err := tx.Exec(ctx, updateRotatedSessionQuery, time.Now(), newSession.TokenHash, oldHash)
@@ -132,6 +133,16 @@ func (r *PostgresSessionRepository) RotateSession(ctx context.Context, oldHash s
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit rotate session transaction: %w", err)
+	}
+	return nil
+}
+
+func validateSessionForRotation(session *user.Session, now time.Time) error {
+	if session.ReplacedByTokenHash != nil {
+		return user.ErrSessionCompromised
+	}
+	if session.RevokedAt != nil || !session.ExpiresAt.After(now) {
+		return user.ErrSessionNotFound
 	}
 	return nil
 }

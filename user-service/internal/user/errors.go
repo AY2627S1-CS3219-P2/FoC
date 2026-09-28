@@ -27,4 +27,6 @@ var (
 	ErrLastAdmin          = errors.New("cannot suspend the last active admin")
 	ErrSessionNotFound    = errors.New("session not found")
 	ErrSessionCompromised = errors.New("session compromised")
+	// AI-generated (edited by ZI YANG): lets the HTTP layer return the recorded 429 without treating lock contention as an authentication failure.
+	ErrRefreshInProgress = errors.New("refresh already in progress")
 )

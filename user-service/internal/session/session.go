@@ -39,6 +39,14 @@ type RefreshTokenVerifier interface {
 	VerifyRefresh(ctx context.Context, rawToken string) (RefreshClaims, error)
 }
 
+// AI-generated (edited by ZI YANG): keeps the Redis vendor dependency at the application boundary while enforcing the recorded refresh debounce.
+// RefreshLock serializes refresh attempts for the same hashed credential.
+type RefreshLock interface {
+	Acquire(ctx context.Context, tokenHash string, ttl time.Duration) (bool, error)
+}
+
+const refreshLockTTL = 5 * time.Second
+
 // LoginService authenticates an account and records its refresh session.
 type LoginService struct {
 	authenticator *Authenticator
@@ -102,16 +110,17 @@ type RefreshService struct {
 	sessions   user.SessionRepository
 	verifier   RefreshTokenVerifier
 	issuer     TokenIssuer
+	lock       RefreshLock
 	now        func() time.Time
 }
 
 // NewRefreshService constructs a refresh service with injected token and
 // persistence boundaries.
-func NewRefreshService(repository user.UserRepository, sessions user.SessionRepository, verifier RefreshTokenVerifier, issuer TokenIssuer, now func() time.Time) *RefreshService {
+func NewRefreshService(repository user.UserRepository, sessions user.SessionRepository, verifier RefreshTokenVerifier, issuer TokenIssuer, lock RefreshLock, now func() time.Time) *RefreshService {
 	if now == nil {
 		now = time.Now
 	}
-	return &RefreshService{repository: repository, sessions: sessions, verifier: verifier, issuer: issuer, now: now}
+	return &RefreshService{repository: repository, sessions: sessions, verifier: verifier, issuer: issuer, lock: lock, now: now}
 }
 
 // Refresh verifies and rotates a refresh session. A previously revoked or
@@ -124,7 +133,12 @@ func (s *RefreshService) Refresh(ctx context.Context, rawToken string) (TokenPai
 	if err != nil {
 		return TokenPair{}, err
 	}
-	session, oldHash, err := s.activeSession(ctx, rawToken, claims)
+	// AI-generated (edited by ZI YANG): hash before locking so Redis never receives the raw refresh credential.
+	oldHash := HashRefreshToken(rawToken)
+	if err := s.acquireRefreshLock(ctx, oldHash); err != nil {
+		return TokenPair{}, err
+	}
+	session, err := s.activeSession(ctx, oldHash, claims)
 	if err != nil {
 		return TokenPair{}, err
 	}
@@ -143,7 +157,7 @@ func (s *RefreshService) Refresh(ctx context.Context, rawToken string) (TokenPai
 }
 
 func (s *RefreshService) validateDependencies() error {
-	if s.repository == nil || s.sessions == nil || s.verifier == nil || s.issuer == nil {
+	if s.repository == nil || s.sessions == nil || s.verifier == nil || s.issuer == nil || s.lock == nil {
 		return errors.New("refresh dependencies are required")
 	}
 	return nil
@@ -160,34 +174,45 @@ func (s *RefreshService) verifyClaims(ctx context.Context, rawToken string) (Ref
 	return claims, nil
 }
 
-func (s *RefreshService) activeSession(ctx context.Context, rawToken string, claims RefreshClaims) (*user.Session, string, error) {
-	oldHash := HashRefreshToken(rawToken)
+func (s *RefreshService) acquireRefreshLock(ctx context.Context, oldHash string) error {
+	// AI-generated (edited by ZI YANG): reject concurrent refreshes before any session query so one client cannot trigger its own replay defense.
+	locked, err := s.lock.Acquire(ctx, oldHash, refreshLockTTL)
+	if err != nil {
+		return fmt.Errorf("acquire refresh lock: %w", err)
+	}
+	if !locked {
+		return user.ErrRefreshInProgress
+	}
+	return nil
+}
+
+func (s *RefreshService) activeSession(ctx context.Context, oldHash string, claims RefreshClaims) (*user.Session, error) {
 	session, err := s.sessions.GetSessionByHash(ctx, oldHash)
 	if err != nil {
 		if errors.Is(err, user.ErrSessionNotFound) {
-			return nil, "", user.ErrSessionNotFound
+			return nil, user.ErrSessionNotFound
 		}
-		return nil, "", fmt.Errorf("get refresh session: %w", err)
+		return nil, fmt.Errorf("get refresh session: %w", err)
 	}
 	if session == nil || session.UID != claims.UserID || session.JTI != claims.JTI {
-		return nil, "", user.ErrSessionNotFound
+		return nil, user.ErrSessionNotFound
 	}
 	if session.ReplacedByTokenHash != nil {
 		if err := s.revokeCompromisedSessions(ctx, session.UID); err != nil {
-			return nil, "", err
+			return nil, err
 		}
-		return nil, "", user.ErrSessionCompromised
+		return nil, user.ErrSessionCompromised
 	}
 	if session.RevokedAt != nil {
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — preserves the
 		// recorded distinction between normal logout and rotated-token replay.
 		// Author review: ZI YANG - validated correctness.
-		return nil, "", user.ErrSessionNotFound
+		return nil, user.ErrSessionNotFound
 	}
 	if !session.ExpiresAt.After(s.now()) {
-		return nil, "", user.ErrSessionNotFound
+		return nil, user.ErrSessionNotFound
 	}
-	return session, oldHash, nil
+	return session, nil
 }
 
 func (s *RefreshService) activeAccount(ctx context.Context, claims RefreshClaims) (*user.User, error) {
