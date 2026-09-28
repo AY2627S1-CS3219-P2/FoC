@@ -6,11 +6,17 @@
 // Package hash contains user-service password cryptography.
 package hash
 
-import "golang.org/x/crypto/bcrypt"
+import (
+	"crypto/sha256"
+
+	"golang.org/x/crypto/bcrypt"
+)
 
 // HashPassword returns a bcrypt hash for a plaintext password.
 func HashPassword(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	// AI-generated (edited by PENDING): preserve the recorded 128-character policy within bcrypt's 72-byte cap.
+	digest := sha256.Sum256([]byte(password))
+	hash, err := bcrypt.GenerateFromPassword(digest[:], bcrypt.DefaultCost)
 	if err != nil {
 		return "", err
 	}
@@ -19,5 +25,6 @@ func HashPassword(password string) (string, error) {
 
 // CheckPassword reports whether password matches a bcrypt hash.
 func CheckPassword(hash, password string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
+	digest := sha256.Sum256([]byte(password))
+	return bcrypt.CompareHashAndPassword([]byte(hash), digest[:]) == nil
 }

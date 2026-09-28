@@ -5,7 +5,10 @@
 
 package hash
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestHashPasswordDoesNotReturnPlaintext(t *testing.T) {
 	password := "CorrectHorseBattery9"
@@ -35,5 +38,23 @@ func TestCheckPasswordMatchesOnlyTheOriginalPassword(t *testing.T) {
 func TestCheckPasswordRejectsMalformedHash(t *testing.T) {
 	if CheckPassword("not-a-bcrypt-hash", "CorrectHorseBattery9") {
 		t.Fatal("CheckPassword() accepted a malformed hash")
+	}
+}
+
+// AI-generated (edited by PENDING): the recorded 8–128-character policy must not be limited by bcrypt's 72-byte input cap.
+func TestHashPasswordSupportsRecordedLongAndMultibytePasswords(t *testing.T) {
+	for name, password := range map[string]string{
+		"128 ASCII characters":    strings.Repeat("Abcdef1x", 16),
+		"multibyte over 72 bytes": strings.Repeat("Äbcdef1", 18),
+	} {
+		t.Run(name, func(t *testing.T) {
+			passwordHash, err := HashPassword(password)
+			if err != nil {
+				t.Fatalf("HashPassword() error = %v", err)
+			}
+			if !CheckPassword(passwordHash, password) {
+				t.Fatal("CheckPassword() rejected the original password")
+			}
+		})
 	}
 }
