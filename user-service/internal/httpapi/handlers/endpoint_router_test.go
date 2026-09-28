@@ -3,7 +3,7 @@
 // Scope: Added shared test helper that exercises the dedicated router package.
 // Author review: Validated tests reflects intended behaviour
 
-package httpapi
+package handlers_test
 
 import (
 	"net/http"

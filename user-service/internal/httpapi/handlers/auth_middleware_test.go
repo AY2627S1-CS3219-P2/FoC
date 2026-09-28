@@ -3,7 +3,7 @@
 // Scope: Added unit tests for JWT verification middleware and principal context.
 // Author review: Validated tests reflects intended behaviour
 
-package httpapi
+package handlers_test
 
 import (
 	"context"
