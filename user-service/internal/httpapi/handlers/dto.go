@@ -69,6 +69,9 @@ type UpdateStatusRequest struct {
 // UpdateProfileRequest is the JSON body accepted by profile updates.
 type UpdateProfileRequest struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
-	PhoneNum string `json:"phone_num"`
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — transcribes the
+	// recorded password-change request contract. Author review: PENDING.
+	CurrentPassword string `json:"currentPassword"`
+	NewPassword     string `json:"newPassword"`
+	PhoneNum        string `json:"phone_num"`
 }

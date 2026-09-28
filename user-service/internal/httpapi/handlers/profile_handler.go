@@ -29,15 +29,21 @@ type AccountStatusUpdater interface {
 
 // ProfileUpdater changes mutable profile fields.
 type ProfileUpdater interface {
-	UpdateProfile(context.Context, uuid.UUID, string, string, string) (*user.User, error)
+	UpdateProfile(context.Context, uuid.UUID, string, string, string, string) (*user.User, error)
+}
+
+// AdminProfileUpdater changes another account's mutable profile fields.
+type AdminProfileUpdater interface {
+	UpdateProfileAsAdmin(context.Context, uuid.UUID, string, string, string) (*user.User, error)
 }
 
 // ProfileDependencies contains only the operations required by ProfileHandler.
 type ProfileDependencies struct {
-	ProfileGetter  ProfileGetter
-	StatusUpdater  AccountStatusUpdater
-	ProfileUpdater ProfileUpdater
-	Logger         *slog.Logger
+	ProfileGetter       ProfileGetter
+	StatusUpdater       AccountStatusUpdater
+	ProfileUpdater      ProfileUpdater
+	AdminProfileUpdater AdminProfileUpdater
+	Logger              *slog.Logger
 }
 
 // ProfileHandler serves profile and account-status endpoints.
@@ -143,13 +149,24 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("profile updater is required"), "profile unavailable")
 		return
 	}
-	account, err := h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, request.PhoneNum, request.Password)
+	var account *user.User
+	if p.Role == user.AccountRoleAdmin && p.UserID != uid {
+		if h.deps.AdminProfileUpdater == nil {
+			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("admin profile updater is required"), "profile unavailable")
+			return
+		}
+		account, err = h.deps.AdminProfileUpdater.UpdateProfileAsAdmin(r.Context(), uid, request.Username, request.PhoneNum, request.NewPassword)
+	} else {
+		account, err = h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, request.PhoneNum, request.CurrentPassword, request.NewPassword)
+	}
 	if err != nil {
 		if errors.Is(err, user.ErrInvalidUsername) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "username must be at most 128 characters and contain only alphanumeric characters"})
 			// AI-generated (edited by ZI YANG): report the recorded database-width validation as a client error.
 		} else if errors.Is(err, user.ErrInvalidPhone) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "phone number must be at most 20 characters"})
+		} else if errors.Is(err, user.ErrInvalidCurrentPassword) {
+			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid current password"})
 		} else if errors.Is(err, user.ErrInvalidPassword) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateUsername) {

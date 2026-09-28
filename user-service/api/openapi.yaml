@@ -29,7 +29,12 @@ components:
           maxLength: 128
           description: Must contain only alphanumeric characters.
         # AI-generated (edited by ZI YANG): recorded password policy constraints.
-        password:
+        # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — transcribed
+        # the recorded password-change contract. Author review: PENDING.
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
           type: string
           format: password
           minLength: 8
@@ -252,7 +257,8 @@ paths:
     put:
       summary: Update mutable profile fields
       description: >
-        Updates the user's username, password, or phone number.
+        Updates the user's username, password, or phone number. Password changes
+        require currentPassword and newPassword unless an ADMIN resets another account.
         Authorization: The caller must either possess the ADMIN role, or their authenticated user ID (passed via the Gateway) must strictly match the `uid` in the path parameter.
       security:
         - BearerAuth: []
@@ -278,6 +284,12 @@ paths:
                 $ref: '#/components/schemas/UserResponse'
         '400':
           description: Invalid request body or password policy violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: The current password is incorrect.
           content:
             application/json:
               schema:

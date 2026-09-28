@@ -147,9 +147,25 @@ func (s *AccountService) GetByID(ctx context.Context, uid uuid.UUID) (*User, err
 	return account, nil
 }
 
-// UpdateProfile changes the recorded mutable profile fields. An empty password
-// leaves the existing password unchanged.
-func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, username, phone, password string) (*User, error) {
+// UpdateProfile changes mutable profile fields and verifies the current
+// password before changing it.
+func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, username, phone, currentPassword, newPassword string) (*User, error) {
+	return s.updateProfile(ctx, uid, username, phone, newPassword, func(account *User) error {
+		if !hash.CheckPassword(account.PasswordHash, currentPassword) {
+			return ErrInvalidCurrentPassword
+		}
+		return nil
+	})
+}
+
+// UpdateProfileAsAdmin changes mutable profile fields for another account.
+// An administrator may reset the target account's password without its current
+// password, as recorded for administrative recovery.
+func (s *AccountService) UpdateProfileAsAdmin(ctx context.Context, uid uuid.UUID, username, phone, newPassword string) (*User, error) {
+	return s.updateProfile(ctx, uid, username, phone, newPassword, func(*User) error { return nil })
+}
+
+func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, username, phone, newPassword string, authorizePasswordChange func(*User) error) (*User, error) {
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
@@ -175,17 +191,33 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 	if phone != "" {
 		account.PhoneNum = phone
 	}
-	if password != "" {
-		if err := ValidatePassword(password); err != nil {
+	passwordChanged := newPassword != ""
+	if passwordChanged {
+		if err := authorizePasswordChange(account); err != nil {
+			return nil, err
+		}
+		if err := ValidatePassword(newPassword); err != nil {
 			return nil, fmt.Errorf("validate profile password: %w", err)
 		}
-		account.PasswordHash, err = hash.HashPassword(password)
+		account.PasswordHash, err = hash.HashPassword(newPassword)
 		if err != nil {
 			return nil, fmt.Errorf("hash profile password: %w", err)
 		}
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — applies the
+		// recorded access-token validity boundary after a password reset.
+		// Author review: PENDING.
+		account.TokensValidAfter = s.now().UTC()
 	}
 	if err := s.repository.Update(ctx, account); err != nil {
 		return nil, fmt.Errorf("update account: %w", err)
+	}
+	if passwordChanged {
+		if s.sessions == nil {
+			return nil, errors.New("session repository is required")
+		}
+		if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
+			return nil, fmt.Errorf("revoke password-changed account sessions: %w", err)
+		}
 	}
 	return account, nil
 }

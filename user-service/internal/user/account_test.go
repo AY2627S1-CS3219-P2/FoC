@@ -159,7 +159,7 @@ func TestAccountServiceUpdateProfilePreservesEmptyPassword(t *testing.T) {
 	repository := &fakeAccountRepository{user: account}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	updated, err := service.UpdateProfile(context.Background(), uid, "new", "+6512345678", "")
+	updated, err := service.UpdateProfile(context.Background(), uid, "new", "+6512345678", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestAccountServiceUpdateProfileRejectsInvalidUsername(t *testing.T) {
 	repository := &fakeAccountRepository{user: account}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	_, err := service.UpdateProfile(context.Background(), uid, "new_user", "", "")
+	_, err := service.UpdateProfile(context.Background(), uid, "new_user", "", "", "")
 	if !errors.Is(err, ErrInvalidUsername) {
 		t.Fatalf("error = %v, want ErrInvalidUsername", err)
 	}
@@ -188,11 +188,15 @@ func TestAccountServiceUpdateProfileRejectsInvalidUsername(t *testing.T) {
 
 func TestAccountServiceUpdateProfileRejectsInvalidPassword(t *testing.T) {
 	uid := uuid.New()
-	account := &User{UID: uid, Username: "old"}
+	oldHash, err := hash.HashPassword("OldPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	account := &User{UID: uid, Username: "old", PasswordHash: oldHash}
 	repository := &fakeAccountRepository{user: account}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	_, err := service.UpdateProfile(context.Background(), uid, "", "", "weakpass")
+	_, err = service.UpdateProfile(context.Background(), uid, "", "", "OldPass1", "weakpass")
 	if !errors.Is(err, ErrInvalidPassword) {
 		t.Fatalf("error = %v, want ErrInvalidPassword", err)
 	}
@@ -207,12 +211,78 @@ func TestAccountServiceUpdateProfileRejectsPhoneLongerThanDatabaseWidth(t *testi
 	repository := &fakeAccountRepository{user: &User{UID: uid, PhoneNum: "91234567"}}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	_, err := service.UpdateProfile(context.Background(), uid, "", strings.Repeat("1", 21), "")
+	_, err := service.UpdateProfile(context.Background(), uid, "", strings.Repeat("1", 21), "", "")
 	if !errors.Is(err, ErrInvalidPhone) {
 		t.Fatalf("error = %v, want ErrInvalidPhone", err)
 	}
 	if repository.updated != nil {
 		t.Fatal("repository should not persist an overlong phone number")
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the recorded
+// password confirmation, access-token boundary, and refresh-session revocation.
+// Author review: PENDING.
+func TestAccountServiceUpdateProfileChangesPasswordAndRevokesSessions(t *testing.T) {
+	uid := uuid.New()
+	oldHash, err := hash.HashPassword("OldPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 9, 28, 4, 0, 0, 0, time.UTC)
+	account := &User{UID: uid, PasswordHash: oldHash}
+	repository := &fakeAccountRepository{user: account}
+	sessions := &fakeAccountSessionRepository{}
+	service := NewAccountServiceWithClock(repository, &fakeSuspensionWriter{}, sessions, time.Minute, func() time.Time { return timestamp })
+
+	updated, err := service.UpdateProfile(context.Background(), uid, "", "", "OldPass1", "NewPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hash.CheckPassword(updated.PasswordHash, "NewPass1") {
+		t.Fatal("new password was not stored")
+	}
+	if !updated.TokensValidAfter.Equal(timestamp) {
+		t.Fatalf("tokens valid after = %s, want %s", updated.TokensValidAfter, timestamp)
+	}
+	if sessions.uid != uid {
+		t.Fatalf("sessions revoked for = %s, want %s", sessions.uid, uid)
+	}
+}
+
+func TestAccountServiceUpdateProfileRejectsIncorrectCurrentPassword(t *testing.T) {
+	uid := uuid.New()
+	oldHash, err := hash.HashPassword("OldPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &fakeAccountRepository{user: &User{UID: uid, PasswordHash: oldHash}}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	_, err = service.UpdateProfile(context.Background(), uid, "", "", "WrongPass1", "NewPass1")
+	if !errors.Is(err, ErrInvalidCurrentPassword) {
+		t.Fatalf("error = %v, want ErrInvalidCurrentPassword", err)
+	}
+	if repository.updated != nil {
+		t.Fatal("repository should not persist an unconfirmed password change")
+	}
+}
+
+func TestAccountServiceAdminPasswordResetBypassesCurrentPassword(t *testing.T) {
+	uid := uuid.New()
+	oldHash, err := hash.HashPassword("OldPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &fakeAccountRepository{user: &User{UID: uid, PasswordHash: oldHash}}
+	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
+
+	updated, err := service.UpdateProfileAsAdmin(context.Background(), uid, "", "", "NewPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !hash.CheckPassword(updated.PasswordHash, "NewPass1") {
+		t.Fatal("admin reset did not update the password")
 	}
 }
 
@@ -378,7 +448,7 @@ func TestAccountServicePropagatesRepositoryErrors(t *testing.T) {
 	repository := &fakeAccountRepository{lookupErr: failure}
 	service := NewAccountService(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute)
 
-	_, err := service.UpdateProfile(context.Background(), uuid.New(), "new", "", "")
+	_, err := service.UpdateProfile(context.Background(), uuid.New(), "new", "", "", "")
 	if !errors.Is(err, failure) {
 		t.Fatalf("error = %v, want repository error", err)
 	}

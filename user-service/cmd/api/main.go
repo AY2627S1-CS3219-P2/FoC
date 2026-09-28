@@ -107,10 +107,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		},
 		Profile: handlers.ProfileDependencies{
 			// AI-generated (edited by PENDING): profile reads enter through the domain service, not the repository adapter.
-			ProfileGetter:  accountService,
-			StatusUpdater:  accountService,
-			ProfileUpdater: accountService,
-			Logger:         logger,
+			ProfileGetter:       accountService,
+			StatusUpdater:       accountService,
+			ProfileUpdater:      accountService,
+			AdminProfileUpdater: accountService,
+			Logger:              logger,
 		},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,
