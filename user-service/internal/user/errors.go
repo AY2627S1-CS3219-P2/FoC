@@ -7,6 +7,9 @@ package user
 
 import "errors"
 
+// AI-generated (edited by ZI YANG): adds block documentation for the exported
+// error values without changing their errors.Is behavior.
+// Sentinel errors that callers tell apart with errors.Is.
 var (
 	ErrNotFound           = errors.New("user not found")
 	ErrDuplicateEmail     = errors.New("email address is already in use")

@@ -16,8 +16,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// AccessTokenClaims contains the access-token data required for logout
-// invalidation without exposing JWT library types to the domain service.
+// AI-generated (edited by ZI YANG): removes implementation-boundary rationale
+// and describes the claims required by the logout operation.
+// AccessTokenClaims holds the access-token JTI and expiry that logout needs.
 type AccessTokenClaims struct {
 	UserID    uuid.UUID
 	JTI       uuid.UUID
@@ -36,13 +37,13 @@ type AccessTokenVerifier interface {
 	VerifyAccess(ctx context.Context, rawToken string) (AccessTokenClaims, error)
 }
 
-// BlocklistWriter is the sole write boundary for access-token invalidation.
+// BlocklistWriter blocks an access token's JTI for a given TTL.
 type BlocklistWriter interface {
 	BlockAccessToken(ctx context.Context, jti uuid.UUID, ttl time.Duration) error
 }
 
-// LogoutService invalidates an access token in Redis before revoking its
-// refresh session in PostgreSQL, as recorded by the service requirements.
+// LogoutService ends a session: it blocks the access token and revokes the
+// refresh token.
 type LogoutService struct {
 	sessions  user.SessionRepository
 	blocklist BlocklistWriter

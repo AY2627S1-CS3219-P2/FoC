@@ -33,8 +33,9 @@ type RefreshClaims struct {
 	ExpiresAt time.Time
 }
 
-// RefreshTokenVerifier verifies a refresh token without exposing JWT vendor
-// types to the domain service.
+// AI-generated (edited by ZI YANG): simplifies the interface documentation to
+// its input and returned claims without describing its implementation boundary.
+// RefreshTokenVerifier verifies a refresh token and returns its claims.
 type RefreshTokenVerifier interface {
 	VerifyRefresh(ctx context.Context, rawToken string) (RefreshClaims, error)
 }

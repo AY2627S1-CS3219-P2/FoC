@@ -1,8 +1,15 @@
+import argparse
 import json
 import os
-import argparse
+import sys
+
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
+
+# AI Assistance Disclosure:
+# Tool: Codex (GPT-5), date: 2026-09-28
+# Scope: Enforced recorded key-file permissions and failure exit status, and added script attribution.
+# Author review: ZI YANG - validated correctness
 
 
 def generate_rsa_private_key_pem(key_size: int = 2048) -> str:
@@ -21,7 +28,7 @@ def generate_rsa_private_key_pem(key_size: int = 2048) -> str:
     return pem_bytes.decode("utf-8")
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(
         description="Generate keys.json for CampusRun User Service"
     )
@@ -34,22 +41,23 @@ def main():
     parser.add_argument("--out", type=str, default="keys.json", help="Output file path")
     args = parser.parse_args()
 
-    # The Go service computes the public keys and kids programmatically,
-    # so we only need to provide the raw private keys.
-    payload = {"keys": [generate_rsa_private_key_pem() for _ in range(args.count)]}
-
-    # Open file with restricted 0600 permissions (read/write for owner only)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
     try:
+        # The Go service computes the public keys and kids programmatically,
+        # so this file contains only PEM private keys.
+        payload = {"keys": [generate_rsa_private_key_pem() for _ in range(args.count)]}
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
         fd = os.open(args.out, flags, 0o600)
-        with open(fd, "w", encoding="utf-8") as f:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(payload, f, indent=2)
         print(
             f"Success: Wrote {args.count} RSA private keys to {args.out} with 0600 permissions."
         )
-    except Exception as e:
-        print(f"Error writing keys: {e}")
+        return 0
+    except Exception as error:
+        print(f"Error writing keys: {error}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

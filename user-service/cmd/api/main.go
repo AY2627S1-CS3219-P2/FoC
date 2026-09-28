@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added the user-service command entry point and wired the recorded startup dependencies.
-// Author review: COMPLETED BY ZI YANG
+// Author review: COMPLETED BY ZI YANG - verified correctness
 
 package main
 

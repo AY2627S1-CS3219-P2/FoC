@@ -40,14 +40,6 @@ below is theirs, not an agent's.
 
 Migrations named `NNNNNN_<name>.{up,down}.sql`.
 
-Which domain packages exist under `internal/`, and what each contains, is the
-owner's to decide — `supplier-service` has exactly one (`internal/supplier`)
-because it has one aggregate; identity may not.
-
-Root §8 makes `api/openapi.yaml` the contract; `supplier-service` predates it
-and has no `api/` directory yet. Adding one here is an interface decision: the
-owner writes the spec, an agent implements against it.
-
 The request schemas, response schemas, and error contracts (specifically 401 Unauthorized for expired/compromised tokens and 500 Internal Server Error for Redis failures) for /refresh, /logout, and /.well-known/jwks.json must be fully documented in `api/openapi.yaml` to comply with the project's spec-first requirement.
 
 ## Packaging
@@ -149,11 +141,14 @@ Example repository method signatures:
 	// GetSessionByHash retrieves a session to validate an incoming refresh request.
 	GetSessionByHash(ctx context.Context, hash string) (*Session, error)
 
-	// RotateSession atomically invalidates the old refresh token and issues a new one.
-	// It must execute the following as a single database transaction:
-	// 1. Set old session's `revoked_at` to time.Now()
-	// 2. Set old session's `replaced_by_token_hash` to newSession.TokenHash
-	// 3. Insert newSession
+    // RotateSession handles the entire refresh transaction to prevent race conditions.
+    // It MUST execute the following within a SINGLE database transaction (pgx.Tx):
+    // 1. SELECT ... FOR UPDATE to lock the old session row.
+    // 2. Perform the Replay Detection checks (checking revoked_at and replaced_by_token_hash).
+    // 3. If compromised, rollback and return ErrSessionCompromised.
+    // 4. If valid, set old session's `revoked_at` = NOW() and `replaced_by_token_hash` = newSession.TokenHash.
+    // 5. Insert newSession.
+    // 6. Commit the transaction.
 	RotateSession(ctx context.Context, oldHash string, newSession *Session) error
 
 	// RevokeSessionByHash is used during a standard logout.
@@ -221,6 +216,39 @@ Handlers should be grouped according to functions. For example:
 3. SystemHandler (includes health and jwks)
 Handlers should all be grouped under a package in `httpapi`.
 
+### OpenAPI Specification & API Contracts
+The API contract is defined in `api/openapi.yaml` and must strictly align with the handler implementations. The specification must use **OpenAPI 3.1.0**.
+
+**Global API Rules:**
+1. **Error Response Schema:** Every `4xx` and `5xx` response across all endpoints must strictly use a standardized `ErrorResponse` component schema: `{"error": "string"}`.
+2. **Malformed Identifiers:** Any endpoint accepting a `{uid}` path parameter must return `400 Bad Request` (not `404 Not Found`) if the provided UUID is malformed.
+3. **Public Endpoints:** Unauthenticated endpoints (health, register, login, refresh, jwks) must explicitly declare `security: []` in the OpenAPI spec to override any global security requirements.
+
+**Endpoint-Specific Contracts:**
+*   **GET /api/v1/health**
+    *   **Statuses:** `200 OK` {"status":"ok"}, `503 Service Unavailable` {"status:"unhealthy"} (e.g., when Redis is unreachable).
+*   **POST /api/v1/users/register**
+    *   **Statuses:** `201 Created`, `400 Bad Request`, `409 Conflict`, `500 Internal Server Error`.
+    *   **Schema Constraints:** The `email` field must explicitly document the `@u.nus.edu` restriction. The `phone_num` field must have `maxLength: 20`.
+*   **POST /api/v1/users/login**
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized` (invalid credentials), `403 Forbidden` (account suspended), `500 Internal Server Error`.
+    *   **Schema Constraints:** Remove password length validation (8-128) from the `LoginRequest` schema. Login handlers must not enforce length limits on input; they simply pass the input to the hash comparator which will inherently fail invalid strings, returning `401`.
+*   **GET /api/v1/users/{uid}**
+    *   **Statuses:** `200 OK`, `401 Unauthorized`, `404 Not Found`, `500 Internal Server Error`.
+*   **PUT /api/v1/users/{uid}**
+    *   **Statuses:** `200 OK`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict`, `500 Internal Server Error`.
+    *   **Schema Constraints:** The `UpdateProfileRequest.password` field must declare the 8-128 character policy.
+    *   **Authorization Fix:** The code must be updated to align with the spec description. It must read the `X-User-ID` header injected by the API Gateway to verify the caller's identity, instead of attempting to read a Bearer token directly.
+*   **PATCH /api/v1/users/{uid}/status**
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict` (last admin), `500 Internal Server Error`.
+*   **POST /api/v1/users/refresh**
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `429 Too Many Requests`, `500 Internal Server Error`.
+*   **POST /api/v1/users/logout**
+    *   **Statuses:** `204 No Content`, `400 Bad Request` (mismatched session), `401 Unauthorized`, `500 Internal Server Error`.
+*   **GET /.well-known/jwks.json**
+    *   **Statuses:** `200 OK`, `500 Internal Server Error`.
+    *   **Schema Constraints:** The JWKS key object schema must explicitly require the `kid` property.
+
 ### JWT Signing, Key Policy, and Trust Boundary
 - Signing Algorithm & Key Type: RS256, the user service shall hold the private key to sign tokens, while the API gateway
 uses the public key to verify them.
@@ -245,11 +273,11 @@ the system must assume a compromise and revoke all tokens associated with that u
 
 Implementation:
 1. Hash the incoming token
-2. Call `GetSessionByHash`. If it returns `ErrSessionNotFound`, reject the request to refresh the session.
-3. Check the returned `Session.RevokedAt`
-   - If `RevokedAt` is NULL, the token is valid, and the system should call `RotateSession`.
-   - If `RevokedAt` is NOT NULL, then the token has been leaked or there is a replay attack. Call `RevokeAllUserSessions()`
-     and return `401 Unauthorized (ErrSessionCompromised)` 
+2. Call `GetSessionByHash` (must be executed within an active transaction with `SELECT ... FOR UPDATE`).
+3. Evaluate the returned Session state:
+    - **Valid:** If `RevokedAt` is NULL and `ReplacedByTokenHash` is NULL, the token is valid. Proceed with rotation.
+    - **Logged Out (Not Compromised):** If `RevokedAt` is NOT NULL but `ReplacedByTokenHash` is NULL, the token was ended via normal logout. Return `401 Unauthorized` (invalid token) but **do not** revoke other sessions.
+    - **Replay Attack (Compromised):** If `ReplacedByTokenHash` is NOT NULL, the token was previously used to issue a new session. This indicates a token theft or race condition. Call `RevokeAllUserSessions()` and return `401 Unauthorized (ErrSessionCompromised)`.
 
 The database transaction used to check the token in the `sessions` database should use Row-level locking (e.g.
 using `SELECT ... FOR UPDATE` when checking the token.
@@ -257,6 +285,17 @@ using `SELECT ... FOR UPDATE` when checking the token.
 A normal logout (where a token is manually revoked) must not trigger a full account lockout if that specific token is accidentally submitted again (e.g., by a stale browser tab). ErrSessionCompromised should only fire if a token was rotated (i.e., replaced_by_token_hash is populated) and then reused.
 
 To prevent race conditions where simultaneous refresh requests from the same client cause one to succeed and the other to falsely trigger replay detection, the refresh endpoint must acquire a short-lived Redis lock on the session hash before executing the rotation.
+
+### Parallel Refresh Lock & Replay Detection
+Both a Redis lock and a PostgreSQL transaction lock are required during the refresh flow.
+
+**Implementation Sequence:**
+1. **Acquire Redis Lock (Debouncing):** Before querying PostgreSQL, attempt to create a Redis key (e.g., `refresh_lock:<refresh_token_hash>`) using a `SETNX` (Set if Not Exists) operation.
+    - **TTL:** The lock must have a strict TTL of **5 seconds**.
+    - **Concurrency Rejection:** If the lock already exists, a parallel request is currently processing this exact token. Immediately return `429 Too Many Requests`. Do not execute the PostgreSQL query. This prevents accidental self-nuking.
+    - **Unavailable Behavior:** If Redis is unreachable, fail-closed. Abort the request and return `500 Internal Server Error`.
+2. **Execute PostgreSQL Transaction (Integrity):** Once the Redis lock is acquired, invoke `RotateSession`. This method must open a single transaction, use `SELECT ... FOR UPDATE` to read the row, evaluate the compromise rules (`ReplacedByTokenHash != NULL`), and perform the rotation.
+3. **Release:** The Redis lock may be explicitly deleted after the database transaction completes, or simply left to expire via its 5-second TTL.
 
 ### Implementation of Access and Refresh Tokens
 The Access/Refresh Token Claims should include:
@@ -359,6 +398,15 @@ The JSON file should contain a single root with a keys array. Here is an example
 go run ./cmd/api      # migrations run on startup via golang-migrate
 go test ./...
 ```
+
+### Key Generation Script (`generate_jwks.py`)
+To facilitate local development and JWT integration, the service includes a Python script to generate the required RSA private keys. This script is a strict build dependency and must adhere to the following rules:
+
+*   **Product Naming:** All descriptions, comments, and CLI outputs within the script must use "CampusRun" to align with the `campusrun-user-service` token issuer and audience claims.
+*   **Strict Permission Enforcement:** The script must explicitly apply `0600` (owner read/write only) permissions to `keys.json` on *every* run using `os.fchmod(fd, 0o600)`. Relying on `os.open` creation modes is insufficient, as it leaves existing wider permissions intact.
+*   **Pipeline Failure on Error:** If the script encounters an error while generating or writing the keys, it must print the error and terminate with a non-zero exit code (e.g., `sys.exit(1)`). It must not swallow the error and exit `0`.
+*   **Local Dependencies:** Python 3 and the `cryptography` package are official prerequisites for building and running the user-service locally.
+*   **AI Disclosure:** If the script was generated by an AI, it must include the standard AI disclosure header at the top of the file and be recorded in the repository's usage log.
 
 ## Gotchas
 

@@ -3,8 +3,12 @@
 // Scope: Implemented the recorded RS256 JWT signing, verification, and JWKS boundary.
 // Author review: COMPLETED BY ZI YANG
 
-// Package auth contains the user-service authentication adapters.
+// Package jwt signs and verifies user-service RS256 tokens, loads signing keys,
+// and builds the JWKS document.
 package jwt
+
+// AI-generated (edited by ZI YANG): comment-only cleanup that replaces stale
+// references to recorded decisions with the behavior each exported API exposes.
 
 import (
 	"context"
@@ -25,28 +29,33 @@ import (
 )
 
 const (
-	// Issuer is the recorded JWT issuer for user-service tokens.
+	// Issuer is the iss claim on every token. Verify rejects any other value, so
+	// changing it invalidates every token already issued.
 	Issuer = "campusrun-user-service"
-	// Audience is the recorded audience for API access tokens.
+	// Audience is the aud claim on every token. Verify rejects any other value,
+	// so changing it invalidates every token already issued.
 	Audience = "campusrun-api"
 	// ClockSkew is the allowed server-clock drift during claim validation.
 	ClockSkew = 5 * time.Second
-	// DefaultAccessTokenTTL is the recorded default lifetime for access tokens.
+	// DefaultAccessTokenTTL is the access-token lifetime used when
+	// JWT_ACCESS_TOKEN_TTL is unset.
 	DefaultAccessTokenTTL = 15 * time.Minute
-	// DefaultRefreshTokenTTL is the recorded default lifetime for refresh tokens.
+	// DefaultRefreshTokenTTL is the refresh-token lifetime used when
+	// JWT_REFRESH_TOKEN_TTL is unset.
 	DefaultRefreshTokenTTL = 7 * 24 * time.Hour
 )
 
 // TokenType identifies the two JWT credentials issued by user-service.
 type TokenType string
 
+// Token types carried in the typ claim.
 const (
 	AccessToken  TokenType = "access"
 	RefreshToken TokenType = "refresh"
 )
 
-// Key describes one RSA signing key. Retired keys omit PrivateKey but remain
-// available for verification and publication in JWKS until their tokens expire.
+// Key is one RSA key. The active key signs and must have a PrivateKey; the
+// others only verify tokens and are published in the JWKS.
 type Key struct {
 	ID         string
 	PrivateKey *rsa.PrivateKey
@@ -86,8 +95,7 @@ func NewKeySet(keys []Key, activeID string) (KeySet, error) {
 	return keySet, nil
 }
 
-// VerifiedToken contains the claims required by downstream authentication
-// boundaries without exposing a vendor JWT type.
+// VerifiedToken holds the claims of a token that passed Verify.
 type VerifiedToken struct {
 	Subject   uuid.UUID
 	Role      user.AccountRole
@@ -98,7 +106,7 @@ type VerifiedToken struct {
 	KeyID     string
 }
 
-// Service signs and verifies the recorded JWT credential types.
+// Service signs and verifies user-service access and refresh tokens.
 type Service struct {
 	keys            KeySet
 	now             func() time.Time
@@ -143,8 +151,9 @@ func (s *Service) IssueRefreshToken(subject uuid.UUID, ttl time.Duration) (strin
 	return s.issue(subject, "", RefreshToken, ttl)
 }
 
-// Issue implements the domain token issuer using the recorded default token
-// lifetimes and returns the refresh metadata required for session persistence.
+// Issue implements session.TokenIssuer. It signs an access and refresh token
+// for account with the service's configured lifetimes and returns the refresh
+// token's JTI and expiry for the session record.
 func (s *Service) Issue(ctx context.Context, account *user.User) (session.TokenPair, error) {
 	if err := ctx.Err(); err != nil {
 		return session.TokenPair{}, fmt.Errorf("issue JWT session: %w", err)
@@ -270,8 +279,8 @@ func (s *Service) Verify(raw string) (VerifiedToken, error) {
 	}, nil
 }
 
-// VerifyRefresh implements the domain refresh-token boundary while keeping
-// JWT library types inside this adapter.
+// VerifyRefresh implements session.RefreshTokenVerifier. It accepts only a
+// valid refresh token and returns its claims.
 func (s *Service) VerifyRefresh(ctx context.Context, rawToken string) (session.RefreshClaims, error) {
 	if err := ctx.Err(); err != nil {
 		return session.RefreshClaims{}, fmt.Errorf("verify refresh JWT: %w", err)
@@ -291,8 +300,8 @@ func (s *Service) VerifyRefresh(ctx context.Context, rawToken string) (session.R
 	}, nil
 }
 
-// VerifyAccess implements the domain access-token verification boundary while
-// keeping JWT library types inside this adapter.
+// VerifyAccess implements session.AccessTokenVerifier. It accepts only a valid
+// access token and returns its JTI and expiry.
 func (s *Service) VerifyAccess(ctx context.Context, rawToken string) (session.AccessTokenClaims, error) {
 	if err := ctx.Err(); err != nil {
 		return session.AccessTokenClaims{}, fmt.Errorf("verify access JWT: %w", err)

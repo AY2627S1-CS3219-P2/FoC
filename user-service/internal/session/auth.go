@@ -18,6 +18,10 @@ import (
 	"github.com/google/uuid"
 )
 
+// AI-generated (edited by ZI YANG): adds missing exported documentation and
+// keeps the issuer interface focused on its observable responsibility.
+// TokenPair is the access and refresh token returned to the client, plus the
+// refresh token's JTI and expiry for its session record.
 type TokenPair struct {
 	AccessToken      string
 	RefreshToken     string
@@ -26,7 +30,6 @@ type TokenPair struct {
 }
 
 // TokenIssuer creates JWT session credentials for an authenticated account.
-// The concrete signing and claims policy belongs outside the domain service.
 type TokenIssuer interface {
 	Issue(ctx context.Context, account *user.User) (TokenPair, error)
 }

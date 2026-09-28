@@ -36,8 +36,10 @@ func NewRedisBlocklistWriter(client redisSetter) *RedisBlocklistWriter {
 	return &RedisBlocklistWriter{client: client}
 }
 
-// BlockAccessToken stores the recorded JTI key for exactly the remaining
-// access-token lifetime.
+// AI-generated (edited by ZI YANG): assigns the lifetime calculation to the
+// caller, which passes the token's remaining lifetime into this adapter.
+// BlockAccessToken writes the jti:<uuid> key with the given TTL. The caller
+// passes the token's remaining lifetime.
 func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UUID, ttl time.Duration) error {
 	if w.client == nil {
 		return errors.New("Redis client is required")

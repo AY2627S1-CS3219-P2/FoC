@@ -3,8 +3,11 @@
 // Scope: Added startup migration execution for user-service.
 // Author review: COMPLETED BY ZI YANG
 
-// Package migrations applies the service-owned PostgreSQL migrations.
+// Package repository holds the PostgreSQL and Redis adapters for user-service
+// and applies its database migrations.
 package repository
+
+// AI-generated (edited by ZI YANG): corrects the package name in its Go doc.
 
 import (
 	"errors"

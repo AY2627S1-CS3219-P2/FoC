@@ -17,7 +17,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// ProfileGetter retrieves a public profile by account ID.
+// AI-generated (edited by ZI YANG): avoids describing the domain account as a
+// public response, because it includes fields selected later by the handler.
+// ProfileGetter retrieves an account by ID.
 type ProfileGetter interface {
 	GetByID(context.Context, uuid.UUID) (*user.User, error)
 }

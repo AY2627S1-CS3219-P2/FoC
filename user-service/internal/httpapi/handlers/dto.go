@@ -41,7 +41,10 @@ type AuthResponse struct {
 	RefreshToken string `json:"refreshToken"`
 }
 
-// UserResponse is the JSON response containing a public profile.
+// AI-generated (edited by ZI YANG): distinguishes the full profile from the
+// restricted response used for non-admin callers.
+// UserResponse is the full profile, including role, status, and creation date.
+// Profile returns it only to admins; UpdateProfile returns it to the caller.
 type UserResponse struct {
 	UID           string    `json:"uid"`
 	Username      string    `json:"username"`

@@ -11,16 +11,23 @@ import (
 	"github.com/google/uuid"
 )
 
+// AI-generated (edited by ZI YANG): adds exported role and status documentation
+// tied to the persisted enum values without changing the model.
+// AccountRole is an account's permission level, carried in the access token's
+// role claim.
 type AccountRole string
 
+// Account roles. Each value must match the account_role database enum.
 const (
 	AccountRoleStudent AccountRole = "STUDENT"
 	AccountRoleAdmin   AccountRole = "ADMIN"
 )
 
-// AccountStatus values match the account_status database enum.
+// AccountStatus says whether an account may sign in (ACTIVE) or not
+// (SUSPENDED).
 type AccountStatus string
 
+// Account statuses. Each value must match the account_status database enum.
 const (
 	AccountStatusActive    AccountStatus = "ACTIVE"
 	AccountStatusSuspended AccountStatus = "SUSPENDED"

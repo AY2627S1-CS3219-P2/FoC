@@ -63,10 +63,14 @@ const (
 		WHERE uid = $3`
 )
 
+// AI-generated (edited by ZI YANG): documents the exported repository adapter
+// and makes the suspension invalidation boundary explicit.
+// PostgresRepository stores user accounts in PostgreSQL.
 type PostgresRepository struct {
 	pool *pgxpool.Pool
 }
 
+// NewPostgresRepository returns a PostgresRepository that uses pool.
 func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{pool: pool}
 }
@@ -153,9 +157,10 @@ func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.U
 	return nil
 }
 
-// UpdateAccountStatusByID changes account status and invalidates existing JWTs
-// only when suspending an account. Reactivation preserves the validity boundary.
-// The caller supplies the timestamp so it can be shared with Redis invalidation.
+// UpdateAccountStatusByID sets the account status. Suspending also sets
+// tokens_valid_after, so refresh tokens issued before it are rejected;
+// reactivating leaves it unchanged. The caller passes the timestamp so it
+// matches the suspension key written to Redis.
 func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
 	result, err := r.pool.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid)
 	if err != nil {

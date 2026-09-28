@@ -19,9 +19,10 @@ import (
 	"github.com/google/uuid"
 )
 
-// AccountService owns user-facing account operations above the repository
-// boundary. Event publication remains outside this service until its contract
-// is recorded.
+// AI-generated (edited by ZI YANG): replaces an open event-publication note
+// with the current responsibilities of the account service.
+// AccountService handles registration, profile updates, and account-status
+// changes.
 type AccountService struct {
 	repository       UserRepository
 	suspensionWriter SuspensionWriter
@@ -147,8 +148,9 @@ func (s *AccountService) GetByID(ctx context.Context, uid uuid.UUID) (*User, err
 	return account, nil
 }
 
-// UpdateProfile changes mutable profile fields and verifies the current
-// password before changing it.
+// UpdateProfile changes the username, phone number, and password. An empty
+// value leaves that field unchanged; a password change verifies the current
+// password first.
 func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, username, phone, currentPassword, newPassword string) (*User, error) {
 	return s.updateProfile(ctx, uid, username, phone, newPassword, func(account *User) error {
 		if !hash.CheckPassword(account.PasswordHash, currentPassword) {
@@ -222,7 +224,9 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 	return account, nil
 }
 
-// UpdateAccountStatus applies the recorded active/suspended account transition.
+// UpdateAccountStatus sets an account ACTIVE or SUSPENDED. Suspending first
+// writes the suspension key and revokes every refresh session, then saves the
+// status; if either earlier step fails, the status is left unchanged.
 func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")

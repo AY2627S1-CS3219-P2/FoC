@@ -21,8 +21,10 @@ type keySetFile struct {
 	Keys []string `json:"keys"`
 }
 
-// LoadKeySet reads the recorded JSON key-set file. The first private key is
-// active for signing; remaining keys remain available for verification/JWKS.
+// AI-generated (edited by ZI YANG): documents the key file's concrete format
+// and signing-key selection without referring to an external decision record.
+// LoadKeySet reads a JSON file of PEM private keys. The first key signs new
+// tokens; the others only verify tokens and are published in the JWKS.
 func LoadKeySet(path string) (KeySet, error) {
 	if path == "" {
 		return KeySet{}, errors.New("JWT key-set path is required")

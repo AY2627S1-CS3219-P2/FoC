@@ -19,7 +19,13 @@ services:
       retries: 5
 
   redis:
+    # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — applied the
+    # recorded persistent Redis and internal-only networking configuration.
+    # Author review: ZI YANG -- verified correctness.
     image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -46,8 +52,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    ports:
-      - "8081:8081"
     volumes:
       # AI-generated (edited by ZI YANG).
       - ./user-service/keys.json:/run/secrets/keys.json:ro
@@ -87,4 +91,5 @@ services:
 
 volumes:
   user-db-data:
+  redis-data:
   supplier-db-data:

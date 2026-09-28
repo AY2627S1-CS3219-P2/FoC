@@ -12,7 +12,9 @@ import (
 	"github.com/google/uuid"
 )
 
-// UserRepository stores and looks up user accounts
+// AI-generated (edited by ZI YANG): keeps the repository documentation focused
+// on its account persistence operations.
+// UserRepository stores and looks up user accounts.
 type UserRepository interface {
 	HasAdmin(ctx context.Context) (bool, error)
 	CountActiveAdmins(ctx context.Context) (int, error)
