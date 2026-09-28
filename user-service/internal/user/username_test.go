@@ -17,7 +17,11 @@ func TestValidateUsername(t *testing.T) {
 		wantErr  bool
 	}{
 		"accepts letters and digits": {username: "student123"},
-		"accepts unicode letters":    {username: "学生123"},
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — covers the
+		// recorded ASCII-only username policy. Author review: PENDING.
+		"rejects Unicode letters":    {username: "学生123", wantErr: true},
+		"rejects Cyrillic lookalike": {username: "аdmin", wantErr: true},
+		"rejects full-width letters": {username: "ａｄｍｉｎ", wantErr: true},
 		"accepts 128 characters":     {username: maxLengthUsername},
 		"rejects empty username":     {username: "", wantErr: true},
 		"rejects more than 128":      {username: maxLengthUsername + "a", wantErr: true},

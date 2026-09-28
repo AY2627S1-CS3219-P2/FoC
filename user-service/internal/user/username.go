@@ -6,7 +6,6 @@
 package user
 
 import (
-	"unicode"
 	"unicode/utf8"
 )
 
@@ -17,7 +16,9 @@ func ValidateUsername(username string) error {
 		return ErrInvalidUsername
 	}
 	for _, r := range username {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — applies the
+		// recorded ASCII-only username policy. Author review: PENDING.
+		if !((r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9')) {
 			return ErrInvalidUsername
 		}
 	}
