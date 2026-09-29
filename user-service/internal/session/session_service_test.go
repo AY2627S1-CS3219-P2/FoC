@@ -220,6 +220,23 @@ func TestRefreshServiceRejectsUnknownSession(t *testing.T) {
 	}
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — verifies invalid JWTs
+// become the recorded unauthenticated session outcome. Author review: validated correctness.
+func TestRefreshServiceHidesRefreshTokenVerificationFailure(t *testing.T) {
+	_, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	verifier := &fakeRefreshVerifier{err: errors.New("signature verification failed")}
+	lock := &fakeRefreshLock{acquired: true}
+	service := newRefreshService(repo, sessions, verifier, issuer, lock, func() time.Time { return now })
+
+	_, err := service.Refresh(context.Background(), "invalid-refresh")
+	if !errors.Is(err, ErrSessionNotFound) {
+		t.Fatalf("error = %v, want ErrSessionNotFound", err)
+	}
+	if lock.tokenHash != "" || sessions.getCalls != 0 {
+		t.Fatalf("invalid JWT reached lock/session lookup: %q/%d", lock.tokenHash, sessions.getCalls)
+	}
+}
+
 // AI-generated (edited by ZI YANG): refresh must enforce account status, token boundaries, session expiry, and rotation replay.
 func TestRefreshServiceRejectsRecordedInvalidStates(t *testing.T) {
 	for name, configure := range map[string]func(*User, *fakeSessionRepository, *fakeRefreshVerifier, time.Time){

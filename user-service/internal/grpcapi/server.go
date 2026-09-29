@@ -63,6 +63,23 @@ type AccountStatusUpdater interface {
 	UpdateAccountStatus(context.Context, uuid.UUID, user.AccountStatus) error
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — adds the recorded
+// refresh and logout application boundaries. Author review: validated correctness.
+// Refresher rotates a valid refresh-token session.
+type Refresher interface {
+	Refresh(context.Context, string) (session.TokenPair, error)
+}
+
+// AccessTokenVerifier verifies the access credential used by Logout.
+type AccessTokenVerifier interface {
+	VerifyAccess(context.Context, string) (session.AccessTokenClaims, error)
+}
+
+// Logoutter invalidates a verified access token and refresh session.
+type Logoutter interface {
+	Logout(context.Context, session.AccessTokenClaims, string) error
+}
+
 // Dependencies contains the domain operations used by the user RPC adapter.
 type Dependencies struct {
 	Registrar           Registrar
@@ -71,6 +88,9 @@ type Dependencies struct {
 	ProfileUpdater      ProfileUpdater
 	AdminProfileUpdater AdminProfileUpdater
 	StatusUpdater       AccountStatusUpdater
+	Refresher           Refresher
+	AccessVerifier      AccessTokenVerifier
+	Logoutter           Logoutter
 }
 
 // Server is the user RPC adapter.
@@ -82,6 +102,9 @@ type Server struct {
 	profileUpdater      ProfileUpdater
 	adminProfileUpdater AdminProfileUpdater
 	statusUpdater       AccountStatusUpdater
+	refresher           Refresher
+	accessVerifier      AccessTokenVerifier
+	logoutter           Logoutter
 }
 
 // NewServer constructs a ready-to-register user RPC adapter.
@@ -93,6 +116,9 @@ func NewServer(deps Dependencies) *Server {
 		profileUpdater:      deps.ProfileUpdater,
 		adminProfileUpdater: deps.AdminProfileUpdater,
 		statusUpdater:       deps.StatusUpdater,
+		refresher:           deps.Refresher,
+		accessVerifier:      deps.AccessVerifier,
+		logoutter:           deps.Logoutter,
 	}
 }
 

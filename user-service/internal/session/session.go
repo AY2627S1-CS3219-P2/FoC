@@ -167,7 +167,13 @@ func (s *RefreshService) validateDependencies() error {
 func (s *RefreshService) verifyClaims(ctx context.Context, rawToken string) (RefreshClaims, error) {
 	claims, err := s.verifier.VerifyRefresh(ctx, rawToken)
 	if err != nil {
-		return RefreshClaims{}, fmt.Errorf("verify refresh token: %w", err)
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return RefreshClaims{}, fmt.Errorf("verify refresh token: %w", err)
+		}
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — maps invalid
+		// refresh JWTs to the recorded unauthenticated session outcome without
+		// exposing verifier details. Author review: validated correctness.
+		return RefreshClaims{}, fmt.Errorf("verify refresh token: %w", user.ErrSessionNotFound)
 	}
 	if claims.UserID == uuid.Nil || claims.JTI == uuid.Nil {
 		return RefreshClaims{}, user.ErrSessionNotFound
