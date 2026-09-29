@@ -79,7 +79,13 @@ func newHarness(t *testing.T, service userv1.UserServiceServer) harness {
 	listener := bufconn.Listen(1024 * 1024)
 	logs := new(bytes.Buffer)
 	logger := slog.New(slog.NewJSONHandler(logs, nil))
-	server, err := grpcapi.NewGRPCServer(logger, service)
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — supplies the
+	// mandatory standard health service to the test transport. Author review: validated correctness.
+	healthServer, err := grpcapi.NewHealthServer(func(context.Context) error { return nil }, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	server, err := grpcapi.NewGRPCServer(logger, service, healthServer)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,6 +24,7 @@ import (
 
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 // MaxRequestBytes is the recorded maximum inbound protobuf message size.
@@ -148,13 +149,18 @@ func (s *Server) Login(ctx context.Context, request *userv1.LoginRequest) (*user
 	}, nil
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — registers the
+// recorded standard health service. Author review: validated correctness.
 // NewGRPCServer constructs and registers the unary user-service transport.
-func NewGRPCServer(logger *slog.Logger, implementation userv1.UserServiceServer) (*grpc.Server, error) {
+func NewGRPCServer(logger *slog.Logger, implementation userv1.UserServiceServer, healthServer healthv1.HealthServer) (*grpc.Server, error) {
 	if logger == nil {
 		return nil, errors.New("gRPC logger is required")
 	}
 	if implementation == nil {
 		return nil, errors.New("user service implementation is required")
+	}
+	if healthServer == nil {
+		return nil, errors.New("health service implementation is required")
 	}
 
 	unaryInterceptors, err := interceptors.NewUnaryChain(logger)
@@ -166,5 +172,6 @@ func NewGRPCServer(logger *slog.Logger, implementation userv1.UserServiceServer)
 		grpc.ChainUnaryInterceptor(unaryInterceptors...),
 	)
 	userv1.RegisterUserServiceServer(server, implementation)
+	healthv1.RegisterHealthServer(server, healthServer)
 	return server, nil
 }
