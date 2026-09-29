@@ -22,6 +22,7 @@ import (
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 
+	"github.com/google/uuid"
 	"google.golang.org/grpc"
 )
 
@@ -38,24 +39,50 @@ type LoginService interface {
 	Login(context.Context, string, string) (session.TokenPair, error)
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — adds the narrow
+// profile operations consumed by the generated RPC adapter. Author review: validated correctness.
+// ProfileGetter retrieves an account by ID.
+type ProfileGetter interface {
+	GetByID(context.Context, uuid.UUID) (*user.User, error)
+}
+
+// ProfileUpdater changes the caller's own mutable profile fields.
+type ProfileUpdater interface {
+	UpdateProfile(context.Context, uuid.UUID, string, string, string, string) (*user.User, error)
+}
+
+// AdminProfileUpdater changes another account's mutable profile fields.
+type AdminProfileUpdater interface {
+	UpdateProfileAsAdmin(context.Context, uuid.UUID, string, string, string) (*user.User, error)
+}
+
 // Dependencies contains the domain operations used by the user RPC adapter.
 type Dependencies struct {
-	Registrar    Registrar
-	LoginService LoginService
+	Registrar           Registrar
+	LoginService        LoginService
+	ProfileGetter       ProfileGetter
+	ProfileUpdater      ProfileUpdater
+	AdminProfileUpdater AdminProfileUpdater
 }
 
 // Server is the user RPC adapter.
 type Server struct {
 	userv1.UnimplementedUserServiceServer
-	registrar    Registrar
-	loginService LoginService
+	registrar           Registrar
+	loginService        LoginService
+	profileGetter       ProfileGetter
+	profileUpdater      ProfileUpdater
+	adminProfileUpdater AdminProfileUpdater
 }
 
 // NewServer constructs a ready-to-register user RPC adapter.
 func NewServer(deps Dependencies) *Server {
 	return &Server{
-		registrar:    deps.Registrar,
-		loginService: deps.LoginService,
+		registrar:           deps.Registrar,
+		loginService:        deps.LoginService,
+		profileGetter:       deps.ProfileGetter,
+		profileUpdater:      deps.ProfileUpdater,
+		adminProfileUpdater: deps.AdminProfileUpdater,
 	}
 }
 
