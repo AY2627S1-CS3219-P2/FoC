@@ -3,6 +3,11 @@
 // Scope: Added the user-service command entry point and wired the recorded startup dependencies.
 // Author review: COMPLETED BY ZI YANG - verified correctness
 
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-29
+// Scope: Switched process wiring from chi HTTP to gRPC plus the JWKS HTTP exception.
+// Author review: ZI YANG - Validated correctness
+
 package main
 
 import (
@@ -10,14 +15,16 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"foc/user-service/internal/config"
-	"foc/user-service/internal/httpapi/handlers"
-	"foc/user-service/internal/httpapi/router"
-	"foc/user-service/internal/httpapi/routes"
+	"foc/user-service/internal/grpcapi"
+	"foc/user-service/internal/jwkshttp"
 	"foc/user-service/internal/jwt"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
@@ -29,8 +36,9 @@ import (
 
 func main() {
 	cfg := config.Load()
-	ctx := context.Background()
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	if err := run(ctx, cfg, logger); err != nil {
 		logger.Error("user service stopped", "error", err)
@@ -97,84 +105,51 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// AI-generated (edited by ZI YANG): supply the recorded Redis refresh lock through the composition root.
 	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, repository.NewRedisRefreshLock(redisClient), time.Now)
 	logoutService := session.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
-	httpHandler := router.Setup(routes.Dependencies{
-		Auth: handlers.AuthDependencies{
-			Registrar:      accountService,
-			LoginService:   loginService,
-			Refresher:      refreshService,
-			AccessVerifier: jwtService,
-			Logoutter:      logoutService,
-			Logger:         logger,
-		},
-		Profile: handlers.ProfileDependencies{
-			// AI-generated (edited by ZI YANG): profile reads enter through the domain service, not the repository adapter.
-			ProfileGetter:       accountService,
-			StatusUpdater:       accountService,
-			ProfileUpdater:      accountService,
-			AdminProfileUpdater: accountService,
-			Logger:              logger,
-		},
-		System: handlers.SystemDependencies{
-			JWKSProvider: jwtService,
-			HealthCheck: newHealthCheck(
-				pool.Ping,
-				func(ctx context.Context) error { return redisClient.Ping(ctx).Err() },
-			),
-			Logger: logger,
-		},
-		TokenVerifier: jwtPrincipalVerifier{service: jwtService},
+	userServer := grpcapi.NewServer(grpcapi.Dependencies{
+		Registrar:           accountService,
+		LoginService:        loginService,
+		ProfileGetter:       accountService,
+		ProfileUpdater:      accountService,
+		AdminProfileUpdater: accountService,
+		StatusUpdater:       accountService,
+		Refresher:           refreshService,
+		AccessVerifier:      jwtService,
+		Logoutter:           logoutService,
 	})
-
-	server := newHTTPServer(":"+cfg.Port, httpHandler)
-	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("serve HTTP: %w", err)
+	healthServer, err := grpcapi.NewHealthServer(
+		pool.Ping,
+		func(ctx context.Context) error { return redisClient.Ping(ctx).Err() },
+	)
+	if err != nil {
+		return fmt.Errorf("create health service: %w", err)
 	}
-	return nil
+	grpcServer, err := grpcapi.NewGRPCServer(logger, userServer, healthServer)
+	if err != nil {
+		return fmt.Errorf("create gRPC server: %w", err)
+	}
+	jwksHandler, err := jwkshttp.NewHandler(jwtService, logger)
+	if err != nil {
+		return fmt.Errorf("create JWKS handler: %w", err)
+	}
+	jwksServer := newJWKSHTTPServer(jwksHandler)
+	grpcListener, jwksListener, err := openServiceListeners(net.Listen, cfg.Port)
+	if err != nil {
+		return err
+	}
+	return serveServers(ctx, grpcServer, grpcListener, jwksServer, jwksListener)
 }
 
-// newHTTPServer constructs the API server with the recorded defensive timeouts.
-func newHTTPServer(addr string, handler http.Handler) *http.Server {
-	// AI-generated (edited by ZI YANG): apply the owner-recorded HTTP timeout policy at server construction.
+// newJWKSHTTPServer constructs the isolated key-discovery server with the
+// recorded defensive timeouts.
+func newJWKSHTTPServer(handler http.Handler) *http.Server {
 	return &http.Server{
-		Addr:              addr,
+		Addr:              jwksListenAddress,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-}
-
-// newHealthCheck reports failure when any required service dependency is unavailable.
-func newHealthCheck(checks ...func(context.Context) error) handlers.HealthCheck {
-	// AI-generated (edited by ZI YANG): Redis and PostgreSQL are both required for the recorded health boundary.
-	return func(ctx context.Context) error {
-		for _, check := range checks {
-			if err := check(ctx); err != nil {
-				return err
-			}
-		}
-		return nil
-	}
-}
-
-type jwtPrincipalVerifier struct{ service *jwt.Service }
-
-func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (handlers.Principal, error) {
-	if err := ctx.Err(); err != nil {
-		return handlers.Principal{}, err
-	}
-	if v.service == nil {
-		return handlers.Principal{}, errors.New("JWT service is required")
-	}
-	verified, err := v.service.Verify(rawToken)
-	if err != nil {
-		return handlers.Principal{}, err
-	}
-	if verified.Type != jwt.AccessToken {
-		return handlers.Principal{}, errors.New("JWT is not an access token")
-	}
-	return handlers.Principal{UserID: verified.Subject, Role: verified.Role}, nil
 }
 
 func parseTokenTTL(value string, defaultValue time.Duration) (time.Duration, error) {

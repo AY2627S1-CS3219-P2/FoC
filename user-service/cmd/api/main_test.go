@@ -6,8 +6,6 @@
 package main
 
 import (
-	"context"
-	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -39,9 +37,13 @@ func TestParseTokenTTL(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by ZI YANG): the server timeouts match the recorded defensive policy.
-func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
-	server := newHTTPServer(":8081", http.NotFoundHandler())
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — retains the recorded
+// defensive timeout policy on the JWKS-only listener. Author review: ZI YANG - validate correctness.
+func TestNewJWKSHTTPServerUsesRecordedTimeouts(t *testing.T) {
+	server := newJWKSHTTPServer(http.NotFoundHandler())
+	if server.Addr != ":8085" {
+		t.Fatalf("Addr = %q, want :8085", server.Addr)
+	}
 
 	if server.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("ReadHeaderTimeout = %s, want 5s", server.ReadHeaderTimeout)
@@ -54,34 +56,5 @@ func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
 	}
 	if server.IdleTimeout != 120*time.Second {
 		t.Fatalf("IdleTimeout = %s, want 120s", server.IdleTimeout)
-	}
-}
-
-// AI-generated (edited by ZI YANG): health must fail when either required persistence dependency is unavailable.
-func TestNewHealthCheckIncludesRedis(t *testing.T) {
-	databaseFailure := errors.New("database unavailable")
-	redisFailure := errors.New("redis unavailable")
-	tests := map[string]struct {
-		databaseErr error
-		redisErr    error
-		wantErr     error
-	}{
-		"healthy dependencies": {},
-		"database unavailable": {databaseErr: databaseFailure, wantErr: databaseFailure},
-		"redis unavailable":    {redisErr: redisFailure, wantErr: redisFailure},
-	}
-
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			check := newHealthCheck(
-				func(context.Context) error { return tt.databaseErr },
-				func(context.Context) error { return tt.redisErr },
-			)
-
-			err := check(context.Background())
-			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("health check error = %v, want %v", err, tt.wantErr)
-			}
-		})
 	}
 }

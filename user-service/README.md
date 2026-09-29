@@ -12,11 +12,19 @@ Scope: Aligned startup and endpoint documentation with the current user-service 
 Author review: ZI YANG - validated correctness
 -->
 
+<!--
+AI Assistance Disclosure:
+Tool: Codex (GPT-5), date: 2026-09-29
+Scope: Updated local startup and transport documentation for gRPC plus JWKS HTTP.
+Author review: ZI YANG - verified correctness
+-->
+
 # User Service
 
 The user service provides account registration, authentication, profile
-management, session handling, and JWT public-key discovery. Set `PORT` before
-starting it; the service has no built-in default port.
+management, session handling, and JWT public-key discovery. Its user API and
+health protocol use gRPC on `PORT`; its one HTTP exception serves JWKS on the
+fixed internal port `8085`.
 
 ## 1. Start the service
 
@@ -86,33 +94,42 @@ OR
 go run ./cmd/api
 ```
 
-The service is then available at `http://localhost:8081`.
+The gRPC service is then available at `localhost:8081`. JWKS is served at
+`http://localhost:8085/.well-known/jwks.json`.
 
-## 2. API calls
+## 2. Service contracts
 
-All paths below are relative to `http://localhost:8081`. You may refer to the [openapi.yaml](./api/openapi.yaml) for more information.
+The generated user API is defined by
+[`proto/user/v1/user.proto`](./proto/user/v1/user.proto). It exposes these
+unary RPCs through `user.v1.UserService`:
 
-| Method | Path | Auth | Remarks |
-|---|---|---|---|
-| `GET` | `/api/v1/health` | None | Returns `200 {"status":"ok"}` only when PostgreSQL and Redis are healthy; otherwise `503 {"status":"unhealthy"}`. |
-| `POST` | `/api/v1/users/register` | None | JSON body: `email` ending in `@u.nus.edu`, alphanumeric `username`, and a 8–128 character password containing upper- and lowercase letters plus a digit. Returns `201`; validation `400`, duplicate `409`, oversized body `413`, or unavailable service `500`. |
-| `POST` | `/api/v1/users/login` | None | JSON body: `identifier` (username or email) and `password`. Returns an `accessToken` and `refreshToken`; errors are `400`, invalid credentials `401`, suspended account `403`, oversized body `413`, or `500`. |
-| `POST` | `/api/v1/users/refresh` | None | JSON body: `refreshToken`. Rotates the refresh session and returns a new token pair; invalid, expired, or compromised tokens return `401`; concurrent refreshes return `429`. |
-| `POST` | `/api/v1/users/logout` | Bearer access token | JSON body: `refreshToken`. Invalidates the access token and refresh session; success returns `204`; errors include `400`, `401`, `413`, and `500`. |
-| `GET` | `/api/v1/users/{uid}` | Bearer access token | Returns a full profile to administrators and a restricted profile to other callers. Unknown or malformed user IDs return `404`. |
-| `PUT` | `/api/v1/users/{uid}` | Bearer access token | JSON body may contain `username`, `phone_num` (at most 20 characters), `currentPassword`, and `newPassword`. The caller may update their own profile, or an admin may update any profile. Returns the updated profile. |
-| `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated; errors include `400`, `401`, `403`, `404`, `409`, `413`, and `500`. |
-| `GET` | `/.well-known/jwks.json` | None | Returns the active and retired public JWT keys. This endpoint is intended to be reachable only through the API gateway. |
+- `Register`
+- `Login`
+- `GetProfile`
+- `UpdateProfile`
+- `UpdateStatus`
+- `RefreshSession`
+- `Logout`
 
-For protected endpoints, send the token as follows:
+The API gateway supplies verified `x-user-id` and `x-user-role` metadata for
+protected profile and status RPCs. `Logout` receives the original bearer value
+through `authorization` metadata. `RefreshSession`, `Register`, and `Login`
+remain unauthenticated RPCs.
 
-```http
-Authorization: Bearer <access-token>
-```
+The process also registers the standard `grpc.health.v1.Health` service. Its
+whole-process and `user.v1.UserService` checks report `SERVING` only when both
+PostgreSQL and Redis are reachable internally by the service.
+
+JWKS remains HTTP because JWT verifiers discover keys through the standard
+`GET /.well-known/jwks.json` path. This listener and the gRPC listener are
+internal service surfaces intended to be reached through the API gateway, not
+directly by browser clients. The historical
+[`api/openapi.yaml`](./api/openapi.yaml) remains the source record from which
+the protobuf contract was transcribed.
 
 ## 3. Test the service
 
-Run the unit and HTTP handler tests from `user-service/`:
+Run the unit and transport tests from `user-service/`:
 
 ```bash
 go test ./...
@@ -125,7 +142,7 @@ gofmt -d $(rg --files -g '*.go')
 go vet ./...
 ```
 
-The tests use in-memory fakes and HTTP test servers where possible, so the
-standard test command does not require PostgreSQL, Redis, or generated JWT
-keys. The service itself does require those dependencies when started with
-`go run ./cmd/api`.
+The tests use in-memory fakes, in-process gRPC connections, and HTTP test
+servers where possible, so the standard test command does not require
+PostgreSQL, Redis, or generated JWT keys. The service itself does require those
+dependencies when started with `go run ./cmd/api`.

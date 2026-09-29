@@ -29,6 +29,8 @@ COPY migrations ./migrations
 
 USER appuser
 
-EXPOSE 8081
+# AI-assisted (Codex GPT-5, 2026-09-29; review verified ports exposed): expose the internal
+# gRPC and fixed JWKS listeners.
+EXPOSE 8081 8085
 
 ENTRYPOINT ["./user-service"]
