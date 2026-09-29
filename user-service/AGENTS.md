@@ -17,9 +17,8 @@ below is theirs, not an agent's.
 
 - **Other services asking about a user.** `order-service` needs "is this
   user a courier?", `credit-service` "does this user exist?", `frontend` a
-  display name. Each is an HTTP call through the generated OpenAPI client,
-  or an event this service publishes — never a join, never a second
-  connection to this database.
+  display name. Each is a gRPC call, or an event this service publishes — 
+  never a join, never a second connection to this database.
 - **This service asking about a user's activity.** A rule like "you may not
   switch to requester while a delivery is in flight" is an `order-service`
   question. Either call `order-service` through its generated client or hand
@@ -33,14 +32,16 @@ below is theirs, not an agent's.
 - **JWT is the recorded identity mechanism.** This service issues and validates
   JWTs for authentication and session handling. Other services will not verify the JWT
   at their own boundaries; they must not connect to this service's database or
-  import an auth package. All other services will trust the `X-User-ID` and
-  `X-User-Role` headers from the API Gateway
+  import an auth package. All other services will trust the gRPC metadata (x-user-id and
+  x-user-role) from the API Gateway
 
 ## Layout
 
 Migrations named `NNNNNN_<name>.{up,down}.sql`.
 
-The request schemas, response schemas, and error contracts (specifically 401 Unauthorized for expired/compromised tokens and 500 Internal Server Error for Redis failures) for /refresh, /logout, and /.well-known/jwks.json must be fully documented in `api/openapi.yaml` to comply with the project's spec-first requirement.
+The request schemas, response schemas, and error contracts (specifically 401 Unauthorized for expired/compromised tokens and 500 Internal Server Error for Redis failures) for /refresh, /logout, and /.well-known/jwks.json must be fully documented in `proto/user/v1/user.proto` to comply with the project's spec-first requirement.
+
+The project uses `protoc` with `protoc-gen-go` and `protoc-gen-go-grpc` to compile the schemas into generated Go code under `internal/gen/user/v1/`. Hand-written DTOs are prohibited; the generated structs must be used globally.
 
 ## Packaging
 
@@ -51,25 +52,33 @@ In `internal` directory, it should have the following general structure:
 internal/
 |- jwt/                 (contains all jwt service related files)
 |- config/              (contains all files related to extracting config information for startup)
+|- grpcapi/             (contains gRPC server implementations and interceptors)
+   |- server.go         (contains the `Server` struct implementing the generated interface, bridging to domain services)
+   |- interceptors/     (contains unary interceptors for request ID injection, structured slog logging, panic recovery, and metadata                     extraction)
+<!--
 |- httpapi/             (contains dtos, handlers, routers, routes)
    |- router/           (contains `router.go` so that `main.go` can call `router.Setup()`, which in turn calls private function `setUpRoutes` which groups routes obtained from `routes.GetRoutes()` for idiomatic purposes)
    |- routes/           (contains `routes.go` which imports handlers and implements GetRoutes() which returns `func(r chi.Router)` which specifies routes and their respective handlers)
    |- handlers/         (contains `auth_handler.go`, `profile_handler.go` and `system_handler.go` with their own dependencies)
+-->
 |- repository/          (contains all files related to postgresql database or redis)
 |- user/                (contains all domain specific functions, errors, and repository interfaces)
 |- hash/                (contains `password.go` for other modules to use its cryptographic functions)
 |- session/             (contains `auth.go`, `session.go`, and `invalidation.go` for session lifecycle and login orchestration)
 ```
 
+<!--
 The handlers will be imported by `routes.go` so as a package and instantiated in `GetRoutes()` instead of being passed as instantiations.
 
 All HTTP handler tests must reside directly inside the internal/httpapi/handlers/ directory. They must use package `handlers_test` (black-box testing) to prevent import cycles with the router and to ensure accurate code coverage reporting.
+-->
 
 ## Bootstrap Admin Decision
 The bootstrap.go script must only execute if the users table contains zero admins of any status. Changing INITIAL_ADMIN_* environment variables after the first boot will safely do nothing.
 
 ## Networking Decisions
 The user-service must only be accessible within the internal Docker network. All external traffic must route exclusively through the API Gateway. (`compose.yaml` should reflect this behaviour)
+Use port 8085 for JWKS listener.
 
 ## Database Decisions
 
@@ -169,6 +178,86 @@ Example repository method signatures:
 - Unavailable Behavior: Fail-closed. If a `Set` operation to Redis fails during logout, the application must immediately return a 500 Internal Server Error and abort the subsequent PostgreSQL transaction, forcing the frontend client to retry.
 - The user-service should adopt the Gateway's Redis configuration: redis:7-alpine (or 8-alpine depending on Gateway) with `--appendonly yes` and a persistent volume. This guarantees state recovery across container restarts.
 
+## HTTP to gRPC Mapping
+
+* 400 Bad Request → `codes.InvalidArgument` (e.g., malformed UUID, invalid email string).
+* 409 last admin conflict → `codes.FailedPrecondition`
+* 413 Payload Too Large → `codes.ResourceExhausted` (used by the interceptor to enforce the 10KB limit).
+* 429 Too Many Requests → `codes.ResourceExhausted` (for Redis SETNX refresh contention locks).
+* 500 Internal Server Error → `codes.Internal` for unexpected Go panics or query logic failures, and `codes.Unavailable` specifically for connection drops to dependencies like PostgreSQL or Redis.
+
+Use a single message with proto3 optional for administrative fields (optional string account_role, optional string account_status, optional google.protobuf.Timestamp date_created).
+
+Use google.protobuf.Timestamp for date_created, last_login_date, and tokens_valid_after
+
+Use native Protobuf enums with a strict zero-value UNSPECIFIED prefix to comply with proto3 rules.
+Example: enum AccountRole { ACCOUNT_ROLE_UNSPECIFIED = 0; ACCOUNT_ROLE_STUDENT = 1; ACCOUNT_ROLE_ADMIN = 2; }
+
+Use proto3 optional for fields in UpdateProfileRequest. This generates pointers in Go (e.g., *string), allowing the domain service to distinguish between a field explicitly set to an empty value versus a field the user does not want to update.
+
+Use named empty messages (e.g., message LogoutResponse {} and message UpdateStatusResponse {}) instead of google.protobuf.Empty.
+
+Use the standard grpc.health.v1.Health service exclusively. This service should return status information regarding the whole user service, postgresql database, and redis. Do not define a custom UserService.Check RPC.
+
+Use validation annotations directly in the .proto file (e.g., using buf.build/gen/go/bufbuild/protovalidate)
+
+Use structured google.rpc.Status error details. Base errors will use standard status.Code (e.g., InvalidArgument), but validation failures must attach a google.rpc.BadRequest.FieldViolation detail payload, and domain errors must attach google.rpc.ErrorInfo to provide the frontend with machine-readable causes
+
+Exclude JWKS from the .proto file completely. It must remain a pure HTTP exception handled via a secondary listener in main.go
+
+Authentication Metadata contract: `x-user-id` and `x-user-role` shall be injected by the API Gateway for identity propagation.
+The `authorization` metadata shall contain the raw Bearer <token> string, passed by the gateway only for the Logout and Refresh RPCs that require the token payload for blocklisting and DB revocation.
+
+## User Service gRPC RPCs
+
+The service implements the generated gRPC `UserServiceServer` interface. Transport data (tokens) arrives via gRPC Metadata.
+
+- `rpc Register(RegisterRequest) returns (RegisterResponse)`
+  * InvalidArgument (400): Returned if validation fails (e.g., email does not end in @u.nus.edu, password is too weak). Includes a 
+       google.rpc.BadRequest.FieldViolation detail payload specifying the invalid field.
+  * AlreadyExists (409): Returned if the requested username or email is already registered. Includes a google.rpc.ErrorInfo payload specifying the duplication reason.
+  * Internal / Unavailable (500/503): Returned for unexpected Go panics or if the PostgreSQL database is unreachable.
+
+- `rpc Login(LoginRequest) returns (LoginResponse)`
+  * InvalidArgument (400): Returned if required fields are missing.
+  * Unauthenticated (401): Returned for invalid credentials (username/email not found, or password hash mismatch).
+  * PermissionDenied (403): Returned if the credentials are correct but the account status is ACCOUNT_STATUS_SUSPENDED.
+  * Internal / Unavailable (500/503): Returned for database connection failures.
+
+- `rpc GetProfile(GetProfileRequest) returns (GetProfileResponse)`
+  * InvalidArgument (400): Returned if the provided uid string is a malformed UUID.
+  * NotFound (404): Returned if the well-formed UUID does not match any existing user.
+  * Internal / Unavailable (500/503): Returned for system or database failures.
+
+- `rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse)`
+  * InvalidArgument (400): Returned for malformed UUIDs or if the optional updated fields (e.g., phone number length, password policy) fail validation. Includes FieldViolation details.
+  * Unauthenticated (401): Returned if a user attempting to update their own profile provides an incorrect current_password.
+  * PermissionDenied (403): Returned if the x-user-id in the metadata does not match the target uid and the caller lacks the x-user-role of ADMIN.
+  * AlreadyExists (409): Returned if updating to a new username or email causes a unique constraint violation in the database.
+  * Internal / Unavailable (500/503): Returned for system or database failures.
+
+- `rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse)`
+  * InvalidArgument (400): Returned for a malformed UUID or if the status enum is ACCOUNT_STATUS_UNSPECIFIED.
+  * PermissionDenied (403): Returned if the caller's metadata lacks the ADMIN role.
+  * NotFound (404): Returned if the target user ID does not exist.
+  * FailedPrecondition (409): Returned if attempting to suspend an admin when CountActiveAdmins equals 1. Includes a google.rpc.ErrorInfo payload indicating the last-admin business rule violation.
+  * Internal / Unavailable (500/503): Returned for system or database failures.
+
+- `rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse)`
+  * InvalidArgument (400): Returned if the refresh token string is missing or malformed.
+  * Unauthenticated (401): Returned if the token is invalid, expired, or ended by a normal logout. If a compromised replay attack is detected (token already rotated), this status is returned alongside a google.rpc.ErrorInfo payload indicating an ErrSessionCompromised event.
+  * ResourceExhausted (429): Returned if the 5-second Redis SETNX lock is already held, indicating parallel refresh contention from the same client.
+  * Internal / Unavailable (500/503): Returned if PostgreSQL or Redis are unreachable (triggering a fail-closed response).
+
+- `rpc Logout(LogoutRequest) returns (LogoutResponse)`
+  * InvalidArgument (400): Returned if the refresh token in the body is missing or malformed.
+  * Unauthenticated (401): Returned if the authorization metadata (Bearer token) is missing or cryptographically invalid. (Note: If the token is valid but the session was already revoked, this RPC succeeds idempotently and returns the empty LogoutResponse).
+  * Internal / Unavailable (500/503): Returned for system, database, or Redis blocklist write failures.
+
+**JWKS HTTP Exception:**
+The `/.well-known/jwks.json` endpoint CANNOT be converted to gRPC. Because standard JWT verifiers and gateways expect a standard HTTP GET request for key discovery, `main.go` must instantiate a secondary minimal HTTP listener (e.g., standard `net/http` multiplexer) running on a separate port specifically to serve the JWKS JSON payload.
+
+<!--
 ## User Service API Endpoints
 Use Go Chi router for handling API calls. The API should handle these calls:
 1. GET /api/v1/health : Returns health status of the whole user microservice (includes Go logic layer and database health)
@@ -202,11 +291,14 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - Request: Unauthenticated GET request.
    - Response: 200 OK with the standard JWKS JSON payload containing active and retired public keys.
    - This API endpoint should not be reachable beyond the API gateway. Only the API gateway should be able to reach this endpoint and verify the signatures of incoming JWTs.
+-->
 
+<!-- TODO: replace http with gRPC restrictions
 Request bodies should enforce a strict 10KB (10 * 1024 bytes) limit using Go's `http.MaxBytesReader(w, r.Body, 10240)`, and return `413 Payload Too Large` and drop the connection if a client exceeds the limit.
+-->
 
-Additionally, the HTTP behaviour below should be observed:
-* Timeouts: Configure the http.Server with explicit defensive timeouts: ReadHeaderTimeout: 5s, ReadTimeout: 10s, WriteTimeout: 10s, and IdleTimeout: 120s.
+Additionally, the gRPC behaviour below should be observed:
+* Timeouts: Configure the grpc server with explicit defensive timeouts: ReadHeaderTimeout: 5s, ReadTimeout: 10s, WriteTimeout: 10s, and IdleTimeout: 120s.
 * Logging: Log all 500 Internal Server Error events with the underlying Go error message, a stack trace, and a unique Request ID. Never log plaintext passwords, bearer tokens, or PII.
 * Health Check: The /api/v1/health endpoint must fail (503 Service Unavailable) if Redis is unreachable. Because the API Gateway strictly depends on the User Service to populate the Redis blocklist and suspension keys, a disconnected Redis instance compromises the platform's security boundary.
 
@@ -343,7 +435,12 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 ### Observability & Error Handling
 To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.
 
+- **Unary Interceptors:** Use gRPC Unary Interceptors exclusively. No stream interceptors are permitted.
+- **Metadata Extraction:** Interceptors must extract `x-user-id`, `x-user-role`, and `authorization` from `metadata.FromIncomingContext(ctx)`.
+- **Centralized Error Mapping:** A dedicated interceptor must act as the error boundary, converting core domain errors (e.g., `user.ErrNotFound`) into appropriate `google.golang.org/grpc/status` codes. Unhandled panics must be recovered here, capturing `runtime/debug.Stack()`, logging via injected `slog`, and returning `codes.Internal`.
+<!--
 - **Request IDs:** Use `github.com/go-chi/chi/v5/middleware.RequestID` globally in the Chi router. This automatically generates and propagates a unique request ID into every `http.Request` context.
+-->
 - **Logger Injection:** The application must use structured logging (e.g., Go 1.21's `log/slog.Logger`). The logger instance must be instantiated in `main.go` and explicitly injected into the handler constructors (e.g., `NewAuthHandler(..., logger *slog.Logger)`) to avoid mutable global state.
 - **Error Exposure & Stack Traces:** Handlers must never discard original errors. To standardize this, the HTTP transport layer must implement a centralized helper function (e.g., `writeError(ctx context.Context, w http.ResponseWriter, logger *slog.Logger, status int, rawErr error, clientMsg string)`).
     - For `500 Internal Server Error` statuses, this helper must extract the Request ID from the context (`middleware.GetReqID(ctx)`) and capture the stack trace using `runtime/debug.Stack()`.
@@ -366,7 +463,11 @@ The `main.go` file should construct its dependencies in the following order:
 5. Add default admin account if `users` table does not have at least 1 user with ADMIN role.
 6. Instantiate the background Outbox worker goroutine. (to be done at the last stage of the project)
 7. Instantiate the Domain Service (injecting repos, redis client, and JWT manager).
-8. Instantiate the HTTP Handlers and mount them to the Chi router.
+<!-- 8. Instantiate the HTTP Handlers and mount them to the Chi router. -->
+8. Instantiate the gRPC server (`grpc.NewServer()`) with the chained Unary Interceptors.
+9. Register the `UserServiceServer` and `grpc_health_v1` server.
+10. Bind a `net.Listen("tcp", ":<port>")` listener, start the gRPC server, and configure `grpcServer.GracefulStop()` on OS interrupt signals.
+11. Start the secondary HTTP server for the JWKS endpoint on a separate port.
 
 ### Miscellaneous details
 
