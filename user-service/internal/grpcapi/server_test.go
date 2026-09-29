@@ -8,6 +8,7 @@ package grpcapi_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"foc/user-service/internal/gen/user/v1"
 	"foc/user-service/internal/grpcapi"
 	"foc/user-service/internal/grpcapi/interceptors"
+	"foc/user-service/internal/user"
 
 	"buf.build/go/protovalidate"
 	"github.com/google/uuid"
@@ -32,12 +34,14 @@ import (
 type recordingService struct {
 	userv1.UnimplementedUserServiceServer
 	registerCalls atomic.Int32
-	principal     chan interceptors.Principal
+	// AI-assisted: injects a domain failure so tests exercise the complete interceptor chain.
+	registerErr error
+	principal   chan interceptors.Principal
 }
 
 func (s *recordingService) Register(context.Context, *userv1.RegisterRequest) (*userv1.RegisterResponse, error) {
 	s.registerCalls.Add(1)
-	return &userv1.RegisterResponse{}, nil
+	return &userv1.RegisterResponse{}, s.registerErr
 }
 
 func (s *recordingService) Login(context.Context, *userv1.LoginRequest) (*userv1.LoginResponse, error) {
@@ -247,6 +251,53 @@ func TestPanicsAreLoggedAndSanitized(t *testing.T) {
 		if !strings.Contains(h.logs.String(), want) {
 			t.Errorf("logs = %s, want %s", h.logs.String(), want)
 		}
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — verifies structured
+// domain errors over the in-process gRPC transport. Author review: ZI YANG - validated correctness.
+func TestDomainErrorsAreMappedThroughServer(t *testing.T) {
+	h := newHarness(t, &recordingService{
+		principal:   make(chan interceptors.Principal, 1),
+		registerErr: user.ErrDuplicateEmail,
+	})
+	_, err := h.client.Register(context.Background(), &userv1.RegisterRequest{
+		Email:    "student1@u.nus.edu",
+		Username: "student1",
+		Password: "Password1",
+	})
+	grpcStatus := status.Convert(err)
+	if grpcStatus.Code() != codes.AlreadyExists {
+		t.Fatalf("code = %s, want %s; error = %v", grpcStatus.Code(), codes.AlreadyExists, err)
+	}
+	var reason string
+	for _, detail := range grpcStatus.Details() {
+		if info, ok := detail.(*errdetails.ErrorInfo); ok {
+			reason = info.GetReason()
+		}
+	}
+	if reason != "ErrDuplicateEmail" {
+		t.Fatalf("ErrorInfo reason = %q, want ErrDuplicateEmail", reason)
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — verifies the raw
+// failure is logged without exposing it to the caller. Author review: ZI YANG - validated correctness.
+func TestUnexpectedErrorsAreLoggedAndSanitized(t *testing.T) {
+	h := newHarness(t, &recordingService{
+		principal:   make(chan interceptors.Principal, 1),
+		registerErr: errors.New("secret database detail"),
+	})
+	_, err := h.client.Register(context.Background(), &userv1.RegisterRequest{
+		Email:    "student1@u.nus.edu",
+		Username: "student1",
+		Password: "Password1",
+	})
+	if status.Code(err) != codes.Internal || status.Convert(err).Message() != "internal server error" {
+		t.Fatalf("error = %v, want sanitized Internal", err)
+	}
+	if !strings.Contains(h.logs.String(), `"error":"secret database detail"`) {
+		t.Fatalf("logs = %s, want raw error detail", h.logs.String())
 	}
 }
 

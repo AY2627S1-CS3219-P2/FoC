@@ -27,6 +27,8 @@ func NewUnaryChain(logger *slog.Logger) ([]grpc.UnaryServerInterceptor, error) {
 		requestIDInterceptor(),
 		loggingInterceptor(logger),
 		recoveryInterceptor(logger),
+		// AI-assisted: applies the recorded domain-error boundary before lower transport checks return.
+		errorMappingInterceptor(logger),
 		metadataInterceptor(),
 		validationInterceptor(validator),
 	}, nil
