@@ -183,6 +183,7 @@ enum AccountStatus {
 
 // RegisterRequest corresponds to the OpenAPI RegisterRequest schema.
 message RegisterRequest {
+  // AI-generated: preserve the regex escape through protobuf and CEL parsing.
   option (buf.validate.message).cel = {
     id: "register.email.nus_domain"
     message: "email must end with @u.nus.edu"
@@ -191,17 +192,17 @@ message RegisterRequest {
   option (buf.validate.message).cel = {
     id: "register.password.uppercase"
     message: "password must contain at least one uppercase character"
-    expression: "this.password.matches('.*\\p{Lu}.*')"
+    expression: "this.password.matches('.*\\\\p{Lu}.*')"
   };
   option (buf.validate.message).cel = {
     id: "register.password.lowercase"
     message: "password must contain at least one lowercase character"
-    expression: "this.password.matches('.*\\p{Ll}.*')"
+    expression: "this.password.matches('.*\\\\p{Ll}.*')"
   };
   option (buf.validate.message).cel = {
     id: "register.password.digit"
     message: "password must contain at least one digit"
-    expression: "this.password.matches('.*\\p{Nd}.*')"
+    expression: "this.password.matches('.*\\\\p{Nd}.*')"
   };
 
   string email = 1 [(buf.validate.field).string = {
@@ -252,20 +253,21 @@ message GetProfileResponse {
 // caller intends to change. Proto3 optional presence distinguishes omission
 // from explicitly supplying an empty string.
 message UpdateProfileRequest {
+  // AI-generated: preserve the regex escape through protobuf and CEL parsing.
   option (buf.validate.message).cel = {
     id: "update_profile.new_password.uppercase"
     message: "new_password must contain at least one uppercase character"
-    expression: "!has(this.new_password) || this.new_password.matches('.*\\p{Lu}.*')"
+    expression: "!has(this.new_password) || this.new_password.matches('.*\\\\p{Lu}.*')"
   };
   option (buf.validate.message).cel = {
     id: "update_profile.new_password.lowercase"
     message: "new_password must contain at least one lowercase character"
-    expression: "!has(this.new_password) || this.new_password.matches('.*\\p{Ll}.*')"
+    expression: "!has(this.new_password) || this.new_password.matches('.*\\\\p{Ll}.*')"
   };
   option (buf.validate.message).cel = {
     id: "update_profile.new_password.digit"
     message: "new_password must contain at least one digit"
-    expression: "!has(this.new_password) || this.new_password.matches('.*\\p{Nd}.*')"
+    expression: "!has(this.new_password) || this.new_password.matches('.*\\\\p{Nd}.*')"
   };
 
   string uid = 1 [(buf.validate.field).string.uuid = true];

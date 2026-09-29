@@ -922,16 +922,16 @@ var File_user_v1_user_proto protoreflect.FileDescriptor
 
 const file_user_v1_user_proto_rawDesc = "" +
 	"\n" +
-	"\x12user/v1/user.proto\x12\auser.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xeb\x04\n" +
+	"\x12user/v1/user.proto\x12\auser.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xee\x04\n" +
 	"\x0fRegisterRequest\x12\"\n" +
 	"\x05email\x18\x01 \x01(\tB\f\xbaH\tr\a\x10\x01\x18\xff\x01`\x01R\x05email\x126\n" +
 	"\busername\x18\x02 \x01(\tB\x1a\xbaH\x17r\x15\x10\x01\x18\x80\x012\x0e^[A-Za-z0-9]+$R\busername\x12&\n" +
 	"\bpassword\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\b\x18\x80\x01R\bpassword:\xd3\x03\xbaH\xcf\x03\x1ak\n" +
-	"\x19register.email.nus_domain\x12\x1eemail must end with @u.nus.edu\x1a.this.email.lowerAscii().endsWith('@u.nus.edu')\x1az\n" +
-	"\x1bregister.password.uppercase\x126password must contain at least one uppercase character\x1a#this.password.matches('.*\\p{Lu}.*')\x1az\n" +
-	"\x1bregister.password.lowercase\x126password must contain at least one lowercase character\x1a#this.password.matches('.*\\p{Ll}.*')\x1ah\n" +
-	"\x17register.password.digit\x12(password must contain at least one digit\x1a#this.password.matches('.*\\p{Nd}.*')\"\x12\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\bpassword:\xd6\x03\xbaH\xd2\x03\x1ak\n" +
+	"\x19register.email.nus_domain\x12\x1eemail must end with @u.nus.edu\x1a.this.email.lowerAscii().endsWith('@u.nus.edu')\x1a{\n" +
+	"\x1bregister.password.uppercase\x126password must contain at least one uppercase character\x1a$this.password.matches('.*\\\\p{Lu}.*')\x1a{\n" +
+	"\x1bregister.password.lowercase\x126password must contain at least one lowercase character\x1a$this.password.matches('.*\\\\p{Ll}.*')\x1ai\n" +
+	"\x17register.password.digit\x12(password must contain at least one digit\x1a$this.password.matches('.*\\\\p{Nd}.*')\"\x12\n" +
 	"\x10RegisterResponse\"\\\n" +
 	"\fLoginRequest\x12'\n" +
 	"\n" +
@@ -944,17 +944,17 @@ const file_user_v1_user_proto_rawDesc = "" +
 	"\x11GetProfileRequest\x12\x1a\n" +
 	"\x03uid\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x03uid\"L\n" +
 	"\x12GetProfileResponse\x126\n" +
-	"\aprofile\x18\x01 \x01(\v2\x14.user.v1.UserProfileB\x06\xbaH\x03\xc8\x01\x01R\aprofile\"\xb2\x06\n" +
+	"\aprofile\x18\x01 \x01(\v2\x14.user.v1.UserProfileB\x06\xbaH\x03\xc8\x01\x01R\aprofile\"\xb5\x06\n" +
 	"\x14UpdateProfileRequest\x12\x1a\n" +
 	"\x03uid\x18\x01 \x01(\tB\b\xbaH\x05r\x03\xb0\x01\x01R\x03uid\x12;\n" +
 	"\busername\x18\x02 \x01(\tB\x1a\xbaH\x17r\x15\x10\x01\x18\x80\x012\x0e^[A-Za-z0-9]+$H\x00R\busername\x88\x01\x01\x12.\n" +
 	"\x10current_password\x18\x03 \x01(\tH\x01R\x0fcurrentPassword\x88\x01\x01\x122\n" +
 	"\fnew_password\x18\x04 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\b\x18\x80\x01H\x02R\vnewPassword\x88\x01\x01\x12)\n" +
-	"\tphone_num\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x18\x14H\x03R\bphoneNum\x88\x01\x01:\xf0\x03\xbaH\xec\x03\x1a\xa7\x01\n" +
-	"%update_profile.new_password.uppercase\x12:new_password must contain at least one uppercase character\x1aB!has(this.new_password) || this.new_password.matches('.*\\p{Lu}.*')\x1a\xa7\x01\n" +
-	"%update_profile.new_password.lowercase\x12:new_password must contain at least one lowercase character\x1aB!has(this.new_password) || this.new_password.matches('.*\\p{Ll}.*')\x1a\x95\x01\n" +
-	"!update_profile.new_password.digit\x12,new_password must contain at least one digit\x1aB!has(this.new_password) || this.new_password.matches('.*\\p{Nd}.*')B\v\n" +
+	"\tphone_num\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x18\x14H\x03R\bphoneNum\x88\x01\x01:\xf3\x03\xbaH\xef\x03\x1a\xa8\x01\n" +
+	"%update_profile.new_password.uppercase\x12:new_password must contain at least one uppercase character\x1aC!has(this.new_password) || this.new_password.matches('.*\\\\p{Lu}.*')\x1a\xa8\x01\n" +
+	"%update_profile.new_password.lowercase\x12:new_password must contain at least one lowercase character\x1aC!has(this.new_password) || this.new_password.matches('.*\\\\p{Ll}.*')\x1a\x96\x01\n" +
+	"!update_profile.new_password.digit\x12,new_password must contain at least one digit\x1aC!has(this.new_password) || this.new_password.matches('.*\\\\p{Nd}.*')B\v\n" +
 	"\t_usernameB\x13\n" +
 	"\x11_current_passwordB\x0f\n" +
 	"\r_new_passwordB\f\n" +
