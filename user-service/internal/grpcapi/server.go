@@ -16,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 
 	"foc/user-service/internal/gen/user/v1"
 	"foc/user-service/internal/grpcapi/interceptors"
@@ -139,7 +140,13 @@ func (s *Server) Login(ctx context.Context, request *userv1.LoginRequest) (*user
 	if s.loginService == nil {
 		return nil, errors.New("login service is required")
 	}
-	pair, err := s.loginService.Login(ctx, request.GetIdentifier(), request.GetPassword())
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — preserves the
+	// legacy login identifier normalization. Author review: validated correctness.
+	identifier := strings.TrimSpace(request.GetIdentifier())
+	if strings.Contains(identifier, "@") {
+		identifier = strings.ToLower(identifier)
+	}
+	pair, err := s.loginService.Login(ctx, identifier, request.GetPassword())
 	if err != nil {
 		return nil, fmt.Errorf("login account: %w", err)
 	}

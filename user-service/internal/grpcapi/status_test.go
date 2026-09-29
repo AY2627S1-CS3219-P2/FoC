@@ -88,7 +88,11 @@ func TestServerUpdateStatusValidationPrecedesDomainService(t *testing.T) {
 
 	_, invalidIDErr := h.client.UpdateStatus(ctx, &userv1.UpdateStatusRequest{Uid: "not-a-uuid", Status: userv1.AccountStatus_ACCOUNT_STATUS_ACTIVE})
 	_, unspecifiedErr := h.client.UpdateStatus(ctx, &userv1.UpdateStatusRequest{Uid: uuid.NewString(), Status: userv1.AccountStatus_ACCOUNT_STATUS_UNSPECIFIED})
-	if status.Code(invalidIDErr) != codes.InvalidArgument || status.Code(unspecifiedErr) != codes.InvalidArgument {
+	// AI-assisted (Codex GPT-5, 2026-09-29; review: validated correctness): retain legacy
+	// status-input field attribution through gRPC validation.
+	invalidIDStatus := status.Convert(invalidIDErr)
+	unspecifiedStatus := status.Convert(unspecifiedErr)
+	if invalidIDStatus.Code() != codes.InvalidArgument || !hasBadRequestField(invalidIDStatus, "uid") || unspecifiedStatus.Code() != codes.InvalidArgument || !hasBadRequestField(unspecifiedStatus, "status") {
 		t.Fatalf("codes = (%s, %s), want InvalidArgument", status.Code(invalidIDErr), status.Code(unspecifiedErr))
 	}
 	if updater.calls != 0 {

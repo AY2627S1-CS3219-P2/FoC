@@ -83,7 +83,10 @@ func TestServerRefreshSessionValidationPrecedesService(t *testing.T) {
 	refresher := &refresherStub{}
 	h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{Refresher: refresher}))
 	_, err := h.client.RefreshSession(context.Background(), &userv1.RefreshSessionRequest{})
-	if status.Code(err) != codes.InvalidArgument {
+	// AI-assisted (Codex GPT-5, 2026-09-29; review: validated correctness): retain the missing
+	// refresh-token field detail from the legacy boundary.
+	grpcStatus := status.Convert(err)
+	if grpcStatus.Code() != codes.InvalidArgument || !hasBadRequestField(grpcStatus, "refresh_token") {
 		t.Fatalf("code = %s, want %s; error = %v", status.Code(err), codes.InvalidArgument, err)
 	}
 	if refresher.calls != 0 {
@@ -187,7 +190,10 @@ func TestServerLogoutValidationPrecedesTokenVerification(t *testing.T) {
 	logoutter := &logoutterStub{}
 	h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{AccessVerifier: verifier, Logoutter: logoutter}))
 	_, err := h.client.Logout(authorizationContext("Bearer access-token"), &userv1.LogoutRequest{})
-	if status.Code(err) != codes.InvalidArgument || verifier.calls != 0 || logoutter.calls != 0 {
+	// AI-assisted (Codex GPT-5, 2026-09-29; review: validated correctness): retain the missing
+	// refresh-token field detail from the legacy boundary.
+	grpcStatus := status.Convert(err)
+	if grpcStatus.Code() != codes.InvalidArgument || !hasBadRequestField(grpcStatus, "refresh_token") || verifier.calls != 0 || logoutter.calls != 0 {
 		t.Fatalf("error/calls = %v/%d/%d", err, verifier.calls, logoutter.calls)
 	}
 }
@@ -210,8 +216,14 @@ func TestServerLogoutMapsInvalidationFailures(t *testing.T) {
 				Logoutter:      &logoutterStub{err: test.err},
 			}))
 			_, err := h.client.Logout(authorizationContext("Bearer access-token"), &userv1.LogoutRequest{RefreshToken: "refresh-token"})
-			if status.Code(err) != test.wantCode {
+			grpcStatus := status.Convert(err)
+			if grpcStatus.Code() != test.wantCode {
 				t.Fatalf("code = %s, want %s; error = %v", status.Code(err), test.wantCode, err)
+			}
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — preserves the
+			// legacy mismatched-session field attribution. Author review: validated correctness.
+			if test.err == session.ErrSessionOwnershipMismatch && !hasBadRequestField(grpcStatus, "refresh_token") {
+				t.Fatalf("details = %#v, want refresh_token violation", grpcStatus.Details())
 			}
 		})
 	}

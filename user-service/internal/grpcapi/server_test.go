@@ -164,6 +164,51 @@ func TestProtectedRPCRejectsMissingOrMalformedMetadata(t *testing.T) {
 	}
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — rejects ambiguous
+// repeated gateway identity and authorization metadata. Author review: validated correctness.
+func TestProtectedRPCRejectsRepeatedMetadata(t *testing.T) {
+	uid := uuid.NewString()
+	tests := []struct {
+		name   string
+		method func(context.Context) error
+	}{
+		{
+			name: "identity",
+			method: func(ctx context.Context) error {
+				h := newHarness(t, &recordingService{principal: make(chan interceptors.Principal, 1)})
+				_, err := h.client.GetProfile(ctx, &userv1.GetProfileRequest{Uid: uid})
+				return err
+			},
+		},
+		{
+			name: "authorization",
+			method: func(ctx context.Context) error {
+				h := newHarness(t, &recordingService{principal: make(chan interceptors.Principal, 1)})
+				_, err := h.client.Logout(ctx, &userv1.LogoutRequest{RefreshToken: "refresh"})
+				return err
+			},
+		},
+	}
+	contexts := map[string]context.Context{
+		"identity": metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+			interceptors.UserIDMetadataKey, uid,
+			interceptors.UserIDMetadataKey, uid,
+			interceptors.UserRoleMetadataKey, "STUDENT",
+		)),
+		"authorization": metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+			interceptors.AuthorizationMetadataKey, "Bearer first",
+			interceptors.AuthorizationMetadataKey, "Bearer second",
+		)),
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.method(contexts[test.name]); status.Code(err) != codes.Unauthenticated {
+				t.Fatalf("code = %s, want %s; error = %v", status.Code(err), codes.Unauthenticated, err)
+			}
+		})
+	}
+}
+
 func TestLogoutExtractsAuthorizationWithoutRequiringIdentity(t *testing.T) {
 	service := &recordingService{principal: make(chan interceptors.Principal, 1)}
 	h := newHarness(t, service)

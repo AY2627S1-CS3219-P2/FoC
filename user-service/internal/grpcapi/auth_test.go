@@ -98,6 +98,35 @@ func TestServerRegisterValidationRunsBeforeDomainService(t *testing.T) {
 	}
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — checks that every
+// legacy registration validation identifies its input field. Author review: validated correctness.
+func TestServerRegisterValidationDetailsIdentifyLegacyFields(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   *userv1.RegisterRequest
+		wantField string
+	}{
+		{name: "malformed email", request: &userv1.RegisterRequest{Email: "not-an-email", Username: "student1", Password: "Password1"}, wantField: "email"},
+		{name: "non NUS email", request: &userv1.RegisterRequest{Email: "student@example.com", Username: "student1", Password: "Password1"}, wantField: "email"},
+		{name: "invalid username", request: &userv1.RegisterRequest{Email: "student@u.nus.edu", Username: "student_name", Password: "Password1"}, wantField: "username"},
+		{name: "weak password", request: &userv1.RegisterRequest{Email: "student@u.nus.edu", Username: "student1", Password: "weakpass"}, wantField: "password"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			registrar := &registrarStub{}
+			h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{Registrar: registrar}))
+			_, err := h.client.Register(context.Background(), test.request)
+			grpcStatus := status.Convert(err)
+			if grpcStatus.Code() != codes.InvalidArgument || !hasBadRequestField(grpcStatus, test.wantField) {
+				t.Fatalf("status/details = (%s, %#v), want InvalidArgument field %q", grpcStatus.Code(), grpcStatus.Details(), test.wantField)
+			}
+			if registrar.calls != 0 {
+				t.Fatalf("registrar calls = %d, want 0", registrar.calls)
+			}
+		})
+	}
+}
+
 func TestServerRegisterMapsDomainFailures(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -130,6 +159,33 @@ func TestServerRegisterMapsDomainFailures(t *testing.T) {
 	}
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — verifies the domain
+// validation failures previously covered at the HTTP boundary. Author review: validated correctness.
+func TestServerRegisterMapsDomainValidationFailures(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantField string
+	}{
+		{name: "invalid email", err: user.ErrInvalidEmail, wantField: "email"},
+		{name: "email too long", err: user.ErrEmailTooLong, wantField: "email"},
+		{name: "invalid username", err: user.ErrInvalidUsername, wantField: "username"},
+		{name: "invalid password", err: user.ErrInvalidPassword, wantField: "password"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{Registrar: &registrarStub{err: test.err}}))
+			_, err := h.client.Register(context.Background(), &userv1.RegisterRequest{
+				Email: "student1@u.nus.edu", Username: "student1", Password: "Password1",
+			})
+			grpcStatus := status.Convert(err)
+			if grpcStatus.Code() != codes.InvalidArgument || badRequestField(grpcStatus) != test.wantField {
+				t.Fatalf("status/field = (%s, %q), want (InvalidArgument, %q); error = %v", grpcStatus.Code(), badRequestField(grpcStatus), test.wantField, err)
+			}
+		})
+	}
+}
+
 func TestServerLoginReturnsIssuedTokenPair(t *testing.T) {
 	login := &loginStub{pair: session.TokenPair{
 		AccessToken:  "access-token",
@@ -138,7 +194,7 @@ func TestServerLoginReturnsIssuedTokenPair(t *testing.T) {
 	h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{LoginService: login}))
 
 	response, err := h.client.Login(context.Background(), &userv1.LoginRequest{
-		Identifier: "Student1@U.NUS.EDU",
+		Identifier: "student1",
 		Password:   "Password1",
 	})
 	if err != nil {
@@ -147,8 +203,36 @@ func TestServerLoginReturnsIssuedTokenPair(t *testing.T) {
 	if response.GetAccessToken() != "access-token" || response.GetRefreshToken() != "refresh-token" {
 		t.Fatalf("response = %#v", response)
 	}
-	if login.calls != 1 || login.identifier != "Student1@U.NUS.EDU" || login.password != "Password1" {
+	if login.calls != 1 || login.identifier != "student1" || login.password != "Password1" {
 		t.Fatalf("login call = (%d, %q, %q)", login.calls, login.identifier, login.password)
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — preserves identifier
+// normalization and login password-policy behavior from the HTTP handler. Author review: validated correctness.
+func TestServerLoginPreservesHTTPInputBehavior(t *testing.T) {
+	tests := []struct {
+		name           string
+		identifier     string
+		password       string
+		wantIdentifier string
+	}{
+		{name: "trims username", identifier: "  student1  ", password: "Password1", wantIdentifier: "student1"},
+		{name: "normalizes email", identifier: " Student1@U.NUS.EDU ", password: "Password1", wantIdentifier: "student1@u.nus.edu"},
+		{name: "does not apply registration password policy", identifier: "student1", password: "weakpass", wantIdentifier: "student1"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			login := &loginStub{pair: session.TokenPair{AccessToken: "access", RefreshToken: "refresh"}}
+			h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{LoginService: login}))
+			_, err := h.client.Login(context.Background(), &userv1.LoginRequest{Identifier: test.identifier, Password: test.password})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if login.identifier != test.wantIdentifier || login.password != test.password {
+				t.Fatalf("login input = (%q, %q), want (%q, %q)", login.identifier, login.password, test.wantIdentifier, test.password)
+			}
+		})
 	}
 }
 
@@ -157,7 +241,10 @@ func TestServerLoginValidationRunsBeforeDomainService(t *testing.T) {
 	h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{LoginService: login}))
 
 	_, err := h.client.Login(context.Background(), &userv1.LoginRequest{})
-	if status.Code(err) != codes.InvalidArgument {
+	// AI-assisted (Codex GPT-5, 2026-09-29; review: validated correctness): retain field-level
+	// parity for both missing legacy login inputs.
+	grpcStatus := status.Convert(err)
+	if grpcStatus.Code() != codes.InvalidArgument || !hasBadRequestField(grpcStatus, "identifier") || !hasBadRequestField(grpcStatus, "password") {
 		t.Fatalf("code = %s, want %s; error = %v", status.Code(err), codes.InvalidArgument, err)
 	}
 	if login.calls != 0 {
@@ -214,6 +301,28 @@ func hasBadRequestDetail(grpcStatus *status.Status) bool {
 	for _, detail := range grpcStatus.Details() {
 		if _, ok := detail.(*errdetails.BadRequest); ok {
 			return true
+		}
+	}
+	return false
+}
+
+func badRequestField(grpcStatus *status.Status) string {
+	for _, detail := range grpcStatus.Details() {
+		if badRequest, ok := detail.(*errdetails.BadRequest); ok && len(badRequest.GetFieldViolations()) > 0 {
+			return badRequest.GetFieldViolations()[0].GetField()
+		}
+	}
+	return ""
+}
+
+func hasBadRequestField(grpcStatus *status.Status, want string) bool {
+	for _, detail := range grpcStatus.Details() {
+		if badRequest, ok := detail.(*errdetails.BadRequest); ok {
+			for _, violation := range badRequest.GetFieldViolations() {
+				if violation.GetField() == want {
+					return true
+				}
+			}
 		}
 	}
 	return false

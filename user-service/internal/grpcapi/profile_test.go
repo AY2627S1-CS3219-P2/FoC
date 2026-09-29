@@ -265,18 +265,72 @@ func TestServerUpdateProfileMapsDomainFailures(t *testing.T) {
 	}
 }
 
-func TestServerUpdateProfileValidationPrecedesDomainService(t *testing.T) {
-	profiles := &profileServiceStub{}
-	h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{ProfileUpdater: profiles}))
-	ctx := identityContext(uuid.New(), "STUDENT")
-
-	_, invalidIDErr := h.client.UpdateProfile(ctx, &userv1.UpdateProfileRequest{Uid: "not-a-uuid", Username: stringPointer("updated1")})
-	_, invalidFieldErr := h.client.UpdateProfile(ctx, &userv1.UpdateProfileRequest{Uid: uuid.NewString(), Username: stringPointer("invalid username")})
-	if status.Code(invalidIDErr) != codes.InvalidArgument || status.Code(invalidFieldErr) != codes.InvalidArgument {
-		t.Fatalf("codes = (%s, %s), want InvalidArgument", status.Code(invalidIDErr), status.Code(invalidFieldErr))
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — verifies legacy
+// profile validation sentinels through the complete gRPC path. Author review: validated correctness.
+func TestServerUpdateProfileMapsDomainValidationFailures(t *testing.T) {
+	targetID := uuid.New()
+	tests := []struct {
+		name      string
+		err       error
+		wantField string
+	}{
+		{name: "invalid username", err: user.ErrInvalidUsername, wantField: "username"},
+		{name: "invalid phone", err: user.ErrInvalidPhone, wantField: "phone_num"},
+		{name: "invalid new password", err: user.ErrInvalidPassword, wantField: "new_password"},
 	}
-	if profiles.selfUpdateCalls != 0 {
-		t.Fatalf("update calls = %d, want 0", profiles.selfUpdateCalls)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			profiles := &profileServiceStub{err: test.err}
+			h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{ProfileUpdater: profiles}))
+			_, err := h.client.UpdateProfile(identityContext(targetID, "STUDENT"), &userv1.UpdateProfileRequest{
+				Uid: targetID.String(), Username: stringPointer("updated1"), PhoneNum: stringPointer("91234567"), NewPassword: stringPointer("NewPass1"),
+			})
+			grpcStatus := status.Convert(err)
+			if grpcStatus.Code() != codes.InvalidArgument || !hasBadRequestField(grpcStatus, test.wantField) {
+				t.Fatalf("status/details = (%s, %#v), want InvalidArgument field %q", grpcStatus.Code(), grpcStatus.Details(), test.wantField)
+			}
+		})
+	}
+}
+
+func TestServerUpdateProfileValidationPrecedesDomainService(t *testing.T) {
+	tests := []struct {
+		name      string
+		request   *userv1.UpdateProfileRequest
+		wantField string
+	}{
+		{name: "malformed uid", request: &userv1.UpdateProfileRequest{Uid: "not-a-uuid", Username: stringPointer("updated1")}, wantField: "uid"},
+		{name: "invalid username", request: &userv1.UpdateProfileRequest{Uid: uuid.NewString(), Username: stringPointer("invalid username")}, wantField: "username"},
+		{name: "phone exceeds database width", request: &userv1.UpdateProfileRequest{Uid: uuid.NewString(), PhoneNum: stringPointer("123456789012345678901")}, wantField: "phone_num"},
+		{name: "weak new password", request: &userv1.UpdateProfileRequest{Uid: uuid.NewString(), NewPassword: stringPointer("weakpass")}, wantField: "new_password"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			profiles := &profileServiceStub{}
+			h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{ProfileUpdater: profiles}))
+			_, err := h.client.UpdateProfile(identityContext(uuid.New(), "STUDENT"), test.request)
+			grpcStatus := status.Convert(err)
+			if grpcStatus.Code() != codes.InvalidArgument || !hasBadRequestField(grpcStatus, test.wantField) {
+				t.Fatalf("status/details = (%s, %#v), want InvalidArgument field %q", grpcStatus.Code(), grpcStatus.Details(), test.wantField)
+			}
+			if profiles.selfUpdateCalls != 0 {
+				t.Fatalf("update calls = %d, want 0", profiles.selfUpdateCalls)
+			}
+		})
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — preserves missing
+// profile dependency failures from the legacy handler. Author review: validated correctness.
+func TestServerProfileRPCsReportMissingDependencies(t *testing.T) {
+	targetID := uuid.New()
+	h := newHarness(t, grpcapi.NewServer(grpcapi.Dependencies{}))
+	ctx := identityContext(targetID, "STUDENT")
+	_, getErr := h.client.GetProfile(ctx, &userv1.GetProfileRequest{Uid: targetID.String()})
+	_, updateErr := h.client.UpdateProfile(ctx, &userv1.UpdateProfileRequest{Uid: targetID.String(), Username: stringPointer("updated1")})
+	_, adminUpdateErr := h.client.UpdateProfile(identityContext(uuid.New(), "ADMIN"), &userv1.UpdateProfileRequest{Uid: targetID.String(), Username: stringPointer("updated1")})
+	if status.Code(getErr) != codes.Internal || status.Code(updateErr) != codes.Internal || status.Code(adminUpdateErr) != codes.Internal {
+		t.Fatalf("codes = (%s, %s, %s), want Internal", status.Code(getErr), status.Code(updateErr), status.Code(adminUpdateErr))
 	}
 }
 

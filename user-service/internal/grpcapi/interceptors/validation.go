@@ -8,6 +8,7 @@ package interceptors
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"buf.build/go/protovalidate"
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
@@ -42,6 +43,12 @@ func validationStatus(err error) error {
 		description := "request field is invalid"
 		if violation != nil && violation.Proto != nil {
 			field = protovalidate.FieldPathString(violation.Proto.GetField())
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — message-level
+			// CEL rules have no field path, so recover the recorded request field
+			// from their stable contract IDs. Author review: validated correctness.
+			if field == "" {
+				field = messageRuleField(violation.Proto.GetRuleId())
+			}
 			if violation.Proto.GetMessage() != "" {
 				description = violation.Proto.GetMessage()
 			}
@@ -56,4 +63,17 @@ func validationStatus(err error) error {
 		return status.Error(codes.Internal, "internal server error")
 	}
 	return grpcStatus.Err()
+}
+
+func messageRuleField(ruleID string) string {
+	switch {
+	case ruleID == "register.email.nus_domain":
+		return "email"
+	case strings.HasPrefix(ruleID, "register.password."):
+		return "password"
+	case strings.HasPrefix(ruleID, "update_profile.new_password."):
+		return "new_password"
+	default:
+		return ""
+	}
 }
