@@ -56,6 +56,13 @@ type AdminProfileUpdater interface {
 	UpdateProfileAsAdmin(context.Context, uuid.UUID, string, string, string) (*user.User, error)
 }
 
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — adds the recorded
+// account-status domain boundary. Author review: Validated correctness.
+// AccountStatusUpdater suspends or reactivates an account.
+type AccountStatusUpdater interface {
+	UpdateAccountStatus(context.Context, uuid.UUID, user.AccountStatus) error
+}
+
 // Dependencies contains the domain operations used by the user RPC adapter.
 type Dependencies struct {
 	Registrar           Registrar
@@ -63,6 +70,7 @@ type Dependencies struct {
 	ProfileGetter       ProfileGetter
 	ProfileUpdater      ProfileUpdater
 	AdminProfileUpdater AdminProfileUpdater
+	StatusUpdater       AccountStatusUpdater
 }
 
 // Server is the user RPC adapter.
@@ -73,6 +81,7 @@ type Server struct {
 	profileGetter       ProfileGetter
 	profileUpdater      ProfileUpdater
 	adminProfileUpdater AdminProfileUpdater
+	statusUpdater       AccountStatusUpdater
 }
 
 // NewServer constructs a ready-to-register user RPC adapter.
@@ -83,6 +92,7 @@ func NewServer(deps Dependencies) *Server {
 		profileGetter:       deps.ProfileGetter,
 		profileUpdater:      deps.ProfileUpdater,
 		adminProfileUpdater: deps.AdminProfileUpdater,
+		statusUpdater:       deps.StatusUpdater,
 	}
 }
 
