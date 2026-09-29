@@ -1,0 +1,341 @@
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-29
+// Scope: Transcribed the owner-recorded OpenAPI user contract and gRPC mapping
+//   decisions into the versioned protobuf service contract.
+// Author review: ZI YANG - Validated correctness against previous openapi implementation
+
+syntax = "proto3";
+
+package user.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "foc/user-service/internal/gen/user/v1;userv1";
+
+// UserService is the internal gRPC API called by the API Gateway.
+//
+// Authentication metadata:
+//   - x-user-id: verified caller UUID injected by the API Gateway.
+//   - x-user-role: verified AccountRole name injected by the API Gateway.
+//   - authorization: raw "Bearer <token>" value. The gateway forwards it only
+//     to RPCs that need the token payload for session invalidation.
+//
+// The server trusts identity metadata only because user-service is reachable
+// solely through the API Gateway. It must never accept a direct public route.
+//
+// Error model:
+//   - RPC failures use google.rpc.Status and the canonical codes documented on
+//     each method; successful responses never carry an embedded error object.
+//   - Validation failures attach google.rpc.BadRequest containing one or more
+//     FieldViolation values.
+//   - Domain failures attach google.rpc.ErrorInfo when documented below so the
+//     gateway can preserve the public API's machine-readable failure cause.
+//   - An interceptor rejects requests larger than 10 KiB with
+//     RESOURCE_EXHAUSTED before invoking a method.
+//   - Unexpected application failures use INTERNAL. Connection failures to
+//     PostgreSQL or Redis use UNAVAILABLE.
+//
+// Health is intentionally not part of this service. The process registers the
+// standard grpc.health.v1.Health service and reports NOT_SERVING when either
+// PostgreSQL or Redis is unavailable.
+service UserService {
+  // Register creates an active STUDENT account.
+  //
+  // Success: OK with an empty RegisterResponse. The API Gateway maps this to
+  // HTTP 201 with an empty response body.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: missing or invalid email, username, or password;
+  //     includes google.rpc.BadRequest.FieldViolation details.
+  //   - ALREADY_EXISTS: email or username already exists; includes
+  //     google.rpc.ErrorInfo distinguishing the duplicated field.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL connection is unavailable.
+  rpc Register(RegisterRequest) returns (RegisterResponse);
+
+  // Login validates an email/username and password and issues a token pair.
+  //
+  // Success: OK with LoginResponse. The API Gateway maps this to HTTP 200.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: identifier or password is missing; includes
+  //     google.rpc.BadRequest.FieldViolation details.
+  //   - UNAUTHENTICATED: credentials are invalid.
+  //   - PERMISSION_DENIED: credentials are valid but the account is suspended;
+  //     includes google.rpc.ErrorInfo identifying the suspended-account cause.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL connection is unavailable.
+  rpc Login(LoginRequest) returns (LoginResponse);
+
+  // GetProfile returns the requested account profile. The gateway supplies
+  // x-user-id and x-user-role. Administrative fields in UserProfile are present
+  // only when the caller is an ADMIN.
+  //
+  // Success: OK with GetProfileResponse. The API Gateway maps this to HTTP 200.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: uid is not a UUID; includes a FieldViolation for uid.
+  //   - UNAUTHENTICATED: required verified identity metadata is absent.
+  //   - NOT_FOUND: uid is valid but no account exists.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL connection is unavailable.
+  rpc GetProfile(GetProfileRequest) returns (GetProfileResponse);
+
+  // UpdateProfile modifies the target account's mutable profile fields. A
+  // non-admin caller may update only the account identified by x-user-id.
+  // Administrative reset of another account uses x-user-role=ADMIN.
+  //
+  // Success: OK with UpdateProfileResponse. The API Gateway maps this to HTTP
+  // 200 and serializes the returned full profile.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: uid or an updated field is invalid; includes
+  //     google.rpc.BadRequest.FieldViolation details.
+  //   - UNAUTHENTICATED: verified identity metadata is absent, or a caller
+  //     changing their own password supplies the wrong current_password.
+  //   - PERMISSION_DENIED: caller is neither the target account nor an ADMIN.
+  //   - NOT_FOUND: target uid does not exist.
+  //   - ALREADY_EXISTS: username is already used; includes google.rpc.ErrorInfo
+  //     identifying the unique-field conflict.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL or Redis connection is unavailable.
+  rpc UpdateProfile(UpdateProfileRequest) returns (UpdateProfileResponse);
+
+  // UpdateStatus suspends or reactivates an account. It requires
+  // x-user-role=ADMIN.
+  //
+  // Success: OK with an empty UpdateStatusResponse. The API Gateway maps this
+  // to HTTP 200 with an empty response body.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: uid is malformed or status is
+  //     ACCOUNT_STATUS_UNSPECIFIED; includes FieldViolation details.
+  //   - UNAUTHENTICATED: verified identity metadata is absent.
+  //   - PERMISSION_DENIED: caller is not an ADMIN.
+  //   - NOT_FOUND: target uid does not exist.
+  //   - FAILED_PRECONDITION: suspending the last active ADMIN; includes
+  //     google.rpc.ErrorInfo identifying the last-admin rule.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL or Redis connection is unavailable.
+  rpc UpdateStatus(UpdateStatusRequest) returns (UpdateStatusResponse);
+
+  // RefreshSession rotates a refresh session and issues a new token pair. It
+  // does not require caller identity metadata or authorization metadata; the
+  // refresh token is carried in RefreshSessionRequest.
+  //
+  // Success: OK with RefreshSessionResponse. The API Gateway maps this to HTTP
+  // 200, keeps refresh_token in its HttpOnly cookie, and returns access_token to
+  // the browser.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: refresh_token is missing or malformed; includes a
+  //     google.rpc.BadRequest.FieldViolation detail.
+  //   - UNAUTHENTICATED: session is missing, expired, revoked by normal logout,
+  //     belongs to a suspended account, or is otherwise invalid. A replay of a
+  //     rotated token additionally carries google.rpc.ErrorInfo identifying
+  //     ErrSessionCompromised.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB, or the five-second Redis
+  //     refresh lock is already held for this token.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL or Redis connection is unavailable.
+  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
+
+  // Logout terminates the refresh session and blocklists the current access
+  // token. The gateway supplies authorization metadata and places the
+  // gateway-owned refresh cookie value in refresh_token.
+  //
+  // Success: OK with an empty LogoutResponse. Missing or already-revoked
+  // sessions are idempotent successes. The gateway maps success to HTTP 204.
+  //
+  // Errors:
+  //   - INVALID_ARGUMENT: refresh_token is missing or malformed, or it belongs
+  //     to a different account than the verified access token; field validation
+  //     failures include google.rpc.BadRequest.FieldViolation details.
+  //   - UNAUTHENTICATED: authorization metadata is missing, malformed, or
+  //     cryptographically invalid.
+  //   - RESOURCE_EXHAUSTED: request exceeds 10 KiB.
+  //   - INTERNAL: unexpected application or persistence failure.
+  //   - UNAVAILABLE: PostgreSQL or Redis connection is unavailable.
+  rpc Logout(LogoutRequest) returns (LogoutResponse);
+}
+
+// AccountRole is the permission level asserted in access tokens and gateway
+// metadata. Requester and courier are not account roles.
+enum AccountRole {
+  ACCOUNT_ROLE_UNSPECIFIED = 0;
+  ACCOUNT_ROLE_STUDENT = 1;
+  ACCOUNT_ROLE_ADMIN = 2;
+}
+
+// AccountStatus controls whether an account may authenticate and refresh its
+// sessions.
+enum AccountStatus {
+  ACCOUNT_STATUS_UNSPECIFIED = 0;
+  ACCOUNT_STATUS_ACTIVE = 1;
+  ACCOUNT_STATUS_SUSPENDED = 2;
+}
+
+// RegisterRequest corresponds to the OpenAPI RegisterRequest schema.
+message RegisterRequest {
+  // AI-generated: preserve the regex escape through protobuf and CEL parsing.
+  option (buf.validate.message).cel = {
+    id: "register.email.nus_domain"
+    message: "email must end with @u.nus.edu"
+    expression: "this.email.lowerAscii().endsWith('@u.nus.edu')"
+  };
+  option (buf.validate.message).cel = {
+    id: "register.password.uppercase"
+    message: "password must contain at least one uppercase character"
+    expression: "this.password.matches('.*\\\\p{Lu}.*')"
+  };
+  option (buf.validate.message).cel = {
+    id: "register.password.lowercase"
+    message: "password must contain at least one lowercase character"
+    expression: "this.password.matches('.*\\\\p{Ll}.*')"
+  };
+  option (buf.validate.message).cel = {
+    id: "register.password.digit"
+    message: "password must contain at least one digit"
+    expression: "this.password.matches('.*\\\\p{Nd}.*')"
+  };
+
+  string email = 1 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 255
+    email: true
+  }];
+  string username = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[A-Za-z0-9]+$"
+  }];
+  string password = 3 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+}
+
+// RegisterResponse is intentionally empty. Registration returns no body in the
+// public HTTP API.
+message RegisterResponse {}
+
+// LoginRequest corresponds to the OpenAPI LoginRequest schema. Password length
+// is deliberately not constrained during login; invalid values pass to the
+// password comparator and produce UNAUTHENTICATED.
+message LoginRequest {
+  string identifier = 1 [(buf.validate.field).string.min_len = 1];
+  string password = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// LoginResponse is the successful authentication token pair.
+message LoginResponse {
+  string access_token = 1 [(buf.validate.field).string.min_len = 1];
+  string refresh_token = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// GetProfileRequest identifies the account to retrieve.
+message GetProfileRequest {
+  string uid = 1 [(buf.validate.field).string.uuid = true];
+}
+
+// GetProfileResponse wraps the profile selected for the caller's role.
+message GetProfileResponse {
+  UserProfile profile = 1 [(buf.validate.field).required = true];
+}
+
+// UpdateProfileRequest identifies the account and carries only fields the
+// caller intends to change. Proto3 optional presence distinguishes omission
+// from explicitly supplying an empty string.
+message UpdateProfileRequest {
+  // AI-generated: preserve the regex escape through protobuf and CEL parsing.
+  option (buf.validate.message).cel = {
+    id: "update_profile.new_password.uppercase"
+    message: "new_password must contain at least one uppercase character"
+    expression: "!has(this.new_password) || this.new_password.matches('.*\\\\p{Lu}.*')"
+  };
+  option (buf.validate.message).cel = {
+    id: "update_profile.new_password.lowercase"
+    message: "new_password must contain at least one lowercase character"
+    expression: "!has(this.new_password) || this.new_password.matches('.*\\\\p{Ll}.*')"
+  };
+  option (buf.validate.message).cel = {
+    id: "update_profile.new_password.digit"
+    message: "new_password must contain at least one digit"
+    expression: "!has(this.new_password) || this.new_password.matches('.*\\\\p{Nd}.*')"
+  };
+
+  string uid = 1 [(buf.validate.field).string.uuid = true];
+  optional string username = 2 [(buf.validate.field).string = {
+    min_len: 1
+    max_len: 128
+    pattern: "^[A-Za-z0-9]+$"
+  }];
+  optional string current_password = 3;
+  optional string new_password = 4 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  optional string phone_num = 5 [(buf.validate.field).string.max_len = 20];
+}
+
+// UpdateProfileResponse contains the updated full profile.
+message UpdateProfileResponse {
+  UserProfile profile = 1 [(buf.validate.field).required = true];
+}
+
+// UpdateStatusRequest identifies the account and requested status transition.
+message UpdateStatusRequest {
+  string uid = 1 [(buf.validate.field).string.uuid = true];
+  AccountStatus status = 2 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+}
+
+// UpdateStatusResponse is intentionally empty.
+message UpdateStatusResponse {}
+
+// RefreshSessionRequest carries the gateway-owned refresh token.
+message RefreshSessionRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// RefreshSessionResponse contains the rotated token pair.
+message RefreshSessionResponse {
+  string access_token = 1 [(buf.validate.field).string.min_len = 1];
+  string refresh_token = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// LogoutRequest carries the gateway-owned refresh token. The corresponding
+// access token is supplied separately in authorization metadata.
+message LogoutRequest {
+  string refresh_token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// LogoutResponse is intentionally empty to preserve idempotent logout.
+message LogoutResponse {}
+
+// UserProfile represents both OpenAPI profile response variants. The common
+// fields are always populated. Administrative fields are present only when the
+// caller is permitted to receive the full profile.
+message UserProfile {
+  string uid = 1 [(buf.validate.field).string.uuid = true];
+  string username = 2 [(buf.validate.field).string.min_len = 1];
+  string email = 3 [(buf.validate.field).string.email = true];
+  string phone_num = 4 [(buf.validate.field).string.max_len = 20];
+  optional AccountRole account_role = 5 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+  optional AccountStatus account_status = 6 [(buf.validate.field).enum = {
+    defined_only: true
+    not_in: 0
+  }];
+  optional google.protobuf.Timestamp date_created = 7;
+}

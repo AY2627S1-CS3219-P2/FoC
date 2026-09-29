@@ -1,0 +1,60 @@
+// AI Assistance Disclosure:
+// Tool: Codex (GPT-5), date: 2026-09-20
+// Scope: Added focused startup configuration tests for JWT token lifetimes.
+// Author review: Validated tests reflects intended behvaiour
+
+package main
+
+import (
+	"net/http"
+	"testing"
+	"time"
+)
+
+func TestParseTokenTTL(t *testing.T) {
+	tests := map[string]struct {
+		value        string
+		defaultValue time.Duration
+		want         time.Duration
+		wantError    bool
+	}{
+		"uses recorded default when unset": {defaultValue: 15 * time.Minute, want: 15 * time.Minute},
+		"parses configured duration":       {value: "168h", defaultValue: time.Minute, want: 168 * time.Hour},
+		"rejects malformed duration":       {value: "seven days", defaultValue: time.Minute, wantError: true},
+		"rejects non-positive duration":    {value: "0s", defaultValue: time.Minute, wantError: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := parseTokenTTL(tt.value, tt.defaultValue)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("parseTokenTTL() error = %v, wantError %v", err, tt.wantError)
+			}
+			if err == nil && got != tt.want {
+				t.Fatalf("parseTokenTTL() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-5), 2026-09-29 — retains the recorded
+// defensive timeout policy on the JWKS-only listener. Author review: ZI YANG - validate correctness.
+func TestNewJWKSHTTPServerUsesRecordedTimeouts(t *testing.T) {
+	server := newJWKSHTTPServer(http.NotFoundHandler())
+	if server.Addr != ":8085" {
+		t.Fatalf("Addr = %q, want :8085", server.Addr)
+	}
+
+	if server.ReadHeaderTimeout != 5*time.Second {
+		t.Fatalf("ReadHeaderTimeout = %s, want 5s", server.ReadHeaderTimeout)
+	}
+	if server.ReadTimeout != 10*time.Second {
+		t.Fatalf("ReadTimeout = %s, want 10s", server.ReadTimeout)
+	}
+	if server.WriteTimeout != 10*time.Second {
+		t.Fatalf("WriteTimeout = %s, want 10s", server.WriteTimeout)
+	}
+	if server.IdleTimeout != 120*time.Second {
+		t.Fatalf("IdleTimeout = %s, want 120s", server.IdleTimeout)
+	}
+}

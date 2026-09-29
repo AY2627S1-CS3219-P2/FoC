@@ -1,0 +1,579 @@
+# AI-generated (edited by ZI YANG): the owner-recorded API contract requires OpenAPI 3.1.0.
+openapi: 3.1.0
+info:
+  title: CampusRun User Service API
+  version: 1.0.0
+  description: The identity authority for the CampusRun platform.
+
+servers:
+  - url: http://localhost:8081
+    description: Local development server
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [email, username, password]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be a valid email address ending in `@u.nus.edu`.
+        # AI-generated (edited by ZI YANG): recorded username policy constraints.
+        username:
+          type: string
+          maxLength: 128
+          description: Must contain only alphanumeric characters.
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
+
+    LoginRequest:
+      type: object
+      required: [identifier, password]
+      properties:
+        identifier:
+          type: string
+          description: Can be either email or username
+        password:
+          type: string
+          format: password
+
+    AuthResponse:
+      type: object
+      required: [accessToken, refreshToken]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+
+    RefreshRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    LogoutRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    UserResponse:
+      type: object
+      properties:
+        uid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        phone_num:
+          type: string
+        account_role:
+          type: string
+          enum: [STUDENT, ADMIN]
+        account_status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+        date_created:
+          type: string
+          format: date-time
+
+    # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — documents the
+    # restricted profile response generated from the current handler behavior.
+    # Author review: ZI YANG - validated correctness
+    RestrictedUserResponse:
+      type: object
+      additionalProperties: false
+      required: [uid, username, email, phone_num]
+      properties:
+        uid:
+          type: string
+          format: uuid
+        username:
+          type: string
+        email:
+          type: string
+        phone_num:
+          type: string
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          maxLength: 128
+          description: Must contain only alphanumeric characters.
+        currentPassword:
+          type: string
+          format: password
+        newPassword:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+          description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
+        phone_num:
+          type: string
+          maxLength: 20
+
+    UpdateStatusRequest:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED]
+
+    ErrorResponse:
+      type: object
+      # AI-generated (edited by ZI YANG): the recorded error contract always includes an error string.
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    HealthResponse:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unhealthy]
+
+    JWKSResponse:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            type: object
+            required: [kty, use, alg, kid, n, e]
+            properties:
+              kty:
+                type: string
+              use:
+                type: string
+              alg:
+                type: string
+              kid:
+                type: string
+              n:
+                type: string
+              e:
+                type: string
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check
+      # AI-generated (edited by ZI YANG): health is an unauthenticated endpoint under the recorded global API rule.
+      security: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+        '503':
+          description: Service Unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/v1/users/register:
+    post:
+      summary: Register a new user
+      # AI-generated (edited by ZI YANG): registration has no authentication middleware.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: User created successfully with an empty response body.
+        '400':
+          description: Invalid email, missing credentials, or password policy violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Email or username already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Registration unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                error: registration unavailable
+
+  /api/v1/users/login:
+    post:
+      summary: Authenticate user
+      # AI-generated (edited by ZI YANG): login is public even when a global security requirement is introduced later.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Authentication successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Account suspended
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/refresh:
+    post:
+      summary: Refresh access token
+      # AI-generated (edited by ZI YANG): refresh has no authentication middleware.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+      responses:
+        '200':
+          description: Tokens refreshed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Unauthorized (Token invalid, expired, or ErrSessionCompromised)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '400':
+          description: Invalid request body or missing refresh token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        # AI-generated (edited by ZI YANG): documents the owner-recorded concurrent-refresh and Redis-lock outcomes.
+        '429':
+          description: A refresh for this credential is already being processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error (e.g., Redis refresh-lock failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/logout:
+    post:
+      summary: Terminate session
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+      responses:
+        '204':
+          description: Session terminated successfully
+        '400':
+          description: Invalid request body, missing refresh token, or mismatched session.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized. The access token is missing, malformed, or cryptographically invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error (e.g., Redis invalidation failure)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/{uid}:
+    get:
+      summary: Fetch profile data
+      description: >
+        Authenticated ADMIN callers receive full user details. Other
+        authenticated callers receive only uid, username, email, and phone_num.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              # AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 —
+              # documents the handler-selected full or restricted profile body.
+              # Author review: ZI YANG - validated correctness
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/UserResponse'
+                  - $ref: '#/components/schemas/RestrictedUserResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      summary: Update mutable profile fields
+      description: >
+        Updates the user's username, password, or phone number. Password changes
+        require currentPassword and newPassword unless an ADMIN resets another account.
+        Authorization: The verified Bearer token must identify the caller as the
+        target user or an ADMIN.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          description: Invalid request body or password policy violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: The current password is incorrect.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Forbidden. The caller is not an ADMIN and is attempting to modify another user's profile.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict. The requested username is already taken.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/{uid}/status:
+    patch:
+      summary: Suspend or reactivate user (ADMIN only)
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateStatusRequest'
+      responses:
+        '200':
+          description: Status updated with an empty response body.
+        '400':
+          description: Invalid request body, account status, or user ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Administrator access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: User not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict. The last active administrator cannot be suspended.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /.well-known/jwks.json:
+    get:
+      summary: Retrieve standard JSON Web Key Set
+      # AI-generated (edited by ZI YANG): JWKS has no authentication middleware.
+      security: []
+      responses:
+        '200':
+          description: JWKS payload containing active and retired public keys
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JWKSResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
