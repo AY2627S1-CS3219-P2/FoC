@@ -111,7 +111,7 @@ There is no `internal/revocation/`: D-024 leaves it with nothing to do.
 ## Local development
 
 Module path `foc/api-gateway`. Port **8080**, provisional (D-018). Env vars are
-in `.env.example`. Every one except `STATIC_DIR` is required; the process exits
+in `.env.example`. Every one is required; the process exits
 with a sorted list of what is missing rather than guessing.
 
 ```bash

@@ -9,8 +9,7 @@
 
 // Command api runs the FoC API Gateway. It verifies each access token against
 // user-service's JWKS, strips client-supplied claim headers, injects its own,
-// forwards the request to the downstream service over HTTP, and serves the
-// built frontend when STATIC_DIR is set.
+// and forwards the request to the downstream service over HTTP.
 package main
 
 import (
@@ -36,7 +35,7 @@ func main() {
 
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 
-	router, err := httpapi.NewRouter(cfg.Downstream, verifier, cfg.RefreshTokenTTL, cfg.StaticDir)
+	router, err := httpapi.NewRouter(cfg.Downstream, verifier, cfg.RefreshTokenTTL)
 	if err != nil {
 		log.Fatalf("api-gateway: building router: %v", err)
 	}

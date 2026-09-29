@@ -9,12 +9,13 @@
 # Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
 
 # Only services with a `ports:` key are reachable from the host; api-gateway
-# (host port 3001) is the only one. Downstream services trust the gateway's
+# (host port 8080) is the only one. Downstream services trust the gateway's
 # X-User-Id and X-User-Role headers, so publishing any other service lets a
 # client skip token verification (D-010 in ai/decisions.md).
 #
 # Services with no code yet (user-service, order-service, credit-service) are
-# not listed.
+# not listed. The frontend is not in this file either: `npm run dev` in
+# frontend/ serves it on 3001 and forwards /auth and /api to the gateway here.
 
 services:
   # ---- Redis ------------------------------------------------------------
@@ -53,9 +54,9 @@ services:
       # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
       # (default 168h) so it matches user-service's refresh-token lifetime.
       REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
-    # Host port 3001 maps to the gateway's container port 8080 (PORT above).
+    # Host port 8080 maps to the gateway's container port 8080 (PORT above).
     ports:
-      - "3001:8080"
+      - "8080:8080"
 
   # ---- Supplier service and its database -------------------------------
   supplier-db:
