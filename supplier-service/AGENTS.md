@@ -10,20 +10,21 @@ This is the only implemented service in the repo, so its layering is the
 reference the other four copy (root §6 points here by name). Changing the
 *shape* of that layering is a repo-wide decision, not a local one.
 
-**Status: implemented, but not on this branch.** `supplier-service/` here holds
-empty `Dockerfile` and `README.md` placeholders; the implementation is on
-`origin/feat/supplier-service` (open PR #1, "Supplier Service + homepage
-frontend"). Read it before concluding something is missing:
+**Status: implemented and merged (PR #1).** The code on `main` today is a REST
+API (`internal/httpapi`), which is what the "Boundaries" and "Gotchas" sections
+below still describe. **A gRPC replacement is decided (D-035, D-037 to D-040)
+but not yet merged** — it is on `feat/supplier-service-grpc` (PR #8), which
+also rewrites this file. Until #8 merges, treat the REST description below as
+current and the gRPC decisions as the direction, not yet the code:
 
 ```bash
-git ls-tree -r --name-only origin/feat/supplier-service:supplier-service
+git ls-tree -r --name-only feat/supplier-service-grpc:supplier-service
 ```
 
 ## Owner
 
-TBD — one developer owns this folder (root §3). Requirements, table design and
-endpoint shape are theirs to decide, and must be recorded before an agent
-builds to them (root §1).
+GCheeYang (D-034). Requirements, table design and endpoint shape are theirs to
+decide, and must be recorded before an agent builds to them (root §1).
 
 ## Boundaries
 
@@ -40,7 +41,8 @@ builds to them (root §1).
 - **`frontend`.** It will eventually want a supplier merged with data this
   service does not hold. Compose that at the caller; do not grow a field here
   that only another service can fill.
-- **Others reading suppliers.** Point them at this service's HTTP API. Never
+- **Others reading suppliers.** Point them at this service's HTTP API — the
+  gRPC contract decided in D-035 is not merged yet (see Status above). Never
   share `SUPPLIER_DB_URL`, and never factor the `Supplier` struct into a package
   they import — a duplicated struct on their side is the correct outcome
   (root §4.2).
@@ -97,6 +99,8 @@ docker compose up supplier-service supplier-db    # from the repo root
 - **Admin auth trusts an `X-User-Role: ADMIN` header** — interim, and not
   secure. Swapping `HeaderRoleExtractor` for the real mechanism is the only
   change needed here once the team decides it.
-- **There is no `api/openapi.yaml` yet**, so the DTOs in `internal/httpapi` are
-  hand-written and there is no `internal/gen/`. Root §8 is still the target;
-  writing that spec is an interface decision for the owner, not for you.
+- **There is no `api/openapi.yaml`, and there will not be one.** The owner has
+  decided the contract is gRPC instead (D-035, D-039): a `.proto`, generated
+  with `buf`, on `feat/supplier-service-grpc` (PR #8), not yet merged. Until
+  then the DTOs in `internal/httpapi` are still the hand-written REST contract
+  in code today.
