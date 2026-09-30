@@ -35,10 +35,6 @@ type Config struct {
 	// shorter logs users out early, longer leaves a cookie the refresh call rejects.
 	RefreshTokenTTL time.Duration
 
-	// StaticDir is the directory of built frontend files served at "/" for any
-	// path no other route matches (STATIC_DIR). Optional: empty serves no pages.
-	StaticDir string
-
 	// Downstream holds the base URL of each service the gateway forwards to.
 	Downstream Downstream
 }
@@ -55,7 +51,7 @@ type Downstream struct {
 
 // Load reads the environment and returns an error naming every required
 // variable that is unset or blank, or a REFRESH_TOKEN_TTL that is not a Go
-// duration. There are no defaults; STATIC_DIR is the only optional variable.
+// duration. There are no defaults: every variable is required.
 func Load() (Config, error) {
 	rawTTL := os.Getenv("REFRESH_TOKEN_TTL")
 	ttl, err := time.ParseDuration(rawTTL)
@@ -67,7 +63,6 @@ func Load() (Config, error) {
 		Port:            os.Getenv("PORT"),
 		JWKSURL:         os.Getenv("JWKS_URL"),
 		RefreshTokenTTL: ttl,
-		StaticDir:       os.Getenv("STATIC_DIR"),
 		Downstream: Downstream{
 			User:     os.Getenv("USER_BASE_URL"),
 			Supplier: os.Getenv("SUPPLIER_BASE_URL"),

@@ -19,8 +19,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -155,7 +153,7 @@ func newHarness(t *testing.T) *harness {
 		Supplier: suppSvc.URL,
 		Order:    suppSvc.URL,
 		Credit:   suppSvc.URL,
-	}, verifier, testRefreshTTL, "")
+	}, verifier, testRefreshTTL)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -450,7 +448,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
-	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL, "")
+	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -575,104 +573,11 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 }
 
 // AI-generated (edited by nigeltzy).
-// Covers the static-file tests below: the SPA handler must not shadow API
-// routes.
-
-// AI-generated (edited by nigeltzy).
-func newStaticHarness(t *testing.T) (http.Handler, string) {
-	t.Helper()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>APP"), 0o600); err != nil {
-		t.Fatalf("write index: %v", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "app.js"), []byte("console.log(1)"), 0o600); err != nil {
-		t.Fatalf("write asset: %v", err)
-	}
-
-	iss := newIssuer(t)
-	jwks := httptest.NewServer(iss.jwksHandler())
-	t.Cleanup(jwks.Close)
-	rec := &recorder{}
-	svc := stubService(rec)
-	t.Cleanup(svc.Close)
-	router, err := httpapi.NewRouter(config.Downstream{
-		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
-	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL, dir)
-	if err != nil {
-		t.Fatalf("NewRouter: %v", err)
-	}
-	return router, dir
-}
-
-func get(h http.Handler, path string) *httptest.ResponseRecorder {
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
-	return w
-}
-
-func TestStaticFilesAndSPAFallback(t *testing.T) {
-	// AI-generated (edited by nigeltzy).
-	h, _ := newStaticHarness(t)
-
-	if got := get(h, "/app.js"); got.Code != http.StatusOK ||
-		!strings.Contains(got.Body.String(), "console.log") {
-		t.Errorf("GET /app.js = %d %q, want the asset", got.Code, got.Body.String())
-	}
-	// A client-side route is not a file. 404ing it would break every deep
-	// link into the app.
-	if got := get(h, "/suppliers"); got.Code != http.StatusOK ||
-		!strings.Contains(got.Body.String(), "APP") {
-		t.Errorf("GET /suppliers = %d %q, want index.html", got.Code, got.Body.String())
-	}
-}
-
-// AI-generated (edited by nigeltzy).
-// TestStaticServesNamesStartingWithDotDot checks that a file whose name merely
-// starts with ".." is served, while a path that climbs out of the static dir
-// is still refused.
-func TestStaticServesNamesStartingWithDotDot(t *testing.T) {
-	// AI-generated (edited by nigeltzy).
-	h, dir := newStaticHarness(t)
-
-	if err := os.WriteFile(filepath.Join(dir, "..foo"), []byte("DOTDOT"), 0o600); err != nil {
-		t.Fatalf("write ..foo: %v", err)
-	}
-	if got := get(h, "/..foo"); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "DOTDOT") {
-		t.Errorf("GET /..foo = %d %q, want the file", got.Code, got.Body.String())
-	}
-
-	// A file beside the static dir must stay unreachable.
-	if err := os.WriteFile(filepath.Join(filepath.Dir(dir), "secret.txt"), []byte("SECRET"), 0o600); err != nil {
-		t.Fatalf("write secret: %v", err)
-	}
-	for _, path := range []string{"/../secret.txt", "/..", "/a/../../secret.txt"} {
-		if got := get(h, path); got.Code != http.StatusNotFound || strings.Contains(got.Body.String(), "SECRET") {
-			t.Errorf("GET %s = %d %q, want 404", path, got.Code, got.Body.String())
-		}
-	}
-}
-
-func TestStaticServingDoesNotShadowTheAPI(t *testing.T) {
-	// AI-generated (edited by nigeltzy).
-	h, _ := newStaticHarness(t)
-
-	// A path that matches an API route gets the API's answer (401 without a
-	// token), not index.html with 200.
-	if got := get(h, "/api/suppliers/42"); got.Code != http.StatusUnauthorized {
-		t.Errorf("GET /api/suppliers/42 = %d, want 401 from the API", got.Code)
-	}
-	if got := get(h, "/healthz"); got.Code != http.StatusOK ||
-		!strings.Contains(got.Body.String(), `"status":"ok"`) {
-		t.Errorf("GET /healthz = %d %q, want the gateway's own", got.Code, got.Body.String())
-	}
-}
-
-// AI-generated (edited by nigeltzy).
 // TestUnknownAPIPathsGetJSON404 checks that a mistyped /api or /auth path gets
-// a JSON 404 rather than the frontend's index.html with 200.
+// a JSON 404 in the gateway's error shape.
 func TestUnknownAPIPathsGetJSON404(t *testing.T) {
 	// AI-generated (edited by nigeltzy).
-	h, _ := newStaticHarness(t)
+	h := newHarness(t).router
 
 	for _, tc := range []struct{ method, path string }{
 		{http.MethodGet, "/api"},
@@ -689,18 +594,13 @@ func TestUnknownAPIPathsGetJSON404(t *testing.T) {
 			t.Errorf("%s %s = %d %q, want 404 application/json", tc.method, tc.path, w.Code, w.Header().Get("Content-Type"))
 		}
 	}
-
-	// Client-side routes still load the app.
-	if got := get(h, "/profile"); got.Code != http.StatusOK || !strings.Contains(got.Body.String(), "APP") {
-		t.Errorf("GET /profile = %d, want index.html", got.Code)
-	}
 }
 
-func TestNoStaticDirLeavesTheDefault404(t *testing.T) {
+func TestOtherUnmatchedPathsGetA404(t *testing.T) {
 	h := newHarness(t)
 
-	// With no static dir, unmatched paths get a plain 404, not a page.
+	// The gateway serves no pages: a path outside its routes is a plain 404.
 	if got := h.do(httptest.NewRequest(http.MethodGet, "/suppliers", nil)); got.Code != http.StatusNotFound {
-		t.Errorf("GET /suppliers = %d, want 404 when no static dir is configured", got.Code)
+		t.Errorf("GET /suppliers = %d, want 404", got.Code)
 	}
 }

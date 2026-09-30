@@ -1,0 +1,8 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5), date: 2026-09-17
+# Scope: Ignore list for the Node toolchain, written with the React port.
+# Author review: nigeltzy - generated simple gitignore file
+
+# Node toolchain artifacts: dependencies and tsc -b build info.
+node_modules/
+*.tsbuildinfo

@@ -1,0 +1,13 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5), date: 2026-09-17
+// Scope: Root TypeScript project file referencing the app and Node configs,
+//   written with the React port.
+// Author review: nigeltzy - generated simple config file
+
+{
+  "files": [],
+  "references": [
+    { "path": "./tsconfig.app.json" },
+    { "path": "./tsconfig.node.json" }
+  ]
+}
