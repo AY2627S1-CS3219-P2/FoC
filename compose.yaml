@@ -1,4 +1,23 @@
 # AI Assistance Disclosure:
+# Tool: Codex (GPT-5), date: 2026-09-18
+# Scope: Added local PostgreSQL 16 and user-service API containers.
+# Author review: COMPLETED BY ZI YANG
+
+services:
+  user-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user
+      POSTGRES_USER: ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}
+    volumes:
+      - user-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set} -d user"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 # Tool: Claude Code (model: Opus 5), date: 2026-09-19
 # Scope: Compose baseline — extends the supplier-service/frontend stack from
 #   PR #1 with Redis and the API Gateway, and closes the public ports that
@@ -33,6 +52,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  user-service:
+    build:
+      context: ./user-service
+      dockerfile: Dockerfile
+    environment:
+      PORT: 8081
+      USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
+      REDIS_URL: redis://redis:6379
+      # AI-generated (edited by ZI YANG).
+      JWT_KEYSET_PATH: /run/secrets/keys.json
+      JWT_ACCESS_TOKEN_TTL: ${JWT_ACCESS_TOKEN_TTL:-15m}
+      JWT_REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
+      INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:?INITIAL_ADMIN_EMAIL must be set}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?INITIAL_ADMIN_USERNAME must be set}
+      INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set}
+    depends_on:
+      user-db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # AI-generated (edited by ZI YANG).
+      - ./user-service/keys.json:/run/secrets/keys.json:ro
+    restart: on-failure
 
   # ---- API gateway ------------------------------------------------------
   api-gateway:
@@ -69,9 +113,6 @@ services:
       - supplier-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
 
   supplier-service:
     build:
@@ -87,5 +128,6 @@ services:
 
 
 volumes:
+  user-db-data:
   redis-data:
   supplier-db-data:
