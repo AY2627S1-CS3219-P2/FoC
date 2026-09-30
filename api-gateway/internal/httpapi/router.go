@@ -66,11 +66,10 @@ func authRoutes() []authRoute {
 }
 
 // NewRouter builds the gateway's handler: /healthz, the four public /auth
-// routes, the /api/<service> prefixes behind RequireToken and, when staticDir
-// is non-empty, the built frontend for every path no route matches. Clients
-// call these public paths, so renaming one, or moving one out of RequireToken,
+// routes and the /api/<service> prefixes behind RequireToken. Clients call
+// these public paths, so renaming one, or moving one out of RequireToken,
 // changes the gateway's API (D-027 in ai/decisions.md).
-func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration, staticDir string) (http.Handler, error) {
+func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	// AI-generated (edited by nigeltzy).
@@ -134,20 +133,14 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 	}
 
 	// AI-generated (edited by nigeltzy).
-	// Unmatched paths under /api and /auth get a JSON 404 rather than the
-	// frontend, so a mistyped API call fails as one instead of returning a page.
+	// Unmatched paths under /api and /auth get a JSON 404 in the gateway's
+	// error shape, so a mistyped API call fails the way the client expects.
 	apiNotFound := func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "no such route")
 	}
 	for _, prefix := range []string{"/api", "/auth"} {
 		r.HandleFunc(prefix, apiNotFound)
 		r.HandleFunc(prefix+"/*", apiNotFound)
-	}
-
-	// Other paths no route matches get the built frontend; with an empty
-	// staticDir they get chi's default 404.
-	if staticDir != "" {
-		r.NotFound(newSPAHandler(staticDir).ServeHTTP)
 	}
 
 	return r, nil

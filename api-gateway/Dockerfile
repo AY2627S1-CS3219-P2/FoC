@@ -20,7 +20,7 @@ WORKDIR /app
 
 COPY --from=builder /out/api-gateway ./api-gateway
 
-# Listens on PORT (8080 in compose.yaml); compose.yaml publishes it on host port 3001.
+# Listens on PORT (8080 in compose.yaml), which compose.yaml publishes on host port 8080.
 EXPOSE 8080
 
 ENTRYPOINT ["./api-gateway"]

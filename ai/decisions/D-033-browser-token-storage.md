@@ -35,13 +35,15 @@ The browser talks to one origin. **`interimCORS` is deleted, not configured.**
 
 - **Dev:** Vite's `server.proxy` routes `/api/*` and `/auth/*` to `:8080`.
   The browser only ever addresses `:3001`.
-- **Prod:** the gateway serves the built frontend from `/`. nginx is to be
-  added only if that proves unworkable, and flagged before it is.
+- **Prod:** a static host (Amplify or Vercel, not yet chosen) serves the
+  built frontend and forwards `/api/*` and `/auth/*` to the gateway. The
+  frontend and the gateway deploy separately; the gateway serves no pages.
 - No `Access-Control-Allow-Origin`, no `Access-Control-Allow-Credentials`, no
   allowlist, no preflight path anywhere.
 - No `credentials: "include"` — same-origin requests send cookies by default,
   so the `fetch` options are left alone.
-- The gateway's port is not exposed to the browser in production.
+- In production the browser addresses only the static host, which forwards
+  API calls to the gateway.
 
 `SameSite=Strict` was never the blocker: `:3001` and `:8080` are same-*site*,
 because SameSite ignores ports. CORS was the blocker. It is not to be loosened.
