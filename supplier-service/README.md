@@ -92,8 +92,9 @@ The URLs are `google.api.http` options in the `.proto`, metadata for the gateway
 JSON names are snake_case (`location_description`, `is_available`, `created_at`), pinned in the `.proto` with `json_name` (D-036), so the shape the gateway emits and the frontend reads does not depend on gateway settings. Errors are gRPC status codes with a readable message; turning them into `{"error": "<message>"}` is the gateway's job.
 
 `grpc.health.v1.Health/Check` replaces the former `GET /health` for
-container readiness. Server reflection is on, so `grpcurl` (or any
-reflection-aware client) needs no local copy of the `.proto`:
+container readiness. Server reflection is on by default, so `grpcurl` (or
+any reflection-aware client) needs no local copy of the `.proto` — set
+`SUPPLIER_DISABLE_REFLECTION` to any non-empty value to turn it off:
 
 ```bash
 grpcurl -plaintext localhost:8082 list

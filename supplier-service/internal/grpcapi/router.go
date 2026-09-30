@@ -2,6 +2,8 @@
 // Tool: Claude Code (model: Sonnet 5), date: 2026-09-22
 // Scope: New file. grpc.Server wiring: admin-role interceptor, the
 //   standard health service, and reflection.
+//   2026-09-30: reflection made conditional on enableReflection, responding
+//   to a Copilot review finding on PR #8.
 // Author review: PENDING — <reviewer to complete>
 
 package grpcapi
@@ -27,10 +29,11 @@ var adminMethods = map[string]bool{
 
 // NewGRPCServer wires the SupplierService implementation, the admin-role
 // interceptor, the standard grpc.health.v1.Health service (for container
-// readiness — the gRPC equivalent of the former GET /health), and
-// reflection (so grpcurl and similar tools can call it without a copy of
-// the .proto) into a *grpc.Server ready to Serve.
-func NewGRPCServer(svc *supplier.Service) *grpc.Server {
+// readiness — the gRPC equivalent of the former GET /health), and,
+// when enableReflection is true, reflection (so grpcurl and similar tools
+// can call it without a copy of the .proto) into a *grpc.Server ready to
+// Serve.
+func NewGRPCServer(svc *supplier.Service, enableReflection bool) *grpc.Server {
 	srv := grpc.NewServer(
 		grpc.UnaryInterceptor(appmw.RequireAdmin(appmw.MetadataRoleExtractor, adminMethods)),
 	)
@@ -41,7 +44,9 @@ func NewGRPCServer(svc *supplier.Service) *grpc.Server {
 	healthSrv.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
 	healthv1.RegisterHealthServer(srv, healthSrv)
 
-	reflection.Register(srv)
+	if enableReflection {
+		reflection.Register(srv)
+	}
 
 	return srv
 }

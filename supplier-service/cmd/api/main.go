@@ -44,7 +44,7 @@ func main() {
 	svc := supplier.NewService(repo)
 	// AI-generated (edited by PENDING) — swapped from httpapi.NewRouter +
 	// http.ListenAndServe to grpcapi.NewGRPCServer + net.Listen/srv.Serve.
-	srv := grpcapi.NewGRPCServer(svc)
+	srv := grpcapi.NewGRPCServer(svc, cfg.EnableReflection)
 
 	lis, err := net.Listen("tcp", ":"+cfg.Port)
 	if err != nil {

@@ -140,14 +140,16 @@ migrations/          golang-migrate .up/.down pairs, applied at startup from
 ## Local development
 
 Port **8082** (root §3, unchanged — same port, gRPC instead of HTTP/JSON on
-it). Env vars `PORT`, `SUPPLIER_DB_URL`, `SEED_CSV_PATH`, with placeholders in
-the root `.env.example` and this folder's own.
+it). Env vars `PORT`, `SUPPLIER_DB_URL`, `SEED_CSV_PATH`, `SUPPLIER_DISABLE_REFLECTION`
+(unset/default leaves reflection on; any non-empty value turns it off — a
+Copilot review on PR #8 flagged reflection being unconditional), with placeholders
+in the root `.env.example` and this folder's own.
 
 ```bash
 go run ./cmd/api     # from supplier-service/; migrates then seeds on startup
 go test ./...        # unit + in-process gRPC tests, no Docker needed
 docker compose up supplier-service supplier-db    # from the repo root
-grpcurl -plaintext localhost:8082 list             # reflection is on
+grpcurl -plaintext localhost:8082 list             # reflection is on by default
 ```
 
 Regenerating after a `.proto` change is `buf generate` from this folder (D-039). The
