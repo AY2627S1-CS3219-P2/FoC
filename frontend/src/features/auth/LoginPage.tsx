@@ -163,6 +163,7 @@ export function LoginPage({
               <label htmlFor="auth-identifier">Username or NUS email</label>
               <input
                 id="auth-identifier"
+                type="text"
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
                 placeholder="nigeltzy"
@@ -189,6 +190,7 @@ export function LoginPage({
                 <label htmlFor="auth-username">Username</label>
                 <input
                   id="auth-username"
+                  type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   placeholder="nigeltzy"

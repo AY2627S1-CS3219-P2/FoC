@@ -472,6 +472,16 @@ textarea:focus {
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
+/* The native select arrow renders at an inconsistent vertical position
+   across browsers/platforms; draw our own and center it precisely instead. */
+select {
+  appearance: none;
+  padding-right: 36px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%236b7688' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+
 textarea {
   min-height: 62px;
   resize: vertical;
@@ -1229,6 +1239,13 @@ button.service-card:hover {
   .controls {
     flex-direction: column;
     align-items: stretch;
+  }
+
+  /* .search-input's flex-basis (240px) is a width in the default row
+     layout; in this column layout flex-basis is a height, so unset it
+     here or the box grows to fill .controls vertically. */
+  .search-input {
+    flex: none;
   }
 
   .category-select {
