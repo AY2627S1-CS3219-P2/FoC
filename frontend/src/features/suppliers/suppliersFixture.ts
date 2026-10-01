@@ -4,6 +4,13 @@
 //   (VITE_USE_FIXTURES=true), seeded from data/csv/supplier-seed-data.csv the
 //   way supplier-service's seed.go loads it.
 // Author review: nigeltzy
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+// Scope: Updated 10 suppliers' image_url to match the self-hosted paths
+//   data/csv/supplier-seed-data.csv was corrected to (PR #11) — this
+//   fixture had fallen out of sync with the CSV it is supposed to mirror.
+// Author review: PENDING — <reviewer to complete>
 
 import { mockDelay } from "../../lib/mock";
 import { SupplierApiError, type SuppliersApi } from "./suppliersApi";
@@ -87,7 +94,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7738478,
     opening_time: "09:00",
     closing_time: "21:30",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWnbKftSoeMWP3T7GaFshaZ0NLOuRsE33l_MwuKA_0jjg9mDfPMREaQGXpFsMZVbW7hTadp4WgrKMDZ0q-DD7TPonC89NaAFOzrAlGVpRyrD-gOywx3dL2ahDFfTGwlLC1A8uIMVtzBjw_6E=s1360-w1360-h1020-rw",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/COOL_SPOT.jpeg",
   }),
   seed(5, {
     name: "InstaChef",
@@ -135,7 +142,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.769064,
     opening_time: "08:00",
     closing_time: "18:00",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWlMQJFtn1-R6faY8YON6TXELpF_1ix9IRl2kpFQdaZQ8gLVz-BZoJP_ldTNuLwneALFlP4CAUw3QNZDDexgMC1dZYsPBHlt9CNjk0kQzJG8zTFNh4r4oZYoUxSkShsAtDgkAv2E=s1360-w1360-h1020-rw",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/ARISE_AND_SHINE.jpeg",
   }),
   seed(9, {
     name: "Bakehaus / Aurea",
@@ -147,7 +154,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7707872,
     opening_time: "08:00",
     closing_time: "21:00",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWnSPhOWOjsovwu98TZpWjiNt6Rb79YXhZtWhw-TMRPT3XP8uItykHUQbU3ppAJZTys49yqlRbKzfMlIBByyzBSXyiXnfkb-BdWUSTYSyJEYVDMJhMtdUZbUET4xYNjWew1l4VgPYfWg2N0=w408-h356-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/BAKEHAUS_AUREA.jpeg",
   }),
   seed(10, {
     name: "Central Square @ YIH",
@@ -171,7 +178,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7704435,
     opening_time: "09:30",
     closing_time: "19:30",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWmUD0So0a9tnpaQvZ14OeUzkiSDLX4MJiqAs1hm6t5CzjByx9gUT0GktsahO8CHZSOfNpb7SA3zKSl9yU0r5Ca_BFE8XEmt4JvWYadw6iTg6nkcFkXN6G-TctMa2yQtCguG9h5e=w408-h272-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/PASTA_EXPRESS.jpeg",
   }),
   seed(12, {
     name: "TOMORO COFFEE",
@@ -183,7 +190,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7719943,
     opening_time: "08:15",
     closing_time: "18:00",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWkQQottowVVI2NVVhDZfDAEmIbA8ZqyIs-jx1C4deCKActV3lwvOPDmRTZ902JFteB3CM4gv0W8gQsmM5fowQ_oVdqrnM5ziKqwxG4yvFJfz36_q5jJ2vMbXPbX2YKjap55Ab2c=w408-h306-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/TOMORO_COFFEE.jpeg",
   }),
   seed(13, {
     name: "Octobox",
@@ -195,7 +202,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7787588,
     opening_time: "00:00",
     closing_time: "23:59",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWlA4Toa4tSE4KK1c-JORamlknrxZXraXrD2dAdfcMgmHPk1HyqWvVM9NOVTFpR3QM3qXlcOsQdDtrcdl9RzpFomNJAkazPtjmEJVEntPex_0ltOVaIatbucplmKax2s49281GPpnk7Btzk=w408-h306-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/OCTOBOX.png",
   }),
   seed(14, {
     name: "Smooy",
@@ -231,7 +238,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7526298,
     opening_time: "00:00",
     closing_time: "23:59",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWnH5mpLERSb_Yf7gsqMglXEDHGdVu8zE1tV2GdKNMT1KcUF7u6imG9Vjy-tepRUSFVsaEQeQgQFUKsxU_acX_kFwJ9OUri1rhzVDPhg31i1z33p3d7vaDJStF595Ou2ATOwJw5N=w408-h544-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/CHEERS_UNMANNED.jpeg",
   }),
   seed(17, {
     name: "Nami",
@@ -243,7 +250,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7708813,
     opening_time: "08:00",
     closing_time: "17:30",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWntNY4TO3Lb87QdhY0myxuoeYmI8-N9N3ExA2IM1pazJTfHH0-vbcM3jLv5lwG_8D2Mlxf4yuC8M-c8Pr3EvS9Gc4ZWEyJbTBR_I_ZrlqRBTMoKwzIv4N2uvmR_3WcVbGwg7aPZS1VY3fdZ=s1360-w1360-h1020-rw",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/NAMI.jpeg",
   }),
   seed(18, {
     name: "Supersnacks",
@@ -279,7 +286,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7720926,
     opening_time: "08:00",
     closing_time: "17:30",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWk65JqsLWtUmpRJwU3shE351_3yPnxVqBnd6i6NMcgZZsQEHesr1AWQC8JbtXPjNlNZRR2L-3I1vl3ik4niQQecuYeUeFidEP5FKOosrJCXmgdtRPl30XtQZB0N5RNNwpSQJnv5=w408-h271-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/COFFEE_ROASTER.jpeg",
   }),
   seed(21, {
     name: "he by He Brews",
@@ -291,7 +298,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7707577,
     opening_time: "08:00",
     closing_time: "17:00",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWneOXivy1ZqDtOcywaoKrBqW59o4w179360AN9ad0a7jOp_wwaHluRjAhORj-9UQKkmFyutYwLAFAQUkJBvEPLnDmw-SwZ657drKFKDb4kdtxQYPNzbBnyNI33bk02xB1UT82vvxNw7Q_qt=w408-h306-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/HE_BY_HE_BREWS.jpeg",
   }),
 ];
 

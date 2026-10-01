@@ -3,6 +3,15 @@
 // Scope: Ported openForm()/submitForm() from the prototype to a controlled
 //   React form.
 // Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+// Scope: Renamed the form-row/form-row-grid classes to the field/field-grid
+//   classes every other form in this app already uses (login, register,
+//   new errand). form-row/form-row-grid had no matching CSS at all, so the
+//   form fell back to unstyled inline browser defaults — fine by accident
+//   at desktop width, visibly broken (cramped, overlapping) at phone width.
+// Author review: PENDING — <reviewer to complete>
 
 import { useState, type FormEvent } from "react";
 import type { Supplier, SupplierInput } from "./types";
@@ -60,7 +69,7 @@ export function SupplierForm({
         {existing ? "Edit Supplier" : "Add Supplier"}
       </h2>
       <form onSubmit={handleSubmit}>
-        <div className="form-row">
+        <div className="field">
           <label htmlFor="f-name">Name</label>
           <input
             id="f-name"
@@ -70,8 +79,8 @@ export function SupplierForm({
           />
         </div>
 
-        <div className="form-row-grid">
-          <div className="form-row">
+        <div className="field-grid">
+          <div className="field">
             <label htmlFor="f-type">Type / category</label>
             <input
               id="f-type"
@@ -80,7 +89,7 @@ export function SupplierForm({
               onChange={(e) => set("type", e.target.value)}
             />
           </div>
-          <div className="form-row">
+          <div className="field">
             <label htmlFor="f-building">Building</label>
             <input
               id="f-building"
@@ -91,8 +100,8 @@ export function SupplierForm({
           </div>
         </div>
 
-        <div className="form-row-grid">
-          <div className="form-row">
+        <div className="field-grid">
+          <div className="field">
             <label htmlFor="f-floor">Floor</label>
             <input
               id="f-floor"
@@ -100,7 +109,7 @@ export function SupplierForm({
               onChange={(e) => set("floor", e.target.value)}
             />
           </div>
-          <div className="form-row">
+          <div className="field">
             <label htmlFor="f-loc">Location description</label>
             <input
               id="f-loc"
@@ -111,8 +120,8 @@ export function SupplierForm({
           </div>
         </div>
 
-        <div className="form-row-grid">
-          <div className="form-row">
+        <div className="field-grid">
+          <div className="field">
             <label htmlFor="f-lat">Latitude</label>
             <input
               id="f-lat"
@@ -123,7 +132,7 @@ export function SupplierForm({
               onChange={(e) => set("latitude", Number(e.target.value))}
             />
           </div>
-          <div className="form-row">
+          <div className="field">
             <label htmlFor="f-lng">Longitude</label>
             <input
               id="f-lng"
@@ -136,8 +145,8 @@ export function SupplierForm({
           </div>
         </div>
 
-        <div className="form-row-grid">
-          <div className="form-row">
+        <div className="field-grid">
+          <div className="field">
             <label htmlFor="f-open">Opening time (HH:MM)</label>
             <input
               id="f-open"
@@ -146,7 +155,7 @@ export function SupplierForm({
               onChange={(e) => set("opening_time", e.target.value)}
             />
           </div>
-          <div className="form-row">
+          <div className="field">
             <label htmlFor="f-close">Closing time (HH:MM)</label>
             <input
               id="f-close"
@@ -157,7 +166,7 @@ export function SupplierForm({
           </div>
         </div>
 
-        <div className="form-row">
+        <div className="field">
           <label htmlFor="f-img">Image URL</label>
           <input
             id="f-img"
@@ -166,7 +175,7 @@ export function SupplierForm({
           />
         </div>
 
-        <div className="form-row">
+        <div className="field">
           <label htmlFor="f-desc">Description</label>
           <input
             id="f-desc"
@@ -175,7 +184,7 @@ export function SupplierForm({
           />
         </div>
 
-        <div className="form-row checkbox-row">
+        <div className="checkbox-row">
           <input
             type="checkbox"
             id="f-available"

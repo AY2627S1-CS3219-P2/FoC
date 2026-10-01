@@ -109,7 +109,6 @@ export function App() {
   // first and then jump.
   const [view, setView] = useState<ViewName>(() => readLastView() ?? "home");
   const [mode, setMode] = useState<ActingMode>("requesting");
-  const [isAdmin, setIsAdmin] = useState(false);
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Balance lives here because the sidebar, the top bar and NewErrandView all
@@ -235,8 +234,7 @@ export function App() {
           <SuppliersView
             api={suppliers}
             isMock={!usingGateway}
-            isAdmin={isAdmin}
-            onAdminChange={setIsAdmin}
+            isAdmin={session.role === "ADMIN"}
             onNotify={setToast}
           />
         )}

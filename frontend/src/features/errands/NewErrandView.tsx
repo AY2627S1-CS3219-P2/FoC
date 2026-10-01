@@ -198,6 +198,7 @@ export function NewErrandView({
             {items.map((item, index) => (
               <div className="item-row" key={index}>
                 <input
+                  type="text"
                   value={item}
                   placeholder="1 × Iced latte, less ice"
                   onChange={(e) => setItem(index, e.target.value)}

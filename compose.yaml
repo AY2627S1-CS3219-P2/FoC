@@ -3,6 +3,14 @@
 # Scope: Added local PostgreSQL 16 and user-service API containers.
 # Author review: COMPLETED BY ZI YANG
 
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+# Scope: Merged two top-level `services:` maps left over from PR #4/#5 landing
+#   separately (invalid YAML — a duplicate mapping key — made `docker compose`
+#   refuse to parse the file at all); mechanical fix, no service definition
+#   changed.
+# Author review: PENDING — <reviewer to complete>
+
 services:
   user-db:
     image: postgres:16-alpine
@@ -32,11 +40,10 @@ services:
 # X-User-Id and X-User-Role headers, so publishing any other service lets a
 # client skip token verification (D-010 in ai/decisions.md).
 #
-# Services with no code yet (user-service, order-service, credit-service) are
-# not listed. The frontend is not in this file either: `npm run dev` in
-# frontend/ serves it on 3001 and forwards /auth and /api to the gateway here.
+# Services with no code yet (order-service, credit-service) are not listed.
+# The frontend is not in this file either: `npm run dev` in frontend/ serves
+# it on 3001 and forwards /auth and /api to the gateway here.
 
-services:
   # ---- Redis ------------------------------------------------------------
   # AI-generated (edited by nigeltzy) — rewritten for D-024.
   # Used only by user-service, which is not in this file yet. No `ports:` key,

@@ -104,3 +104,12 @@ docker compose up supplier-service supplier-db    # from the repo root
   with `buf`, on `feat/supplier-service-grpc` (PR #8), not yet merged. Until
   then the DTOs in `internal/httpapi` are still the hand-written REST contract
   in code today.
+- <!-- AI-generated (edited by PENDING). --> **A corrected seed CSV does not reach an existing database.**
+  `seed.EnsureSeeded` only seeds when the `suppliers` table is empty, and
+  `compose.yaml` persists it in the named volume `supplier-db-data` — so
+  pulling a CSV fix (e.g. the 2026-10-01 `image_url` corrections, PR #11)
+  changes nothing for anyone whose stack already ran once. To pick up a
+  seed-data-only fix: `docker compose down` then `docker volume rm
+  <project>_supplier-db-data` before the next `docker compose up` (or, for a
+  single already-running row, `UPDATE` it directly — see PR #11's own
+  description for the exact statements used there).
