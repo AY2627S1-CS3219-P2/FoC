@@ -271,3 +271,49 @@ has a `ports:` key — that is how D-010's trust zones are enforced. The fronten
 is not in Compose: `npm run dev` in `frontend/` serves it on 3001 and forwards
 `/auth` and `/api` to the gateway on 8080. Integration tests everywhere are
 spelled `go test -tags=integration ./...`.
+
+## 11. Shared local test accounts
+
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+Scope: New section. Recorded the two accounts used to manually test the
+  running stack (login, role-gated supplier CRUD), so everyone on the team
+  hits the same two accounts instead of each creating their own.
+Author review: PENDING — <reviewer to complete>
+-->
+
+Fake, local-only accounts — not real NUS emails, not real passwords, not
+reachable outside your own machine. Use them when testing the stack by hand
+(browser or curl) so everyone compares against the same two accounts instead
+of a different ad-hoc one each time.
+
+| Role | Username | Password | Email |
+| --- | --- | --- | --- |
+| STUDENT | `student2` | `Student123` | `student2@u.nus.edu` |
+| ADMIN | `admindemo` | `AdminDemo123` | `admin@u.nus.edu` |
+
+**ADMIN** is created automatically on first boot by user-service's bootstrap
+(only when the database has no admin yet — see `user-service/README.md` §1.3).
+To get this exact account on your own machine, set these in your local `.env`
+before the first `docker compose up` (or first `go run ./cmd/api`) against a
+fresh database:
+
+```bash
+INITIAL_ADMIN_EMAIL=admin@u.nus.edu
+INITIAL_ADMIN_USERNAME=admindemo
+INITIAL_ADMIN_PASSWORD=AdminDemo123
+```
+
+**STUDENT** is not bootstrapped — register it once against your own running
+stack:
+
+```bash
+curl -X POST http://localhost:8080/auth/register \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student2@u.nus.edu","username":"student2","password":"Student123"}'
+```
+
+If your database already has an admin account or a `student2` row from
+earlier, these steps are no-ops (register replies `409` on the duplicate,
+and the bootstrap skips itself) — nothing to clean up first.
