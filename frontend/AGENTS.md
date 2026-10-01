@@ -175,12 +175,16 @@ allocation quoted on the login screen.
 - **Nothing shipped to the browser is secret.** Not a build-time env var,
   not an inlined constant, not a "hidden" field. No `JWT_SECRET`, no
   database URL, no admin key ever appears in this folder.
-- **The admin checkbox is not auth.** On the Suppliers screen it only shows or
-  hides the admin controls; `suppliersApi.ts` sends no role header. The
-  gateway derives `role` from the verified access token (D-013) and strips
-  any claim header a client supplies, so a write succeeds only for an ADMIN
-  account. Do not build real UI on the checkbox or present it as access
-  control.
+- **Showing the admin controls is not auth.** On the Suppliers screen,
+  `isAdmin` (App.tsx) is `session.role === "ADMIN"` from the signed-in
+  account's own profile — it only shows or hides the admin controls;
+  `suppliersApi.ts` still sends no role header. The gateway derives `role`
+  from the verified access token (D-013) and strips any claim header a
+  client supplies, so a write succeeds only for an ADMIN account regardless
+  of what the UI shows. There used to be a manual "show admin controls"
+  checkbox here (2026-09-17 to 2026-10-01); it was removed once `isAdmin`
+  could be derived from the real session instead of toggled by hand. Do not
+  build real UI on `isAdmin` or present it as access control.
 - **Tokens never go in component state or storage.** `lib/tokens.ts` keeps the
   access token in a closure created once in `App.tsx`, and nothing writes it
   to `localStorage`, `sessionStorage` or a cookie. The refresh token is an

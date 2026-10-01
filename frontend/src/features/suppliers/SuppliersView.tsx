@@ -6,6 +6,13 @@
 //   module, now that it carries a per-session token. The admin checkbox's
 //   label no longer claims to bypass access control — it cannot any more.
 // Author review: Nigeltzy - Checked the simple generated converted file based on the prototype and requirements provided.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
+// Scope: Removed the manual "show admin controls" checkbox. `isAdmin` is now
+//   App's own derived session.role === "ADMIN", so the controls just show
+//   for a real admin account instead of needing a manual toggle every time.
+// Author review: PENDING — <reviewer to complete>
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { SuppliersApi } from "./suppliersApi";
@@ -24,7 +31,6 @@ interface SuppliersViewProps {
   /** True when `api` is the fixture rather than supplier-service. */
   isMock: boolean;
   isAdmin: boolean;
-  onAdminChange: (isAdmin: boolean) => void;
   onNotify: (message: ToastMessage) => void;
 }
 
@@ -39,7 +45,6 @@ export function SuppliersView({
   api,
   isMock,
   isAdmin,
-  onAdminChange,
   onNotify,
 }: SuppliersViewProps) {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -161,26 +166,6 @@ export function SuppliersView({
           </button>
         )}
       </div>
-
-      {/*
-        View switch only: it shows or hides the admin controls and adds
-        nothing to the requests. Whether a write is allowed is decided from
-        the role in the signed-in account's access token.
-      */}
-      <label
-        className="checkbox-row"
-        title="Shows the admin controls. Whether they work is decided by supplier-service, from the role in your access token."
-        style={{ marginBottom: 18 }}
-      >
-        <input
-          type="checkbox"
-          checked={isAdmin}
-          onChange={(e) => onAdminChange(e.target.checked)}
-        />
-        <span className="balance-label">
-          Show admin controls (an ADMIN account is still required to use them)
-        </span>
-      </label>
 
       {loading && <p className="status">Loading suppliers…</p>}
 
