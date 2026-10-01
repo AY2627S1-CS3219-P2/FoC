@@ -18,7 +18,12 @@
  * Scope: Mobile sidebar is now an off-canvas drawer (hidden below 860px,
  *   slides in over a backdrop) instead of the old bottom tab bar. Removed
  *   the now-dead .tabbar rules and added the drawer/backdrop/menu-toggle
- *   styles plus a tighter top-bar layout for phone widths.
+ *   styles plus a tighter top-bar layout for phone widths. Then, per PR #12's
+ *   Copilot review: the closed drawer's links no longer stay keyboard-
+ *   focusable while invisible (visibility toggles with the open transform,
+ *   delayed on close so the slide animation still shows), and the backdrop
+ *   now has a `display: none` base rule so it cannot leak into the desktop
+ *   layout if the viewport is widened past 860px while still "open".
  * Author review: PENDING — <reviewer to complete>
  * ------------------------------------------------------------------------- */
 
@@ -144,6 +149,13 @@ h3 {
   padding: 16px 12px;
   color: var(--sidebar-text);
   background: var(--sidebar-bg);
+}
+
+/* Only ever shown below 860px (drawer mode); otherwise it must not take
+   part in the desktop flex layout at all, even if mobileNavOpen is still
+   true from before the viewport was widened past the breakpoint. */
+.sidebar-backdrop {
+  display: none;
 }
 
 .sidebar-brand {
@@ -1200,19 +1212,23 @@ button.service-card:hover {
 
   .sidebar {
     z-index: 50;
+    visibility: hidden;
     transform: translateX(-100%);
     box-shadow: var(--shadow-lg);
-    transition: transform 0.22s ease;
+    transition: transform 0.22s ease, visibility 0s linear 0.22s;
   }
 
   .sidebar.open {
+    visibility: visible;
     transform: translateX(0);
+    transition: transform 0.22s ease, visibility 0s linear 0s;
   }
 
   .sidebar-backdrop {
     position: fixed;
     inset: 0;
     z-index: 40;
+    display: block;
     background: rgba(15, 23, 42, 0.45);
     border: none;
   }
