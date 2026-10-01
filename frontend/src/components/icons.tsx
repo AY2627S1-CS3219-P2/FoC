@@ -2,6 +2,11 @@
 // Tool: Claude Code (model: Opus 5), date: 2026-09-17
 // Scope: Inline SVG icons matching the mockups' line-icon set.
 // Author review: Nigeltzy - Generated based on the simple designs that our team decided to use for the time being. Simple designs and they look valid and as intended.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-10-02
+// Scope: Added MenuIcon (hamburger), used by the new mobile drawer toggle.
+// Author review: PENDING — <reviewer to complete>
 
 /**
  * Inline SVG line icons. Each takes an optional size in pixels (default 17).
@@ -87,5 +92,11 @@ export const SearchIcon = (p: IconProps) => (
 export const LogoutIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M15 17l5-5-5-5M20 12H9M11 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5" />
+  </Svg>
+);
+
+export const MenuIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
   </Svg>
 );

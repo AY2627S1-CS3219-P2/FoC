@@ -12,6 +12,16 @@
  * token-driven. Change a value here, not in a component.
  * ------------------------------------------------------------------------- */
 
+/* ---------------------------------------------------------------------------
+ * AI Assistance Disclosure:
+ * Tool: Claude Code (model: Sonnet 5), date: 2026-10-02
+ * Scope: Mobile sidebar is now an off-canvas drawer (hidden below 860px,
+ *   slides in over a backdrop) instead of the old bottom tab bar. Removed
+ *   the now-dead .tabbar rules and added the drawer/backdrop/menu-toggle
+ *   styles plus a tighter top-bar layout for phone widths.
+ * Author review: PENDING — <reviewer to complete>
+ * ------------------------------------------------------------------------- */
+
 :root {
   /* Surfaces */
   --bg: #eef1f6;
@@ -60,7 +70,6 @@
 
   --sidebar-w: 236px;
   --topbar-h: 60px;
-  --tabbar-h: 62px;
 }
 
 * {
@@ -253,6 +262,25 @@ h3 {
   border-bottom: 1px solid var(--border);
 }
 
+/* Opens the mobile sidebar drawer; hidden on desktop, shown below 860px. */
+.menu-toggle {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  color: var(--text);
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+}
+
+.menu-toggle:hover {
+  background: var(--surface-sunken);
+}
+
 .topbar-user {
   display: flex;
   gap: 8px;
@@ -329,43 +357,6 @@ h3 {
   width: 100%;
   max-width: 1120px;
   padding: 28px 20px 40px;
-}
-
-/* -------------------------------------------------------- mobile tabbar --- */
-
-.tabbar {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 30;
-  display: none;
-  height: var(--tabbar-h);
-  background: var(--surface);
-  border-top: 1px solid var(--border);
-}
-
-.tabbar button {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 3px;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: var(--text-muted);
-  cursor: pointer;
-  background: none;
-  border: none;
-}
-
-.tabbar button.active {
-  font-weight: 600;
-  color: var(--primary);
-}
-
-.tabbar button:disabled {
-  opacity: 0.4;
 }
 
 /* ------------------------------------------------------------ page head --- */
@@ -1200,22 +1191,38 @@ button.service-card:hover {
 /* ----------------------------------------------------------- responsive --- */
 
 /* M1 requires every workflow to work at phone width; AGENTS.md says ~375px.
-   The sidebar becomes the bottom tab bar from the mockups. */
+   Below 860px the sidebar becomes an off-canvas drawer: hidden by default,
+   opened with the menu button in the top-left of the top bar. */
 @media (max-width: 860px) {
+  .menu-toggle {
+    display: flex;
+  }
+
   .sidebar {
-    display: none;
+    z-index: 50;
+    transform: translateX(-100%);
+    box-shadow: var(--shadow-lg);
+    transition: transform 0.22s ease;
+  }
+
+  .sidebar.open {
+    transform: translateX(0);
+  }
+
+  .sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(15, 23, 42, 0.45);
+    border: none;
   }
 
   .main {
     margin-left: 0;
   }
 
-  .tabbar {
-    display: flex;
-  }
-
   .content {
-    padding: 20px 14px calc(var(--tabbar-h) + 26px);
+    padding: 20px 14px 26px;
   }
 
   .two-col {
@@ -1223,11 +1230,37 @@ button.service-card:hover {
   }
 
   .topbar {
+    gap: 8px;
     padding: 0 14px;
   }
 
   .topbar-user span:not(.avatar) {
     display: none;
+  }
+
+  .mode-toggle button {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  .credit-pill {
+    gap: 0;
+    padding: 5px 10px;
+  }
+
+  .credit-pill span {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .mode-toggle button {
+    padding: 5px 6px;
+    font-size: 11px;
+  }
+
+  .credit-pill {
+    padding: 5px 8px;
   }
 }
 
