@@ -5,8 +5,16 @@
 //   toggle and credits pill.
 // Author review: Nigeltzy - AI created the implementation as per the mockup that the team designed.
 // Code wise and UI looks wise, seems valid and as intended.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5), date: 2026-10-02
+// Scope: Mobile nav is now an off-canvas drawer instead of the bottom tab
+//   bar: hidden below 860px by default, opened by a new hamburger button in
+//   the top bar, closed by tapping its backdrop or any nav item. Removed the
+//   dead tab-bar JSX.
+// Author review: PENDING — <reviewer to complete>
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { MockBadge } from "./MockBadge";
 import type { ActingMode, Session } from "../features/auth/types";
 import { NAV_ITEMS, type ViewName } from "../views";
@@ -15,6 +23,7 @@ import {
   HomeIcon,
   ListIcon,
   LogoutIcon,
+  MenuIcon,
   PlusIcon,
   StoreIcon,
   UserIcon,
@@ -55,12 +64,25 @@ export function AppShell({
   onLogOut,
   children,
 }: AppShellProps) {
-  const tabItems = NAV_ITEMS.filter((item) => item.inTabBar);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+
+  const navigateAndClose = (next: ViewName) => {
+    onNavigate(next);
+    setMobileNavOpen(false);
+  };
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <button className="sidebar-brand" onClick={() => onNavigate("home")}>
+      {mobileNavOpen && (
+        <button
+          className="sidebar-backdrop"
+          aria-label="Close menu"
+          onClick={() => setMobileNavOpen(false)}
+        />
+      )}
+
+      <aside className={`sidebar ${mobileNavOpen ? "open" : ""}`}>
+        <button className="sidebar-brand" onClick={() => navigateAndClose("home")}>
           <span className="brand-mark">FoC</span>
           <span>Friend on Campus</span>
         </button>
@@ -72,7 +94,7 @@ export function AppShell({
               <button
                 key={item.view}
                 className={`sidebar-link ${view === item.view ? "active" : ""}`}
-                onClick={() => onNavigate(item.view)}
+                onClick={() => navigateAndClose(item.view)}
                 disabled={!item.enabled}
                 title={item.enabled ? undefined : "Coming soon"}
               >
@@ -107,6 +129,14 @@ export function AppShell({
 
       <div className="main">
         <header className="topbar">
+          <button
+            className="menu-toggle"
+            aria-label="Open menu"
+            onClick={() => setMobileNavOpen(true)}
+          >
+            <MenuIcon />
+          </button>
+
           <span className="topbar-user">
             <span className="avatar">{session.initials}</span>
             <span>{session.username}</span>
@@ -142,23 +172,6 @@ export function AppShell({
 
         <main className="content">{children}</main>
       </div>
-
-      <nav className="tabbar">
-        {tabItems.map((item) => {
-          const Icon = ICONS[item.view];
-          return (
-            <button
-              key={item.view}
-              className={view === item.view ? "active" : ""}
-              onClick={() => onNavigate(item.view)}
-              disabled={!item.enabled}
-            >
-              <Icon size={19} />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
-      </nav>
     </div>
   );
 }
