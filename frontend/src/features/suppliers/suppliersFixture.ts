@@ -130,7 +130,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7770891,
     opening_time: "11:00",
     closing_time: "21:30",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWkrNItZxIKyImhH6dKRBAMHPyhjFCMKQWX-NO_nCoDNmsBSn2MhrKYOUcTZu0VdSOmcgq0iKAikd3eVwW_yhkNICQdrVUbhe1TC2oMLWymLInaRe3kryqoilpT_zlxW3rCtGsD0=s1360-w1360-h1020-rw",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/HOT_HIDEOUT.jpeg",
   }),
   seed(8, {
     name: "Arise and Shine",
@@ -166,7 +166,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7726256,
     opening_time: "08:00",
     closing_time: "20:00",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWnUshwdsGvjqWDr5IcLlUYijZ3CALJYoQnzqszWPQfqBxbPHCqAbFmnTlb1Hwk0JiJZxPWfCoiGFJymHKpspsExW0nKjlkLC54nk5F_bGvnYikXoyvfV67B6BdVy8P7SUdh-X9jTmGlMpGY=w408-h306-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/CENTRAL_SQUARE_YIH.jpeg",
   }),
   seed(11, {
     name: "Pasta Express",
@@ -226,7 +226,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7720544,
     opening_time: "09:00",
     closing_time: "18:00",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWm5NuiWtWZyjafM7uN_6Gu9iQZXaIrwmzxQMdizQUH1R2aQWL9SwOQDS4lyD_TtB_k5sBV4whaAtseI1fq74WgMRSUUnsTBtDmlL51bBtvLSF8FhHnGqgSUm9JM-GF-SgvFsZ1v=w408-h306-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/GOH_BROS_EPRINT.jpeg",
   }),
   seed(16, {
     name: "Cheers Unmanned Convenience Store",
@@ -274,7 +274,7 @@ const SEED: readonly Supplier[] = [
     longitude: 103.7794336,
     opening_time: "07:30",
     closing_time: "18:30",
-    image_url: "https://lh3.googleusercontent.com/gps-cs-s/AHRPTWnmMPF_PW_yskgKVzZQzhxvMYOjqUvIkGTKAnt9M083VExnE23zxA_hF1fsFOhSYoanfZpxGhkI-wJ218hawyZXaZRLgKRxe0IsiCGUbbp6w5yqyVuJxzNU4NzUaa_Um3hYgFiI=w408-h306-k-no",
+    image_url: "https://raw.githubusercontent.com/AY2627S1-CS3219-P2/FoC/main/data/images/GOOD_DAY_CAFE.jpeg",
   }),
   seed(20, {
     name: "The Coffee Roaster",
