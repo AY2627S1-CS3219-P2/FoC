@@ -110,6 +110,10 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		} else if errors.Is(err, user.ErrAccountSuspended) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "account suspended"})
+		} else if errors.Is(err, user.ErrAccountUnverified) {
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — exposes the
+			// owner-recorded frontend OTP-routing signal without issuing tokens. Author review: ZI YANG - validated Correctness.
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "ACCOUNT_UNVERIFIED"})
 		} else {
 			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "authentication unavailable")
 		}

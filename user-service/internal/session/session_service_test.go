@@ -142,6 +142,22 @@ func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 	}
 }
 
+func TestLoginServiceRejectsUnverifiedAccountBeforeSessionCreation(t *testing.T) {
+	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+	account.AccountStatus = AccountStatusUnverified
+	service := NewLoginService(NewAuthenticator(repo, issuer), sessions, func() time.Time { return now })
+
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — verifies the
+	// OTP gate prevents analytics, token issuance, and refresh-session storage. Author review: ZI YANG - validated correctness.
+	pair, err := service.Login(context.Background(), "user@example.com", "ValidPass1")
+	if !errors.Is(err, ErrAccountUnverified) {
+		t.Fatalf("error = %v, want ErrAccountUnverified", err)
+	}
+	if pair != (TokenPair{}) || sessions.created != nil || issuer.issuedFor != uuid.Nil || repo.lastLogin != nil {
+		t.Fatalf("login side effects = pair %#v, session %#v, issuedFor %v, lastLogin %v", pair, sessions.created, issuer.issuedFor, repo.lastLogin)
+	}
+}
+
 func TestRefreshServiceRotatesTokenIssuedDuringAccountCreationSecond(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
 	// AI-generated (edited by ZI YANG).

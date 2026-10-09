@@ -25,6 +25,9 @@ var (
 	ErrEmailTooLong           = errors.New("email exceeds maximum length")
 	ErrInvalidPhone           = errors.New("invalid phone number")
 	ErrAccountSuspended       = errors.New("account is suspended")
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — distinguishes
+	// the owner-recorded OTP verification gate from suspension. Author review: ZI YANG - validated correctness.
+	ErrAccountUnverified = errors.New("account is unverified")
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — distinguishes the
 	// recorded last-active-admin suspension guard. Author review: ZI YANG - validated correcness.
 	ErrLastAdmin          = errors.New("cannot suspend the last active admin")
