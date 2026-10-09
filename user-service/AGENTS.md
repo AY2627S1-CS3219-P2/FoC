@@ -108,16 +108,25 @@ using the repository interface under `internal/user/`.
 ### Repository Methods
 The `users` repository interface should include these actions: 
 1. Create, 
-2. GetByID (get user by uuid), 
-3. GetByIdentifier (get user by username/email), 
-4. Update (update user's mutable fields, which should not allow updating uid or email), 
-5. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
-6. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
-7. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
+2. **CreateWithTask** (executes a user insert, runs a provided callback function, and commits only if the callback succeeds),
+3. GetByID (get user by uuid), 
+4. GetByIdentifier (get user by username/email), 
+5. Update (update user's mutable fields, which should not allow updating uid or email), 
+6. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
+7. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
+8. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
 
 Example repository method signatures:
 ```Go
     Create(ctx context.Context, u *User) error
+    // CreateWithTask manages a cross-infrastructure transaction boundary.
+    // It MUST execute the following:
+    // 1. Begin a PostgreSQL transaction (pgx.Tx).
+    // 2. INSERT the new user into the database.
+    // 3. Invoke the provided `task()` closure.
+    // 4. If `task()` returns an error, execute tx.Rollback() and bubble up the error.
+    // 5. If `task()` succeeds, execute tx.Commit().
+    CreateWithTask(ctx context.Context, u *User, task func() error) error
 	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
 	Update(ctx context.Context, u *User) error
@@ -376,13 +385,14 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   Modify `POST /api/v1/users/login`: If credentials are valid but the user's `account_status` is `UNVERIFIED`, reject the login. Return `403 Forbidden` with a standardized error payload (e.g., `{"error": "ACCOUNT_UNVERIFIED"}`) to signal the frontend to route the user to the OTP entry screen.
 
 **6. Registration and Resend Flow**
-*   Redis: Increment the `otp:count:<email>` rate limiter. If the limit is exceeded, immediately abort and return 429 Too Many Requests.
-*   PostgreSQL: Open a transaction and INSERT the user with account_status = 'UNVERIFIED'.
-*   Redis: Write the `otp:hash:<email>` with a 5-minute TTL.
-    * Failure: If Redis is unreachable, execute a PostgreSQL rollback and return 500 Internal Server Error.
-*   PostgreSQL: Commit the database transaction. The system of record is now secure.
-*   Mailgun: Dispatch the plaintext OTP via Mailgun.
-    * Failure: If Mailgun times out or returns a 5xx error, do not roll back the database. The user is safely stored as UNVERIFIED. Return a 500 Internal Server Error to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which skips step 2 and safely overwrites the Redis hash.
+*   **Redis (Pre-flight):** Increment the `otp:count:<email>` rate limiter. If the limit is exceeded, immediately abort and return `429 Too Many Requests`.
+*   **Domain Orchestration (The Callback):** The Account Service invokes `usersRepo.CreateWithTask()`, passing the new `UNVERIFIED` user object and a closure containing the Redis write logic.
+*   **PostgreSQL (Open Transaction):** The repository opens a transaction and `INSERT`s the user.
+*   **Redis (Write Hash inside Callback):** The repository executes the closure. The closure attempts to write `otp:hash:<email>` with a 5-minute TTL to Redis.
+    *   **Failure:** If Redis is unreachable, the closure returns an error to the repository. The repository executes a PostgreSQL rollback and returns the error to the domain service, resulting in a `500 Internal Server Error`.
+*   **PostgreSQL (Commit):** If the closure succeeds, the repository commits the database transaction. The system of record is now secure.
+*   **Mailgun:** After `CreateWithTask` returns successfully, the domain service dispatches the plaintext OTP via Mailgun.
+    *   **Failure:** If Mailgun times out or returns a 5xx error, do not roll back the database. The user is safely stored as `UNVERIFIED`. Return a `500 Internal Server Error` to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which safely overwrites the Redis hash.
 
 **7. Verification Flow**
 *   Redis: Fetch the `otp:hash:<email>`. Compare it to the client's hashed input.

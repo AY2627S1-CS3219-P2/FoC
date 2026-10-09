@@ -83,6 +83,34 @@ func TestPostgresRepositories(t *testing.T) {
 			}
 		})
 
+		t.Run("commits or rolls back the recorded create task", func(t *testing.T) {
+			resetIntegrationDatabase(t, ctx, pool)
+			committed := integrationAccount("create-task-commit", user.AccountRoleStudent)
+			callbackRan := false
+			if err := users.CreateWithTask(ctx, committed, func() error {
+				callbackRan = true
+				return nil
+			}); err != nil {
+				t.Fatalf("create with successful task: %v", err)
+			}
+			if !callbackRan {
+				t.Fatal("create task did not run")
+			}
+			if _, err := users.GetByID(ctx, committed.UID); err != nil {
+				t.Fatalf("get committed account: %v", err)
+			}
+
+			resetIntegrationDatabase(t, ctx, pool)
+			callbackFailure := errors.New("Redis unavailable")
+			rolledBack := integrationAccount("create-task-rollback", user.AccountRoleStudent)
+			if err := users.CreateWithTask(ctx, rolledBack, func() error { return callbackFailure }); !errors.Is(err, callbackFailure) {
+				t.Fatalf("create with failed task: %v, want callback failure", err)
+			}
+			if _, err := users.GetByIdentifier(ctx, rolledBack.Email); !errors.Is(err, user.ErrNotFound) {
+				t.Fatalf("rolled-back account lookup error = %v, want ErrNotFound", err)
+			}
+		})
+
 		t.Run("detects an administrator", func(t *testing.T) {
 			resetIntegrationDatabase(t, ctx, pool)
 			assertHasAdmin(t, ctx, users, false)

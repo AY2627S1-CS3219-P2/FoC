@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"time"
 
+	"foc/user-service/internal/user"
+
 	"github.com/redis/go-redis/v9"
 )
 
@@ -141,3 +143,5 @@ func (s *RedisOTPStore) Delete(ctx context.Context, email string) error {
 func otpHashKey(email string) string { return otpHashKeyPrefix + email }
 
 func otpCountKey(email string) string { return otpCountKeyPrefix + email }
+
+var _ user.OTPStore = (*RedisOTPStore)(nil)

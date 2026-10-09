@@ -78,7 +78,44 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 // Create inserts a user and fills Go-generated fields that were not supplied.
 func (r *PostgresRepository) Create(ctx context.Context, u *user.User) error {
 	prepared := prepareForCreate(*u, time.Now())
-	_, err := r.pool.Exec(ctx, insertUserQuery,
+	if err := insertUser(ctx, r.pool, prepared); err != nil {
+		return err
+	}
+	*u = prepared
+	return nil
+}
+
+// CreateWithTask inserts a user, runs task while the PostgreSQL transaction
+// remains open, and commits only when task succeeds.
+func (r *PostgresRepository) CreateWithTask(ctx context.Context, u *user.User, task func() error) error {
+	if task == nil {
+		return errors.New("create task is required")
+	}
+	prepared := prepareForCreate(*u, time.Now())
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin create user transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := insertUser(ctx, tx, prepared); err != nil {
+		return err
+	}
+	if err := task(); err != nil {
+		return fmt.Errorf("run create user task: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit create user transaction: %w", err)
+	}
+	*u = prepared
+	return nil
+}
+
+type userInserter interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertUser(ctx context.Context, executor userInserter, prepared user.User) error {
+	_, err := executor.Exec(ctx, insertUserQuery,
 		prepared.UID,
 		prepared.Username,
 		prepared.Email,
@@ -93,7 +130,6 @@ func (r *PostgresRepository) Create(ctx context.Context, u *user.User) error {
 	if err != nil {
 		return fmt.Errorf("create user: %w", mapDatabaseError(err))
 	}
-	*u = prepared
 	return nil
 }
 

@@ -31,6 +31,14 @@ func (f *fakeAuthRepository) Create(_ context.Context, account *User) error {
 	return nil
 }
 
+func (f *fakeAuthRepository) CreateWithTask(_ context.Context, account *User, task func() error) error {
+	if err := task(); err != nil {
+		return err
+	}
+	f.user = account
+	return nil
+}
+
 func (f *fakeAuthRepository) HasAdmin(context.Context) (bool, error) {
 	return false, nil
 }

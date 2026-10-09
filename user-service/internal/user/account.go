@@ -27,6 +27,7 @@ type AccountService struct {
 	repository       UserRepository
 	suspensionWriter SuspensionWriter
 	sessions         SessionRepository
+	otpStore         OTPStore
 	suspensionTTL    time.Duration
 	now              func() time.Time
 }
@@ -39,12 +40,24 @@ const (
 // NewAccountService constructs an account service with the dependencies
 // required to invalidate suspended accounts before persistence.
 func NewAccountService(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration) *AccountService {
-	return NewAccountServiceWithClock(repository, suspensionWriter, sessions, suspensionTTL, time.Now)
+	return NewAccountServiceWithClockAndOTP(repository, suspensionWriter, sessions, suspensionTTL, time.Now, nil)
 }
 
 // NewAccountServiceWithClock constructs an account service with an injected
 // clock for account-status invalidation.
 func NewAccountServiceWithClock(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time) *AccountService {
+	return NewAccountServiceWithClockAndOTP(repository, suspensionWriter, sessions, suspensionTTL, now, nil)
+}
+
+// NewAccountServiceWithOTP constructs an account service with the recorded
+// OTP Redis boundary for pending registrations.
+func NewAccountServiceWithOTP(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, otpStore OTPStore) *AccountService {
+	return NewAccountServiceWithClockAndOTP(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore)
+}
+
+// NewAccountServiceWithClockAndOTP constructs an account service with injected
+// clock and OTP storage dependencies.
+func NewAccountServiceWithClockAndOTP(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time, otpStore OTPStore) *AccountService {
 	if now == nil {
 		now = time.Now
 	}
@@ -52,16 +65,60 @@ func NewAccountServiceWithClock(repository UserRepository, suspensionWriter Susp
 		repository:       repository,
 		suspensionWriter: suspensionWriter,
 		sessions:         sessions,
+		otpStore:         otpStore,
 		suspensionTTL:    suspensionTTL,
 		now:              now,
 	}
 }
 
-// Register creates an active student account with a bcrypt password hash.
+// Register creates an unverified student account with a bcrypt password hash.
 func (s *AccountService) Register(ctx context.Context, email, username, password string) (*User, error) {
+	account, err := s.newRegistrationAccount(email, username, password)
+	if err != nil {
+		return nil, err
+	}
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
+	if err := s.repository.Create(ctx, account); err != nil {
+		return nil, fmt.Errorf("create account: %w", err)
+	}
+	return account, nil
+}
+
+// RegisterWithOTP creates an unverified account only when its OTP hash is
+// stored successfully inside the recorded CreateWithTask boundary.
+func (s *AccountService) RegisterWithOTP(ctx context.Context, email, username, password string) (*User, string, error) {
+	if s.repository == nil {
+		return nil, "", errors.New("user repository is required")
+	}
+	if s.otpStore == nil {
+		return nil, "", errors.New("OTP store is required")
+	}
+	account, err := s.newRegistrationAccount(email, username, password)
+	if err != nil {
+		return nil, "", err
+	}
+	count, err := s.otpStore.IncrementRequestCount(ctx, account.Email)
+	if err != nil {
+		return nil, "", fmt.Errorf("increment OTP request count: %w", err)
+	}
+	if OTPRequestLimitExceeded(count) {
+		return nil, "", ErrOTPRequestLimit
+	}
+	otp, err := GenerateOTP()
+	if err != nil {
+		return nil, "", err
+	}
+	if err := s.repository.CreateWithTask(ctx, account, func() error {
+		return s.otpStore.StoreHash(ctx, account.Email, HashOTP(otp))
+	}); err != nil {
+		return nil, "", fmt.Errorf("create OTP-pending account: %w", err)
+	}
+	return account, otp, nil
+}
+
+func (s *AccountService) newRegistrationAccount(email, username, password string) (*User, error) {
 	email, err := normalizeAndValidateNUSEmail(email)
 	if err != nil {
 		return nil, err
@@ -88,9 +145,6 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — new accounts
 		// remain gated until the recorded OTP flow activates them. Author review: Verify Correctness.
 		AccountStatus: AccountStatusUnverified,
-	}
-	if err := s.repository.Create(ctx, account); err != nil {
-		return nil, fmt.Errorf("create account: %w", err)
 	}
 	return account, nil
 }

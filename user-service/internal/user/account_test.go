@@ -38,6 +38,69 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	}
 }
 
+func TestAccountServiceRegisterWithOTPStoresOnlyHashInsideCreateTask(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	store := &fakeOTPStore{count: 1}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — exercises the
+	// owner-recorded pre-flight count and transactional Redis-write boundary. Author review: ZI YANG - validated correctness.
+	account, otp, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repository.createWithTaskCalled || repository.user != account {
+		t.Fatalf("CreateWithTask state = called %t, account %#v", repository.createWithTaskCalled, repository.user)
+	}
+	if account.AccountStatus != AccountStatusUnverified || store.storedEmail != account.Email {
+		t.Fatalf("account/store = %#v / %q", account, store.storedEmail)
+	}
+	if otp == "" || store.storedHash != HashOTP(otp) || store.storedHash == otp {
+		t.Fatalf("OTP/hash = %q/%q", otp, store.storedHash)
+	}
+}
+
+func TestAccountServiceRegisterWithOTPRejectsRateLimitBeforePersistence(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: OTPRequestLimit + 1})
+
+	_, _, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, ErrOTPRequestLimit) {
+		t.Fatalf("error = %v, want ErrOTPRequestLimit", err)
+	}
+	if repository.createWithTaskCalled || repository.user != nil {
+		t.Fatal("rate-limited registration reached PostgreSQL persistence")
+	}
+}
+
+func TestAccountServiceRegisterWithOTPStopsOnCountPreflightFailure(t *testing.T) {
+	redisFailure := errors.New("Redis unavailable")
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{incrementErr: redisFailure})
+
+	_, _, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, redisFailure) {
+		t.Fatalf("error = %v, want Redis failure", err)
+	}
+	if repository.createWithTaskCalled || repository.user != nil {
+		t.Fatal("failed rate-limit pre-flight reached PostgreSQL persistence")
+	}
+}
+
+func TestAccountServiceRegisterWithOTPRollsBackOnRedisFailure(t *testing.T) {
+	redisFailure := errors.New("Redis unavailable")
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: 1, storeErr: redisFailure})
+
+	_, _, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, redisFailure) {
+		t.Fatalf("error = %v, want Redis failure", err)
+	}
+	if !repository.createWithTaskCalled || repository.user != nil {
+		t.Fatal("failed Redis write must not leave a persisted account")
+	}
+}
+
 // AI-generated (edited by ZI YANG): NUS email validation is enforced by the domain service for every caller.
 func TestAccountServiceRegisterRejectsNonNUSEmail(t *testing.T) {
 	repository := &fakeAccountRepository{}

@@ -19,12 +19,19 @@ type UserRepository interface {
 	HasAdmin(ctx context.Context) (bool, error)
 	CountActiveAdmins(ctx context.Context) (int, error)
 	Create(ctx context.Context, u *User) error
+	CreateWithTask(ctx context.Context, u *User, task func() error) error
 	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
 	// Update changes mutable user fields; UID and email are immutable.
 	Update(ctx context.Context, u *User) error
 	UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
+}
+
+// OTPStore stores OTP hashes and tracks OTP request counts in Redis.
+type OTPStore interface {
+	IncrementRequestCount(ctx context.Context, email string) (int64, error)
+	StoreHash(ctx context.Context, email, hash string) error
 }
 
 // SuspensionWriter writes the invalidation marker to Redis for a suspended account.

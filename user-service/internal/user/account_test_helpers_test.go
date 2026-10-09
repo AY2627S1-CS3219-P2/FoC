@@ -23,6 +23,7 @@ type fakeAccountRepository struct {
 	callOrder            *[]string
 	statusErr            error
 	statusErrs           []error // AI-generated (edited by ZI YANG).
+	createWithTaskCalled bool
 }
 
 func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
@@ -34,6 +35,14 @@ func (f *fakeAccountRepository) CountActiveAdmins(context.Context) (int, error) 
 }
 
 func (f *fakeAccountRepository) Create(_ context.Context, account *User) error {
+	f.user = account
+	return nil
+}
+func (f *fakeAccountRepository) CreateWithTask(_ context.Context, account *User, task func() error) error {
+	f.createWithTaskCalled = true
+	if err := task(); err != nil {
+		return err
+	}
 	f.user = account
 	return nil
 }
@@ -70,6 +79,23 @@ type fakeSuspensionWriter struct {
 	at        time.Time
 	ttl       time.Duration
 	callOrder *[]string
+}
+
+type fakeOTPStore struct {
+	count        int64
+	incrementErr error
+	storedEmail  string
+	storedHash   string
+	storeErr     error
+}
+
+func (f *fakeOTPStore) IncrementRequestCount(_ context.Context, _ string) (int64, error) {
+	return f.count, f.incrementErr
+}
+
+func (f *fakeOTPStore) StoreHash(_ context.Context, email, hash string) error {
+	f.storedEmail, f.storedHash = email, hash
+	return f.storeErr
 }
 
 func (f *fakeSuspensionWriter) WriteSuspension(_ context.Context, uid uuid.UUID, at time.Time, ttl time.Duration) error {
