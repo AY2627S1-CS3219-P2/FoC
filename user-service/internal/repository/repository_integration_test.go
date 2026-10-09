@@ -374,7 +374,9 @@ func assertActiveAdminCount(t *testing.T, ctx context.Context, repository *Postg
 
 func integrationSession(uid uuid.UUID, hash string, createdAt time.Time) *user.Session {
 	if createdAt.IsZero() {
-		createdAt = time.Date(2026, 9, 27, 12, 0, 0, 123456000, time.UTC)
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — keeps
+		// integration refresh sessions valid whenever the suite is run. Author review: PENDING.
+		createdAt = time.Now().UTC().Truncate(time.Microsecond)
 	}
 	return &user.Session{
 		JTI:       uuid.New(),
@@ -382,6 +384,21 @@ func integrationSession(uid uuid.UUID, hash string, createdAt time.Time) *user.S
 		ExpiresAt: createdAt.Add(7 * 24 * time.Hour),
 		TokenHash: hash,
 		UID:       uid,
+	}
+}
+
+func TestIntegrationSessionDefaultExpiryIsFuture(t *testing.T) {
+	before := time.Now().UTC()
+	session := integrationSession(uuid.New(), "future-expiry", time.Time{})
+	after := time.Now().UTC()
+
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — prevents the
+	// integration fixture from silently becoming invalid as calendar time advances. Author review: PENDING.
+	if session.CreatedAt.Before(before) || session.CreatedAt.After(after) {
+		t.Fatalf("CreatedAt = %s, want a timestamp between %s and %s", session.CreatedAt, before, after)
+	}
+	if !session.ExpiresAt.After(after) {
+		t.Fatalf("ExpiresAt = %s, want a future timestamp after %s", session.ExpiresAt, after)
 	}
 }
 

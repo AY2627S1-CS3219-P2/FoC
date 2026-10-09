@@ -41,6 +41,19 @@ func TestPostgresRepositoryUpdateAccountStatusByID(t *testing.T) {
 	}
 	t.Cleanup(pool.Close)
 	repository := NewPostgresRepository(pool)
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — verifies the
+	// forward migration applies the owner-recorded database default. Author review: Verified correctness.
+	var accountStatusDefault string
+	if err := pool.QueryRow(ctx, `
+		SELECT column_default
+		FROM information_schema.columns
+		WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'account_status'
+	`).Scan(&accountStatusDefault); err != nil {
+		t.Fatalf("read account_status default: %v", err)
+	}
+	if accountStatusDefault != "'UNVERIFIED'::account_status" {
+		t.Fatalf("account_status default = %q, want UNVERIFIED enum default", accountStatusDefault)
+	}
 
 	account := &user.User{
 		Username:     "status-integration",

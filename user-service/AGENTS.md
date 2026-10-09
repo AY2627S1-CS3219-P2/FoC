@@ -84,7 +84,7 @@ The user-service must only be accessible within the internal Docker network. All
   - date_created: TIMESTAMPTZ, not null
   - last_login_date: TIMESTAMPTZ, NULL
   - account_role: ENUM ('STUDENT' / 'ADMIN'), defaults to STUDENT
-  - account_status: ENUM ('ACTIVE' / 'SUSPENDED'), defaults to ACTIVE
+  - account_status: ENUM ('ACTIVE' / 'SUSPENDED' / 'UNVERIFIED'), defaults to UNVERIFIED
   - tokens_valid_after: TIMESTAMPTZ, not null, default NOW()
 - Indexes:
     - `CREATE UNIQUE INDEX idx_users_email_lower ON users (LOWER(email));`
@@ -339,6 +339,62 @@ This policy should be checked during registration and updating profile of a user
 
 ### Email Policy
 Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddress()` to prevent malformed inputs
+
+### OTP Feature
+**1. Database & State Updates**
+*   Update the `users` table `account_status` ENUM to include an `UNVERIFIED` state.
+*   New registrations must be inserted into PostgreSQL with `account_status = 'UNVERIFIED'`.
+
+**2. OTP Generation & Redis Storage**
+*   **Generation:** Use `crypto/rand` to generate a cryptographically secure 6-digit numeric string (^[0-9]{6}$).
+*   **Storage:** Store the SHA-256 hash of the OTP in Redis using the key `otp:hash:<email>`. Never store the plaintext OTP.
+*   **Lifespan:** Set the Redis TTL for `otp:hash:<email>` to exactly 5 minutes.
+*   **Invalidation:** If a replacement OTP is requested, generating the new OTP and overwriting the existing `otp:hash:<email>` key automatically invalidates the previous one.
+
+**3. Rate Limiting (Brute-Force & Spam Prevention)**
+*   Track OTP requests using a secondary Redis integer key: `otp:count:<email>`.
+*   Every time an OTP is requested (initial or replacement), increment this key using Redis `INCR` and set its TTL to 10 minutes.
+*   If `otp:count:<email>` exceeds 3, reject any further replacement requests or verification attempts with a `429 Too Many Requests` status until the 10-minute TTL expires.
+
+**4. API Endpoints & Transport Boundaries**
+*   **Modify `POST /api/v1/users/register`:**
+    *   Inserts the `UNVERIFIED` user into PostgreSQL.
+    *   Generates the OTP, hashes it, and stores it in Redis.
+    *   Dispatches the plaintext OTP to the Email Service (via Mailgun).
+    *   Does *not* publish the `UserRegistered` event for the Credit Service yet. (will be done in the later stage of the project)
+*   **New `POST /api/v1/users/resend-otp`:**
+    *   Accepts `{"email": "string"}`.
+    *   Checks the `otp:count:<email>` rate limit. If under the limit, generates a new OTP, overwrites the hash in Redis with a 5-minute TTL, and dispatches the email.
+    *   A new OTP should not be generated and resent to the client if an email is unknown or is already active
+*   **New `POST /api/v1/users/verify-otp`:**
+    *   Accepts `{"email": "string", "otp": "string"}`.
+    *   Hashes the provided OTP and compares it against the Redis `otp:hash:<email>` value.
+    *   **Success:** If matched, open a database transaction to update `account_status` to `ACTIVE`, delete the Redis OTP keys, and publish the `UserRegistered` event to the outbox for the Credit Service (outbox will be done in the later stage of the project). Return `200 OK`.
+    *   **Failure:** Return `400 Bad Request` for a mismatch, or `404 Not Found` if the OTP expired.
+
+**5. Authentication Blocking**
+*   Modify `POST /api/v1/users/login`: If credentials are valid but the user's `account_status` is `UNVERIFIED`, reject the login. Return `403 Forbidden` with a standardized error payload (e.g., `{"error": "ACCOUNT_UNVERIFIED"}`) to signal the frontend to route the user to the OTP entry screen.
+
+**6. Registration and Resend Flow**
+*   Redis: Increment the `otp:count:<email>` rate limiter. If the limit is exceeded, immediately abort and return 429 Too Many Requests.
+*   PostgreSQL: Open a transaction and INSERT the user with account_status = 'UNVERIFIED'.
+*   Redis: Write the `otp:hash:<email>` with a 5-minute TTL.
+    * Failure: If Redis is unreachable, execute a PostgreSQL rollback and return 500 Internal Server Error.
+*   PostgreSQL: Commit the database transaction. The system of record is now secure.
+*   Mailgun: Dispatch the plaintext OTP via Mailgun.
+    * Failure: If Mailgun times out or returns a 5xx error, do not roll back the database. The user is safely stored as UNVERIFIED. Return a 500 Internal Server Error to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which skips step 2 and safely overwrites the Redis hash.
+
+**7. Verification Flow**
+*   Redis: Fetch the `otp:hash:<email>`. Compare it to the client's hashed input.
+    * Failure: If missing, return 404 Not Found. If mismatched, return 400 Bad Request.
+*   PostgreSQL (Open Transaction):
+    * Execute SELECT ... FOR UPDATE on the user to lock the row.
+    * Verify the user is not already ACTIVE (return 409 Conflict if they are).
+    * Update account_status to ACTIVE.
+    * Insert the UserRegistered event into the outbox table.
+*   PostgreSQL (Commit): Commit the transaction. The user is now officially active and the Credit Service will eventually receive the outbox event.
+*   Redis (Cleanup): Delete the `otp:hash:<email>` and `otp:count:<email>` key to prevent reuse.
+    * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
 
 ### Observability & Error Handling
 To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.

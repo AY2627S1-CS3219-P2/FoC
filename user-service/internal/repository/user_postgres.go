@@ -215,7 +215,7 @@ func prepareForCreate(u user.User, now time.Time) user.User {
 		u.AccountRole = user.AccountRoleStudent
 	}
 	if u.AccountStatus == "" {
-		u.AccountStatus = user.AccountStatusActive
+		u.AccountStatus = user.AccountStatusUnverified
 	}
 	if u.TokensValidAfter.IsZero() {
 		// AI-generated (edited by ZI YANG).

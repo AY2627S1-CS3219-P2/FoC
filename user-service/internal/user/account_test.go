@@ -28,7 +28,9 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	if repository.user != account {
 		t.Fatalf("created account pointer = %p, want %p", repository.user, account)
 	}
-	if account.Email != "student@u.nus.edu" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusActive {
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — asserts the
+	// owner-recorded OTP gate for every new registration. Author review: verified correctness.
+	if account.Email != "student@u.nus.edu" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusUnverified {
 		t.Fatalf("created account = %#v", account)
 	}
 	if account.PasswordHash == "ValidPass1" || !hash.CheckPassword(account.PasswordHash, "ValidPass1") {

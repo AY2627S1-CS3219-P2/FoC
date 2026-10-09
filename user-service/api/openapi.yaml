@@ -37,6 +37,27 @@ components:
           maxLength: 128
           description: Must contain at least one uppercase letter, one lowercase letter, and one digit.
 
+    NewOtpRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be a valid email address ending in `@u.nus.edu`.
+
+    VerifyOtpRequest:
+      type: object
+      required: [email, otp]
+      properties:
+        email:
+          type: string
+          format: email
+          description: Must be a valid email address ending in `@u.nus.edu`.
+        otp:
+          type: string
+          description: Must be a valid 6 digit OTP.
+
     LoginRequest:
       type: object
       required: [identifier, password]
@@ -88,7 +109,7 @@ components:
           enum: [STUDENT, ADMIN]
         account_status:
           type: string
-          enum: [ACTIVE, SUSPENDED]
+          enum: [ACTIVE, SUSPENDED, UNVERIFIED]
         date_created:
           type: string
           format: date-time
@@ -200,7 +221,7 @@ paths:
 
   /api/v1/users/register:
     post:
-      summary: Register a new user
+      summary: Register a new user and send OTP via email
       # AI-generated (edited by ZI YANG): registration has no authentication middleware.
       security: []
       requestBody:
@@ -211,7 +232,7 @@ paths:
               $ref: '#/components/schemas/RegisterRequest'
       responses:
         '201':
-          description: User created successfully with an empty response body.
+          description: User created successfully (but awaiting email verification) with an empty response body.
         '400':
           description: Invalid email, missing credentials, or password policy violation.
           content:
@@ -238,6 +259,76 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
               example:
                 error: registration unavailable
+
+  /api/v1/users/resend-otp:
+    post:
+      summary: Resend a new OTP via email to a registered but still unverified user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewOtpRequest'
+      responses:
+        '200':
+          description: New OTP sent successfully with an empty response body.
+        '400':
+          description: Invalid email violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many requests to resend OTP.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/verify-otp:
+    post:
+      summary: Verifies OTP via email tied to an unverified user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VerifyOtpRequest'
+      responses:
+        '200':
+          description: Email verification successful.
+        '400':
+          description: Invalid email/OTP violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: OTP expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Conflict. Account is already verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
 
   /api/v1/users/login:
     post:
@@ -270,7 +361,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Account suspended
+          description: Account suspended or unverified
           content:
             application/json:
               schema:

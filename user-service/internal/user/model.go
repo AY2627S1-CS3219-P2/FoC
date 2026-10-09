@@ -23,14 +23,17 @@ const (
 	AccountRoleAdmin   AccountRole = "ADMIN"
 )
 
-// AccountStatus says whether an account may sign in (ACTIVE) or not
-// (SUSPENDED).
+// AccountStatus says whether an account may sign in, awaits verification, or
+// has been suspended.
 type AccountStatus string
 
 // Account statuses. Each value must match the account_status database enum.
 const (
 	AccountStatusActive    AccountStatus = "ACTIVE"
 	AccountStatusSuspended AccountStatus = "SUSPENDED"
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — transcribes the
+	// owner-recorded OTP-gated account state. Author review: verified correctness.
+	AccountStatusUnverified AccountStatus = "UNVERIFIED"
 )
 
 // User is an account as stored in the users table.

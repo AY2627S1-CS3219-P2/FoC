@@ -81,11 +81,13 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 		return nil, fmt.Errorf("hash registration password: %w", err)
 	}
 	account := &User{
-		Email:         email,
-		Username:      username,
-		PasswordHash:  passwordHash,
-		AccountRole:   AccountRoleStudent,
-		AccountStatus: AccountStatusActive,
+		Email:        email,
+		Username:     username,
+		PasswordHash: passwordHash,
+		AccountRole:  AccountRoleStudent,
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — new accounts
+		// remain gated until the recorded OTP flow activates them. Author review: Verify Correctness.
+		AccountStatus: AccountStatusUnverified,
 	}
 	if err := s.repository.Create(ctx, account); err != nil {
 		return nil, fmt.Errorf("create account: %w", err)
