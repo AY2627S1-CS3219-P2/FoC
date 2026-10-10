@@ -187,6 +187,37 @@ func TestAccountServiceResendOTPEnforcesRequestLimit(t *testing.T) {
 	}
 }
 
+func TestAccountServiceVerifyOTPActivatesAndCleansUp(t *testing.T) {
+	store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+	if err := service.VerifyOTP(context.Background(), "student@u.nus.edu", "123456"); err != nil {
+		t.Fatal(err)
+	}
+	if repository.status != AccountStatusActive {
+		t.Fatal("account was not activated")
+	}
+}
+
+func TestAccountServiceVerifyOTPRejectsMissingMismatchedAndLimited(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		store *fakeOTPStore
+		otp   string
+		want  error
+	}{
+		"missing":  {store: &fakeOTPStore{}, otp: "123456", want: ErrNotFound},
+		"mismatch": {store: &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}, otp: "000000", want: ErrInvalidOTP},
+		"limited":  {store: &fakeOTPStore{count: OTPRequestLimit + 1, requestFound: true}, otp: "123456", want: ErrOTPRequestLimit},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := NewAccountServiceWithOTP(&fakeAccountRepository{}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, testCase.store).VerifyOTP(context.Background(), "student@u.nus.edu", testCase.otp)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("error = %v, want %v", err, testCase.want)
+			}
+		})
+	}
+}
+
 // AI-generated (edited by ZI YANG): NUS email validation is enforced by the domain service for every caller.
 func TestAccountServiceRegisterRejectsNonNUSEmail(t *testing.T) {
 	repository := &fakeAccountRepository{}

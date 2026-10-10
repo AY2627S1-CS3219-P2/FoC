@@ -90,6 +90,8 @@ func (f *fakeAuthRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.U
 	return nil
 }
 
+func (f *fakeAuthRepository) ActivateUser(context.Context, string) error { return nil }
+
 type fakeTokenIssuer struct {
 	pair      TokenPair
 	err       error

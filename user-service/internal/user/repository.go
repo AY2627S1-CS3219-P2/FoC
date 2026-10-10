@@ -26,12 +26,16 @@ type UserRepository interface {
 	Update(ctx context.Context, u *User) error
 	UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
+	ActivateUser(ctx context.Context, email string) error
 }
 
 // OTPStore stores OTP hashes and tracks OTP request counts in Redis.
 type OTPStore interface {
 	IncrementRequestCount(ctx context.Context, email string) (int64, error)
 	StoreHash(ctx context.Context, email, hash string) error
+	LookupHash(ctx context.Context, email string) (string, bool, error)
+	RequestCount(ctx context.Context, email string) (int64, bool, error)
+	Delete(ctx context.Context, email string) error
 }
 
 // OTPDeliverer sends a plaintext OTP only after its hash is durably stored.

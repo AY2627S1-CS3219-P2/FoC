@@ -108,13 +108,14 @@ using the repository interface under `internal/user/`.
 ### Repository Methods
 The `users` repository interface should include these actions: 
 1. Create, 
-2. **CreateWithTask** (executes a user insert, runs a provided callback function, and commits only if the callback succeeds),
+2. CreateWithTask (executes a user insert, runs a provided callback function, and commits only if the callback succeeds),
 3. GetByID (get user by uuid), 
 4. GetByIdentifier (get user by username/email), 
 5. Update (update user's mutable fields, which should not allow updating uid or email), 
 6. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
 7. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
 8. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
+9. ActivateUser (manages the strict transaction boundary for OTP verification, locking the user row, asserting its state, updating it, and writing to the outbox).
 
 Example repository method signatures:
 ```Go
@@ -133,6 +134,16 @@ Example repository method signatures:
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus) error
     UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
     CountActiveAdmins(ctx context.Context) (int, error)
+    // ActivateUser executes the final registration step after a successful Redis OTP match.
+    // It MUST execute the following within a SINGLE database transaction (pgx.Tx):
+    // 1. SELECT ... FROM users WHERE email = $1 FOR UPDATE to lock the row.
+    // 2. If the user does not exist, rollback and return user.ErrNotFound.
+    // 3. If the user's account_status is already 'ACTIVE' (or anything other than 'UNVERIFIED'),
+    //    rollback and return a specific domain error (e.g., user.ErrAccountAlreadyActive).
+    // 4. UPDATE the user's account_status to 'ACTIVE'.
+    // 5. INSERT the 'UserRegistered' event into the outbox_events table.
+    // 6. Commit the transaction.
+    ActivateUser(ctx context.Context, email string) error
 ```
 
 The `sessions` repository interface should include these actions: 
@@ -397,11 +408,12 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 **7. Verification Flow**
 *   Redis: Fetch the `otp:hash:<email>`. Compare it to the client's hashed input.
     * Failure: If missing, return 404 Not Found. If mismatched, return 400 Bad Request.
-*   PostgreSQL (Open Transaction):
-    * Execute SELECT ... FOR UPDATE on the user to lock the row.
-    * Verify the user is not already ACTIVE (return 409 Conflict if they are).
-    * Update account_status to ACTIVE.
-    * Insert the UserRegistered event into the outbox table.
+*   Domain Orchestration: The Account Service invokes `s.repository.ActivateUser(ctx, email)`.
+*   PostgreSQL (ActivateUser Transaction):
+    * The repository executes `SELECT ... FOR UPDATE` to lock the user row.
+    * If the user is missing, it returns `user.ErrNotFound` -> API returns `404 Not Found`.
+    * If the user is already `ACTIVE`, it returns `user.ErrAccountAlreadyVerified` -> API returns `409 Conflict`.
+    * Updates `account_status` to `ACTIVE` and inserts the `UserRegistered` outbox event (outbox event can be done in a later iteration for now).
 *   PostgreSQL (Commit): Commit the transaction. The user is now officially active and the Credit Service will eventually receive the outbox event.
 *   Redis (Cleanup): Delete the `otp:hash:<email>` and `otp:count:<email>` key to prevent reuse.
     * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.

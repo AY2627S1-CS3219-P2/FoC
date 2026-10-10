@@ -61,6 +61,7 @@ const (
 				ELSE tokens_valid_after
 			END
 		WHERE uid = $3`
+	activateUserByEmailQuery = `UPDATE users SET account_status = 'ACTIVE' WHERE LOWER(email) = LOWER($1) AND account_status = 'UNVERIFIED'`
 )
 
 // AI-generated (edited by ZI YANG): documents the exported repository adapter
@@ -204,6 +205,29 @@ func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uu
 	}
 	if result.RowsAffected() == 0 {
 		return user.ErrNotFound
+	}
+	return nil
+}
+
+// ActivateUser locks and activates a pending account in one transaction.
+func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin activation transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status user.AccountStatus
+	if err := tx.QueryRow(ctx, `SELECT account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`, email).Scan(&status); err != nil {
+		return fmt.Errorf("lock account for activation: %w", mapDatabaseError(err))
+	}
+	if status == user.AccountStatusActive {
+		return user.ErrAccountAlreadyVerified
+	}
+	if _, err := tx.Exec(ctx, activateUserByEmailQuery, email); err != nil {
+		return fmt.Errorf("activate user: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit activation transaction: %w", err)
 	}
 	return nil
 }

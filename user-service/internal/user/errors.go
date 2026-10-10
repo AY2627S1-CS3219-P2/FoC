@@ -35,6 +35,7 @@ var (
 	// the recorded resend response for accounts that are already active.
 	// Author review: ZI YANG - validated correctness.
 	ErrAccountAlreadyVerified = errors.New("account is already verified")
+	ErrInvalidOTP             = errors.New("invalid OTP")
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — distinguishes the
 	// recorded last-active-admin suspension guard. Author review: ZI YANG - validated correcness.
 	ErrLastAdmin          = errors.New("cannot suspend the last active admin")

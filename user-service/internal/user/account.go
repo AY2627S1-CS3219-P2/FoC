@@ -153,6 +153,39 @@ func (s *AccountService) ResendOTP(ctx context.Context, email string) error {
 	return nil
 }
 
+// VerifyOTP activates an account only after its supplied OTP matches Redis.
+func (s *AccountService) VerifyOTP(ctx context.Context, email, otp string) error {
+	if s.repository == nil || s.otpStore == nil {
+		return errors.New("OTP verification dependencies are required")
+	}
+	email, err := normalizeAndValidateNUSEmail(email)
+	if err != nil {
+		return err
+	}
+	count, found, err := s.otpStore.RequestCount(ctx, email)
+	if err != nil {
+		return fmt.Errorf("get OTP request count: %w", err)
+	}
+	if found && OTPRequestLimitExceeded(count) {
+		return ErrOTPRequestLimit
+	}
+	shaHash, found, err := s.otpStore.LookupHash(ctx, email)
+	if err != nil {
+		return fmt.Errorf("get OTP hash: %w", err)
+	}
+	if !found {
+		return ErrNotFound
+	}
+	if shaHash != HashOTP(otp) {
+		return ErrInvalidOTP
+	}
+	if err := s.repository.ActivateUser(ctx, email); err != nil {
+		return fmt.Errorf("activate verified account: %w", err)
+	}
+	_ = s.otpStore.Delete(ctx, email)
+	return nil
+}
+
 // RegisterWithOTP creates an unverified account only when its OTP hash is
 // stored successfully inside the recorded CreateWithTask boundary.
 func (s *AccountService) RegisterWithOTP(ctx context.Context, email, username, password string) (*User, string, error) {

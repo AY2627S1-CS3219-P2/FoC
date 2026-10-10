@@ -72,6 +72,10 @@ func (f *fakeAccountRepository) UpdateAccountStatusByID(_ context.Context, _ uui
 	}
 	return f.statusErr
 }
+func (f *fakeAccountRepository) ActivateUser(_ context.Context, _ string) error {
+	f.status = AccountStatusActive
+	return nil
+}
 
 type fakeSuspensionWriter struct {
 	err       error
@@ -87,7 +91,19 @@ type fakeOTPStore struct {
 	storedEmail  string
 	storedHash   string
 	storeErr     error
+	hash         string
+	hashFound    bool
+	requestFound bool
+	deleteErr    error
 }
+
+func (f *fakeOTPStore) LookupHash(context.Context, string) (string, bool, error) {
+	return f.hash, f.hashFound, nil
+}
+func (f *fakeOTPStore) RequestCount(context.Context, string) (int64, bool, error) {
+	return f.count, f.requestFound, nil
+}
+func (f *fakeOTPStore) Delete(context.Context, string) error { return f.deleteErr }
 
 type fakeOTPDeliverer struct {
 	email string
