@@ -5,7 +5,8 @@
 //   2026-09-21: three tests added for the reworked /api/users route.
 //   2026-09-22: two added for /api/suppliers reaching supplier-service's
 //   /suppliers prefix. The two interim-CORS tests were removed with the
-//   policy when the frontend became same-origin.
+//   policy when the frontend became same-origin. 2026-10-10 (Claude Code,
+//   Opus 5.5): one added for the D-041 OTP routes.
 // Author review: Nigeltzy - Directed and generated as part of implementation of unit tests for the router package. I checked the output and it seems to be reasonable and typical unit tests for the router package.
 
 package httpapi_test
@@ -569,6 +570,40 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 	res := post(h, "/auth/register", `{"email":"a@u.nus.edu","username":"a","password":"Passw0rd"}`)
 	if c := refreshCookieFrom(t, res); c != nil {
 		t.Errorf("register set a refresh cookie (%+v); it issues no tokens", c)
+	}
+}
+
+// AI-generated (edited by PENDING).
+// TestOTPRoutesArePublicPassthroughs checks the two D-041 routes: no token
+// needed, rewritten onto user-service's OTP endpoints, body forwarded as sent,
+// and no refresh cookie read or set.
+func TestOTPRoutesArePublicPassthroughs(t *testing.T) {
+	cases := []struct {
+		public, upstream, body string
+	}{
+		{"/auth/resend-otp", "/api/v1/users/resend-otp", `{"email":"a@u.nus.edu"}`},
+		{"/auth/verify-otp", "/api/v1/users/verify-otp", `{"email":"a@u.nus.edu","otp":"123456"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.public, func(t *testing.T) {
+			h, rec := newAuthHarness(t)
+
+			// A stale cookie must not be injected into the body the way refresh does.
+			res := post(h, tc.public, tc.body, &http.Cookie{Name: "foc_refresh", Value: "rt-stale"})
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 — OTP routes take no token", res.Code)
+			}
+			if rec.path != tc.upstream {
+				t.Errorf("user-service saw path %q, want %q", rec.path, tc.upstream)
+			}
+			if rec.body != tc.body {
+				t.Errorf("user-service saw body %q, want it unchanged: %q", rec.body, tc.body)
+			}
+			// The stub returns a token pair; the route must still set no cookie.
+			if c := refreshCookieFrom(t, res); c != nil {
+				t.Errorf("%s set a refresh cookie (%+v); it issues no tokens", tc.public, c)
+			}
+		})
 	}
 }
 
