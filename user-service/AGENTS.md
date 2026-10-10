@@ -406,6 +406,17 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   Redis (Cleanup): Delete the `otp:hash:<email>` and `otp:count:<email>` key to prevent reuse.
     * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
 
+**8. Mailgun Delivery Contract**
+*   **Configuration:** The service requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `MAILGUN_SENDER_EMAIL` in the environment.
+*   **API Endpoint & Authentication:** Use the standard Mailgun Messages API (`POST https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages`). Authenticate using HTTP Basic Auth with the username `api` and the password from `MAILGUN_API_KEY`.
+*   **Message Content:** Use a concise plaintext and HTML template: `"Your CampusRun verification code is: <OTP>. This code expires in 5 minutes."`
+*   **Message Body:** `from` should be `MAILGUN_SENDER_EMAIL` and `to` should be the OTP recipient email received from registration. `subject` should be `"CampusRun Email Verification"`
+*   **Timeout & Retry Behavior:** Configure the `http.Client` for the Mailgun call with a strict 5-second timeout. Do not implement automatic application-level retries for timeouts or 5xx errors; rely on the frontend client to prompt the user to manually click "Resend" to avoid stalling the synchronous API response.
+
+**9. Resend Edge Cases**
+*   If an email is submitted to `/resend-otp` that does not exist in the `users` table, the service must return `404 Not Found`.
+*   If an email is submitted to `/resend-otp` but the user's `account_status` is already `ACTIVE`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
+
 ### Observability & Error Handling
 To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.
 

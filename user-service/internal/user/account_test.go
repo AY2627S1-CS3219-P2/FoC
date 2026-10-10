@@ -101,6 +101,92 @@ func TestAccountServiceRegisterWithOTPRollsBackOnRedisFailure(t *testing.T) {
 	}
 }
 
+func TestAccountServiceRegisterDeliversOTPAfterPersistingUnverifiedAccount(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	store := &fakeOTPStore{count: 1}
+	deliverer := &fakeOTPDeliverer{}
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+	account, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.user != account || account.AccountStatus != AccountStatusUnverified {
+		t.Fatal("registration did not retain the unverified account before delivery")
+	}
+	if deliverer.email != account.Email || deliverer.otp == "" {
+		t.Fatal("delivery did not receive the persisted account email and OTP")
+	}
+	if store.storedHash != HashOTP(deliverer.otp) {
+		t.Fatal("stored hash does not match delivered OTP")
+	}
+}
+
+func TestAccountServiceRegisterRetainsUnverifiedAccountWhenDeliveryFails(t *testing.T) {
+	deliveryFailure := errors.New("Mailgun unavailable")
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: 1}, &fakeOTPDeliverer{err: deliveryFailure})
+
+	_, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, deliveryFailure) {
+		t.Fatalf("error = %v, want delivery failure", err)
+	}
+	if repository.user == nil || repository.user.AccountStatus != AccountStatusUnverified {
+		t.Fatal("delivery failure must not remove the persisted unverified account")
+	}
+}
+
+func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGeneratingOTP(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		account *User
+		wantErr error
+	}{
+		"unknown": {account: nil, wantErr: ErrNotFound},
+		"active":  {account: &User{AccountStatus: AccountStatusActive}, wantErr: ErrAccountAlreadyVerified},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeOTPStore{count: 1}
+			deliverer := &fakeOTPDeliverer{}
+			service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: testCase.account}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+			err := service.ResendOTP(context.Background(), "student@u.nus.edu")
+			if !errors.Is(err, testCase.wantErr) {
+				t.Fatalf("error = %v, want %v", err, testCase.wantErr)
+			}
+			if store.storedHash != "" || deliverer.otp != "" {
+				t.Fatal("unknown or active account must not generate or deliver an OTP")
+			}
+		})
+	}
+}
+
+func TestAccountServiceResendOTPReplacesHashAndDeliversReplacement(t *testing.T) {
+	store := &fakeOTPStore{count: 2}
+	deliverer := &fakeOTPDeliverer{}
+	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+	if err := service.ResendOTP(context.Background(), "student@u.nus.edu"); err != nil {
+		t.Fatal(err)
+	}
+	if store.storedHash != HashOTP(deliverer.otp) || deliverer.email != "student@u.nus.edu" {
+		t.Fatal("resend did not store and deliver the replacement OTP")
+	}
+}
+
+func TestAccountServiceResendOTPEnforcesRequestLimit(t *testing.T) {
+	store := &fakeOTPStore{count: OTPRequestLimit + 1}
+	deliverer := &fakeOTPDeliverer{}
+	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+	err := service.ResendOTP(context.Background(), "student@u.nus.edu")
+	if !errors.Is(err, ErrOTPRequestLimit) {
+		t.Fatalf("error = %v, want ErrOTPRequestLimit", err)
+	}
+	if store.storedHash != "" || deliverer.otp != "" {
+		t.Fatal("over-limit resend must not generate or deliver an OTP")
+	}
+}
+
 // AI-generated (edited by ZI YANG): NUS email validation is enforced by the domain service for every caller.
 func TestAccountServiceRegisterRejectsNonNUSEmail(t *testing.T) {
 	repository := &fakeAccountRepository{}

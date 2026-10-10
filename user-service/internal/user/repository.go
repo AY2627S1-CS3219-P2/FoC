@@ -34,6 +34,11 @@ type OTPStore interface {
 	StoreHash(ctx context.Context, email, hash string) error
 }
 
+// OTPDeliverer sends a plaintext OTP only after its hash is durably stored.
+type OTPDeliverer interface {
+	DeliverOTP(ctx context.Context, email, otp string) error
+}
+
 // SuspensionWriter writes the invalidation marker to Redis for a suspended account.
 type SuspensionWriter interface {
 	WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error

@@ -89,6 +89,17 @@ type fakeOTPStore struct {
 	storeErr     error
 }
 
+type fakeOTPDeliverer struct {
+	email string
+	otp   string
+	err   error
+}
+
+func (f *fakeOTPDeliverer) DeliverOTP(_ context.Context, email, otp string) error {
+	f.email, f.otp = email, otp
+	return f.err
+}
+
 func (f *fakeOTPStore) IncrementRequestCount(_ context.Context, _ string) (int64, error) {
 	return f.count, f.incrementErr
 }

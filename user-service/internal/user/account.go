@@ -28,6 +28,7 @@ type AccountService struct {
 	suspensionWriter SuspensionWriter
 	sessions         SessionRepository
 	otpStore         OTPStore
+	otpDeliverer     OTPDeliverer
 	suspensionTTL    time.Duration
 	now              func() time.Time
 }
@@ -52,12 +53,24 @@ func NewAccountServiceWithClock(repository UserRepository, suspensionWriter Susp
 // NewAccountServiceWithOTP constructs an account service with the recorded
 // OTP Redis boundary for pending registrations.
 func NewAccountServiceWithOTP(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, otpStore OTPStore) *AccountService {
-	return NewAccountServiceWithClockAndOTP(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore)
+	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore, nil)
 }
 
 // NewAccountServiceWithClockAndOTP constructs an account service with injected
 // clock and OTP storage dependencies.
 func NewAccountServiceWithClockAndOTP(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time, otpStore OTPStore) *AccountService {
+	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, now, otpStore, nil)
+}
+
+// NewAccountServiceWithOTPAndDelivery constructs an account service with the
+// recorded OTP storage and delivery boundaries.
+func NewAccountServiceWithOTPAndDelivery(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, otpStore OTPStore, otpDeliverer OTPDeliverer) *AccountService {
+	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore, otpDeliverer)
+}
+
+// NewAccountServiceWithClockAndOTPAndDelivery constructs an account service
+// with injected clock, OTP storage, and OTP delivery dependencies.
+func NewAccountServiceWithClockAndOTPAndDelivery(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time, otpStore OTPStore, otpDeliverer OTPDeliverer) *AccountService {
 	if now == nil {
 		now = time.Now
 	}
@@ -66,6 +79,7 @@ func NewAccountServiceWithClockAndOTP(repository UserRepository, suspensionWrite
 		suspensionWriter: suspensionWriter,
 		sessions:         sessions,
 		otpStore:         otpStore,
+		otpDeliverer:     otpDeliverer,
 		suspensionTTL:    suspensionTTL,
 		now:              now,
 	}
@@ -73,6 +87,16 @@ func NewAccountServiceWithClockAndOTP(repository UserRepository, suspensionWrite
 
 // Register creates an unverified student account with a bcrypt password hash.
 func (s *AccountService) Register(ctx context.Context, email, username, password string) (*User, error) {
+	if s.otpStore != nil && s.otpDeliverer != nil {
+		account, otp, err := s.RegisterWithOTP(ctx, email, username, password)
+		if err != nil {
+			return nil, err
+		}
+		if err := s.otpDeliverer.DeliverOTP(ctx, account.Email, otp); err != nil {
+			return nil, fmt.Errorf("deliver registration OTP: %w", err)
+		}
+		return account, nil
+	}
 	account, err := s.newRegistrationAccount(email, username, password)
 	if err != nil {
 		return nil, err
@@ -84,6 +108,49 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 		return nil, fmt.Errorf("create account: %w", err)
 	}
 	return account, nil
+}
+
+// ResendOTP replaces an unverified account's OTP only after confirming the
+// account exists and has not already been activated.
+func (s *AccountService) ResendOTP(ctx context.Context, email string) error {
+	if s.repository == nil {
+		return errors.New("user repository is required")
+	}
+	if s.otpStore == nil || s.otpDeliverer == nil {
+		return errors.New("OTP dependencies are required")
+	}
+	email, err := normalizeAndValidateNUSEmail(email)
+	if err != nil {
+		return err
+	}
+	account, err := s.repository.GetByIdentifier(ctx, email)
+	if err != nil {
+		return fmt.Errorf("get account for OTP resend: %w", err)
+	}
+	if account == nil {
+		return ErrNotFound
+	}
+	if account.AccountStatus == AccountStatusActive {
+		return ErrAccountAlreadyVerified
+	}
+	count, err := s.otpStore.IncrementRequestCount(ctx, email)
+	if err != nil {
+		return fmt.Errorf("increment OTP request count: %w", err)
+	}
+	if OTPRequestLimitExceeded(count) {
+		return ErrOTPRequestLimit
+	}
+	otp, err := GenerateOTP()
+	if err != nil {
+		return err
+	}
+	if err := s.otpStore.StoreHash(ctx, email, HashOTP(otp)); err != nil {
+		return fmt.Errorf("store replacement OTP hash: %w", err)
+	}
+	if err := s.otpDeliverer.DeliverOTP(ctx, email, otp); err != nil {
+		return fmt.Errorf("deliver replacement OTP: %w", err)
+	}
+	return nil
 }
 
 // RegisterWithOTP creates an unverified account only when its OTP hash is

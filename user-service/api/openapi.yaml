@@ -251,6 +251,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many OTP requests for registration.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Registration unavailable.
           content:
@@ -275,6 +281,18 @@ paths:
           description: New OTP sent successfully with an empty response body.
         '400':
           description: Invalid email violation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Unknown email.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Account already active.
           content:
             application/json:
               schema:
@@ -319,6 +337,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
           description: Conflict. Account is already verified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          description: Too many OTP verification requests.
           content:
             application/json:
               schema:

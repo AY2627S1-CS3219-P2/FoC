@@ -17,6 +17,9 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 	t.Setenv("INITIAL_ADMIN_EMAIL", "admin@u.nus.edu")
 	t.Setenv("INITIAL_ADMIN_USERNAME", "initial-admin")
 	t.Setenv("INITIAL_ADMIN_PASSWORD", "StrongAdminPassword1")
+	t.Setenv("MAILGUN_API_KEY", "mailgun-key")
+	t.Setenv("MAILGUN_DOMAIN", "mg.example.test")
+	t.Setenv("MAILGUN_SENDER_EMAIL", "verify@example.test")
 
 	got := Load()
 
@@ -30,6 +33,9 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 		InitialAdminEmail:    "admin@u.nus.edu",
 		InitialAdminUsername: "initial-admin",
 		InitialAdminPassword: "StrongAdminPassword1",
+		MailgunAPIKey:        "mailgun-key",
+		MailgunDomain:        "mg.example.test",
+		MailgunSenderEmail:   "verify@example.test",
 	}
 	if got != want {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
@@ -47,6 +53,9 @@ func TestLoadUsesEmptyValuesWhenEnvironmentIsUnset(t *testing.T) {
 		"INITIAL_ADMIN_EMAIL",
 		"INITIAL_ADMIN_USERNAME",
 		"INITIAL_ADMIN_PASSWORD",
+		"MAILGUN_API_KEY",
+		"MAILGUN_DOMAIN",
+		"MAILGUN_SENDER_EMAIL",
 	} {
 		t.Setenv(name, "")
 	}
