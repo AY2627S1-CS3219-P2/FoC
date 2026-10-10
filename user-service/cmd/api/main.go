@@ -109,6 +109,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	httpHandler := router.Setup(routes.Dependencies{
 		Auth: handlers.AuthDependencies{
 			Registrar:      accountService,
+			OTPResender:    accountService,
+			OTPVerifier:    accountService,
 			LoginService:   loginService,
 			Refresher:      refreshService,
 			AccessVerifier: jwtService,

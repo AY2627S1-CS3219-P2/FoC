@@ -50,6 +50,8 @@ func TestNewRouterRegistersRecordedRoutes(t *testing.T) {
 		{http.MethodGet, "/.well-known/jwks.json"},
 		{http.MethodGet, "/api/v1/health"},
 		{http.MethodPost, "/api/v1/users/register"},
+		{http.MethodPost, "/api/v1/users/resend-otp"},
+		{http.MethodPost, "/api/v1/users/verify-otp"},
 		{http.MethodPost, "/api/v1/users/login"},
 		{http.MethodPost, "/api/v1/users/refresh"},
 		{http.MethodPost, "/api/v1/users/logout"},

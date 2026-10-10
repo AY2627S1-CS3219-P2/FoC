@@ -20,6 +20,12 @@ import (
 type Registrar interface {
 	Register(context.Context, string, string, string) (*user.User, error)
 }
+type OTPResender interface {
+	ResendOTP(context.Context, string) error
+}
+type OTPVerifier interface {
+	VerifyOTP(context.Context, string, string) error
+}
 
 // LoginService authenticates an account and persists its refresh session.
 type LoginService interface {
@@ -39,6 +45,8 @@ type Logoutter interface {
 // AuthDependencies contains only the operations required by AuthHandler.
 type AuthDependencies struct {
 	Registrar      Registrar
+	OTPResender    OTPResender
+	OTPVerifier    OTPVerifier
 	LoginService   LoginService
 	Refresher      Refresher
 	AccessVerifier session.AccessTokenVerifier
@@ -84,6 +92,57 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (h AuthHandler) ResendOTP(w http.ResponseWriter, r *http.Request) {
+	var request OTPEmailRequest
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	if request.Email == "" {
+		writeJSON(w, 400, map[string]string{"error": "email is required"})
+		return
+	}
+	if h.deps.OTPResender == nil {
+		writeError(r.Context(), w, h.deps.Logger, 500, errors.New("OTP resender is required"), "OTP resend unavailable")
+		return
+	}
+	h.writeOTPError(w, r, h.deps.OTPResender.ResendOTP(r.Context(), request.Email), "OTP resend unavailable")
+}
+
+func (h AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
+	var request VerifyOTPRequest
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	if request.Email == "" || request.OTP == "" {
+		writeJSON(w, 400, map[string]string{"error": "email and otp are required"})
+		return
+	}
+	if h.deps.OTPVerifier == nil {
+		writeError(r.Context(), w, h.deps.Logger, 500, errors.New("OTP verifier is required"), "OTP verification unavailable")
+		return
+	}
+	h.writeOTPError(w, r, h.deps.OTPVerifier.VerifyOTP(r.Context(), request.Email, request.OTP), "OTP verification unavailable")
+}
+
+func (h AuthHandler) writeOTPError(w http.ResponseWriter, r *http.Request, err error, fallback string) {
+	if err == nil {
+		writeJSON(w, 200, map[string]any{})
+		return
+	}
+	switch {
+	case errors.Is(err, user.ErrInvalidEmail), errors.Is(err, user.ErrInvalidOTP):
+		writeJSON(w, 400, map[string]string{"error": "invalid OTP"})
+	case errors.Is(err, user.ErrNotFound):
+		writeJSON(w, 404, map[string]string{"error": "OTP not found"})
+	case errors.Is(err, user.ErrAccountAlreadyVerified):
+		writeJSON(w, 409, map[string]string{"error": "Account is already verified"})
+	case errors.Is(err, user.ErrOTPRequestLimit):
+		writeJSON(w, 429, map[string]string{"error": "OTP request limit exceeded"})
+	default:
+		writeError(r.Context(), w, h.deps.Logger, 500, err, fallback)
+	}
 }
 
 // Login handles credential login.

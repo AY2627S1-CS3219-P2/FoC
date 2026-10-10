@@ -31,6 +31,8 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 		router.Route("/api/v1", func(router chi.Router) {
 			router.Get("/health", systemHandler.Health)
 			router.Post("/users/register", authHandler.Register)
+			router.Post("/users/resend-otp", authHandler.ResendOTP)
+			router.Post("/users/verify-otp", authHandler.VerifyOTP)
 			router.Post("/users/login", authHandler.Login)
 			router.Post("/users/refresh", authHandler.Refresh)
 			router.Post("/users/logout", authHandler.Logout)
