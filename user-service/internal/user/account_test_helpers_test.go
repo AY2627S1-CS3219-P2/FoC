@@ -22,7 +22,8 @@ type fakeAccountRepository struct {
 	status               AccountStatus
 	callOrder            *[]string
 	statusErr            error
-	statusErrs           []error // AI-generated (edited by ZI YANG).
+	statusErrs           []error   // AI-generated (edited by ZI YANG).
+	tokensValidAfter     time.Time // AI-generated (edited by nigeltzy).
 }
 
 func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
@@ -50,11 +51,12 @@ func (f *fakeAccountRepository) Update(_ context.Context, account *User) error {
 func (f *fakeAccountRepository) UpdateLastLoginByID(context.Context, uuid.UUID, time.Time) error {
 	return nil
 }
-func (f *fakeAccountRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.UUID, status AccountStatus, _ time.Time) error {
+func (f *fakeAccountRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error {
 	if f.callOrder != nil {
 		*f.callOrder = append(*f.callOrder, "postgres")
 	}
 	f.status = status
+	f.tokensValidAfter = tokensValidAfter // AI-generated (edited by nigeltzy).
 	// AI-generated (edited by ZI YANG).
 	if len(f.statusErrs) > 0 {
 		err := f.statusErrs[0]
