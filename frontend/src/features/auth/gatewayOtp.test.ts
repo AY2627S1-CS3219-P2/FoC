@@ -3,7 +3,8 @@
 // Scope: Tests for the gateway client's OTP calls — register, verify, resend
 //   and resuming an unverified account — against a stubbed fetch, plus the
 //   unverified-login error.
-// Author review: PENDING
+// Author review: nigeltzy - I checked the code and it looks okay, the AI was
+// used to generate a test unit for the gateway OTP function and it seems valid and expected.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
