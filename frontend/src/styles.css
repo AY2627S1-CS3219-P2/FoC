@@ -24,7 +24,7 @@
  *   delayed on close so the slide animation still shows), and the backdrop
  *   now has a `display: none` base rule so it cannot leak into the desktop
  *   layout if the viewport is widened past 860px while still "open".
- * Author review: PENDING — <reviewer to complete>
+ * Author review: nigeltzy - Checked that the css is updated validly and in line with our design plans.
  * ------------------------------------------------------------------------- */
 
 :root {
@@ -1373,4 +1373,40 @@ button.service-card:hover {
 /* Blank placeholder shown while App restores the session on page load. */
 .app-loading {
   min-height: 100vh;
+}
+
+/* AI-generated (edited by nigeltzy). */
+/* Profile and admin screens: an editable row puts its value and an Edit link
+   side by side, right-aligned like every other dd. */
+.detail-list dd.with-action {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  word-break: normal;
+}
+
+.detail-list dd.with-action > span {
+  word-break: break-all;
+}
+
+.link-btn {
+  flex-shrink: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--primary);
+  cursor: pointer;
+  background: none;
+  border: 0;
+}
+
+.link-btn:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.link-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
