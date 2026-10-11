@@ -90,7 +90,7 @@ export function LoginPage({
   // this is non-null the OTP step replaces the form entirely: there is no
   // route to an account that skips it.
   const [pending, setPending] = useState<PendingRegistration | null>(null);
-  // AI-generated (edited by PENDING).
+  // AI-generated (edited by nigeltzy).
   // The identifier to log in with once the code is verified: the signup email,
   // or what was typed at a login refused as unverified. The password stays in
   // `password` state, which this screen already holds.
@@ -98,7 +98,7 @@ export function LoginPage({
   // True once user-service has accepted the code for `pending`.
   const [codeAccepted, setCodeAccepted] = useState(false);
 
-  // AI-generated (edited by PENDING).
+  // AI-generated (edited by nigeltzy).
   // Every way into or out of the OTP step goes through here, so a new
   // registration never inherits the last one's accepted code.
   const openOtpStep = (next: PendingRegistration | null, loginWith = "") => {
@@ -148,7 +148,7 @@ export function LoginPage({
     }
   };
 
-  // AI-generated (edited by PENDING).
+  // AI-generated (edited by nigeltzy).
   // F1.1.2.7 — the account exists but its email is unverified. A new code can
   // only be requested by email, so a username login is told to use the email.
   const resumeUnverified = async () => {
@@ -167,7 +167,7 @@ export function LoginPage({
     }
   };
 
-  // AI-generated (edited by PENDING).
+  // AI-generated (edited by nigeltzy).
   // Verifying returns no session, so log in straight after. user-service
   // deletes a code once it is used, so if the login fails a retry must not
   // verify again — it would be told the code expired — only log in.

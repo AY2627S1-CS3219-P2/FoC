@@ -63,7 +63,7 @@ func passthrough(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
 func authRoutes() []authRoute {
 	return []authRoute{
 		{"register", passthrough},
-		// AI-generated (edited by PENDING): the OTP routes added by D-041.
+		// AI-generated (edited by nigeltzy): the OTP routes added by D-041.
 		// verify-otp only activates the account and returns no tokens, so the
 		// client logs in afterwards through /auth/login.
 		{"resend-otp", passthrough},

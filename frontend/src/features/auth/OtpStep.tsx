@@ -81,7 +81,7 @@ export function OtpStep({
   const blocked =
     pendingRegistration.blockedUntil !== null && blockedMsLeft > 0;
 
-  // AI-generated (edited by PENDING).
+  // AI-generated (edited by nigeltzy).
   // F1.1.2.6 — start the block countdown, which also disables "Send a new
   // code": user-service restarts its block on every refused request.
   const startBlockIfLimited = (err: unknown) => {

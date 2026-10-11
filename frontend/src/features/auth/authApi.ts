@@ -75,7 +75,7 @@ export class SuspendedAccountError extends AuthError {
   }
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /**
  * user-service refuses to log in an account whose email is not verified yet.
  * LoginPage checks for this type to send the user to the OTP step instead.
@@ -87,7 +87,7 @@ export class UnverifiedAccountError extends AuthError {
   }
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /**
  * F1.1.2.6: too many code requests. `blockedUntil` (epoch ms) is when the OTP
  * step may offer a new code again, so it can disable the button until then.
@@ -256,7 +256,7 @@ function decodeAuthError(body: unknown, status: number): AuthError {
   if (status === 403 && message === SUSPENDED_ERROR) {
     return new SuspendedAccountError();
   }
-  // AI-generated (edited by PENDING).
+  // AI-generated (edited by nigeltzy).
   // The 403 user-service sends while the account's email is unverified.
   if (status === 403 && message === UNVERIFIED_ERROR) {
     return new UnverifiedAccountError();
@@ -362,7 +362,7 @@ async function sessionFromTokens(
   };
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // user-service's OTP rules, from the "OTP Feature" section of
 // user-service/AGENTS.md (PR #14). The server enforces them; these only let
 // the OTP step show the same numbers.
@@ -458,7 +458,7 @@ export async function logInViaGateway(
   return sessionFromTokens(decodeTokenPair(response.body), fallback);
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /**
  * F1.1 and F1.1.2.3: creates the account, unverified, and has user-service
  * email the first code. The account cannot log in until verified (F1.1.2.7).
@@ -507,7 +507,7 @@ export async function signUpViaGateway(
   );
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /**
  * F1.1.2.7: activates the account on the correct code. Returns no session —
  * user-service issues no tokens here — so the caller logs in afterwards.
@@ -544,7 +544,7 @@ export async function verifyRegistrationViaGateway(
   }
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /** Asks user-service to email a new code to `email`, replacing any earlier one. */
 async function requestCode(email: string): Promise<void> {
   const response = await post(ROUTES.resend, { email });
@@ -565,7 +565,7 @@ async function requestCode(email: string): Promise<void> {
   }
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /**
  * F1.1.2.4: requests a replacement code. F1.1.2.5: the previous code stops
  * working once this returns.
@@ -581,7 +581,7 @@ export async function resendOtpViaGateway(
   );
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 /**
  * Opens the OTP step for an account that registered but never verified,
  * reached from a login refused with UnverifiedAccountError. Sends a fresh

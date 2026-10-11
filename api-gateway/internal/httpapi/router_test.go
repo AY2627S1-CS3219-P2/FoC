@@ -573,7 +573,7 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // TestOTPRoutesArePublicPassthroughs checks the two D-041 routes: no token
 // needed, rewritten onto user-service's OTP endpoints, body forwarded as sent,
 // and no refresh cookie read or set.
