@@ -28,16 +28,17 @@ func NewService(initialAllocationRepo InitialAllocationRepository) *Service {
 }
 
 // AllocateInitialCredits handles F4.1 for a registered user event.
-func (s *Service) AllocateInitialCredits(ctx context.Context, userID uuid.UUID) (*Account, error) {
+func (s *Service) AllocateInitialCredits(ctx context.Context, userID uuid.UUID) error {
 	if userID == uuid.Nil {
-		return nil, ErrInvalidUserID
+		return ErrInvalidUserID
 	}
 	if s.initialAllocationRepo == nil {
-		return nil, fmt.Errorf("initial allocation repository is required")
+		return fmt.Errorf("initial allocation repository is required")
 	}
-	account, err := s.initialAllocationRepo.AllocateInitialCredits(ctx, userID, InitialAllocationCredits, s.clock().UTC())
-	if err != nil {
-		return nil, fmt.Errorf("allocate initial credits: %w", err)
+
+	// call database method
+	if err := s.initialAllocationRepo.AllocateInitialCredits(ctx, userID, InitialAllocationCredits, s.clock().UTC()); err != nil {
+		return fmt.Errorf("allocate initial credits: %w", err)
 	}
-	return account, nil
+	return nil
 }

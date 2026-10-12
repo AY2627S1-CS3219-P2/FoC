@@ -14,5 +14,5 @@ import (
 
 // InitialAllocationRepository persists initial account creation and its ledger entry atomically.
 type InitialAllocationRepository interface {
-	AllocateInitialCredits(ctx context.Context, userID uuid.UUID, amount int, occurredAt time.Time) (*Account, error)
+	AllocateInitialCredits(ctx context.Context, userID uuid.UUID, amount int, occurredAt time.Time) error
 }
