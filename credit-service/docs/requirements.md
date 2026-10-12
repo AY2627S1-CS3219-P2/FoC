@@ -18,7 +18,7 @@
     - `errandId`: UUID (Unique, Indexed)
     - `requesterId`: UUID (Foreign Key -> CreditAccount.userId)
     - `amount`: Integer (> 0)
-    - `status`: Enum (`RESERVED`, `COMMITTED`, `RELEASED`)
+    - `status`: Enum (`RESERVED`, `PAID_OUT`, `REFUNDED`)
     - `createdAt`: Timestamp
     - `updatedAt`: Timestamp
 - **CreditTransaction**:
@@ -42,21 +42,21 @@
 
 | ID | Description | Channel | Priority |
 | :--- | :--- | :--- | :--- |
-| **F4.1** | Allocate 100 credits to each user upon successful registration. | REST / Hook | High |
-| **F4.1.1** | Create a credit balance for each newly registered user. | REST | High |
-| **F4.1.2** | Initialise the user's available credit balance to 100 credits. | REST | High |
-| **F4.1.3** | Record the initial credit allocation in the user's credit transaction history. | REST | Medium |
+| **F4.1** | Allocate 100 credits to each user upon successful registration. | Async broker (registration event) | High |
+| **F4.1.1** | Create a credit balance for each newly registered user. | Async broker | High |
+| **F4.1.2** | Initialise the user's available credit balance to 100 credits. | Async broker | High |
+| **F4.1.3** | Record the initial credit allocation in the user's credit transaction history. | Async broker | Medium |
 | **F4.2** | Reserve required credits from requester available balance upon errand request creation. | REST (`POST /reservations`) | High |
 | **F4.2.1** | Reject reservation when requester has insufficient available credits. | REST | High |
 | **F4.2.2** | Deduct reserved amount from requester available balance and transfer to reserved balance. | REST | High |
-| **F4.2.3** | Transfer back reserved credits to available balance upon receiving errand creation failure notification. | AMQP (`errand.lifecycle.failed`) | High |
-| **F4.3** | Transfer reserved credits to assigned courier upon receiving errand completion notification. | AMQP (`errand.lifecycle.completed`) | High |
-| **F4.3.1** | Deduct errand reserved amount from requester reserved-credit balance. | AMQP | High |
-| **F4.3.2** | Add errand reserved credit amount to assigned courier available-credit balance. | AMQP | High |
-| **F4.3.3** | Ensure idempotency: do not change any credit balance on duplicate completion notifications. | AMQP | High |
-| **F4.4** | Release reserved credits upon receiving cancellation or expiry notification for an errand. | AMQP (`errand.lifecycle.cancelled` / `.expired`) | High |
-| **F4.4.1** | Deduct reserved amount from requester reserved balance and add back to available balance. | AMQP | High |
-| **F4.4.2** | Ensure idempotency: ignore duplicate or retried cancellation/expiry notifications. | AMQP | High |
+| **F4.2.3** | Transfer back reserved credits to available balance upon receiving errand creation failure notification. | Async broker (`errand.lifecycle.failed`) | High |
+| **F4.3** | Transfer reserved credits to assigned courier upon receiving errand completion notification. | Async broker (`errand.lifecycle.completed`) | High |
+| **F4.3.1** | Deduct errand reserved amount from requester reserved-credit balance. | Async broker | High |
+| **F4.3.2** | Add errand reserved credit amount to assigned courier available-credit balance. | Async broker | High |
+| **F4.3.3** | Ensure idempotency: do not change any credit balance on duplicate completion notifications. | Async broker | High |
+| **F4.4** | Release reserved credits upon receiving cancellation or expiry notification for an errand. | Async broker (`errand.lifecycle.cancelled` / `.expired`) | High |
+| **F4.4.1** | Deduct reserved amount from requester reserved balance and add back to available balance. | Async broker | High |
+| **F4.4.2** | Ensure idempotency: ignore duplicate or retried cancellation/expiry notifications. | Async broker | High |
 | **F4.5** | Adjust requester reserved credits when reward for an open errand is modified. | REST (`PATCH /reservations/:errand_id`) | Medium |
 | **F4.5.1** | Reserve additional credits from available balance when reward increases. | REST | Medium |
 | **F4.5.2** | Release difference to available balance when reward decreases. | REST | Medium |
@@ -74,24 +74,44 @@
 
 ---
 
-## 3. RabbitMQ Messaging Architecture
+## 3. Async Messaging Contract (Broker TBD)
 
-### 3.1 Exchange & Queue Topology
-- **Exchange**: `errand.events` (Topic Exchange, Durable)
-- **Queue**: `credit-service.errand-events` (Durable)
-    - Bound to:
-        - `errand.lifecycle.completed`
-        - `errand.lifecycle.cancelled`
-        - `errand.lifecycle.expired`
-        - `errand.lifecycle.failed`
-    - Argument: `x-dead-letter-exchange: credit-service.dlx`
-- **Dead-Letter Exchange (DLX)**: `credit-service.dlx` (Direct Exchange)
-- **Dead-Letter Queue (DLQ)**: `credit-service.dlq` (Durable)
+<!-- AI-assisted clarification: broker-specific RabbitMQ/Kafka mechanics are intentionally deferred until the owner records the broker decision. -->
 
-### 3.2 Reliability & Acknowledgment Rules
-- **Manual ACKs (`autoAck: false`)**:
-    - `Ack`: Sent only after DB transaction commits successfully or when an event is discarded as an idempotent duplicate.
-    - `Nack(requeue: false)`: Sent on transient DB errors to route the message to the DLQ.
+### 3.1 Broker-Agnostic Event Names
+- Registration allocation event name: TBD by user-service and credit-service owners.
+- `errand.lifecycle.completed`
+- `errand.lifecycle.cancelled`
+- `errand.lifecycle.expired`
+- `errand.lifecycle.failed`
+
+### 3.2 Required Event Payload Fields
+Registration allocation events consumed by credit-service must include:
+- `eventId`: UUID for broker/event-level observability.
+- `userId`: UUID for the account receiving the initial allocation.
+- `occurredAt`: UTC timestamp from the producing service.
+
+All errand lifecycle events consumed by credit-service must include:
+- `eventId`: UUID for broker/event-level observability.
+- `errandId`: UUID used for credit idempotency through `credit_reservations.errand_id`.
+- `requesterId`: UUID for the account whose credits were reserved.
+- `amount`: integer credit amount, greater than zero.
+- `occurredAt`: UTC timestamp from the producing service.
+
+Completion events must additionally include:
+- `courierId`: UUID for the account receiving the payout.
+
+### 3.3 Consumer Reliability Rules
+- A message is acknowledged only after the database transaction commits successfully.
+- A duplicate event whose reservation is already in the target terminal state is acknowledged without mutating balances.
+- A malformed event is rejected and routed to the broker's dead-letter mechanism once that mechanism is recorded.
+- Transient database errors must not be acknowledged before the caller knows whether the transaction committed.
+
+### 3.4 Broker-Specific Details Still Open
+- Broker implementation: Kafka vs RabbitMQ.
+- Topic, queue, exchange, consumer group, and dead-letter names.
+- Retry policy and maximum delivery attempts.
+- Serialization format and schema registry, if any.
 
 ---
 
@@ -103,8 +123,8 @@ Save under `migrations/000001_create_credit_tables.up.sql`:
 -- 1. Enums
 CREATE TYPE reservation_status AS ENUM (
     'RESERVED',
-    'COMMITTED',
-    'RELEASED'
+    'PAID_OUT',
+    'REFUNDED'
 );
 
 CREATE TYPE transaction_reason AS ENUM (
@@ -159,4 +179,111 @@ CREATE TABLE credit_transactions (
 );
 
 CREATE INDEX idx_transactions_user_created ON credit_transactions(user_id, created_at DESC);
-CREATE INDEX idx_transactions_
+CREATE INDEX idx_transactions_errand ON credit_transactions(errand_id);
+```
+
+Save under `migrations/000001_create_credit_tables.down.sql`:
+
+```sql
+DROP TABLE IF EXISTS credit_transactions;
+DROP TABLE IF EXISTS credit_reservations;
+DROP TABLE IF EXISTS credit_accounts;
+DROP TYPE IF EXISTS transaction_reason;
+DROP TYPE IF EXISTS reservation_status;
+```
+
+---
+
+## 5. Package & Folder Structure
+
+<!-- AI-assisted clarification: this records implementation placement for the existing approved service layout without adding business behavior. -->
+
+Credit-service follows the repository's service layering:
+- `internal/credit`: domain models, repository interfaces, service methods, and sentinel errors.
+- `internal/repository`: PostgreSQL adapter and transaction-bound persistence logic.
+- `internal/httpapi`: HTTP DTOs, handlers, and Chi router.
+- `internal/config`: environment loading.
+- `internal/middleware`: identity propagation middleware after the team records that contract.
+- `internal/gen`: generated OpenAPI code only; never hand-edited.
+- `cmd/api`: composition root.
+- `migrations`: reversible PostgreSQL migrations.
+
+Broker adapter package naming is deferred until the broker decision is recorded.
+
+---
+
+## 6. Transaction & Locking Rules
+
+<!-- AI-assisted clarification: restates the concurrency requirements in implementation-ready terms using the existing schema decisions. -->
+
+- Every balance mutation must run in one PostgreSQL transaction.
+- Repository methods that mutate an account must lock the relevant `credit_accounts` row with `SELECT ... FOR UPDATE`.
+- Completion transfers that touch requester and courier accounts must lock both accounts in deterministic UUID order.
+- Reservation creation must create or check the `credit_reservations` row in the same transaction as the requester account update.
+- Reservation terminal transitions must check the current `credit_reservations.status` inside the same transaction as the balance updates.
+- The service layer must not perform check-then-write balance logic outside the repository transaction boundary.
+
+---
+
+## 7. HTTP API Surface
+
+The public HTTP contract is spec-first in `api/openapi.yaml`. The base path is
+`/api/v1/credits`, and all endpoints use Bearer JWT security. Initial account
+creation and credit allocation are intentionally excluded from the HTTP surface;
+they are handled asynchronously from the registration allocation event in
+Section 3.
+
+| Method | Path | Purpose |
+| :--- | :--- | :--- |
+| `POST` | `/api/v1/credits/reservations` | Reserve requester credits for an errand. |
+| `PATCH` | `/api/v1/credits/reservations/{errandId}` | Adjust the reserved reward for an open errand. |
+| `GET` | `/api/v1/credits/accounts/me` | Return the authenticated user's available and reserved credits. |
+| `GET` | `/api/v1/credits/accounts/me/transactions` | Return the authenticated user's paginated transaction history. |
+
+### 7.1 Security
+- Security scheme: `bearerAuth`, HTTP bearer JWT.
+- Downstream services verify the raw Bearer JWT locally per D-041.
+
+### 7.2 Error Envelope and Status Mapping
+- Error response body: `{"error": "<message>"}`.
+- `400 Bad Request`: syntax errors or invalid input, such as `amount <= 0`.
+- `401 Unauthorized`: missing or invalid token.
+- `404 Not Found`: entity not found.
+- `409 Conflict`: duplicate reservation for `errandId`, or modifying a non-`RESERVED` hold.
+- `422 Unprocessable Entity`: insufficient available credits.
+
+### 7.3 Pagination
+- `limit`: query integer, default `20`, minimum `1`, maximum `100`.
+- `offset`: query integer, default `0`, minimum `0`.
+
+### 7.4 Schemas
+- `ErrorResponse`: `error` string.
+- `AccountResponse`: `userId` UUID, `availableCredits` integer, `reservedCredits` integer, `updatedAt` date-time.
+- `CreateReservationRequest`: `errandId` UUID, `amount` integer with minimum `1`.
+- `AdjustRewardRequest`: `newReward` integer with minimum `1`.
+- `ReservationResponse`: `id` UUID, `errandId` UUID, `requesterId` UUID, `amount` integer, `status` enum (`RESERVED`, `PAID_OUT`, `REFUNDED`), `createdAt` date-time, `updatedAt` date-time.
+- `TransactionReason`: enum (`REGISTRATION_ALLOCATION`, `ERRAND_RESERVATION`, `ERRAND_CREATION_FAILED`, `ERRAND_COMPLETED_PAYOUT`, `ERRAND_COMPLETED_DEDUCTION`, `ERRAND_CANCELLED`, `ERRAND_EXPIRED`, `REWARD_INCREASED`, `REWARD_DECREASED`).
+- `TransactionItem`: `id` UUID, `userId` UUID, nullable `errandId` UUID, `amount` integer, `reason` `TransactionReason`, `createdAt` date-time.
+- `Pagination`: `limit` integer, `offset` integer, `total` integer.
+- `TransactionListResponse`: `items` array of `TransactionItem`, `pagination` `Pagination`.
+
+### 7.5 Endpoint Responses
+- `POST /api/v1/credits/reservations`: `201 ReservationResponse`; errors `400`, `401`, `409`, `422`.
+- `PATCH /api/v1/credits/reservations/{errandId}`: `200 ReservationResponse`; errors `400`, `401`, `404`, `409`, `422`.
+- `GET /api/v1/credits/accounts/me`: `200 AccountResponse`; errors `401`, `404`.
+- `GET /api/v1/credits/accounts/me/transactions`: `200 TransactionListResponse`; errors `400`, `401`.
+
+---
+
+## 8. Implementation Readiness Checklist
+
+Ready now:
+- Database schema migration and down migration from Section 4.
+- Domain models and constants from Section 1.
+- Repository transaction logic from Section 6.
+- Service methods for registration allocation, reservation, reward adjustment, account read, and history read. Registration allocation must be callable from an async consumer adapter rather than an HTTP handler.
+
+Blocked until further owner/team records:
+- Broker adapter implementation.
+- Broker-specific topology and retry/dead-letter behavior.
+- Event consumer code that depends on exact broker library and delivery semantics.
