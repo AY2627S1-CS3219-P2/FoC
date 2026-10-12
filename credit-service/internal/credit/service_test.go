@@ -17,24 +17,12 @@ import (
 func TestServiceAllocateInitialCredits(t *testing.T) {
 	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
 	occurredAt := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
-	repository := &allocationRepositoryStub{
-		account: &Account{
-			UserID:           userID,
-			AvailableCredits: InitialAllocationCredits,
-			ReservedCredits:  0,
-			Version:          1,
-			UpdatedAt:        occurredAt,
-		},
-	}
+	repository := &allocationRepositoryStub{}
 	service := NewService(repository)
 	service.clock = func() time.Time { return occurredAt }
 
-	account, err := service.AllocateInitialCredits(context.Background(), userID)
-	if err != nil {
+	if err := service.AllocateInitialCredits(context.Background(), userID); err != nil {
 		t.Fatalf("AllocateInitialCredits returned error: %v", err)
-	}
-	if account.UserID != userID {
-		t.Fatalf("account user ID = %s, want %s", account.UserID, userID)
 	}
 	if repository.userID != userID {
 		t.Fatalf("repository user ID = %s, want %s", repository.userID, userID)
@@ -51,7 +39,7 @@ func TestServiceAllocateInitialCreditsRejectsMissingUserID(t *testing.T) {
 	repository := &allocationRepositoryStub{}
 	service := NewService(repository)
 
-	_, err := service.AllocateInitialCredits(context.Background(), uuid.Nil)
+	err := service.AllocateInitialCredits(context.Background(), uuid.Nil)
 	if !errors.Is(err, ErrInvalidUserID) {
 		t.Fatalf("AllocateInitialCredits error = %v, want %v", err, ErrInvalidUserID)
 	}
@@ -65,7 +53,7 @@ func TestServiceAllocateInitialCreditsWrapsRepositoryError(t *testing.T) {
 	repositoryErr := errors.New("repository unavailable")
 	service := NewService(&allocationRepositoryStub{err: repositoryErr})
 
-	_, err := service.AllocateInitialCredits(context.Background(), userID)
+	err := service.AllocateInitialCredits(context.Background(), userID)
 	if !errors.Is(err, repositoryErr) {
 		t.Fatalf("AllocateInitialCredits error = %v, want wrapped %v", err, repositoryErr)
 	}
@@ -76,14 +64,13 @@ type allocationRepositoryStub struct {
 	userID     uuid.UUID
 	amount     int
 	occurredAt time.Time
-	account    *Account
 	err        error
 }
 
-func (s *allocationRepositoryStub) AllocateInitialCredits(_ context.Context, userID uuid.UUID, amount int, occurredAt time.Time) (*Account, error) {
+func (s *allocationRepositoryStub) AllocateInitialCredits(_ context.Context, userID uuid.UUID, amount int, occurredAt time.Time) error {
 	s.called = true
 	s.userID = userID
 	s.amount = amount
 	s.occurredAt = occurredAt
-	return s.account, s.err
+	return s.err
 }
