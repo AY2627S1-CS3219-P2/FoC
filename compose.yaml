@@ -2,14 +2,8 @@
 # Tool: Codex (GPT-5), date: 2026-09-18
 # Scope: Added local PostgreSQL 16 and user-service API containers.
 # Author review: COMPLETED BY ZI YANG
-# Tool: Claude Code (model: Opus 5), date: 2026-09-19
-# Scope: Compose baseline — extends the supplier-service/frontend stack from
-#   PR #1 with Redis and the API Gateway, and closes the public ports that
-#   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
-#   which landed PR #1's half of this file; comments brought up to date. Later
-#   that day: the frontend service was removed — the gateway serves the built
-#   SPA, so the browser has one origin (D-033).
-# Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
+
+# AI Assistance Disclosure:
 # Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
 # Scope: Merged two top-level `services:` maps left over from PR #4/#5 landing
 #   separately (invalid YAML — a duplicate mapping key — made `docker compose`
@@ -38,7 +32,6 @@ services:
 # X-User-Id and X-User-Role headers, so publishing it lets a client skip
 # token verification (D-010 in ai/decisions.md).
 #
-# credit-service is not in this file yet.
 # The frontend is not in this file either: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
@@ -142,6 +135,34 @@ services:
       ORDER_BASE_URL: http://order-service:8083
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
+  # ---- Credit service and its database ---------------------------------
+  credit-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CREDIT_DB_USER:?CREDIT_DB_USER must be set}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}
+      POSTGRES_DB: credit
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CREDIT_DB_USER:?CREDIT_DB_USER must be set} -d credit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  credit-service:
+    build:
+      context: ./credit-service
+      dockerfile: Dockerfile
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    environment:
+      PORT: 8084
+      CREDIT_DB_URL: postgres://${CREDIT_DB_USER:?CREDIT_DB_USER must be set}:${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}@credit-db:5432/credit?sslmode=disable
+    restart: on-failure
+    # No `ports:` key: reachable only through the gateway, at /api/credits.
+
   rabbitmq:
     image: rabbitmq:3.13-management
     environment:
@@ -212,6 +233,4 @@ volumes:
   supplier-db-data:
   rabbitmq-data:
   order-db-data:
-
-
-
+  credit-db-data:
