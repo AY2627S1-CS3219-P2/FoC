@@ -24,18 +24,27 @@ import (
 )
 
 func main() {
+	// Set up the logger to print messages in JSON format to the terminal.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
+	// Start and set up the app (connect to database, apply tables, start web server).
+	// If anything fails during startup or while running, enter the if-block.
 	if err := run(context.Background(), config.Load(), logger); err != nil {
+		// Print the error message so we know what went wrong.
 		logger.Error("credit service stopped", "error", err)
+
+		// Stop the program completely with an error code (1 means failure).
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	// Database Migration
 	if err := repository.Apply(cfg.DatabaseURL, "file://migrations"); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
 
+	// Database Connection Pool
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("create database pool: %w", err)
@@ -46,8 +55,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("ping database: %w", err)
 	}
 
+	// Repository Initialization
 	_ = repository.NewPostgresRepository(pool)
 
+	// HTTP Server Startup with Chi Router
 	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping))
 
 	errCh := make(chan error, 1)
@@ -60,6 +71,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		errCh <- nil
 	}()
 
+	// Graceful Shutdown
 	signalCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
