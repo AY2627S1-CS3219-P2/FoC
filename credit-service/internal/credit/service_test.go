@@ -1,0 +1,89 @@
+// AI Assistance Disclosure:
+// Tool: Codex (model: GPT-5), date: 2026-10-12
+// Scope: Generated F4.1 unit tests for async registration allocation service behavior.
+// Author review: PENDING - reviewer to complete
+
+package credit
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/uuid"
+)
+
+func TestServiceAllocateInitialCredits(t *testing.T) {
+	userID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	occurredAt := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
+	repository := &allocationRepositoryStub{
+		account: &Account{
+			UserID:           userID,
+			AvailableCredits: InitialAllocationCredits,
+			ReservedCredits:  0,
+			Version:          1,
+			UpdatedAt:        occurredAt,
+		},
+	}
+	service := NewService(repository)
+	service.clock = func() time.Time { return occurredAt }
+
+	account, err := service.AllocateInitialCredits(context.Background(), userID)
+	if err != nil {
+		t.Fatalf("AllocateInitialCredits returned error: %v", err)
+	}
+	if account.UserID != userID {
+		t.Fatalf("account user ID = %s, want %s", account.UserID, userID)
+	}
+	if repository.userID != userID {
+		t.Fatalf("repository user ID = %s, want %s", repository.userID, userID)
+	}
+	if repository.amount != InitialAllocationCredits {
+		t.Fatalf("repository amount = %d, want %d", repository.amount, InitialAllocationCredits)
+	}
+	if !repository.occurredAt.Equal(occurredAt) {
+		t.Fatalf("repository occurredAt = %s, want %s", repository.occurredAt, occurredAt)
+	}
+}
+
+func TestServiceAllocateInitialCreditsRejectsMissingUserID(t *testing.T) {
+	repository := &allocationRepositoryStub{}
+	service := NewService(repository)
+
+	_, err := service.AllocateInitialCredits(context.Background(), uuid.Nil)
+	if !errors.Is(err, ErrInvalidUserID) {
+		t.Fatalf("AllocateInitialCredits error = %v, want %v", err, ErrInvalidUserID)
+	}
+	if repository.called {
+		t.Fatal("repository should not be called for invalid user ID")
+	}
+}
+
+func TestServiceAllocateInitialCreditsWrapsRepositoryError(t *testing.T) {
+	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	repositoryErr := errors.New("repository unavailable")
+	service := NewService(&allocationRepositoryStub{err: repositoryErr})
+
+	_, err := service.AllocateInitialCredits(context.Background(), userID)
+	if !errors.Is(err, repositoryErr) {
+		t.Fatalf("AllocateInitialCredits error = %v, want wrapped %v", err, repositoryErr)
+	}
+}
+
+type allocationRepositoryStub struct {
+	called     bool
+	userID     uuid.UUID
+	amount     int
+	occurredAt time.Time
+	account    *Account
+	err        error
+}
+
+func (s *allocationRepositoryStub) AllocateInitialCredits(_ context.Context, userID uuid.UUID, amount int, occurredAt time.Time) (*Account, error) {
+	s.called = true
+	s.userID = userID
+	s.amount = amount
+	s.occurredAt = occurredAt
+	return s.account, s.err
+}
