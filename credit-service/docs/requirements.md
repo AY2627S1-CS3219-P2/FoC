@@ -2,140 +2,161 @@
 > Owner/reviewer: Seth
 > Date: 2026-10-12
 
-# Credit Service Requirements
+# Credit Service Specification
 
 ## 1. Domain Overview & Invariants
 
 ### Entities & Data Model
 - **CreditAccount**:
-    - `userId`: String / UUID (Primary Key / Unique)
+    - `userId`: UUID (Primary Key / Unique)
     - `availableCredits`: Integer (Default: 100)
     - `reservedCredits`: Integer (Default: 0)
+    - `version`: Integer (Optimistic concurrency / mutation token)
+    - `updatedAt`: Timestamp
+- **CreditReservation**:
+    - `id`: UUID (Primary Key)
+    - `errandId`: UUID (Unique, Indexed)
+    - `requesterId`: UUID (Foreign Key -> CreditAccount.userId)
+    - `amount`: Integer (> 0)
+    - `status`: Enum (`RESERVED`, `COMMITTED`, `RELEASED`)
+    - `createdAt`: Timestamp
     - `updatedAt`: Timestamp
 - **CreditTransaction**:
-    - `id`: String / UUID (Primary Key)
-    - `userId`: String / UUID (Indexed)
-    - `errandId`: String / UUID (Nullable, Indexed)
-    - `amount`: Integer (Signed or absolute delta)
-    - `reason`: String / Enum (`REGISTRATION_ALLOCATION`, `ERRAND_RESERVATION`, `ERRAND_COMPLETION_TRANSFER`, `ERRAND_CANCELLATION_RELEASE`, `ERRAND_REWARD_ADJUSTMENT`, etc.)
+    - `id`: UUID (Primary Key)
+    - `userId`: UUID (Indexed)
+    - `errandId`: UUID (Nullable, Indexed)
+    - `amount`: Integer (Signed: positive for credits added, negative for deducted/reserved)
+    - `reason`: Enum (`REGISTRATION_ALLOCATION`, `ERRAND_RESERVATION`, `ERRAND_CREATION_FAILED`, `ERRAND_COMPLETED_PAYOUT`, `ERRAND_COMPLETED_DEDUCTION`, `ERRAND_CANCELLED`, `ERRAND_EXPIRED`, `REWARD_INCREASED`, `REWARD_DECREASED`)
     - `createdAt`: Timestamp
 
 ### Core Invariants
-1. **Non-negativity**: `availableCredits >= 0` and `reservedCredits >= 0` at all times.
-2. **Auditability**: Every change to `availableCredits` or `reservedCredits` must produce an immutable `CreditTransaction` entry.
-3. **Idempotency**: All notification consumers (e.g., Errand Completed, Errand Cancelled, Errand Expired) must be idempotent and safely handle duplicate deliveries using the unique `errandId`.
-4. **Atomicity**: Multi-step balance updates (e.g., deducting from available and adding to reserved) must execute within a single ACID transaction.
+1. **Non-negativity**: `availableCredits >= 0` and `reservedCredits >= 0` at all times enforced via DB check constraints.
+2. **Auditability**: Every mutation to balances must append an immutable entry to `CreditTransaction`.
+3. **Idempotency**: All notification consumers must check `CreditReservation.status` to safely ignore duplicate deliveries using `errandId`.
+4. **Atomicity**: Multi-step balance updates must execute within a single ACID transaction with row-level locks (`SELECT ... FOR UPDATE`).
+5. **Deadlock Prevention**: When locking multiple accounts (e.g., Requester and Courier during completion), always acquire row locks in deterministic order: `min(requesterId, courierId)` followed by `max(...)`.
 
 ---
 
-## 2. Functional Requirements
+## 2. Requirements Matrix
 
-| ID | Description | Priority |
-| :--- | :--- | :--- |
-| **F4.1** | Allocate 100 credits to each user upon successful registration. | High |
-| **F4.1.1** | Create a credit balance for each newly registered user. | High |
-| **F4.1.2** | Initialise the user's available credit balance to 100 credits. | High |
-| **F4.1.3** | Record the initial credit allocation in the user's credit transaction history. | Medium |
-| **F4.2** | Reserve required credits from the requester's available balance upon errand request creation. | High |
-| **F4.2.1** | Reject the reservation when the requester has insufficient available credits. | High |
-| **F4.2.2** | Deduct the reserved credit amount from the requester's available balance and transfer it to their reserved balance. | High |
-| **F4.2.3** | Transfer back reserved credits to available balance upon receiving an errand creation failure notification. | High |
-| **F4.3** | Transfer reserved credits to the assigned courier upon receiving errand completion notification. | High |
-| **F4.3.1** | Deduct the errand's reserved amount from the requester's reserved-credit balance. | High |
-| **F4.3.2** | Add the errand's reserved credit amount to the assigned courier's available-credit balance. | High |
-| **F4.3.3** | Ensure idempotency: do not change any credit balance on duplicate completion notifications. | High |
-| **F4.4** | Release reserved credits upon receiving a cancellation or expiry notification for an errand. | High |
-| **F4.4.1** | Deduct reserved amount from requester's reserved balance and add back to available balance. | High |
-| **F4.4.2** | Ensure idempotency: ignore duplicate or retried cancellation/expiry notifications. | High |
-| **F4.5** | Adjust the requester's reserved credits when the reward for an open errand is changed. | Medium |
-| **F4.5.1** | Reserve additional credits from available balance when the reward increases. | Medium |
-| **F4.5.2** | Release the difference to available balance when the reward decreases. | Medium |
-| **F4.5.3** | Reject reward modification if the requester has insufficient available credits for an increase. | Medium |
-| **F4.6** | Record comprehensive audit trail for every credit balance modification. | Medium |
-| **F4.6.1** | Record the reason for each balance change. | Medium |
-| **F4.6.2** | Record the numerical delta of credits changed. | Medium |
-| **F4.6.3** | Record the timestamp (date and time) of the balance change. | Medium |
-| **F4.6.4** | Associate unique `errandId` for all errand-related transactions. | Medium |
-| **F4.6.5** | Support non-errand balance updates with a `null` / optional `errandId`. | Medium |
-| **F4.7** | Expose authenticated read APIs for user credit account and history. | Medium |
-| **F4.7.1** | Return the user's available credit balance. | Medium |
-| **F4.7.2** | Return the user's reserved credit balance. | Medium |
-| **F4.7.3** | Return the paginated user credit transaction history. | Medium |
+| ID | Description | Channel | Priority |
+| :--- | :--- | :--- | :--- |
+| **F4.1** | Allocate 100 credits to each user upon successful registration. | REST / Hook | High |
+| **F4.1.1** | Create a credit balance for each newly registered user. | REST | High |
+| **F4.1.2** | Initialise the user's available credit balance to 100 credits. | REST | High |
+| **F4.1.3** | Record the initial credit allocation in the user's credit transaction history. | REST | Medium |
+| **F4.2** | Reserve required credits from requester available balance upon errand request creation. | REST (`POST /reservations`) | High |
+| **F4.2.1** | Reject reservation when requester has insufficient available credits. | REST | High |
+| **F4.2.2** | Deduct reserved amount from requester available balance and transfer to reserved balance. | REST | High |
+| **F4.2.3** | Transfer back reserved credits to available balance upon receiving errand creation failure notification. | AMQP (`errand.lifecycle.failed`) | High |
+| **F4.3** | Transfer reserved credits to assigned courier upon receiving errand completion notification. | AMQP (`errand.lifecycle.completed`) | High |
+| **F4.3.1** | Deduct errand reserved amount from requester reserved-credit balance. | AMQP | High |
+| **F4.3.2** | Add errand reserved credit amount to assigned courier available-credit balance. | AMQP | High |
+| **F4.3.3** | Ensure idempotency: do not change any credit balance on duplicate completion notifications. | AMQP | High |
+| **F4.4** | Release reserved credits upon receiving cancellation or expiry notification for an errand. | AMQP (`errand.lifecycle.cancelled` / `.expired`) | High |
+| **F4.4.1** | Deduct reserved amount from requester reserved balance and add back to available balance. | AMQP | High |
+| **F4.4.2** | Ensure idempotency: ignore duplicate or retried cancellation/expiry notifications. | AMQP | High |
+| **F4.5** | Adjust requester reserved credits when reward for an open errand is modified. | REST (`PATCH /reservations/:errand_id`) | Medium |
+| **F4.5.1** | Reserve additional credits from available balance when reward increases. | REST | Medium |
+| **F4.5.2** | Release difference to available balance when reward decreases. | REST | Medium |
+| **F4.5.3** | Reject reward modification if requester has insufficient available credits for an increase. | REST | Medium |
+| **F4.6** | Record comprehensive audit trail for every credit balance modification. | Database Ledger | Medium |
+| **F4.6.1** | Record the reason for each balance change. | Database Ledger | Medium |
+| **F4.6.2** | Record the numerical delta of credits changed. | Database Ledger | Medium |
+| **F4.6.3** | Record the timestamp (date and time) of the balance change. | Database Ledger | Medium |
+| **F4.6.4** | Associate unique `errandId` for all errand-related transactions. | Database Ledger | Medium |
+| **F4.6.5** | Support non-errand balance updates with a `null` / optional `errandId`. | Database Ledger | Medium |
+| **F4.7** | Expose authenticated read APIs for user credit account and history. | REST (`GET /accounts/me`) | Medium |
+| **F4.7.1** | Return the user's available credit balance. | REST | Medium |
+| **F4.7.2** | Return the user's reserved credit balance. | REST | Medium |
+| **F4.7.3** | Return the paginated user credit transaction history. | REST | Medium |
 
 ---
 
-## 3. Detailed Specification
+## 3. RabbitMQ Messaging Architecture
 
-### F4.1 User Registration Credit Allocation
-- **Trigger**: User registration event / callback.
-- **Priority**: High
-- **Rules**:
-    - `F4.1.1`: Create `CreditAccount` row for `userId`.
-    - `F4.1.2`: Set `availableCredits = 100`, `reservedCredits = 0`.
-    - `F4.1.3`: Insert `CreditTransaction` (`amount = 100`, `reason = "INITIAL_REGISTRATION"`, `errandId = null`).
+### 3.1 Exchange & Queue Topology
+- **Exchange**: `errand.events` (Topic Exchange, Durable)
+- **Queue**: `credit-service.errand-events` (Durable)
+    - Bound to:
+        - `errand.lifecycle.completed`
+        - `errand.lifecycle.cancelled`
+        - `errand.lifecycle.expired`
+        - `errand.lifecycle.failed`
+    - Argument: `x-dead-letter-exchange: credit-service.dlx`
+- **Dead-Letter Exchange (DLX)**: `credit-service.dlx` (Direct Exchange)
+- **Dead-Letter Queue (DLQ)**: `credit-service.dlq` (Durable)
 
-### F4.2 Errand Creation & Credit Reservation
-- **Trigger**: Errand creation request or saga step.
-- **Priority**: High
-- **Rules**:
-    - `F4.2.1`: Validate `availableCredits >= requiredCredits`. If false, throw `InsufficientCreditsException` and reject request.
-    - `F4.2.2`: Atomic transfer:
-        - `availableCredits -= requiredCredits`
-        - `reservedCredits += requiredCredits`
-        - Log `CreditTransaction` (`amount = -requiredCredits`, `reason = "ERRAND_RESERVATION"`, `errandId = <id>`).
-    - `F4.2.3`: On errand creation rollback/failure notification:
-        - `reservedCredits -= requiredCredits`
-        - `availableCredits += requiredCredits`
-        - Log compensation transaction.
+### 3.2 Reliability & Acknowledgment Rules
+- **Manual ACKs (`autoAck: false`)**:
+    - `Ack`: Sent only after DB transaction commits successfully or when an event is discarded as an idempotent duplicate.
+    - `Nack(requeue: false)`: Sent on transient DB errors to route the message to the DLQ.
 
-### F4.3 Errand Completion & Payout
-- **Trigger**: Errand completed notification.
-- **Priority**: High
-- **Rules**:
-    - `F4.3.1`: Deduct reward amount from requester's `reservedCredits`.
-    - `F4.3.2`: Credit reward amount to assigned courier's `availableCredits`.
-    - `F4.3.3`: **Idempotency check**: Check if a completion transfer transaction already exists for this `errandId`. If so, acknowledge message and terminate without mutating balances.
+---
 
-### F4.4 Errand Cancellation & Expiry
-- **Trigger**: Errand cancelled or expired notification.
-- **Priority**: High
-- **Rules**:
-    - `F4.4.1`: Atomic refund:
-        - `reservedCredits -= reservedAmount`
-        - `availableCredits += reservedAmount`
-        - Log `CreditTransaction` (`reason = "ERRAND_CANCELLATION" | "ERRAND_EXPIRY"`).
-    - `F4.4.2`: **Idempotency check**: If credits for this `errandId` have already been released or transferred, ignore duplicate/retry events safely.
+## 4. Database Schema (PostgreSQL DDL)
 
-### F4.5 Errand Reward Adjustment
-- **Trigger**: Requester edits reward on an open errand.
-- **Priority**: Medium
-- **Rules**:
-    - Let `delta = newReward - oldReward`.
-    - `F4.5.1` (If `delta > 0`):
-        - Check if `requester.availableCredits >= delta`. If not, reject request (`F4.5.3`).
-        - `requester.availableCredits -= delta`
-        - `requester.reservedCredits += delta`
-        - Log transaction (`amount = delta`, `reason = "REWARD_INCREASE"`).
-    - `F4.5.2` (If `delta < 0`):
-        - Let `releaseAmount = abs(delta)`.
-        - `requester.reservedCredits -= releaseAmount`
-        - `requester.availableCredits += releaseAmount`
-        - Log transaction (`amount = releaseAmount`, `reason = "REWARD_DECREASE"`).
+Save under `migrations/000001_create_credit_tables.up.sql`:
 
-### F4.6 Transaction Logging & Auditability
-- **Priority**: Medium
-- **Rules**:
-    - Every mutation must record:
-        - `F4.6.1`: `reason` (Human-readable text or structured enum).
-        - `F4.6.2`: `amount` (Credits altered).
-        - `F4.6.3`: `createdAt` (UTC timestamp).
-        - `F4.6.4`: `errandId` (UUID string when tied to an errand).
-        - `F4.6.5`: `errandId = null` when operation is not errand-related (e.g., registration, admin grants).
+```sql
+-- 1. Enums
+CREATE TYPE reservation_status AS ENUM (
+    'RESERVED',
+    'COMMITTED',
+    'RELEASED'
+);
 
-### F4.7 Credit Query Interface
-- **Priority**: Medium
-- **Rules**:
-    - Scope queries to authenticated `userId`.
-    - `F4.7.1`: Expose endpoint/method returning `availableCredits`.
-    - `F4.7.2`: Expose endpoint/method returning `reservedCredits`.
-    - `F4.7.3`: Expose endpoint/method returning list of `CreditTransaction` records sorted by `createdAt DESC` (with pagination support).
+CREATE TYPE transaction_reason AS ENUM (
+    'REGISTRATION_ALLOCATION',
+    'ERRAND_RESERVATION',
+    'ERRAND_CREATION_FAILED',
+    'ERRAND_COMPLETED_PAYOUT',
+    'ERRAND_COMPLETED_DEDUCTION',
+    'ERRAND_CANCELLED',
+    'ERRAND_EXPIRED',
+    'REWARD_INCREASED',
+    'REWARD_DECREASED'
+);
+
+-- 2. Credit Accounts (User Aggregate)
+CREATE TABLE credit_accounts (
+    user_id UUID PRIMARY KEY,
+    available_credits INTEGER NOT NULL DEFAULT 100,
+    reserved_credits INTEGER NOT NULL DEFAULT 0,
+    version INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_available_non_negative CHECK (available_credits >= 0),
+    CONSTRAINT chk_reserved_non_negative CHECK (reserved_credits >= 0)
+);
+
+-- 3. Credit Reservations (Errand Holds)
+CREATE TABLE credit_reservations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    errand_id UUID NOT NULL,
+    requester_id UUID NOT NULL REFERENCES credit_accounts(user_id),
+    amount INTEGER NOT NULL,
+    status reservation_status NOT NULL DEFAULT 'RESERVED',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_reservation_amount_positive CHECK (amount > 0),
+    CONSTRAINT uq_errand_reservation UNIQUE (errand_id)
+);
+
+CREATE INDEX idx_reservations_requester ON credit_reservations(requester_id);
+
+-- 4. Credit Transactions (Append-Only Ledger)
+CREATE TABLE credit_transactions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES credit_accounts(user_id),
+    errand_id UUID,
+    amount INTEGER NOT NULL,
+    reason transaction_reason NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_transactions_user_created ON credit_transactions(user_id, created_at DESC);
+CREATE INDEX idx_transactions_
