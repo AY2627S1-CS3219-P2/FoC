@@ -40,7 +40,7 @@ services:
 # X-User-Id and X-User-Role headers, so publishing any other service lets a
 # client skip token verification (D-010 in ai/decisions.md).
 #
-# Services with no code yet (order-service, credit-service) are not listed.
+# Services with no code yet (order-service) are not listed.
 # The frontend is not in this file either: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
@@ -133,8 +133,37 @@ services:
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
+  # ---- Credit service and its database ---------------------------------
+  credit-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CREDIT_DB_USER:?CREDIT_DB_USER must be set}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}
+      POSTGRES_DB: credit
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CREDIT_DB_USER:?CREDIT_DB_USER must be set} -d credit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  credit-service:
+    build:
+      context: ./credit-service
+      dockerfile: Dockerfile
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    environment:
+      PORT: 8084
+      CREDIT_DB_URL: postgres://${CREDIT_DB_USER:?CREDIT_DB_USER must be set}:${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}@credit-db:5432/credit?sslmode=disable
+    restart: on-failure
+    # No `ports:` key: reachable only through the gateway, at /api/credits.
+
 
 volumes:
   user-db-data:
   redis-data:
   supplier-db-data:
+  credit-db-data:

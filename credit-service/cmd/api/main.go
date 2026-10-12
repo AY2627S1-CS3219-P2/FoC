@@ -18,6 +18,9 @@ import (
 
 	"foc/credit-service/internal/config"
 	"foc/credit-service/internal/httpapi"
+	"foc/credit-service/internal/repository"
+
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
@@ -29,7 +32,23 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
-	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter())
+	if err := repository.Apply(cfg.DatabaseURL, "file://migrations"); err != nil {
+		return fmt.Errorf("apply migrations: %w", err)
+	}
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("create database pool: %w", err)
+	}
+	defer pool.Close()
+
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+
+	_ = repository.NewPostgresRepository(pool)
+
+	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping))
 
 	errCh := make(chan error, 1)
 	go func() {
