@@ -1,8 +1,8 @@
-> Status: Owner-approved functional requirements for credit-service.
+> Status: Owner-approved requirements for credit-service.
 > Owner/reviewer: Seth
 > Date: 2026-10-12
 
-# Credit Service Functional Requirements
+# Credit Service Requirements
 
 ## 1. Domain Overview & Invariants
 
@@ -28,7 +28,7 @@
 
 ---
 
-## 2. Requirements Matrix
+## 2. Functional Requirements
 
 | ID | Description | Priority |
 | :--- | :--- | :--- |
