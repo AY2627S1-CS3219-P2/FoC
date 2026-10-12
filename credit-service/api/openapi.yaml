@@ -1,0 +1,365 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-5), date: 2026-10-12
+# Scope: Transcribed owner-approved credit-service OpenAPI contract from docs/requirements.md Section 7.
+# Author review: PENDING - reviewer to complete
+
+openapi: 3.1.0
+info:
+  title: Credit Service API
+  version: 0.1.0
+  description: Credit account, reservation, and transaction history API.
+servers:
+  - url: http://localhost:8084
+    description: Local development server
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ok
+            - unhealthy
+
+    AccountResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - userId
+        - availableCredits
+        - reservedCredits
+        - updatedAt
+      properties:
+        userId:
+          type: string
+          format: uuid
+        availableCredits:
+          type: integer
+        reservedCredits:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateReservationRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - errandId
+        - amount
+      properties:
+        errandId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+          minimum: 1
+
+    AdjustRewardRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - newReward
+      properties:
+        newReward:
+          type: integer
+          minimum: 1
+
+    ReservationStatus:
+      type: string
+      enum:
+        - RESERVED
+        - PAID_OUT
+        - REFUNDED
+
+    ReservationResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - errandId
+        - requesterId
+        - amount
+        - status
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        errandId:
+          type: string
+          format: uuid
+        requesterId:
+          type: string
+          format: uuid
+        amount:
+          type: integer
+        status:
+          $ref: "#/components/schemas/ReservationStatus"
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    TransactionReason:
+      type: string
+      enum:
+        - REGISTRATION_ALLOCATION
+        - ERRAND_RESERVATION
+        - ERRAND_CREATION_FAILED
+        - ERRAND_COMPLETED_PAYOUT
+        - ERRAND_COMPLETED_DEDUCTION
+        - ERRAND_CANCELLED
+        - ERRAND_EXPIRED
+        - REWARD_INCREASED
+        - REWARD_DECREASED
+
+    TransactionItem:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - userId
+        - errandId
+        - amount
+        - reason
+        - createdAt
+      properties:
+        id:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        errandId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        amount:
+          type: integer
+        reason:
+          $ref: "#/components/schemas/TransactionReason"
+        createdAt:
+          type: string
+          format: date-time
+
+    Pagination:
+      type: object
+      additionalProperties: false
+      required:
+        - limit
+        - offset
+        - total
+      properties:
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        offset:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
+
+    TransactionListResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TransactionItem"
+        pagination:
+          $ref: "#/components/schemas/Pagination"
+
+  responses:
+    BadRequest:
+      description: Syntax error or invalid input.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthorized:
+      description: Missing or invalid token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    NotFound:
+      description: Entity not found.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Conflict:
+      description: Duplicate reservation or non-reservable reservation state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableEntity:
+      description: Insufficient available credits.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+
+paths:
+  /api/v1/health:
+    get:
+      summary: Health check.
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: OK.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+        "503":
+          description: Service unavailable.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /api/v1/credits/reservations:
+    post:
+      summary: Reserve credits for an errand.
+      operationId: createReservation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateReservationRequest"
+      responses:
+        "201":
+          description: Credits reserved.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/credits/reservations/{errandId}:
+    patch:
+      summary: Adjust the reserved reward for an open errand.
+      operationId: adjustReservationReward
+      parameters:
+        - in: path
+          name: errandId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdjustRewardRequest"
+      responses:
+        "200":
+          description: Reservation reward adjusted.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+
+  /api/v1/credits/accounts/me:
+    get:
+      summary: Get the authenticated user's credit account.
+      operationId: getMyCreditAccount
+      responses:
+        "200":
+          description: Credit account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccountResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/credits/accounts/me/transactions:
+    get:
+      summary: List the authenticated user's credit transactions.
+      operationId: listMyCreditTransactions
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: offset
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: Credit transaction history.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TransactionListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
