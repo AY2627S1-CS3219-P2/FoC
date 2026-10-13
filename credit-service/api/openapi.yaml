@@ -147,6 +147,8 @@ components:
         - id
         - userId
         - errandId
+        - operationId
+        - balanceBucket
         - amount
         - reason
         - createdAt
@@ -162,6 +164,14 @@ components:
             - string
             - "null"
           format: uuid
+        operationId:
+          type: string
+          format: uuid
+        balanceBucket:
+          type: string
+          enum:
+            - AVAILABLE
+            - RESERVED
         amount:
           type: integer
         reason:
@@ -228,6 +238,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: Authenticated caller is not authorized for this workflow.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
     UnprocessableEntity:
       description: Insufficient available credits.
       content:
@@ -276,6 +292,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
@@ -309,6 +327,8 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":

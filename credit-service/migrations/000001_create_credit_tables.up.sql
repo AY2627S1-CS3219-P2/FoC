@@ -23,7 +23,7 @@ CREATE TYPE transaction_reason AS ENUM (
 
 CREATE TABLE credit_accounts (
     user_id UUID PRIMARY KEY,
-    available_credits INTEGER NOT NULL DEFAULT 100,
+    available_credits INTEGER NOT NULL DEFAULT 0,
     reserved_credits INTEGER NOT NULL DEFAULT 0,
     version INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -52,10 +52,13 @@ CREATE TABLE credit_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES credit_accounts(user_id),
     errand_id UUID,
-    amount INTEGER NOT NULL,
+    operation_id UUID NOT NULL,
+    balance_bucket TEXT NOT NULL CHECK (balance_bucket IN ('AVAILABLE', 'RESERVED')),
+    amount INTEGER NOT NULL CHECK (amount <> 0),
     reason transaction_reason NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_transactions_user_created ON credit_transactions(user_id, created_at DESC);
+CREATE INDEX idx_transactions_operation ON credit_transactions(operation_id);
 CREATE INDEX idx_transactions_errand ON credit_transactions(errand_id);

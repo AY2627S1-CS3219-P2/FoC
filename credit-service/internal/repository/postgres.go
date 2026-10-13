@@ -76,9 +76,11 @@ func insertInitialAccount(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amou
 
 func insertInitialAllocationTransaction(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int, occurredAt time.Time) error {
 	_, err := tx.Exec(ctx, `
-		INSERT INTO credit_transactions (user_id, errand_id, amount, reason, created_at)
-		VALUES ($1, NULL, $2, $3, $4)`,
-		userID, amount, credit.TransactionReasonRegistrationAllocation, occurredAt,
+		INSERT INTO credit_transactions (
+			user_id, errand_id, operation_id, balance_bucket, amount, reason, created_at
+		)
+		VALUES ($1, NULL, $2, 'AVAILABLE', $3, $4, $5)`,
+		userID, uuid.New(), amount, credit.TransactionReasonRegistrationAllocation, occurredAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert initial allocation transaction: %w", err)
