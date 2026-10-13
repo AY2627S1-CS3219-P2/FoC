@@ -32,6 +32,7 @@ services:
 # X-User-Id and X-User-Role headers, so publishing it lets a client skip
 # token verification (D-010 in ai/decisions.md).
 #
+# Services with no code yet (order-service, credit-service) are not listed.
 # The frontend is not in this file either: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
