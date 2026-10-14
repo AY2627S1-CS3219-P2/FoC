@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"foc/credit-service/internal/auth"
 	"foc/credit-service/internal/config"
 	"foc/credit-service/internal/httpapi"
 	"foc/credit-service/internal/repository"
@@ -58,8 +59,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// Repository Initialization
 	_ = repository.NewPostgresRepository(pool)
 
+	// create JWT token verifier
+	verifier := auth.NewVerifier(cfg.JWKSURL, nil)
+
 	// HTTP Server Startup with Chi Router
-	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping))
+	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping, verifier))
 
 	errCh := make(chan error, 1)
 	go func() {

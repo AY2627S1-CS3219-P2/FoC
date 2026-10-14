@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"foc/credit-service/internal/auth"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
@@ -18,12 +20,13 @@ import (
 type HealthCheck func(context.Context) error
 
 // NewRouter returns the credit-service HTTP handler.
-func NewRouter(healthCheck HealthCheck) http.Handler {
+func NewRouter(healthCheck HealthCheck, verifier *auth.Verifier) http.Handler {
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
 	router.Use(middleware.Recoverer)
 
 	router.Get("/api/v1/health", health(healthCheck))
+	_ = verifier
 
 	return router
 }

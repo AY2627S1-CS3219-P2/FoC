@@ -11,6 +11,7 @@ import "os"
 type Config struct {
 	Port        string
 	DatabaseURL string
+	JWKSURL     string
 }
 
 // Load reads credit-service configuration from environment variables.
@@ -18,6 +19,7 @@ func Load() Config {
 	return Config{
 		Port:        envOrDefault("PORT", "8084"),
 		DatabaseURL: os.Getenv("CREDIT_DB_URL"),
+		JWKSURL:     os.Getenv("JWKS_URL"),
 	}
 }
 
