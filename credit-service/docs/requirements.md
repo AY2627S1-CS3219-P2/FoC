@@ -89,7 +89,7 @@ the original row through nullable `reversesTransactionId`.
 ## 3. Async Messaging Contract (RabbitMQ)
 
 ### 3.1 Broker-Agnostic Event Names
-- Registration allocation event name: TBD by user-service and credit-service owners.
+- `user.registered`
 - `errand.lifecycle.completed`
 - `errand.lifecycle.cancelled`
 - `errand.lifecycle.expired`

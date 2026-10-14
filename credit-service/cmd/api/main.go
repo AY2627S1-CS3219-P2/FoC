@@ -18,7 +18,9 @@ import (
 
 	"foc/credit-service/internal/auth"
 	"foc/credit-service/internal/config"
+	"foc/credit-service/internal/credit"
 	"foc/credit-service/internal/httpapi"
+	"foc/credit-service/internal/messaging"
 	"foc/credit-service/internal/repository"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -56,8 +58,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("ping database: %w", err)
 	}
 
-	// Repository Initialization
-	_ = repository.NewPostgresRepository(pool)
+	// Repository and service initialization
+	creditRepository := repository.NewPostgresRepository(pool)
+	creditService := credit.NewService(creditRepository)
 
 	// create JWT token verifier
 	verifier := auth.NewVerifier(cfg.JWKSURL, nil)
@@ -66,6 +69,15 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping, verifier))
 
 	errCh := make(chan error, 1)
+	if cfg.RabbitMQURL != "" {
+		registrationHandler := messaging.NewRegistrationHandler(creditService)
+		go func() {
+			logger.Info("starting registration consumer", "queue", "credit.registration")
+			if err := messaging.RunRegistrationConsumer(ctx, cfg.RabbitMQURL, registrationHandler, logger); err != nil && !errors.Is(err, context.Canceled) {
+				errCh <- fmt.Errorf("consume registration events: %w", err)
+			}
+		}()
+	}
 	go func() {
 		logger.Info("starting credit service", "addr", server.Addr)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {

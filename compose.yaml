@@ -158,9 +158,13 @@ services:
     depends_on:
       credit-db:
         condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
       PORT: 8084
       CREDIT_DB_URL: postgres://${CREDIT_DB_USER:?CREDIT_DB_USER must be set}:${CREDIT_DB_PASSWORD:?CREDIT_DB_PASSWORD must be set}@credit-db:5432/credit?sslmode=disable
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://foc:foc-dev-password@rabbitmq:5672/foc}
     restart: on-failure
     # No `ports:` key: reachable only through the gateway, at /api/credits.
 

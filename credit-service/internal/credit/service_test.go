@@ -19,9 +19,8 @@ func TestServiceAllocateInitialCredits(t *testing.T) {
 	occurredAt := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 	repository := &allocationRepositoryStub{}
 	service := NewService(repository)
-	service.clock = func() time.Time { return occurredAt }
 
-	if err := service.AllocateInitialCredits(context.Background(), userID); err != nil {
+	if err := service.AllocateInitialCredits(context.Background(), userID, occurredAt); err != nil {
 		t.Fatalf("AllocateInitialCredits returned error: %v", err)
 	}
 	if repository.userID != userID {
@@ -39,7 +38,7 @@ func TestServiceAllocateInitialCreditsRejectsMissingUserID(t *testing.T) {
 	repository := &allocationRepositoryStub{}
 	service := NewService(repository)
 
-	err := service.AllocateInitialCredits(context.Background(), uuid.Nil)
+	err := service.AllocateInitialCredits(context.Background(), uuid.Nil, time.Now())
 	if !errors.Is(err, ErrInvalidUserID) {
 		t.Fatalf("AllocateInitialCredits error = %v, want %v", err, ErrInvalidUserID)
 	}
@@ -52,8 +51,9 @@ func TestServiceAllocateInitialCreditsWrapsRepositoryError(t *testing.T) {
 	userID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
 	repositoryErr := errors.New("repository unavailable")
 	service := NewService(&allocationRepositoryStub{err: repositoryErr})
+	occurredAt := time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 
-	err := service.AllocateInitialCredits(context.Background(), userID)
+	err := service.AllocateInitialCredits(context.Background(), userID, occurredAt)
 	if !errors.Is(err, repositoryErr) {
 		t.Fatalf("AllocateInitialCredits error = %v, want wrapped %v", err, repositoryErr)
 	}
