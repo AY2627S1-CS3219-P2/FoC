@@ -28,8 +28,13 @@
   - `amount`: Integer (Signed delta to the identified balance bucket)
   - `balanceBucket`: Enum (`AVAILABLE`, `RESERVED`)
   - `operationId`: UUID (groups entries belonging to one atomic business operation)
+  - `reversesTransactionId`: UUID (Nullable, links a compensating row to the original transaction it reverses)
   - `reason`: Enum (`REGISTRATION_ALLOCATION`, `ERRAND_RESERVATION`, `ERRAND_CREATION_FAILED`, `ERRAND_COMPLETED_PAYOUT`, `ERRAND_COMPLETED_DEDUCTION`, `ERRAND_CANCELLED`, `ERRAND_EXPIRED`, `REWARD_INCREASED`, `REWARD_DECREASED`)
   - `createdAt`: Timestamp
+
+- Credit transaction idempotency is enforced per `(operationId, userId, balanceBucket)`.
+- Ledger reversals are represented by new compensating transaction rows linked to
+the original row through nullable `reversesTransactionId`.
 
 ### Core Invariants
 1. **Non-negativity**: `availableCredits >= 0` and `reservedCredits >= 0` at all times enforced via DB check constraints.
@@ -181,6 +186,7 @@ CREATE TABLE credit_transactions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id UUID NOT NULL REFERENCES credit_accounts(user_id),
     errand_id UUID,
+    reverses_transaction_id UUID REFERENCES credit_transactions(id),
     operation_id UUID NOT NULL,
     balance_bucket TEXT NOT NULL CHECK (balance_bucket IN ('AVAILABLE', 'RESERVED')),
     amount INTEGER NOT NULL CHECK (amount <> 0),
@@ -191,6 +197,8 @@ CREATE TABLE credit_transactions (
 CREATE INDEX idx_transactions_user_created ON credit_transactions(user_id, created_at DESC);
 CREATE INDEX idx_transactions_operation ON credit_transactions(operation_id);
 CREATE INDEX idx_transactions_errand ON credit_transactions(errand_id);
+CREATE UNIQUE INDEX uq_credit_transaction_operation_bucket
+ON credit_transactions(operation_id, user_id, balance_bucket);
 ```
 
 Save under `migrations/000001_create_credit_tables.down.sql`:
