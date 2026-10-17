@@ -82,12 +82,22 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
-	accountService := user.NewAccountServiceWithClock(
+	// AI-generated (edited by James Teo): OTP_DELIVERY picks Mailgun or, for
+	// local runs, the service log.
+	otpDeliverer, err := newOTPDeliverer(cfg, logger)
+	if err != nil {
+		return fmt.Errorf("configure OTP delivery: %w", err)
+	}
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — wires the
+	// owner-recorded OTP Redis and Mailgun boundaries into registration.
+	// Author review: ZI YANG - validated correctness.
+	accountService := user.NewAccountServiceWithOTPAndDelivery(
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),
 		sessionRepository,
 		accessTokenTTL,
-		time.Now,
+		repository.NewRedisOTPStore(redisClient),
+		otpDeliverer, // AI-generated (edited by James Teo).
 	)
 	if err := bootstrapInitialAdmin(ctx, accountService, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
 		return fmt.Errorf("bootstrap initial admin: %w", err)
@@ -100,6 +110,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	httpHandler := router.Setup(routes.Dependencies{
 		Auth: handlers.AuthDependencies{
 			Registrar:      accountService,
+			OTPResender:    accountService,
+			OTPVerifier:    accountService,
 			LoginService:   loginService,
 			Refresher:      refreshService,
 			AccessVerifier: jwtService,

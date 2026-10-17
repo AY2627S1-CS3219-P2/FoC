@@ -30,8 +30,10 @@ func TestPrepareForCreateGeneratesRecordedDefaults(t *testing.T) {
 	if got.AccountRole != user.AccountRoleStudent {
 		t.Fatalf("AccountRole = %q, want %q", got.AccountRole, user.AccountRoleStudent)
 	}
-	if got.AccountStatus != user.AccountStatusActive {
-		t.Fatalf("AccountStatus = %q, want %q", got.AccountStatus, user.AccountStatusActive)
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — covers the
+	// owner-recorded default for newly persisted accounts. Author review: Verified correctness.
+	if got.AccountStatus != user.AccountStatusUnverified {
+		t.Fatalf("AccountStatus = %q, want %q", got.AccountStatus, user.AccountStatusUnverified)
 	}
 	// AI-generated (edited by ZI YANG).
 	if want := now.Truncate(time.Second); !got.TokensValidAfter.Equal(want) {

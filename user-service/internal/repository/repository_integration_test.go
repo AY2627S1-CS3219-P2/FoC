@@ -83,6 +83,34 @@ func TestPostgresRepositories(t *testing.T) {
 			}
 		})
 
+		t.Run("commits or rolls back the recorded create task", func(t *testing.T) {
+			resetIntegrationDatabase(t, ctx, pool)
+			committed := integrationAccount("create-task-commit", user.AccountRoleStudent)
+			callbackRan := false
+			if err := users.CreateWithTask(ctx, committed, func() error {
+				callbackRan = true
+				return nil
+			}); err != nil {
+				t.Fatalf("create with successful task: %v", err)
+			}
+			if !callbackRan {
+				t.Fatal("create task did not run")
+			}
+			if _, err := users.GetByID(ctx, committed.UID); err != nil {
+				t.Fatalf("get committed account: %v", err)
+			}
+
+			resetIntegrationDatabase(t, ctx, pool)
+			callbackFailure := errors.New("Redis unavailable")
+			rolledBack := integrationAccount("create-task-rollback", user.AccountRoleStudent)
+			if err := users.CreateWithTask(ctx, rolledBack, func() error { return callbackFailure }); !errors.Is(err, callbackFailure) {
+				t.Fatalf("create with failed task: %v, want callback failure", err)
+			}
+			if _, err := users.GetByIdentifier(ctx, rolledBack.Email); !errors.Is(err, user.ErrNotFound) {
+				t.Fatalf("rolled-back account lookup error = %v, want ErrNotFound", err)
+			}
+		})
+
 		t.Run("detects an administrator", func(t *testing.T) {
 			resetIntegrationDatabase(t, ctx, pool)
 			assertHasAdmin(t, ctx, users, false)
@@ -135,6 +163,45 @@ func TestPostgresRepositories(t *testing.T) {
 			missing.UID = uuid.New()
 			if err := users.Update(ctx, missing); !errors.Is(err, user.ErrNotFound) {
 				t.Fatalf("unknown account update error = %v, want ErrNotFound", err)
+			}
+		})
+
+		// AI-generated (edited by James Teo): ActivateUser activates only an
+		// UNVERIFIED account; ACTIVE and SUSPENDED are refused and unchanged.
+		t.Run("activates only unverified accounts", func(t *testing.T) {
+			resetIntegrationDatabase(t, ctx, pool)
+			for name, tt := range map[string]struct {
+				status  user.AccountStatus
+				wantErr error
+			}{
+				"unverified": {status: user.AccountStatusUnverified},
+				"active":     {status: user.AccountStatusActive, wantErr: user.ErrAccountAlreadyVerified},
+				"suspended":  {status: user.AccountStatusSuspended, wantErr: user.ErrAccountAlreadyVerified},
+			} {
+				t.Run(name, func(t *testing.T) {
+					account := integrationAccount("activate-"+name, user.AccountRoleStudent)
+					account.AccountStatus = tt.status
+					if err := users.Create(ctx, account); err != nil {
+						t.Fatalf("create %s account: %v", name, err)
+					}
+					if err := users.ActivateUser(ctx, account.Email); !errors.Is(err, tt.wantErr) {
+						t.Fatalf("ActivateUser() error = %v, want %v", err, tt.wantErr)
+					}
+					got, err := users.GetByID(ctx, account.UID)
+					if err != nil {
+						t.Fatalf("get %s account: %v", name, err)
+					}
+					want := tt.status
+					if tt.wantErr == nil {
+						want = user.AccountStatusActive
+					}
+					if got.AccountStatus != want {
+						t.Fatalf("status after ActivateUser = %q, want %q", got.AccountStatus, want)
+					}
+				})
+			}
+			if err := users.ActivateUser(ctx, "missing@example.com"); !errors.Is(err, user.ErrNotFound) {
+				t.Fatalf("unknown email error = %v, want ErrNotFound", err)
 			}
 		})
 	})
@@ -374,7 +441,9 @@ func assertActiveAdminCount(t *testing.T, ctx context.Context, repository *Postg
 
 func integrationSession(uid uuid.UUID, hash string, createdAt time.Time) *user.Session {
 	if createdAt.IsZero() {
-		createdAt = time.Date(2026, 9, 27, 12, 0, 0, 123456000, time.UTC)
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — keeps
+		// integration refresh sessions valid whenever the suite is run. Author review: ZI YANG - validated correctness.
+		createdAt = time.Now().UTC().Truncate(time.Microsecond)
 	}
 	return &user.Session{
 		JTI:       uuid.New(),
@@ -382,6 +451,21 @@ func integrationSession(uid uuid.UUID, hash string, createdAt time.Time) *user.S
 		ExpiresAt: createdAt.Add(7 * 24 * time.Hour),
 		TokenHash: hash,
 		UID:       uid,
+	}
+}
+
+func TestIntegrationSessionDefaultExpiryIsFuture(t *testing.T) {
+	before := time.Now().UTC()
+	session := integrationSession(uuid.New(), "future-expiry", time.Time{})
+	after := time.Now().UTC()
+
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — prevents the
+	// integration fixture from silently becoming invalid as calendar time advances. Author review: ZI YANG - validated correctness.
+	if session.CreatedAt.Before(before) || session.CreatedAt.After(after) {
+		t.Fatalf("CreatedAt = %s, want a timestamp between %s and %s", session.CreatedAt, before, after)
+	}
+	if !session.ExpiresAt.After(after) {
+		t.Fatalf("ExpiresAt = %s, want a future timestamp after %s", session.ExpiresAt, after)
 	}
 }
 

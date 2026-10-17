@@ -19,12 +19,38 @@ type UserRepository interface {
 	HasAdmin(ctx context.Context) (bool, error)
 	CountActiveAdmins(ctx context.Context) (int, error)
 	Create(ctx context.Context, u *User) error
+	CreateWithTask(ctx context.Context, u *User, task func() error) error
 	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
 	// Update changes mutable user fields; UID and email are immutable.
 	Update(ctx context.Context, u *User) error
 	UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
+	ActivateUser(ctx context.Context, email string) error
+}
+
+// OTPStore stores OTP hashes and tracks OTP request counts in Redis.
+type OTPStore interface {
+	IncrementRequestCount(ctx context.Context, email string) (int64, error)
+	// AI-generated (edited by James Teo): StoreHash's reset and the two attempt
+	// methods below back the per-code wrong-guess limit.
+	// StoreHash replaces the stored hash and resets its attempt count.
+	StoreHash(ctx context.Context, email, hash string) error
+	LookupHash(ctx context.Context, email string) (string, bool, error)
+	RequestCount(ctx context.Context, email string) (int64, bool, error)
+	// IncrementAttemptCount counts one verification attempt against the stored
+	// hash and returns the new count.
+	IncrementAttemptCount(ctx context.Context, email string) (int64, error)
+	// DeleteHash removes the stored hash and its attempt count, keeping the
+	// request count.
+	DeleteHash(ctx context.Context, email string) error
+	// Delete removes the hash, the request count and the attempt count.
+	Delete(ctx context.Context, email string) error
+}
+
+// OTPDeliverer sends a plaintext OTP only after its hash is durably stored.
+type OTPDeliverer interface {
+	DeliverOTP(ctx context.Context, email, otp string) error
 }
 
 // SuspensionWriter writes the invalidation marker to Redis for a suspended account.

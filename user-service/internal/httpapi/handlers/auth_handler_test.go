@@ -15,18 +15,20 @@ import (
 
 	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/session"
+	"foc/user-service/internal/user"
 )
 
 type loginServiceStub struct {
 	pair   session.TokenPair
 	called *bool
+	err    error
 }
 
 func (s loginServiceStub) Login(context.Context, string, string) (session.TokenPair, error) {
 	if s.called != nil {
 		*s.called = true
 	}
-	return s.pair, nil
+	return s.pair, s.err
 }
 
 func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
@@ -47,6 +49,29 @@ func TestAuthHandlerLoginReturnsTokenPair(t *testing.T) {
 	}
 	if payload != (handlers.AuthResponse{AccessToken: "access", RefreshToken: "refresh"}) {
 		t.Fatalf("payload = %#v, want token pair", payload)
+	}
+}
+
+func TestAuthHandlerLoginRejectsUnverifiedAccount(t *testing.T) {
+	handler := handlers.NewAuthHandler(handlers.AuthDependencies{
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — covers the
+		// recorded transport signal that routes users to OTP verification. Author review: ZI YANG - validated correctness.
+		LoginService: loginServiceStub{err: user.ErrAccountUnverified},
+	})
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/users/login", strings.NewReader(`{"identifier":"student","password":"ValidPass1"}`))
+	response := httptest.NewRecorder()
+
+	handler.Login(response, request)
+
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d", response.Code, http.StatusForbidden)
+	}
+	var payload map[string]string
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if payload["error"] != "ACCOUNT_UNVERIFIED" {
+		t.Fatalf("error = %q, want ACCOUNT_UNVERIFIED", payload["error"])
 	}
 }
 

@@ -20,6 +20,12 @@ import (
 type Registrar interface {
 	Register(context.Context, string, string, string) (*user.User, error)
 }
+type OTPResender interface {
+	ResendOTP(context.Context, string) error
+}
+type OTPVerifier interface {
+	VerifyOTP(context.Context, string, string) error
+}
 
 // LoginService authenticates an account and persists its refresh session.
 type LoginService interface {
@@ -39,6 +45,8 @@ type Logoutter interface {
 // AuthDependencies contains only the operations required by AuthHandler.
 type AuthDependencies struct {
 	Registrar      Registrar
+	OTPResender    OTPResender
+	OTPVerifier    OTPVerifier
 	LoginService   LoginService
 	Refresher      Refresher
 	AccessVerifier session.AccessTokenVerifier
@@ -78,12 +86,70 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})
+			// AI-generated (edited by James Teo): the documented 429 for a registration over the OTP request limit.
+		} else if errors.Is(err, user.ErrOTPRequestLimit) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "OTP request limit exceeded"})
 		} else {
 			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "registration unavailable")
 		}
 		return
 	}
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (h AuthHandler) ResendOTP(w http.ResponseWriter, r *http.Request) {
+	var request OTPEmailRequest
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	if request.Email == "" {
+		writeJSON(w, 400, map[string]string{"error": "email is required"})
+		return
+	}
+	if h.deps.OTPResender == nil {
+		writeError(r.Context(), w, h.deps.Logger, 500, errors.New("OTP resender is required"), "OTP resend unavailable")
+		return
+	}
+	h.writeOTPError(w, r, h.deps.OTPResender.ResendOTP(r.Context(), request.Email), "OTP resend unavailable")
+}
+
+func (h AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
+	var request VerifyOTPRequest
+	if !decodeJSONBody(w, r, &request) {
+		return
+	}
+	if request.Email == "" || request.OTP == "" {
+		writeJSON(w, 400, map[string]string{"error": "email and otp are required"})
+		return
+	}
+	if h.deps.OTPVerifier == nil {
+		writeError(r.Context(), w, h.deps.Logger, 500, errors.New("OTP verifier is required"), "OTP verification unavailable")
+		return
+	}
+	h.writeOTPError(w, r, h.deps.OTPVerifier.VerifyOTP(r.Context(), request.Email, request.OTP), "OTP verification unavailable")
+}
+
+func (h AuthHandler) writeOTPError(w http.ResponseWriter, r *http.Request, err error, fallback string) {
+	if err == nil {
+		writeJSON(w, 200, map[string]any{})
+		return
+	}
+	switch {
+	case errors.Is(err, user.ErrInvalidEmail), errors.Is(err, user.ErrInvalidOTP):
+		writeJSON(w, 400, map[string]string{"error": "invalid OTP"})
+	case errors.Is(err, user.ErrNotFound):
+		writeJSON(w, 404, map[string]string{"error": "OTP not found"})
+	case errors.Is(err, user.ErrAccountAlreadyVerified):
+		writeJSON(w, 409, map[string]string{"error": "Account is already verified"})
+	case errors.Is(err, user.ErrOTPRequestLimit):
+		writeJSON(w, 429, map[string]string{"error": "OTP request limit exceeded"})
+	// AI-generated (edited by James Teo): the code was discarded after too many
+	// wrong guesses, so the user needs a new one.
+	case errors.Is(err, user.ErrOTPAttemptsExceeded):
+		writeJSON(w, 429, map[string]string{"error": "too many incorrect OTP attempts; request a new OTP"})
+	default:
+		writeError(r.Context(), w, h.deps.Logger, 500, err, fallback)
+	}
 }
 
 // Login handles credential login.
@@ -110,6 +176,10 @@ func (h AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
 		} else if errors.Is(err, user.ErrAccountSuspended) {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "account suspended"})
+		} else if errors.Is(err, user.ErrAccountUnverified) {
+			// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — exposes the
+			// owner-recorded frontend OTP-routing signal without issuing tokens. Author review: ZI YANG - validated Correctness.
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "ACCOUNT_UNVERIFIED"})
 		} else {
 			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "authentication unavailable")
 		}

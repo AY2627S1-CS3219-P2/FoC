@@ -84,6 +84,11 @@ func (a *Authenticator) authenticate(ctx context.Context, identifier, password s
 	if account.AccountStatus == user.AccountStatusSuspended {
 		return nil, user.ErrAccountSuspended
 	}
+	if account.AccountStatus == user.AccountStatusUnverified {
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — reject an
+		// otherwise valid login until the recorded OTP activation occurs. Author review: PENDING.
+		return nil, user.ErrAccountUnverified
+	}
 	return account, nil
 }
 

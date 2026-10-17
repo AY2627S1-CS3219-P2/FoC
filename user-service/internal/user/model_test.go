@@ -35,6 +35,9 @@ func TestAccountStatusValuesMatchDatabaseContract(t *testing.T) {
 	}{
 		"active":    {got: AccountStatusActive, want: "ACTIVE"},
 		"suspended": {got: AccountStatusSuspended, want: "SUSPENDED"},
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — covers the
+		// owner-recorded pre-verification database state. Author review: verified correctness.
+		"unverified": {got: AccountStatusUnverified, want: "UNVERIFIED"},
 	}
 
 	for name, tt := range tests {

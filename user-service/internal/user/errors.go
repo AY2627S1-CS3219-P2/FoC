@@ -25,6 +25,20 @@ var (
 	ErrEmailTooLong           = errors.New("email exceeds maximum length")
 	ErrInvalidPhone           = errors.New("invalid phone number")
 	ErrAccountSuspended       = errors.New("account is suspended")
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — distinguishes
+	// the owner-recorded OTP verification gate from suspension. Author review: ZI YANG - validated correctness.
+	ErrAccountUnverified = errors.New("account is unverified")
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — distinguishes the
+	// owner-recorded OTP request limit for HTTP 429 mapping. Author review: ZI YANG - validated correctness.
+	ErrOTPRequestLimit = errors.New("OTP request limit exceeded")
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — distinguishes
+	// the recorded resend response for accounts that are already active.
+	// Author review: ZI YANG - validated correctness.
+	ErrAccountAlreadyVerified = errors.New("account is already verified")
+	ErrInvalidOTP             = errors.New("invalid OTP")
+	// AI-generated (edited by James Teo): lets the HTTP layer answer 429 once a
+	// code has been discarded after too many wrong guesses.
+	ErrOTPAttemptsExceeded = errors.New("too many incorrect OTP attempts")
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — distinguishes the
 	// recorded last-active-admin suspension guard. Author review: ZI YANG - validated correcness.
 	ErrLastAdmin          = errors.New("cannot suspend the last active admin")

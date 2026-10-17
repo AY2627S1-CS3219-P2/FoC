@@ -101,6 +101,13 @@ func TestRegisterHandler(t *testing.T) {
 			wantStatus: http.StatusConflict,
 			wantError:  "account already exists",
 		},
+		// AI-generated (edited by James Teo): a registration over the OTP request limit gets the documented 429, not a 500.
+		"reports OTP request limit": {
+			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
+			registrar:  &fakeRegistrar{err: user.ErrOTPRequestLimit},
+			wantStatus: http.StatusTooManyRequests,
+			wantError:  "OTP request limit exceeded",
+		},
 		"hides registration failure": {
 			body:       `{"email":"student@u.nus.edu","username":"student","password":"ValidPass1"}`,
 			registrar:  &fakeRegistrar{err: errors.New("database unavailable")},
