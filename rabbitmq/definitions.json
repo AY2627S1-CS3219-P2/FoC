@@ -1,0 +1,96 @@
+{
+  "vhosts": [
+    {
+      "name": "foc"
+    }
+  ],
+  "users": [
+    {
+      "name": "foc",
+      "password_hash": "DKf94xRfaK3uGjzAjFnXs/dz4s3yjT7lcl3yeL9kxr7HbPDP",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": [
+        "administrator"
+      ],
+      "limits": {}
+    }
+  ],
+  "permissions": [
+    {
+      "user": "foc",
+      "vhost": "foc",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "foc.events",
+      "vhost": "foc",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "credit.registration",
+      "vhost": "foc",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    },
+    {
+      "name": "credit.errand.lifecycle",
+      "vhost": "foc",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {}
+    }
+  ],
+  "bindings": [
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "credit.registration",
+      "destination_type": "queue",
+      "routing_key": "user.registered",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "credit.errand.lifecycle",
+      "destination_type": "queue",
+      "routing_key": "errand.completed",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "credit.errand.lifecycle",
+      "destination_type": "queue",
+      "routing_key": "errand.cancelled",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "credit.errand.lifecycle",
+      "destination_type": "queue",
+      "routing_key": "errand.expired",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "credit.errand.lifecycle",
+      "destination_type": "queue",
+      "routing_key": "errand.failed",
+      "arguments": {}
+    }
+  ]
+}

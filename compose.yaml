@@ -36,7 +36,8 @@ services:
 # Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
 
 # Only services with a `ports:` key are reachable from the host; api-gateway
-# (host port 8080) is the only one. Downstream services trust the gateway's
+# (host port 8080) is the only one other machines can reach, and rabbitmq
+# listens on 127.0.0.1 only. Downstream services trust the gateway's
 # X-User-Id and X-User-Role headers, so publishing any other service lets a
 # client skip token verification (D-010 in ai/decisions.md).
 #
@@ -133,8 +134,34 @@ services:
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER:-foc}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS:-foc-dev-password}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST:-foc}
+    # Loopback only: for host-run services and the management UI. Compose
+    # services reach the broker at rabbitmq:5672.
+    ports:
+      - "127.0.0.1:${RABBITMQ_PORT:-5672}:5672"
+      - "127.0.0.1:${RABBITMQ_MANAGEMENT_PORT:-15672}:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+      - ./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    healthcheck:
+      test: [ "CMD", "rabbitmq-diagnostics", "-q", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 
 volumes:
   user-db-data:
   redis-data:
   supplier-db-data:
+  rabbitmq-data:
+
+
+
