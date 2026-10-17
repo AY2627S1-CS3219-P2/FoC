@@ -20,6 +20,9 @@ import (
 const (
 	otpHashKeyPrefix  = "otp:hash:"
 	otpCountKeyPrefix = "otp:count:"
+	// AI-generated (edited by James Teo): counts verification attempts against
+	// the stored code.
+	otpAttemptsKeyPrefix = "otp:attempts:"
 	// OTPHashTTL is the recorded lifetime for a stored OTP hash.
 	OTPHashTTL = 5 * time.Minute
 	// OTPCountTTL is the recorded rate-limit window for OTP requests.
@@ -30,6 +33,9 @@ type otpRedisClient interface {
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
 	Incr(ctx context.Context, key string) *redis.IntCmd
 	Expire(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
+	// AI-generated (edited by James Teo): gives an attempt count a TTL only when
+	// it has none.
+	ExpireNX(ctx context.Context, key string, expiration time.Duration) *redis.BoolCmd
 	Get(ctx context.Context, key string) *redis.StringCmd
 	Del(ctx context.Context, keys ...string) *redis.IntCmd
 }
@@ -57,6 +63,50 @@ func (s *RedisOTPStore) StoreHash(ctx context.Context, email, hash string) error
 	}
 	if err := s.client.Set(ctx, otpHashKey(email), hash, OTPHashTTL).Err(); err != nil {
 		return fmt.Errorf("store OTP hash: %w", err)
+	}
+	// AI-generated (edited by James Teo): a new code starts with no attempts and
+	// its count shares the code's TTL. Written after the hash, so the count
+	// never expires before the code it limits.
+	if err := s.client.Set(ctx, otpAttemptsKey(email), 0, OTPHashTTL).Err(); err != nil {
+		return fmt.Errorf("reset OTP attempt count: %w", err)
+	}
+	return nil
+}
+
+// AI-generated (edited by James Teo): counts guesses for the per-code limit.
+// IncrementAttemptCount counts one verification attempt against the stored
+// OTP. INCR keeps the TTL that StoreHash gave the count, so it expires with
+// the code; a count that INCR creates with no code stored gets the same TTL.
+func (s *RedisOTPStore) IncrementAttemptCount(ctx context.Context, email string) (int64, error) {
+	if s.client == nil {
+		return 0, errors.New("Redis client is required")
+	}
+	if email == "" {
+		return 0, errors.New("OTP email is required")
+	}
+	key := otpAttemptsKey(email)
+	count, err := s.client.Incr(ctx, key).Result()
+	if err != nil {
+		return 0, fmt.Errorf("increment OTP attempt count: %w", err)
+	}
+	if err := s.client.ExpireNX(ctx, key, OTPHashTTL).Err(); err != nil {
+		return 0, fmt.Errorf("set OTP attempt-count TTL: %w", err)
+	}
+	return count, nil
+}
+
+// AI-generated (edited by James Teo): discards a code after too many attempts.
+// DeleteHash removes the OTP hash and its attempt count. The request count
+// stays, so discarding a code does not reset the resend limit.
+func (s *RedisOTPStore) DeleteHash(ctx context.Context, email string) error {
+	if s.client == nil {
+		return errors.New("Redis client is required")
+	}
+	if email == "" {
+		return errors.New("OTP email is required")
+	}
+	if err := s.client.Del(ctx, otpHashKey(email), otpAttemptsKey(email)).Err(); err != nil {
+		return fmt.Errorf("delete OTP hash: %w", err)
 	}
 	return nil
 }
@@ -126,7 +176,9 @@ func (s *RedisOTPStore) RequestCount(ctx context.Context, email string) (int64, 
 	return count, true, nil
 }
 
-// Delete removes both the OTP hash and request-count keys for an email.
+// AI-generated (edited by James Teo): Delete also removes the attempt count.
+// Delete removes the OTP hash, request-count and attempt-count keys for an
+// email.
 func (s *RedisOTPStore) Delete(ctx context.Context, email string) error {
 	if s.client == nil {
 		return errors.New("Redis client is required")
@@ -134,7 +186,7 @@ func (s *RedisOTPStore) Delete(ctx context.Context, email string) error {
 	if email == "" {
 		return errors.New("OTP email is required")
 	}
-	if err := s.client.Del(ctx, otpHashKey(email), otpCountKey(email)).Err(); err != nil {
+	if err := s.client.Del(ctx, otpHashKey(email), otpCountKey(email), otpAttemptsKey(email)).Err(); err != nil {
 		return fmt.Errorf("delete OTP keys: %w", err)
 	}
 	return nil
@@ -143,5 +195,8 @@ func (s *RedisOTPStore) Delete(ctx context.Context, email string) error {
 func otpHashKey(email string) string { return otpHashKeyPrefix + email }
 
 func otpCountKey(email string) string { return otpCountKeyPrefix + email }
+
+// AI-generated (edited by James Teo).
+func otpAttemptsKey(email string) string { return otpAttemptsKeyPrefix + email }
 
 var _ user.OTPStore = (*RedisOTPStore)(nil)

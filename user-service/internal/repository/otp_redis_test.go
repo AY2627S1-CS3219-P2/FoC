@@ -8,16 +8,23 @@ package repository
 import (
 	"context"
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/redis/go-redis/v9"
 )
 
+// AI-generated (edited by James Teo): records every SET, since StoreHash now
+// writes the hash and then resets its attempt count.
+type fakeRedisSet struct {
+	key   string
+	value any
+	ttl   time.Duration
+}
+
 type fakeOTPRedisClient struct {
-	setKey       string
-	setValue     any
-	setTTL       time.Duration
+	sets         []fakeRedisSet // AI-generated (edited by James Teo).
 	setErr       error
 	incrementKey string
 	incremented  int64
@@ -26,6 +33,9 @@ type fakeOTPRedisClient struct {
 	expireTTL    time.Duration
 	expireSet    bool
 	expireErr    error
+	expireNXKey  string        // AI-generated (edited by James Teo).
+	expireNXTTL  time.Duration // AI-generated (edited by James Teo).
+	expireNXErr  error         // AI-generated (edited by James Teo).
 	getKey       string
 	getValue     string
 	getErr       error
@@ -34,7 +44,7 @@ type fakeOTPRedisClient struct {
 }
 
 func (f *fakeOTPRedisClient) Set(_ context.Context, key string, value any, ttl time.Duration) *redis.StatusCmd {
-	f.setKey, f.setValue, f.setTTL = key, value, ttl
+	f.sets = append(f.sets, fakeRedisSet{key: key, value: value, ttl: ttl}) // AI-generated (edited by James Teo).
 	return redis.NewStatusResult("OK", f.setErr)
 }
 
@@ -46,6 +56,12 @@ func (f *fakeOTPRedisClient) Incr(_ context.Context, key string) *redis.IntCmd {
 func (f *fakeOTPRedisClient) Expire(_ context.Context, key string, ttl time.Duration) *redis.BoolCmd {
 	f.expireKey, f.expireTTL = key, ttl
 	return redis.NewBoolResult(f.expireSet, f.expireErr)
+}
+
+// AI-generated (edited by James Teo).
+func (f *fakeOTPRedisClient) ExpireNX(_ context.Context, key string, ttl time.Duration) *redis.BoolCmd {
+	f.expireNXKey, f.expireNXTTL = key, ttl
+	return redis.NewBoolResult(true, f.expireNXErr)
 }
 
 func (f *fakeOTPRedisClient) Get(_ context.Context, key string) *redis.StringCmd {
@@ -63,8 +79,51 @@ func TestRedisOTPStoreUsesRecordedHashKeyAndTTL(t *testing.T) {
 	if err := NewRedisOTPStore(client).StoreHash(context.Background(), "student@u.nus.edu", "hashed-otp"); err != nil {
 		t.Fatal(err)
 	}
-	if client.setKey != "otp:hash:student@u.nus.edu" || client.setValue != "hashed-otp" || client.setTTL != 5*time.Minute {
-		t.Fatalf("Set() = key %q, value %#v, TTL %v", client.setKey, client.setValue, client.setTTL)
+	// AI-generated (edited by James Teo): the hash is written first, then its
+	// attempt count is reset with the same TTL.
+	want := []fakeRedisSet{
+		{key: "otp:hash:student@u.nus.edu", value: "hashed-otp", ttl: 5 * time.Minute},
+		{key: "otp:attempts:student@u.nus.edu", value: 0, ttl: 5 * time.Minute},
+	}
+	if !reflect.DeepEqual(client.sets, want) {
+		t.Fatalf("SET calls = %#v, want %#v", client.sets, want)
+	}
+}
+
+// AI-generated (edited by James Teo): an attempt is counted with INCR, keeping
+// the TTL StoreHash set; EXPIRE NX only covers a count INCR had to create.
+func TestRedisOTPStoreIncrementsAttemptCountKeepingCodeTTL(t *testing.T) {
+	client := &fakeOTPRedisClient{incremented: 3}
+	count, err := NewRedisOTPStore(client).IncrementAttemptCount(context.Background(), "student@u.nus.edu")
+	if err != nil || count != 3 {
+		t.Fatalf("IncrementAttemptCount() = %d, %v; want 3, nil", count, err)
+	}
+	if client.incrementKey != "otp:attempts:student@u.nus.edu" || client.expireNXKey != client.incrementKey || client.expireNXTTL != 5*time.Minute {
+		t.Fatalf("INCR/EXPIRE NX = %q / %q with TTL %v", client.incrementKey, client.expireNXKey, client.expireNXTTL)
+	}
+	if client.expireKey != "" {
+		t.Fatalf("plain EXPIRE on %q would extend the count past its code", client.expireKey)
+	}
+}
+
+// AI-generated (edited by James Teo).
+func TestRedisOTPStoreReportsAttemptCountTTLFailure(t *testing.T) {
+	redisFailure := errors.New("Redis unavailable")
+	client := &fakeOTPRedisClient{incremented: 1, expireNXErr: redisFailure}
+	if _, err := NewRedisOTPStore(client).IncrementAttemptCount(context.Background(), "student@u.nus.edu"); !errors.Is(err, redisFailure) {
+		t.Fatalf("error = %v, want Redis failure", err)
+	}
+}
+
+// AI-generated (edited by James Teo): discarding a code keeps the request count,
+// so wrong guesses cannot reset the resend limit.
+func TestRedisOTPStoreDeleteHashKeepsRequestCount(t *testing.T) {
+	client := &fakeOTPRedisClient{}
+	if err := NewRedisOTPStore(client).DeleteHash(context.Background(), "student@u.nus.edu"); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"otp:hash:student@u.nus.edu", "otp:attempts:student@u.nus.edu"}; !reflect.DeepEqual(client.deleteKeys, want) {
+		t.Fatalf("DEL keys = %#v, want %#v", client.deleteKeys, want)
 	}
 }
 
@@ -98,13 +157,14 @@ func TestRedisOTPStoreReadsExistingRequestCount(t *testing.T) {
 	}
 }
 
-func TestRedisOTPStoreDeletesBothOTPKeys(t *testing.T) {
+// AI-generated (edited by James Teo): Delete also removes the attempt count.
+func TestRedisOTPStoreDeletesAllOTPKeys(t *testing.T) {
 	client := &fakeOTPRedisClient{}
 	if err := NewRedisOTPStore(client).Delete(context.Background(), "student@u.nus.edu"); err != nil {
 		t.Fatal(err)
 	}
-	if len(client.deleteKeys) != 2 || client.deleteKeys[0] != "otp:hash:student@u.nus.edu" || client.deleteKeys[1] != "otp:count:student@u.nus.edu" {
-		t.Fatalf("DEL keys = %#v", client.deleteKeys)
+	if want := []string{"otp:hash:student@u.nus.edu", "otp:count:student@u.nus.edu", "otp:attempts:student@u.nus.edu"}; !reflect.DeepEqual(client.deleteKeys, want) {
+		t.Fatalf("DEL keys = %#v, want %#v", client.deleteKeys, want)
 	}
 }
 
@@ -120,6 +180,14 @@ func TestRedisOTPStorePreservesRedisFailures(t *testing.T) {
 		},
 		"delete keys": func(store *RedisOTPStore) error {
 			return store.Delete(context.Background(), "student@u.nus.edu")
+		},
+		// AI-generated (edited by James Teo).
+		"increment attempt count": func(store *RedisOTPStore) error {
+			_, err := store.IncrementAttemptCount(context.Background(), "student@u.nus.edu")
+			return err
+		},
+		"delete hash": func(store *RedisOTPStore) error {
+			return store.DeleteHash(context.Background(), "student@u.nus.edu")
 		},
 	}
 	for name, call := range tests {

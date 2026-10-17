@@ -86,6 +86,9 @@ func (h AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "password must be 8-128 characters and contain uppercase, lowercase, and digit characters"})
 		} else if errors.Is(err, user.ErrDuplicateEmail) || errors.Is(err, user.ErrDuplicateUsername) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "account already exists"})
+			// AI-generated (edited by James Teo): the documented 429 for a registration over the OTP request limit.
+		} else if errors.Is(err, user.ErrOTPRequestLimit) {
+			writeJSON(w, http.StatusTooManyRequests, map[string]string{"error": "OTP request limit exceeded"})
 		} else {
 			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "registration unavailable")
 		}
@@ -140,6 +143,10 @@ func (h AuthHandler) writeOTPError(w http.ResponseWriter, r *http.Request, err e
 		writeJSON(w, 409, map[string]string{"error": "Account is already verified"})
 	case errors.Is(err, user.ErrOTPRequestLimit):
 		writeJSON(w, 429, map[string]string{"error": "OTP request limit exceeded"})
+	// AI-generated (edited by James Teo): the code was discarded after too many
+	// wrong guesses, so the user needs a new one.
+	case errors.Is(err, user.ErrOTPAttemptsExceeded):
+		writeJSON(w, 429, map[string]string{"error": "too many incorrect OTP attempts; request a new OTP"})
 	default:
 		writeError(r.Context(), w, h.deps.Logger, 500, err, fallback)
 	}

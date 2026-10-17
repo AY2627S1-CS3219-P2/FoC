@@ -4,7 +4,7 @@
 -- Author review: COMPLETED BY ZI YANG
 
 CREATE TYPE account_role AS ENUM ('STUDENT', 'ADMIN');
-CREATE TYPE account_status AS ENUM ('ACTIVE', 'SUSPENDED', 'UNVERIFIED');
+CREATE TYPE account_status AS ENUM ('ACTIVE', 'SUSPENDED');
 
 CREATE TABLE users (
     uid UUID PRIMARY KEY,
@@ -15,7 +15,7 @@ CREATE TABLE users (
     date_created TIMESTAMPTZ NOT NULL,
     last_login_date TIMESTAMPTZ,
     account_role account_role NOT NULL DEFAULT 'STUDENT',
-    account_status account_status NOT NULL DEFAULT 'UNVERIFIED',
+    account_status account_status NOT NULL DEFAULT 'ACTIVE',
     tokens_valid_after TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

@@ -55,3 +55,23 @@ func TestOTPRequestLimitExceeded(t *testing.T) {
 	}
 
 }
+
+// AI-generated (edited by James Teo): the fifth attempt is still compared; the
+// sixth is over the limit.
+func TestOTPAttemptLimitExceeded(t *testing.T) {
+	tests := map[string]struct {
+		count int64
+		want  bool
+	}{
+		"first attempt": {count: 1, want: false},
+		"at limit":      {count: OTPAttemptLimit, want: false},
+		"over limit":    {count: OTPAttemptLimit + 1, want: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := OTPAttemptLimitExceeded(tt.count); got != tt.want {
+				t.Fatalf("OTPAttemptLimitExceeded(%d) = %t, want %t", tt.count, got, tt.want)
+			}
+		})
+	}
+}

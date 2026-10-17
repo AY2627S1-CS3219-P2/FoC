@@ -220,7 +220,9 @@ func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) err
 	if err := tx.QueryRow(ctx, `SELECT account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`, email).Scan(&status); err != nil {
 		return fmt.Errorf("lock account for activation: %w", mapDatabaseError(err))
 	}
-	if status == user.AccountStatusActive {
+	// AI-generated (edited by James Teo): only an UNVERIFIED account activates;
+	// SUSPENDED, like ACTIVE, is refused instead of reported as verified.
+	if status != user.AccountStatusUnverified {
 		return user.ErrAccountAlreadyVerified
 	}
 	if _, err := tx.Exec(ctx, activateUserByEmailQuery, email); err != nil {

@@ -375,6 +375,8 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   Track OTP requests using a secondary Redis integer key: `otp:count:<email>`.
 *   Every time an OTP is requested (initial or replacement), increment this key using Redis `INCR` and set its TTL to 10 minutes.
 *   If `otp:count:<email>` exceeds 3, reject any further replacement requests or verification attempts with a `429 Too Many Requests` status until the 10-minute TTL expires.
+*   Track verification attempts against the stored code with `otp:attempts:<email>`. Storing a new OTP (registration or resend) resets it to 0 with the same 5-minute TTL as `otp:hash:<email>`, so it expires with the code.
+*   `verify-otp` increments `otp:attempts:<email>` *before* comparing, so concurrent guesses cannot compare one code more than 5 times. When the count exceeds 5, delete `otp:hash:<email>` and `otp:attempts:<email>` (keep `otp:count:<email>`, so this cannot reset the resend limit) and return `429 Too Many Requests` telling the user to request a new OTP. The limit holds per counting window: a guess already in flight when a new code is stored can be compared against the new code without being counted, so each resend allows at most a few extra comparisons, and resends stay capped by `otp:count:<email>`.
 
 **4. API Endpoints & Transport Boundaries**
 *   **Modify `POST /api/v1/users/register`:**
@@ -415,11 +417,11 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
     * If the user is already `ACTIVE`, it returns `user.ErrAccountAlreadyVerified` -> API returns `409 Conflict`.
     * Updates `account_status` to `ACTIVE` and inserts the `UserRegistered` outbox event (outbox event can be done in a later iteration for now).
 *   PostgreSQL (Commit): Commit the transaction. The user is now officially active and the Credit Service will eventually receive the outbox event.
-*   Redis (Cleanup): Delete the `otp:hash:<email>` and `otp:count:<email>` key to prevent reuse.
+*   Redis (Cleanup): Delete the `otp:hash:<email>`, `otp:count:<email>` and `otp:attempts:<email>` keys to prevent reuse.
     * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
 
 **8. Mailgun Delivery Contract**
-*   **Configuration:** The service requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `MAILGUN_SENDER_EMAIL` in the environment.
+*   **Configuration:** With `OTP_DELIVERY=mailgun` (the default), the service requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `MAILGUN_SENDER_EMAIL` in the environment. With `OTP_DELIVERY=log` (local development only), it writes each code to its log instead and needs none of them.
 *   **API Endpoint & Authentication:** Use the standard Mailgun Messages API (`POST https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages`). Authenticate using HTTP Basic Auth with the username `api` and the password from `MAILGUN_API_KEY`.
 *   **Message Content:** Use a concise plaintext and HTML template: `"Your CampusRun verification code is: <OTP>. This code expires in 5 minutes."`
 *   **Message Body:** `from` should be `MAILGUN_SENDER_EMAIL` and `to` should be the OTP recipient email received from registration. `subject` should be `"CampusRun Email Verification"`

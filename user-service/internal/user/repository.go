@@ -32,9 +32,19 @@ type UserRepository interface {
 // OTPStore stores OTP hashes and tracks OTP request counts in Redis.
 type OTPStore interface {
 	IncrementRequestCount(ctx context.Context, email string) (int64, error)
+	// AI-generated (edited by James Teo): StoreHash's reset and the two attempt
+	// methods below back the per-code wrong-guess limit.
+	// StoreHash replaces the stored hash and resets its attempt count.
 	StoreHash(ctx context.Context, email, hash string) error
 	LookupHash(ctx context.Context, email string) (string, bool, error)
 	RequestCount(ctx context.Context, email string) (int64, bool, error)
+	// IncrementAttemptCount counts one verification attempt against the stored
+	// hash and returns the new count.
+	IncrementAttemptCount(ctx context.Context, email string) (int64, error)
+	// DeleteHash removes the stored hash and its attempt count, keeping the
+	// request count.
+	DeleteHash(ctx context.Context, email string) error
+	// Delete removes the hash, the request count and the attempt count.
 	Delete(ctx context.Context, email string) error
 }
 

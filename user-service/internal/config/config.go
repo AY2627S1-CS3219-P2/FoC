@@ -22,6 +22,9 @@ type Config struct {
 	MailgunAPIKey        string
 	MailgunDomain        string
 	MailgunSenderEmail   string
+	// AI-generated (edited by James Teo): OTP_DELIVERY, "mailgun" (the default
+	// when empty) or "log"; cmd/api validates it at startup.
+	OTPDelivery string
 }
 
 // Load reads the service configuration once from the process environment.
@@ -42,5 +45,6 @@ func Load() Config {
 		MailgunAPIKey:      os.Getenv("MAILGUN_API_KEY"),
 		MailgunDomain:      os.Getenv("MAILGUN_DOMAIN"),
 		MailgunSenderEmail: os.Getenv("MAILGUN_SENDER_EMAIL"),
+		OTPDelivery:        os.Getenv("OTP_DELIVERY"), // AI-generated (edited by James Teo).
 	}
 }

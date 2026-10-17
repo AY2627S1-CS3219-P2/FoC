@@ -165,6 +165,45 @@ func TestPostgresRepositories(t *testing.T) {
 				t.Fatalf("unknown account update error = %v, want ErrNotFound", err)
 			}
 		})
+
+		// AI-generated (edited by James Teo): ActivateUser activates only an
+		// UNVERIFIED account; ACTIVE and SUSPENDED are refused and unchanged.
+		t.Run("activates only unverified accounts", func(t *testing.T) {
+			resetIntegrationDatabase(t, ctx, pool)
+			for name, tt := range map[string]struct {
+				status  user.AccountStatus
+				wantErr error
+			}{
+				"unverified": {status: user.AccountStatusUnverified},
+				"active":     {status: user.AccountStatusActive, wantErr: user.ErrAccountAlreadyVerified},
+				"suspended":  {status: user.AccountStatusSuspended, wantErr: user.ErrAccountAlreadyVerified},
+			} {
+				t.Run(name, func(t *testing.T) {
+					account := integrationAccount("activate-"+name, user.AccountRoleStudent)
+					account.AccountStatus = tt.status
+					if err := users.Create(ctx, account); err != nil {
+						t.Fatalf("create %s account: %v", name, err)
+					}
+					if err := users.ActivateUser(ctx, account.Email); !errors.Is(err, tt.wantErr) {
+						t.Fatalf("ActivateUser() error = %v, want %v", err, tt.wantErr)
+					}
+					got, err := users.GetByID(ctx, account.UID)
+					if err != nil {
+						t.Fatalf("get %s account: %v", name, err)
+					}
+					want := tt.status
+					if tt.wantErr == nil {
+						want = user.AccountStatusActive
+					}
+					if got.AccountStatus != want {
+						t.Fatalf("status after ActivateUser = %q, want %q", got.AccountStatus, want)
+					}
+				})
+			}
+			if err := users.ActivateUser(ctx, "missing@example.com"); !errors.Is(err, user.ErrNotFound) {
+				t.Fatalf("unknown email error = %v, want ErrNotFound", err)
+			}
+		})
 	})
 
 	t.Run("session repository", func(t *testing.T) {

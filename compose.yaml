@@ -76,6 +76,12 @@ services:
       INITIAL_ADMIN_EMAIL: ${INITIAL_ADMIN_EMAIL:?INITIAL_ADMIN_EMAIL must be set}
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?INITIAL_ADMIN_USERNAME must be set}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set}
+      # Verification codes go to `docker compose logs user-service` unless .env
+      # sets OTP_DELIVERY=mailgun and the three MAILGUN_* values.
+      OTP_DELIVERY: ${OTP_DELIVERY:-log}
+      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
+      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
+      MAILGUN_SENDER_EMAIL: ${MAILGUN_SENDER_EMAIL:-}
     depends_on:
       user-db:
         condition: service_healthy

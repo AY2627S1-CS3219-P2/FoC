@@ -18,6 +18,10 @@ const (
 	// OTPRequestLimit is the maximum number of OTP requests allowed in the
 	// recorded ten-minute Redis window.
 	OTPRequestLimit = 3
+	// AI-generated (edited by James Teo): the wrong-guess limit for one stored code.
+	// OTPAttemptLimit is the number of verification attempts one stored OTP
+	// accepts; the attempt after it discards the code.
+	OTPAttemptLimit = 5
 )
 
 // GenerateOTP returns a cryptographically secure six-digit numeric OTP.
@@ -39,4 +43,12 @@ func HashOTP(otp string) string {
 // recorded limit.
 func OTPRequestLimitExceeded(count int64) bool {
 	return count > OTPRequestLimit
+}
+
+// AI-generated (edited by James Teo): mirrors OTPRequestLimitExceeded for the
+// wrong-guess limit.
+// OTPAttemptLimitExceeded reports whether a verification attempt count exceeds
+// the per-code limit.
+func OTPAttemptLimitExceeded(count int64) bool {
+	return count > OTPAttemptLimit
 }

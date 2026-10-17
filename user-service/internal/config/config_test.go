@@ -20,6 +20,7 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 	t.Setenv("MAILGUN_API_KEY", "mailgun-key")
 	t.Setenv("MAILGUN_DOMAIN", "mg.example.test")
 	t.Setenv("MAILGUN_SENDER_EMAIL", "verify@example.test")
+	t.Setenv("OTP_DELIVERY", "log") // AI-generated (edited by James Teo).
 
 	got := Load()
 
@@ -36,6 +37,7 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 		MailgunAPIKey:        "mailgun-key",
 		MailgunDomain:        "mg.example.test",
 		MailgunSenderEmail:   "verify@example.test",
+		OTPDelivery:          "log", // AI-generated (edited by James Teo).
 	}
 	if got != want {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
@@ -56,6 +58,7 @@ func TestLoadUsesEmptyValuesWhenEnvironmentIsUnset(t *testing.T) {
 		"MAILGUN_API_KEY",
 		"MAILGUN_DOMAIN",
 		"MAILGUN_SENDER_EMAIL",
+		"OTP_DELIVERY", // AI-generated (edited by James Teo).
 	} {
 		t.Setenv(name, "")
 	}

@@ -25,6 +25,7 @@ type fakeAccountRepository struct {
 	statusErrs           []error   // AI-generated (edited by ZI YANG).
 	tokensValidAfter     time.Time // AI-generated (edited by nigeltzy).
 	createWithTaskCalled bool
+	activateErr          error // AI-generated (edited by James Teo).
 }
 
 func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
@@ -75,6 +76,11 @@ func (f *fakeAccountRepository) UpdateAccountStatusByID(_ context.Context, _ uui
 	return f.statusErr
 }
 func (f *fakeAccountRepository) ActivateUser(_ context.Context, _ string) error {
+	// AI-generated (edited by James Teo): lets a test refuse activation the way
+	// the repository does for an account that is not UNVERIFIED.
+	if f.activateErr != nil {
+		return f.activateErr
+	}
 	f.status = AccountStatusActive
 	return nil
 }
@@ -97,6 +103,8 @@ type fakeOTPStore struct {
 	hashFound    bool
 	requestFound bool
 	deleteErr    error
+	attempts     int64 // AI-generated (edited by James Teo).
+	deleted      bool  // AI-generated (edited by James Teo).
 }
 
 func (f *fakeOTPStore) LookupHash(context.Context, string) (string, bool, error) {
@@ -105,7 +113,21 @@ func (f *fakeOTPStore) LookupHash(context.Context, string) (string, bool, error)
 func (f *fakeOTPStore) RequestCount(context.Context, string) (int64, bool, error) {
 	return f.count, f.requestFound, nil
 }
-func (f *fakeOTPStore) Delete(context.Context, string) error { return f.deleteErr }
+
+// AI-generated (edited by James Teo): Delete is recorded, and the attempt
+// methods keep state the way the Redis store does.
+func (f *fakeOTPStore) Delete(context.Context, string) error {
+	f.deleted = true
+	return f.deleteErr
+}
+func (f *fakeOTPStore) IncrementAttemptCount(context.Context, string) (int64, error) {
+	f.attempts++
+	return f.attempts, nil
+}
+func (f *fakeOTPStore) DeleteHash(context.Context, string) error {
+	f.hash, f.hashFound, f.attempts = "", false, 0
+	return nil
+}
 
 type fakeOTPDeliverer struct {
 	email string
@@ -124,6 +146,11 @@ func (f *fakeOTPStore) IncrementRequestCount(_ context.Context, _ string) (int64
 
 func (f *fakeOTPStore) StoreHash(_ context.Context, email, hash string) error {
 	f.storedEmail, f.storedHash = email, hash
+	// AI-generated (edited by James Teo): like Redis, a stored code is the one
+	// later looked up, and it starts with no attempts.
+	if f.storeErr == nil {
+		f.hash, f.hashFound, f.attempts = hash, true, 0
+	}
 	return f.storeErr
 }
 

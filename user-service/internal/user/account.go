@@ -169,6 +169,20 @@ func (s *AccountService) VerifyOTP(ctx context.Context, email, otp string) error
 	if found && OTPRequestLimitExceeded(count) {
 		return ErrOTPRequestLimit
 	}
+	// AI-generated (edited by James Teo): the guess is counted before the stored
+	// code is read and compared, so concurrent guesses cannot compare one code
+	// more than OTPAttemptLimit times. The attempt after the limit discards the
+	// code; the request count stays, so this does not reset the resend limit.
+	attempts, err := s.otpStore.IncrementAttemptCount(ctx, email)
+	if err != nil {
+		return fmt.Errorf("increment OTP attempt count: %w", err)
+	}
+	if OTPAttemptLimitExceeded(attempts) {
+		if err := s.otpStore.DeleteHash(ctx, email); err != nil {
+			return fmt.Errorf("discard OTP after too many attempts: %w", err)
+		}
+		return ErrOTPAttemptsExceeded
+	}
 	shaHash, found, err := s.otpStore.LookupHash(ctx, email)
 	if err != nil {
 		return fmt.Errorf("get OTP hash: %w", err)

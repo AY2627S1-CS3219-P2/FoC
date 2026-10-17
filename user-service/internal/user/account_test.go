@@ -218,6 +218,107 @@ func TestAccountServiceVerifyOTPRejectsMissingMismatchedAndLimited(t *testing.T)
 	}
 }
 
+// AI-generated (edited by James Teo): the attempt after OTPAttemptLimit wrong
+// guesses is refused and discards the code, so the right code no longer works.
+func TestAccountServiceVerifyOTPDiscardsCodeAfterAttemptLimit(t *testing.T) {
+	for name, guessAfterLimit := range map[string]string{"wrong code": "000000", "right code": "123456"} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+			repository := &fakeAccountRepository{}
+			service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+			ctx := context.Background()
+
+			for attempt := 1; attempt <= OTPAttemptLimit; attempt++ {
+				if err := service.VerifyOTP(ctx, "student@u.nus.edu", "000000"); !errors.Is(err, ErrInvalidOTP) {
+					t.Fatalf("wrong guess %d error = %v, want ErrInvalidOTP", attempt, err)
+				}
+			}
+			if err := service.VerifyOTP(ctx, "student@u.nus.edu", guessAfterLimit); !errors.Is(err, ErrOTPAttemptsExceeded) {
+				t.Fatalf("attempt after the limit error = %v, want ErrOTPAttemptsExceeded", err)
+			}
+			if store.hashFound {
+				t.Fatal("code was not discarded after the attempt limit")
+			}
+			if err := service.VerifyOTP(ctx, "student@u.nus.edu", "123456"); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("right code after the limit error = %v, want ErrNotFound", err)
+			}
+			if repository.status == AccountStatusActive {
+				t.Fatal("account was activated after the attempt limit")
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo): the right code still verifies on the last
+// attempt within the limit.
+func TestAccountServiceVerifyOTPAcceptsRightCodeWithinAttemptLimit(t *testing.T) {
+	store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+	ctx := context.Background()
+
+	for attempt := 1; attempt < OTPAttemptLimit; attempt++ {
+		if err := service.VerifyOTP(ctx, "student@u.nus.edu", "000000"); !errors.Is(err, ErrInvalidOTP) {
+			t.Fatalf("wrong guess %d error = %v, want ErrInvalidOTP", attempt, err)
+		}
+	}
+	if err := service.VerifyOTP(ctx, "student@u.nus.edu", "123456"); err != nil {
+		t.Fatalf("right code on attempt %d: %v", OTPAttemptLimit, err)
+	}
+	if repository.status != AccountStatusActive || !store.deleted {
+		t.Fatalf("status = %q, OTP keys deleted = %t; want ACTIVE and deleted", repository.status, store.deleted)
+	}
+}
+
+// AI-generated (edited by James Teo): a resent code starts a fresh attempt count.
+func TestAccountServiceResendOTPResetsAttemptCount(t *testing.T) {
+	store := &fakeOTPStore{count: 1, hash: HashOTP("123456"), hashFound: true}
+	deliverer := &fakeOTPDeliverer{}
+	repository := &fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+	ctx := context.Background()
+
+	for attempt := 1; attempt <= OTPAttemptLimit; attempt++ {
+		if err := service.VerifyOTP(ctx, "student@u.nus.edu", "000000"); !errors.Is(err, ErrInvalidOTP) {
+			t.Fatalf("wrong guess %d error = %v, want ErrInvalidOTP", attempt, err)
+		}
+	}
+	if err := service.ResendOTP(ctx, "student@u.nus.edu"); err != nil {
+		t.Fatalf("resend OTP: %v", err)
+	}
+	wrongGuess := "000000"
+	if deliverer.otp == wrongGuess {
+		wrongGuess = "111111"
+	}
+	for attempt := 1; attempt < OTPAttemptLimit; attempt++ {
+		if err := service.VerifyOTP(ctx, "student@u.nus.edu", wrongGuess); !errors.Is(err, ErrInvalidOTP) {
+			t.Fatalf("wrong guess %d after resend error = %v, want ErrInvalidOTP", attempt, err)
+		}
+	}
+	if err := service.VerifyOTP(ctx, "student@u.nus.edu", deliverer.otp); err != nil {
+		t.Fatalf("resent code on attempt %d after resend: %v", OTPAttemptLimit, err)
+	}
+	if repository.status != AccountStatusActive {
+		t.Fatal("account was not activated with the resent code")
+	}
+}
+
+// AI-generated (edited by James Teo): when the repository refuses activation
+// because the account is not UNVERIFIED, the OTP keys stay in place.
+func TestAccountServiceVerifyOTPKeepsKeysWhenActivationRefused(t *testing.T) {
+	store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+	repository := &fakeAccountRepository{activateErr: ErrAccountAlreadyVerified}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+
+	err := service.VerifyOTP(context.Background(), "student@u.nus.edu", "123456")
+	if !errors.Is(err, ErrAccountAlreadyVerified) {
+		t.Fatalf("error = %v, want ErrAccountAlreadyVerified", err)
+	}
+	if store.deleted || !store.hashFound {
+		t.Fatal("OTP keys were removed although activation was refused")
+	}
+}
+
 // AI-generated (edited by ZI YANG): NUS email validation is enforced by the domain service for every caller.
 func TestAccountServiceRegisterRejectsNonNUSEmail(t *testing.T) {
 	repository := &fakeAccountRepository{}

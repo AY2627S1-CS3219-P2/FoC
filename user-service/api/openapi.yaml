@@ -342,7 +342,10 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '429':
-          description: Too many OTP verification requests.
+          description: >-
+            Too many OTP requests for this email, or the current code already
+            had 5 wrong guesses. The attempt after the fifth wrong guess
+            discards the code, so the user must request a new one.
           content:
             application/json:
               schema:

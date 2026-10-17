@@ -19,7 +19,6 @@ import (
 	"foc/user-service/internal/httpapi/router"
 	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/jwt"
-	"foc/user-service/internal/mailgun"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
@@ -83,9 +82,11 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
-	mailgunClient, err := mailgun.NewClient(cfg.MailgunAPIKey, cfg.MailgunDomain, cfg.MailgunSenderEmail)
+	// AI-generated (edited by James Teo): OTP_DELIVERY picks Mailgun or, for
+	// local runs, the service log.
+	otpDeliverer, err := newOTPDeliverer(cfg, logger)
 	if err != nil {
-		return fmt.Errorf("create Mailgun client: %w", err)
+		return fmt.Errorf("configure OTP delivery: %w", err)
 	}
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — wires the
 	// owner-recorded OTP Redis and Mailgun boundaries into registration.
@@ -96,7 +97,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		sessionRepository,
 		accessTokenTTL,
 		repository.NewRedisOTPStore(redisClient),
-		mailgunClient,
+		otpDeliverer, // AI-generated (edited by James Teo).
 	)
 	if err := bootstrapInitialAdmin(ctx, accountService, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
 		return fmt.Errorf("bootstrap initial admin: %w", err)
