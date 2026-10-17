@@ -6,7 +6,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Sonnet 5), date: 2026-10-02
 // Scope: Added MenuIcon (hamburger), used by the new mobile drawer toggle.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the component was updated according to the new format and requirements. All seems valid when checked.
 
 /**
  * Inline SVG line icons. Each takes an optional size in pixels (default 17).
@@ -98,5 +98,13 @@ export const LogoutIcon = (p: IconProps) => (
 export const MenuIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M4 7h16M4 12h16M4 17h16" />
+  </Svg>
+);
+
+// AI-generated (edited by nigeltzy): shield, for the admin nav item.
+export const ShieldIcon = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M12 3 5 6v5c0 4.5 3 8.3 7 10 4-1.7 7-5.5 7-10V6z" />
+    <path d="m9 12 2 2 4-4" />
   </Svg>
 );

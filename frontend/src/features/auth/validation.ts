@@ -24,6 +24,13 @@ export const PASSWORD_MAX = 128;
 /** F1.1.2.3 — the OTP is six digits. */
 export const OTP_LENGTH = 6;
 
+// AI-generated (edited by nigeltzy).
+/**
+ * Contact number length limit. Not a backlog ID: user-service's
+ * UpdateProfileRequest declares `phone_num` with `maxLength: 20`.
+ */
+export const CONTACT_MAX = 20;
+
 /**
  * A single password rule and whether the current input satisfies it. The
  * signup form renders these live rather than waiting for a submit, so the user
@@ -106,6 +113,22 @@ export function validateOtp(code: string): string | null {
   if (!trimmed) return "Enter the code we emailed you.";
   if (!new RegExp(`^[0-9]{${OTP_LENGTH}}$`).test(trimmed)) {
     return `The code is ${OTP_LENGTH} digits.`;
+  }
+  return null;
+}
+
+// AI-generated (edited by nigeltzy).
+/**
+ * A replacement contact number: present, and at most CONTACT_MAX characters.
+ * Required because user-service treats an empty `phone_num` as "leave it
+ * unchanged", so a blank submit would look like success and change nothing.
+ * No phone format is checked; user-service checks none either.
+ */
+export function validateContact(contact: string): string | null {
+  const trimmed = contact.trim();
+  if (!trimmed) return "Enter a contact number.";
+  if (trimmed.length > CONTACT_MAX) {
+    return `Contact numbers can be at most ${CONTACT_MAX} characters.`;
   }
   return null;
 }
