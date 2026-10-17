@@ -432,6 +432,46 @@ func TestAccountServiceUpdateProfileChangesPasswordAndRevokesSessions(t *testing
 	}
 }
 
+// AI-generated (edited by nigeltzy): a sub-second clock, so the cutoff must be
+// truncated; a token issued later in the same second has iat == cutoff.
+func TestAccountServicePasswordChangeCutoffIsWholeSeconds(t *testing.T) {
+	uid := uuid.New()
+	oldHash, err := hash.HashPassword("OldPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 10, 11, 12, 0, 5, 734_000_000, time.UTC)
+	repository := &fakeAccountRepository{user: &User{UID: uid, PasswordHash: oldHash}}
+	service := NewAccountServiceWithClock(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, func() time.Time { return timestamp })
+
+	updated, err := service.UpdateProfile(context.Background(), uid, "", "", "OldPass1", "NewPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 10, 11, 12, 0, 5, 0, time.UTC)
+	if !updated.TokensValidAfter.Equal(want) {
+		t.Fatalf("tokens valid after = %s, want %s", updated.TokensValidAfter, want)
+	}
+}
+
+// AI-generated (edited by nigeltzy): suspension writes the same whole-second
+// cutoff to Redis and to PostgreSQL.
+func TestAccountServiceSuspensionCutoffIsWholeSeconds(t *testing.T) {
+	uid := uuid.New()
+	timestamp := time.Date(2026, 10, 11, 12, 0, 5, 734_000_000, time.UTC)
+	repository := &fakeAccountRepository{user: &User{UID: uid}}
+	writer := &fakeSuspensionWriter{}
+	service := NewAccountServiceWithClock(repository, writer, &fakeAccountSessionRepository{}, time.Minute, func() time.Time { return timestamp })
+
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 10, 11, 12, 0, 5, 0, time.UTC)
+	if !writer.at.Equal(want) || !repository.tokensValidAfter.Equal(want) {
+		t.Fatalf("cutoff = redis %s, postgres %s, want %s for both", writer.at, repository.tokensValidAfter, want)
+	}
+}
+
 func TestAccountServiceUpdateProfileRejectsIncorrectCurrentPassword(t *testing.T) {
 	uid := uuid.New()
 	oldHash, err := hash.HashPassword("OldPass1")

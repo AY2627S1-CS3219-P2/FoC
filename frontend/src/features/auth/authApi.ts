@@ -76,7 +76,10 @@ export interface AuthResult {
   tokens: TokenPair;
 }
 
-function initialsOf(value: string): string {
+// AI-generated (edited by nigeltzy): exported so App can refresh the avatar
+// initials after a username change.
+/** Two-letter avatar initials for a username, e.g. "nigeltzy" → "NI". */
+export function initialsOf(value: string): string {
   const cleaned = value.replace(/[^a-zA-Z0-9]+/g, " ").trim();
   if (!cleaned) return "NU";
   const parts = cleaned.split(/\s+/);
