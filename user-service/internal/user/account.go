@@ -208,7 +208,8 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — applies the
 		// recorded access-token validity boundary after a password reset.
 		// Author review: ZI YANG - validated correctness
-		account.TokensValidAfter = s.now().UTC()
+		// AI-generated (edited by nigeltzy): whole seconds, see tokenCutoff.
+		account.TokensValidAfter = s.tokenCutoff()
 	}
 	if err := s.repository.Update(ctx, account); err != nil {
 		return nil, fmt.Errorf("update account: %w", err)
@@ -257,7 +258,8 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 			}
 		}
 		// AI-generated (edited by ZI YANG): the domain owns the timestamp shared by suspension invalidation and persistence.
-		tokensValidAfter = s.now().UTC()
+		// AI-generated (edited by nigeltzy): whole seconds, see tokenCutoff.
+		tokensValidAfter = s.tokenCutoff()
 		if s.suspensionWriter == nil || s.sessions == nil {
 			return errors.New("suspension invalidation dependencies are required")
 		}
@@ -275,6 +277,18 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 		return fmt.Errorf("update account status: %w", err)
 	}
 	return nil
+}
+
+// AI-generated (edited by nigeltzy).
+// tokenCutoff returns the tokens_valid_after value for an invalidation made
+// now, truncated to whole seconds. A JWT's iat is whole seconds, and refresh
+// rejects a token whose iat is before the cutoff, so a sub-second cutoff
+// rejected tokens issued later in the same second — a login right after a
+// password change got a session that failed its first refresh. Tokens issued
+// earlier in that second now pass the iat check; their refresh sessions are
+// revoked by the same invalidation, which refresh checks first.
+func (s *AccountService) tokenCutoff() time.Time {
+	return s.now().UTC().Truncate(time.Second)
 }
 
 func normalizeEmail(email string) string {
