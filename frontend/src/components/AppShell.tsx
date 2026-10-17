@@ -12,7 +12,7 @@
 //   bar: hidden below 860px by default, opened by a new hamburger button in
 //   the top bar, closed by tapping its backdrop or any nav item. Removed the
 //   dead tab-bar JSX.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the component was updated according to the new format and requirements. All seems valid when checked.
 
 import { useState, type ReactNode } from "react";
 import { MockBadge } from "./MockBadge";
@@ -25,6 +25,7 @@ import {
   LogoutIcon,
   MenuIcon,
   PlusIcon,
+  ShieldIcon,
   StoreIcon,
   UserIcon,
   WalletIcon,
@@ -38,6 +39,7 @@ const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
   credits: WalletIcon,
   profile: UserIcon,
   notifications: BellIcon,
+  admin: ShieldIcon,
 };
 
 interface AppShellProps {
@@ -88,7 +90,9 @@ export function AppShell({
         </button>
 
         <nav className="sidebar-nav">
-          {NAV_ITEMS.map((item) => {
+          {/* AI-generated (edited by nigeltzy): admin-only items are left out
+              of a non-admin session's nav. */}
+          {NAV_ITEMS.filter((item) => !item.adminOnly || session.role === "ADMIN").map((item) => {
             const Icon = ICONS[item.view];
             return (
               <button

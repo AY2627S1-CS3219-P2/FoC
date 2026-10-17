@@ -7,7 +7,8 @@
 // Tool: Claude Code (model: Sonnet 5), date: 2026-10-02
 // Scope: Removed NavItem.inTabBar — the bottom tab bar it gated is gone, the
 //   sidebar nav is now used at every width.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the component was updated according to 
+// the new format and requirements.
 
 /**
  * Every view the shell can show. Views are switched by state in App.tsx
@@ -21,6 +22,8 @@ export const VIEW_NAMES = [
   "credits",
   "profile",
   "notifications",
+  // AI-generated (edited by nigeltzy).
+  "admin",
 ] as const;
 
 export type ViewName = (typeof VIEW_NAMES)[number];
@@ -30,6 +33,12 @@ export interface NavItem {
   label: string;
   /** False while the backing service does not exist at all. */
   enabled: boolean;
+  // AI-generated (edited by nigeltzy).
+  /**
+   * Listed only for an ADMIN session. Hiding it is an affordance, not access
+   * control: user-service refuses an admin action from anyone else.
+   */
+  adminOnly?: boolean;
 }
 
 export const NAV_ITEMS: NavItem[] = [
@@ -41,4 +50,6 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "profile", label: "Profile", enabled: true },
   // Disabled: nothing publishes notifications yet.
   { view: "notifications", label: "Notifications", enabled: false },
+  // AI-generated (edited by nigeltzy).
+  { view: "admin", label: "Admin", enabled: true, adminOnly: true },
 ];
