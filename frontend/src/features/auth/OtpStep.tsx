@@ -1,27 +1,30 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-20
 // Scope: The OTP verification step of registration (F1.1.2.3-F1.1.2.7).
+//   2026-10-10 (Claude Code, Opus 5.5): wired to user-service's real OTP
+//   endpoints — verify takes no contact, a rate-limited request starts the
+//   block countdown, and an unknown replacement count is not shown.
 // Author review: Nigeltzy - AI was used to create boilerplate OTP setup, though OTP is not actually set up yet.
 
 import { useEffect, useState, type FormEvent } from "react";
-import type { AuthResult } from "./authApi";
+import { OtpBlockedError, type AuthResult } from "./authApi";
 import type { PendingRegistration } from "./types";
 import { OTP_LENGTH } from "./validation";
 
 interface OtpStepProps {
   pendingRegistration: PendingRegistration;
-  /** F1.1.2.7 — the only path that completes registration. */
+  /**
+   * F1.1.2.7 — the only path that completes registration. LoginPage supplies
+   * one that verifies the code and then logs in, hence the AuthResult.
+   */
   verify: (
     pendingRegistration: PendingRegistration,
     code: string,
-    contact: string,
   ) => Promise<AuthResult>;
   /** F1.1.2.4 — request a replacement code. */
   resend: (
     pendingRegistration: PendingRegistration,
   ) => Promise<PendingRegistration>;
-  /** The contact number from the signup form, passed through to verify. */
-  contact: string;
   onVerified: (result: AuthResult) => void;
   onChanged: (pendingRegistration: PendingRegistration) => void;
   onCancel: () => void;
@@ -51,15 +54,14 @@ function formatDuration(ms: number): string {
 }
 
 /**
- * Step two of registration. F1.1.2.7 makes this mandatory: an account does not
- * exist until the correct code is submitted, so there is no way past this
+ * Step two of registration. F1.1.2.7 makes this mandatory: an account cannot
+ * log in until the correct code is submitted, so there is no way past this
  * screen other than verifying or abandoning the registration.
  */
 export function OtpStep({
   pendingRegistration,
   verify,
   resend,
-  contact,
   onVerified,
   onChanged,
   onCancel,
@@ -79,14 +81,24 @@ export function OtpStep({
   const blocked =
     pendingRegistration.blockedUntil !== null && blockedMsLeft > 0;
 
+  // AI-generated (edited by nigeltzy).
+  // F1.1.2.6 — start the block countdown, which also disables "Send a new
+  // code": user-service restarts its block on every refused request.
+  const startBlockIfLimited = (err: unknown) => {
+    if (err instanceof OtpBlockedError) {
+      onChanged({ ...pendingRegistration, blockedUntil: err.blockedUntil });
+    }
+  };
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     setNotice(null);
     try {
-      onVerified(await verify(pendingRegistration, code, contact));
+      onVerified(await verify(pendingRegistration, code));
     } catch (err) {
+      startBlockIfLimited(err);
       setError(err instanceof Error ? err.message : "Could not verify that code.");
     } finally {
       setBusy(false);
@@ -103,6 +115,7 @@ export function OtpStep({
       setCode("");
       setNotice("A new code is on its way. The previous one no longer works.");
     } catch (err) {
+      startBlockIfLimited(err);
       setError(err instanceof Error ? err.message : "Could not send a new code.");
     } finally {
       setBusy(false);
@@ -158,7 +171,7 @@ export function OtpStep({
             // F7.2.1 — the control is disabled while a submission is in flight.
             disabled={busy || expired || code.length !== OTP_LENGTH}
           >
-            {busy ? "Verifying…" : "Verify and create account"}
+            {busy ? "Verifying…" : "Verify and log in"}
           </button>
         </form>
 
@@ -186,9 +199,13 @@ export function OtpStep({
         <p className="auth-note">
           {blocked
             ? "Too many code requests. You can ask again once the timer runs out."
-            : `${pendingRegistration.resendsRemaining} replacement code${
-                pendingRegistration.resendsRemaining === 1 ? "" : "s"
-              } left. Your account isn't created until you enter the code.`}
+            : `${
+                pendingRegistration.resendsRemaining === null
+                  ? ""
+                  : `${pendingRegistration.resendsRemaining} replacement code${
+                      pendingRegistration.resendsRemaining === 1 ? "" : "s"
+                    } left. `
+              }You can't log in until you enter the code.`}
         </p>
       </div>
     </div>

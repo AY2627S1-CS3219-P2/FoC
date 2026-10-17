@@ -9,7 +9,9 @@
 //   gateway cross-origin at all. Later that day the browser stopped being
 //   cross-origin — the frontend proxies to here — so that policy was deleted
 //   again, and the auth routes gained one constructor each for the refresh
-//   token's cookie.
+//   token's cookie. 2026-10-10 (Claude Code, Opus 5.5): /auth/resend-otp and
+//   /auth/verify-otp added as passthroughs for user-service's OTP endpoints
+//   (PR #14), recorded as D-043.
 // Author review: Nigeltzy - Directed and checked the ouput of the AI code, intention and
 //   changes are as seen above. I also checked externally to see if practices
 //   such as importing third-party packages were reasonable and safe.
@@ -42,21 +44,30 @@ const userServiceAPIPrefix = "/api/v1/users"
 // public /api/suppliers/* path is rewritten onto it.
 const supplierServiceAPIPrefix = "/suppliers"
 
-// authRoute is one of the four public /auth routes. They carry credentials,
+// authRoute is one of the six public /auth routes. They carry credentials,
 // not a verified identity, so they are registered outside RequireToken and
 // user-service authenticates them. newProxy sets the route's refresh-cookie
-// handling: none for register, set on login, read and replaced on refresh,
-// read and cleared on logout.
+// handling: none for register and the two OTP routes, set on login, read and
+// replaced on refresh, read and cleared on logout.
 type authRoute struct {
 	name     string
 	newProxy func(proxy.Route, time.Duration) (*proxy.Proxy, error)
 }
 
+// passthrough is the constructor for auth routes that issue no tokens and
+// read no refresh cookie.
+func passthrough(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
+	return proxy.NewPassthrough(r)
+}
+
 func authRoutes() []authRoute {
 	return []authRoute{
-		{"register", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
-			return proxy.NewPassthrough(r)
-		}},
+		{"register", passthrough},
+		// AI-generated (edited by nigeltzy): the OTP routes added by D-043.
+		// verify-otp only activates the account and returns no tokens, so the
+		// client logs in afterwards through /auth/login.
+		{"resend-otp", passthrough},
+		{"verify-otp", passthrough},
 		{"login", proxy.NewSessionIssuing},
 		{"refresh", proxy.NewSessionRotating},
 		{"logout", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
@@ -65,10 +76,10 @@ func authRoutes() []authRoute {
 	}
 }
 
-// NewRouter builds the gateway's handler: /healthz, the four public /auth
+// NewRouter builds the gateway's handler: /healthz, the six public /auth
 // routes and the /api/<service> prefixes behind RequireToken. Clients call
 // these public paths, so renaming one, or moving one out of RequireToken,
-// changes the gateway's API (D-027 in ai/decisions.md).
+// changes the gateway's API (D-027 and D-043 in ai/decisions.md).
 func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)

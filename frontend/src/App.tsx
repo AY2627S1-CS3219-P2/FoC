@@ -8,7 +8,9 @@
 //   transport and the suppliers client over it, now that suppliers go through
 //   the gateway (D-010, D-025b). Then: restores the session from the refresh
 //   cookie on mount, which is what makes a page reload survive (D-033), and
-//   remembers which view the tab was on across that reload.
+//   remembers which view the tab was on across that reload. 2026-10-10
+//   (Claude Code, Opus 5.5): wires the gateway client's real OTP calls,
+//   including resumeVerification for unverified logins.
 //   2026-10-11 (Claude Code, Opus 5.5): one authorized transport now backs
 //   both the suppliers and the user-service profile client; profile edits
 //   update the session, a password change signs the user out, and the
@@ -24,11 +26,7 @@ import { Toast, type ToastMessage } from "./components/Toast";
 import * as authApi from "./features/auth/authApi";
 import type { AuthResult } from "./features/auth/authApi";
 import { LoginPage } from "./features/auth/LoginPage";
-import type {
-  ActingMode,
-  PendingRegistration,
-  Session,
-} from "./features/auth/types";
+import type { ActingMode, Session } from "./features/auth/types";
 import { config } from "./lib/config";
 import { createTokenStore } from "./lib/tokens";
 import { clearLastView, readLastView, writeLastView } from "./lib/lastView";
@@ -56,14 +54,9 @@ const authClient = usingGateway
   ? {
       logIn: authApi.logInViaGateway,
       signUp: authApi.signUpViaGateway,
-      // The gateway client takes no contact, so the argument is accepted and
-      // ignored to keep one signature for both clients.
-      verifyRegistration: (
-        pendingRegistration: PendingRegistration,
-        code: string,
-        _contact: string,
-      ) => authApi.verifyRegistrationViaGateway(pendingRegistration, code),
+      verifyRegistration: authApi.verifyRegistrationViaGateway,
       resendOtp: authApi.resendOtpViaGateway,
+      resumeVerification: authApi.resumeVerificationViaGateway,
       logOut: authApi.logOutViaGateway,
     }
   : {
@@ -71,6 +64,7 @@ const authClient = usingGateway
       signUp: authApi.signUp,
       verifyRegistration: authApi.verifyRegistration,
       resendOtp: authApi.resendOtp,
+      resumeVerification: authApi.resumeVerification,
       logOut: (_accessToken: string | null) => authApi.logOut(),
     };
 
@@ -244,6 +238,7 @@ export function App() {
           signUp={authClient.signUp}
           verifyRegistration={authClient.verifyRegistration}
           resendOtp={authClient.resendOtp}
+          resumeVerification={authClient.resumeVerification}
           isMock={!usingGateway}
         />
         {/* AI-generated (edited by nigeltzy): carries the password-changed

@@ -5,8 +5,10 @@
 //   rate limits from F1.1.2.4-F1.1.2.7 rather than rubber-stamping them.
 // Author review: Nigeltzy - AI was used to create the implementation for the OTP fixture and its functions., though OTP is not yet set up. This is just boilerplate.
 // Values used are default values, if the team wants to change the values, it will be reflected in decision log.
+// 2026-10-10 (Claude Code, Opus 5.5): a blocked resend throws OtpBlockedError,
+// as the gateway client does, so the OTP step shows the block's countdown.
 
-import { AuthError } from "./authApi";
+import { AuthError, OtpBlockedError } from "./authApi";
 import { OTP_LENGTH } from "./validation";
 import type { PendingRegistration } from "./types";
 
@@ -95,7 +97,10 @@ export function resend(handle: string): PendingRegistration {
 
   const now = Date.now();
   if (record.blockedUntil && now < record.blockedUntil) {
-    throw new AuthError(blockedMessage(record.blockedUntil));
+    throw new OtpBlockedError(
+      record.blockedUntil,
+      blockedMessage(record.blockedUntil),
+    );
   }
   if (record.blockedUntil && now >= record.blockedUntil) {
     // Block served: clear it and start the window fresh.
@@ -107,7 +112,10 @@ export function resend(handle: string): PendingRegistration {
   if (recent.length >= MAX_RESENDS) {
     record.blockedUntil = now + BLOCK_MS;
     record.resendTimes = recent;
-    throw new AuthError(blockedMessage(record.blockedUntil));
+    throw new OtpBlockedError(
+      record.blockedUntil,
+      blockedMessage(record.blockedUntil),
+    );
   }
 
   record.code = sixDigits();

@@ -143,11 +143,11 @@ own folders instead (`src/lib/mock.ts` has the full note).
 
 `authApi.ts` holds **two** clients — the fixtures, and a gateway-backed one
 implementing D-010..D-015 — and `App.tsx` picks between them once: the
-gateway, unless `VITE_USE_FIXTURES=true`. The login, register, refresh and
-logout paths in `ROUTES` are recorded; the two OTP paths (`verify`,
-`resend`) are still invented and carry the same "replace, do not reconcile"
-rule as any other fixture. `<MockBadge />` on the login and profile screens
+gateway, unless `VITE_USE_FIXTURES=true`. Every path in `ROUTES` is
+recorded: the two OTP paths (`verify`, `resend`) are the gateway's D-043
+routes onto user-service's OTP endpoints (PR #14). `<MockBadge />` on the login and profile screens
 shows only in a fixture build.
+<!-- AI-generated (edited by nigeltzy): the OTP-paths sentence above was updated by Claude Code (Opus 5.5, 2026-10-10) when the frontend was wired to D-043. -->
 
 **Those shapes are not a contract.** They were invented here to have something
 to render. An API interface belongs to its service's owner (root §1), and a

@@ -10,6 +10,11 @@
 //   three OTP calls are blocked because no endpoint implements them.
 //   2026-09-21 (later): the session now carries email and contact, which
 //   user-service's UserResponse/RestrictedUserResponse gained in 72fe5a5.
+//   2026-10-10 (Claude Code, Opus 5.5): the three OTP calls now reach
+//   user-service's OTP endpoints (PR #14) through the gateway's D-043 routes;
+//   verify no longer signs in (LoginPage logs in afterwards), an unverified
+//   login is its own error, and a rate-limited code request carries when the
+//   block ends.
 // Author review: Nigeltzy - The AI was used to generate the original boilerplate code,
 // as per our team's decisions, direction and requirements. As far as I can tell, the code 
 // is valid and I have asked the AI to explain some aprts as well as include comments for my
@@ -33,9 +38,9 @@ import { validateOtp, validateRegistration } from "./validation";
  *   - logInViaGateway / ...                       the gateway client, used
  *                                                 otherwise.
  *
- * The gateway has no OTP endpoints, so signUpViaGateway,
- * verifyRegistrationViaGateway and resendOtpViaGateway refuse before sending
- * anything.
+ * Verifying a code only activates the account: neither client returns a
+ * session from it, and LoginPage logs in afterwards with the credentials it
+ * already holds.
  */
 
 /** Gateway paths used by the gateway client. */
@@ -44,10 +49,10 @@ const ROUTES = {
   register: "/auth/register",
   refresh: "/auth/refresh",
   logout: "/auth/logout",
-  /** Placeholder for F1.1.2.7: no endpoint exists and nothing calls it. */
-  verify: "/auth/register/verify",
-  /** Placeholder for F1.1.2.4: no endpoint exists and nothing calls it. */
-  resend: "/auth/register/resend",
+  /** F1.1.2.7 — D-043, onto user-service's /api/v1/users/verify-otp. */
+  verify: "/auth/verify-otp",
+  /** F1.1.2.4 — D-043, onto user-service's /api/v1/users/resend-otp. */
+  resend: "/auth/resend-otp",
   /** The profile route; `/{uid}` is appended. */
   profile: "/api/users",
 } as const;
@@ -67,6 +72,33 @@ export class SuspendedAccountError extends AuthError {
   constructor(message = "This account is suspended. Contact an administrator.") {
     super(message);
     this.name = "SuspendedAccountError";
+  }
+}
+
+// AI-generated (edited by nigeltzy).
+/**
+ * user-service refuses to log in an account whose email is not verified yet.
+ * LoginPage checks for this type to send the user to the OTP step instead.
+ */
+export class UnverifiedAccountError extends AuthError {
+  constructor(message = "Verify your email before logging in.") {
+    super(message);
+    this.name = "UnverifiedAccountError";
+  }
+}
+
+// AI-generated (edited by nigeltzy).
+/**
+ * F1.1.2.6: too many code requests. `blockedUntil` (epoch ms) is when the OTP
+ * step may offer a new code again, so it can disable the button until then.
+ */
+export class OtpBlockedError extends AuthError {
+  constructor(
+    readonly blockedUntil: number,
+    message = "Too many code requests. Try again once the timer runs out.",
+  ) {
+    super(message);
+    this.name = "OtpBlockedError";
   }
 }
 
@@ -160,19 +192,28 @@ export async function signUp(
   return mockDelay(fixtureOtp.startRegistration(email.trim(), username.trim()));
 }
 
-/** Fixture: completes registration against the issued code (F1.1.2.7). */
+/**
+ * Fixture: completes registration against the issued code (F1.1.2.7). Like the
+ * gateway client it returns no session; LoginPage logs in afterwards.
+ */
 export async function verifyRegistration(
   pendingRegistration: PendingRegistration,
   code: string,
-  contact: string,
-): Promise<AuthResult> {
+): Promise<void> {
   const problem = validateOtp(code);
   if (problem) throw new AuthError(problem);
-  const { username, email } = fixtureOtp.verify(
-    pendingRegistration.handle,
-    code,
-  );
-  return mockDelay(fixtureResult(fixtureSession(email, username, contact)));
+  fixtureOtp.verify(pendingRegistration.handle, code);
+  return mockDelay(undefined);
+}
+
+/**
+ * Fixture: never reached. Fixture logins are never unverified, so LoginPage
+ * has no reason to call it.
+ */
+export async function resumeVerification(
+  _email: string,
+): Promise<PendingRegistration> {
+  throw new AuthError("Fixture accounts are always verified.");
 }
 
 /** Fixture: issues a replacement code with the resend limits (F1.1.2.4-F1.1.2.6). */
@@ -202,6 +243,9 @@ export async function refreshAccessToken(): Promise<TokenPair> {
 /** user-service's `error` text for a suspended account's login. */
 const SUSPENDED_ERROR = "account suspended";
 
+/** user-service's `error` text for an unverified account's login. */
+const UNVERIFIED_ERROR = "ACCOUNT_UNVERIFIED";
+
 function decodeAuthError(body: unknown, status: number): AuthError {
   // Use the server's own message when the body has an `error` field.
   const message =
@@ -214,6 +258,11 @@ function decodeAuthError(body: unknown, status: number): AuthError {
   // SUSPENDED_ERROR. The UI names it with its own sentence, not the raw text.
   if (status === 403 && message === SUSPENDED_ERROR) {
     return new SuspendedAccountError();
+  }
+  // AI-generated (edited by nigeltzy).
+  // The 403 user-service sends while the account's email is unverified.
+  if (status === 403 && message === UNVERIFIED_ERROR) {
+    return new UnverifiedAccountError();
   }
   if (message) return new AuthError(message);
   // F1.2.3 — a generic error for bad credentials, naming neither field.
@@ -316,13 +365,48 @@ async function sessionFromTokens(
   };
 }
 
+// AI-generated (edited by nigeltzy).
+// user-service's OTP rules, from the "OTP Feature" section of
+// user-service/AGENTS.md (PR #14). The server enforces them; these only let
+// the OTP step show the same numbers.
+
+/** A code expires five minutes after it is issued. */
+const OTP_TTL_MS = 5 * 60 * 1000;
+
 /**
- * Shown wherever the OTP flow is reached against the real stack. One constant
- * so the wording cannot drift between the three entry points.
+ * Code requests allowed in the window. The first code counts, so a new
+ * registration has OTP_REQUEST_LIMIT - 1 replacements left.
  */
-const OTP_UNAVAILABLE =
-  "Registration is not available yet — user-service does not implement the " +
-  "email verification step. Ask an admin to create your account.";
+const OTP_REQUEST_LIMIT = 3;
+
+/**
+ * How long user-service refuses further requests once over the limit. Each
+ * refused request restarts it, which is why the OTP step disables its button
+ * for the whole block.
+ */
+const OTP_BLOCK_MS = 10 * 60 * 1000;
+
+/** The pending registration for a code that was just sent to `email`. */
+function pendingFor(
+  email: string,
+  resendsRemaining: number | null,
+): PendingRegistration {
+  return {
+    // The gateway client keys a registration by its email; nothing else.
+    handle: email,
+    email,
+    expiresAt: Date.now() + OTP_TTL_MS,
+    resendsRemaining,
+    blockedUntil: null,
+  };
+}
+
+/** The `error` text of a user-service response, or null when there is none. */
+function serverMessage(body: unknown): string | null {
+  return body && typeof body === "object" && "error" in body
+    ? String((body as { error: unknown }).error)
+    : null;
+}
 
 
 async function post(path: string, body: unknown) {
@@ -377,12 +461,13 @@ export async function logInViaGateway(
   return sessionFromTokens(decodeTokenPair(response.body), fallback);
 }
 
+// AI-generated (edited by nigeltzy).
 /**
- * F1.1 and F1.1.2.3: opens a registration for the OTP step to complete.
+ * F1.1 and F1.1.2.3: creates the account, unverified, and has user-service
+ * email the first code. The account cannot log in until verified (F1.1.2.7).
  *
- * Refuses before sending anything. The gateway has no OTP endpoints, and
- * user-service's register creates a live account with no verification step,
- * so calling it here would skip F1.1.2.7.
+ * The contact number is not sent: user-service's register takes no phone
+ * number.
  */
 export async function signUpViaGateway(
   email: string,
@@ -393,30 +478,127 @@ export async function signUpViaGateway(
   const problem = validateRegistration({ email, username, password });
   if (problem) throw new AuthError(problem);
 
-  throw new AuthError(OTP_UNAVAILABLE);
+  const trimmedEmail = email.trim();
+  const response = await post(ROUTES.register, {
+    email: trimmedEmail,
+    username: username.trim(),
+    password,
+  });
+  if (response.ok) return pendingFor(trimmedEmail, OTP_REQUEST_LIMIT - 1);
+
+  if (response.status === 409) {
+    throw new AuthError(
+      "That email or username is already taken. If it is your account and " +
+        "you never verified it, log in with your NUS email to get a new code.",
+    );
+  }
+  if (response.status === 429) {
+    throw new AuthError(
+      "Too many code requests for this email. Try again in 10 minutes.",
+    );
+  }
+  if (response.status >= 500) {
+    // user-service keeps the account when only the email failed to send, so
+    // logging in is how the user reaches a new code.
+    throw new AuthError(
+      "We could not send your code. Log in with your NUS email to request a " +
+        "new one; if those details are not recognised, sign up again.",
+    );
+  }
+  throw new AuthError(
+    serverMessage(response.body) ?? `Sign-up failed (${response.status}).`,
+  );
 }
 
+// AI-generated (edited by nigeltzy).
 /**
- * F1.1.2.7: completes registration on the correct OTP. Always throws after
- * validating the code: there is no endpoint for it.
+ * F1.1.2.7: activates the account on the correct code. Returns no session —
+ * user-service issues no tokens here — so the caller logs in afterwards.
+ *
+ * An account that is already verified (409) counts as success. That is rare:
+ * user-service deletes a used code, so a reused one usually gets 404, which
+ * is why LoginPage never verifies twice.
  */
 export async function verifyRegistrationViaGateway(
-  _pendingRegistration: PendingRegistration,
+  pendingRegistration: PendingRegistration,
   code: string,
-): Promise<AuthResult> {
+): Promise<void> {
   const problem = validateOtp(code);
   if (problem) throw new AuthError(problem);
-  throw new AuthError(OTP_UNAVAILABLE);
+
+  const response = await post(ROUTES.verify, {
+    email: pendingRegistration.email,
+    otp: code.trim(),
+  });
+  if (response.ok || response.status === 409) return;
+
+  switch (response.status) {
+    case 400:
+      throw new AuthError("That code is not right. Check it and try again.");
+    case 404:
+      throw new AuthError("That code has expired. Ask for a new one.");
+    case 429:
+      throw new OtpBlockedError(Date.now() + OTP_BLOCK_MS);
+    default:
+      throw new AuthError(
+        serverMessage(response.body) ??
+          `Could not verify the code (${response.status}).`,
+      );
+  }
 }
 
+// AI-generated (edited by nigeltzy).
+/** Asks user-service to email a new code to `email`, replacing any earlier one. */
+async function requestCode(email: string): Promise<void> {
+  const response = await post(ROUTES.resend, { email });
+  if (response.ok) return;
+
+  switch (response.status) {
+    case 404:
+      throw new AuthError("No account uses that email. Sign up first.");
+    case 409:
+      throw new AuthError("This account is already verified. Log in instead.");
+    case 429:
+      throw new OtpBlockedError(Date.now() + OTP_BLOCK_MS);
+    default:
+      throw new AuthError(
+        serverMessage(response.body) ??
+          `Could not send a new code (${response.status}).`,
+      );
+  }
+}
+
+// AI-generated (edited by nigeltzy).
 /**
- * F1.1.2.4: requests a replacement code. Always throws: there is no endpoint
- * for it.
+ * F1.1.2.4: requests a replacement code. F1.1.2.5: the previous code stops
+ * working once this returns.
  */
 export async function resendOtpViaGateway(
-  _pendingRegistration: PendingRegistration,
+  pendingRegistration: PendingRegistration,
 ): Promise<PendingRegistration> {
-  throw new AuthError(OTP_UNAVAILABLE);
+  await requestCode(pendingRegistration.email);
+  const left = pendingRegistration.resendsRemaining;
+  return pendingFor(
+    pendingRegistration.email,
+    left === null ? null : Math.max(0, left - 1),
+  );
+}
+
+// AI-generated (edited by nigeltzy).
+/**
+ * Opens the OTP step for an account that registered but never verified,
+ * reached from a login refused with UnverifiedAccountError. Sends a fresh
+ * code, since any earlier one may have expired.
+ *
+ * How many requests that account has already made is known only to
+ * user-service, so the replacement count is left unknown (null).
+ */
+export async function resumeVerificationViaGateway(
+  email: string,
+): Promise<PendingRegistration> {
+  const trimmed = email.trim();
+  await requestCode(trimmed);
+  return pendingFor(trimmed, null);
 }
 
 /**

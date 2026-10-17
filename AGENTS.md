@@ -314,6 +314,17 @@ curl -X POST http://localhost:8080/auth/register \
   -d '{"email":"student2@u.nus.edu","username":"student2","password":"Student123"}'
 ```
 
+Registering leaves the account unverified until its emailed code is checked.
+Compose runs user-service with `OTP_DELIVERY=log`, so read the code from its
+log and verify it:
+
+```bash
+docker compose logs user-service | grep 'verification code' | tail -1
+curl -X POST http://localhost:8080/auth/verify-otp \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student2@u.nus.edu","otp":"<code from the log>"}'
+```
+
 If your database already has an admin account or a `student2` row from
 earlier, these steps are no-ops (register replies `409` on the duplicate,
 and the bootstrap skips itself) — nothing to clean up first.

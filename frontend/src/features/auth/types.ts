@@ -6,6 +6,8 @@
 //   made optional — user-service supplies neither. 2026-09-21 (later):
 //   both are on user-service's profile responses after Zi Yang's 72fe5a5,
 //   so the comments saying they have no source were corrected.
+//   2026-10-10 (Claude Code, Opus 5.5): resendsRemaining may be null, for an
+//   unverified account whose request count only user-service knows.
 // Author review: Nigeltzy - AI was used to create the implementation for the session types and pending registration types. Checked and is valid and works as intended.
 // Update was made according to changes in teammate's architecture and framework. Changes made are valid and intended.
 
@@ -58,8 +60,12 @@ export interface PendingRegistration {
   email: string;
   /** Epoch ms. F1.1.2.5 — a code expires five minutes after it is issued. */
   expiresAt: number;
-  /** F1.1.2.6 — how many replacement codes are still allowed. */
-  resendsRemaining: number;
+  /**
+   * F1.1.2.6 — how many replacement codes are still allowed, or null when the
+   * client cannot know: user-service keeps the count, and an account resumed
+   * from a refused login may already have spent some.
+   */
+  resendsRemaining: number | null;
   /**
    * Epoch ms, or null when not blocked. F1.1.2.6 — after three replacements
    * inside ten minutes, further requests are blocked for ten minutes.
