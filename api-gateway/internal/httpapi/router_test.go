@@ -6,7 +6,7 @@
 //   2026-09-22: two added for /api/suppliers reaching supplier-service's
 //   /suppliers prefix. The two interim-CORS tests were removed with the
 //   policy when the frontend became same-origin. 2026-10-10 (Claude Code,
-//   Opus 5.5): one added for the D-041 OTP routes.
+//   Opus 5.5): one added for the D-043 OTP routes.
 // Author review: Nigeltzy - Directed and generated as part of implementation of unit tests for the router package. I checked the output and it seems to be reasonable and typical unit tests for the router package.
 
 package httpapi_test
@@ -574,7 +574,7 @@ func TestRegisterCarriesNoCookie(t *testing.T) {
 }
 
 // AI-generated (edited by nigeltzy).
-// TestOTPRoutesArePublicPassthroughs checks the two D-041 routes: no token
+// TestOTPRoutesArePublicPassthroughs checks the two D-043 routes: no token
 // needed, rewritten onto user-service's OTP endpoints, body forwarded as sent,
 // and no refresh cookie read or set.
 func TestOTPRoutesArePublicPassthroughs(t *testing.T) {

@@ -6,7 +6,7 @@
        D-023 (RS256/JWKS), D-024 (no Redis), D-027 (route surface) and
        D-028 (code-first).
      2026-09-22: dependency list and the CORS entry under "Still open".
-     2026-10-10 (Claude Code, Opus 5.5): the two D-041 OTP auth routes.
+     2026-10-10 (Claude Code, Opus 5.5): the two D-043 OTP auth routes.
      Author review: Nigeltzy — Checked the output of this constantly, as this
      is constantly being updated as needed alongside development -->
 
@@ -47,12 +47,12 @@ with claim-header strip-and-inject. Unit and router tests pass.
 - No shared auth package with the services (root §4.2). If the gateway and a
   service both parse a claim, the duplication is correct.
 
-## The route surface (D-027, amended by D-041)
+## The route surface (D-027, amended by D-043)
 
 ```
 TERMINATED (public, no token required)
   POST /auth/register  /auth/login  /auth/refresh  /auth/logout
-  POST /auth/resend-otp  /auth/verify-otp     (D-041)
+  POST /auth/resend-otp  /auth/verify-otp     (D-043)
        -> rewritten onto user-service's /api/v1/users/*
 
 PROXIED (token verified, headers stripped then injected)

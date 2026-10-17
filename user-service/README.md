@@ -60,6 +60,7 @@ export JWT_ACCESS_TOKEN_TTL='15m'
 export JWT_REFRESH_TOKEN_TTL='168h'
 export REDIS_URL='redis://localhost:6379/0'
 export USER_DB_URL='postgres://postgres:postgres@localhost:5432/user?sslmode=disable'
+export OTP_DELIVERY='log'
 ```
 
 3. Configure the initial admin account
@@ -87,6 +88,21 @@ go run ./cmd/api
 ```
 
 The service is then available at `http://localhost:8081`.
+
+5. Read the verification code
+
+Registration sends a one-time code that `POST /api/v1/users/verify-otp` checks.
+`OTP_DELIVERY=mailgun`, the default when it is unset, emails the code and needs
+`MAILGUN_API_KEY`, `MAILGUN_DOMAIN` and `MAILGUN_SENDER_EMAIL`.
+`OTP_DELIVERY=log`, which Compose uses unless `.env` says otherwise, writes the
+code to the service log instead, as a `WARN` entry with the `email` and `otp`:
+
+```bash
+docker compose logs user-service
+```
+
+With `go run ./cmd/api`, the entry appears in that terminal. Use `log` for local
+development only: anyone who can read the log can verify any account.
 
 ## 2. API calls
 

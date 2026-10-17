@@ -84,7 +84,7 @@ The user-service must only be accessible within the internal Docker network. All
   - date_created: TIMESTAMPTZ, not null
   - last_login_date: TIMESTAMPTZ, NULL
   - account_role: ENUM ('STUDENT' / 'ADMIN'), defaults to STUDENT
-  - account_status: ENUM ('ACTIVE' / 'SUSPENDED'), defaults to ACTIVE
+  - account_status: ENUM ('ACTIVE' / 'SUSPENDED' / 'UNVERIFIED'), defaults to UNVERIFIED
   - tokens_valid_after: TIMESTAMPTZ, not null, default NOW()
 - Indexes:
     - `CREATE UNIQUE INDEX idx_users_email_lower ON users (LOWER(email));`
@@ -108,22 +108,42 @@ using the repository interface under `internal/user/`.
 ### Repository Methods
 The `users` repository interface should include these actions: 
 1. Create, 
-2. GetByID (get user by uuid), 
-3. GetByIdentifier (get user by username/email), 
-4. Update (update user's mutable fields, which should not allow updating uid or email), 
-5. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
-6. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
-7. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
+2. CreateWithTask (executes a user insert, runs a provided callback function, and commits only if the callback succeeds),
+3. GetByID (get user by uuid), 
+4. GetByIdentifier (get user by username/email), 
+5. Update (update user's mutable fields, which should not allow updating uid or email), 
+6. UpdateAccountStatusByID (suspend/reactivate user by their uuid, which should update both `account_status` and `tokens_valid_after` fields in `users` atomically. Note that reactivation should not alter `tokens_valid_after` field) 
+7. UpdateLastLoginByID (update the `last_login_date` field atomically without fetching or modifying the core profile data)
+8. CountActiveAdmins (During a suspension request, if the target user is an admin and CountActiveAdmins returns 1, the domain service must abort the operation and return a specific domain error (e.g., user.ErrLastAdmin))
+9. ActivateUser (manages the strict transaction boundary for OTP verification, locking the user row, asserting its state, updating it, and writing to the outbox).
 
 Example repository method signatures:
 ```Go
     Create(ctx context.Context, u *User) error
+    // CreateWithTask manages a cross-infrastructure transaction boundary.
+    // It MUST execute the following:
+    // 1. Begin a PostgreSQL transaction (pgx.Tx).
+    // 2. INSERT the new user into the database.
+    // 3. Invoke the provided `task()` closure.
+    // 4. If `task()` returns an error, execute tx.Rollback() and bubble up the error.
+    // 5. If `task()` succeeds, execute tx.Commit().
+    CreateWithTask(ctx context.Context, u *User, task func() error) error
 	GetByID(ctx context.Context, uid uuid.UUID) (*User, error)
 	GetByIdentifier(ctx context.Context, identifier string) (*User, error)
 	Update(ctx context.Context, u *User) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus) error
     UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
     CountActiveAdmins(ctx context.Context) (int, error)
+    // ActivateUser executes the final registration step after a successful Redis OTP match.
+    // It MUST execute the following within a SINGLE database transaction (pgx.Tx):
+    // 1. SELECT ... FROM users WHERE email = $1 FOR UPDATE to lock the row.
+    // 2. If the user does not exist, rollback and return user.ErrNotFound.
+    // 3. If the user's account_status is already 'ACTIVE' (or anything other than 'UNVERIFIED'),
+    //    rollback and return a specific domain error (e.g., user.ErrAccountAlreadyActive).
+    // 4. UPDATE the user's account_status to 'ACTIVE'.
+    // 5. INSERT the 'UserRegistered' event into the outbox_events table.
+    // 6. Commit the transaction.
+    ActivateUser(ctx context.Context, email string) error
 ```
 
 The `sessions` repository interface should include these actions: 
@@ -339,6 +359,77 @@ This policy should be checked during registration and updating profile of a user
 
 ### Email Policy
 Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddress()` to prevent malformed inputs
+
+### OTP Feature
+**1. Database & State Updates**
+*   Update the `users` table `account_status` ENUM to include an `UNVERIFIED` state.
+*   New registrations must be inserted into PostgreSQL with `account_status = 'UNVERIFIED'`.
+
+**2. OTP Generation & Redis Storage**
+*   **Generation:** Use `crypto/rand` to generate a cryptographically secure 6-digit numeric string (^[0-9]{6}$).
+*   **Storage:** Store the SHA-256 hash of the OTP in Redis using the key `otp:hash:<email>`. Never store the plaintext OTP.
+*   **Lifespan:** Set the Redis TTL for `otp:hash:<email>` to exactly 5 minutes.
+*   **Invalidation:** If a replacement OTP is requested, generating the new OTP and overwriting the existing `otp:hash:<email>` key automatically invalidates the previous one.
+
+**3. Rate Limiting (Brute-Force & Spam Prevention)**
+*   Track OTP requests using a secondary Redis integer key: `otp:count:<email>`.
+*   Every time an OTP is requested (initial or replacement), increment this key using Redis `INCR` and set its TTL to 10 minutes.
+*   If `otp:count:<email>` exceeds 3, reject any further replacement requests or verification attempts with a `429 Too Many Requests` status until the 10-minute TTL expires.
+*   Track verification attempts against the stored code with `otp:attempts:<email>`. Storing a new OTP (registration or resend) resets it to 0 with the same 5-minute TTL as `otp:hash:<email>`, so it expires with the code.
+*   `verify-otp` increments `otp:attempts:<email>` *before* comparing, so concurrent guesses cannot compare one code more than 5 times. When the count exceeds 5, delete `otp:hash:<email>` and `otp:attempts:<email>` (keep `otp:count:<email>`, so this cannot reset the resend limit) and return `429 Too Many Requests` telling the user to request a new OTP. The limit holds per counting window: a guess already in flight when a new code is stored can be compared against the new code without being counted, so each resend allows at most a few extra comparisons, and resends stay capped by `otp:count:<email>`.
+
+**4. API Endpoints & Transport Boundaries**
+*   **Modify `POST /api/v1/users/register`:**
+    *   Inserts the `UNVERIFIED` user into PostgreSQL.
+    *   Generates the OTP, hashes it, and stores it in Redis.
+    *   Dispatches the plaintext OTP to the Email Service (via Mailgun).
+    *   Does *not* publish the `UserRegistered` event for the Credit Service yet. (will be done in the later stage of the project)
+*   **New `POST /api/v1/users/resend-otp`:**
+    *   Accepts `{"email": "string"}`.
+    *   Checks the `otp:count:<email>` rate limit. If under the limit, generates a new OTP, overwrites the hash in Redis with a 5-minute TTL, and dispatches the email.
+    *   A new OTP should not be generated and resent to the client if an email is unknown or is already active
+*   **New `POST /api/v1/users/verify-otp`:**
+    *   Accepts `{"email": "string", "otp": "string"}`.
+    *   Hashes the provided OTP and compares it against the Redis `otp:hash:<email>` value.
+    *   **Success:** If matched, open a database transaction to update `account_status` to `ACTIVE`, delete the Redis OTP keys, and publish the `UserRegistered` event to the outbox for the Credit Service (outbox will be done in the later stage of the project). Return `200 OK`.
+    *   **Failure:** Return `400 Bad Request` for a mismatch, or `404 Not Found` if the OTP expired.
+
+**5. Authentication Blocking**
+*   Modify `POST /api/v1/users/login`: If credentials are valid but the user's `account_status` is `UNVERIFIED`, reject the login. Return `403 Forbidden` with a standardized error payload (e.g., `{"error": "ACCOUNT_UNVERIFIED"}`) to signal the frontend to route the user to the OTP entry screen.
+
+**6. Registration and Resend Flow**
+*   **Redis (Pre-flight):** Increment the `otp:count:<email>` rate limiter. If the limit is exceeded, immediately abort and return `429 Too Many Requests`.
+*   **Domain Orchestration (The Callback):** The Account Service invokes `usersRepo.CreateWithTask()`, passing the new `UNVERIFIED` user object and a closure containing the Redis write logic.
+*   **PostgreSQL (Open Transaction):** The repository opens a transaction and `INSERT`s the user.
+*   **Redis (Write Hash inside Callback):** The repository executes the closure. The closure attempts to write `otp:hash:<email>` with a 5-minute TTL to Redis.
+    *   **Failure:** If Redis is unreachable, the closure returns an error to the repository. The repository executes a PostgreSQL rollback and returns the error to the domain service, resulting in a `500 Internal Server Error`.
+*   **PostgreSQL (Commit):** If the closure succeeds, the repository commits the database transaction. The system of record is now secure.
+*   **Mailgun:** After `CreateWithTask` returns successfully, the domain service dispatches the plaintext OTP via Mailgun.
+    *   **Failure:** If Mailgun times out or returns a 5xx error, do not roll back the database. The user is safely stored as `UNVERIFIED`. Return a `500 Internal Server Error` to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which safely overwrites the Redis hash.
+
+**7. Verification Flow**
+*   Redis: Fetch the `otp:hash:<email>`. Compare it to the client's hashed input.
+    * Failure: If missing, return 404 Not Found. If mismatched, return 400 Bad Request.
+*   Domain Orchestration: The Account Service invokes `s.repository.ActivateUser(ctx, email)`.
+*   PostgreSQL (ActivateUser Transaction):
+    * The repository executes `SELECT ... FOR UPDATE` to lock the user row.
+    * If the user is missing, it returns `user.ErrNotFound` -> API returns `404 Not Found`.
+    * If the user is already `ACTIVE`, it returns `user.ErrAccountAlreadyVerified` -> API returns `409 Conflict`.
+    * Updates `account_status` to `ACTIVE` and inserts the `UserRegistered` outbox event (outbox event can be done in a later iteration for now).
+*   PostgreSQL (Commit): Commit the transaction. The user is now officially active and the Credit Service will eventually receive the outbox event.
+*   Redis (Cleanup): Delete the `otp:hash:<email>`, `otp:count:<email>` and `otp:attempts:<email>` keys to prevent reuse.
+    * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
+
+**8. Mailgun Delivery Contract**
+*   **Configuration:** With `OTP_DELIVERY=mailgun` (the default), the service requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `MAILGUN_SENDER_EMAIL` in the environment. With `OTP_DELIVERY=log` (local development only), it writes each code to its log instead and needs none of them.
+*   **API Endpoint & Authentication:** Use the standard Mailgun Messages API (`POST https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages`). Authenticate using HTTP Basic Auth with the username `api` and the password from `MAILGUN_API_KEY`.
+*   **Message Content:** Use a concise plaintext and HTML template: `"Your CampusRun verification code is: <OTP>. This code expires in 5 minutes."`
+*   **Message Body:** `from` should be `MAILGUN_SENDER_EMAIL` and `to` should be the OTP recipient email received from registration. `subject` should be `"CampusRun Email Verification"`
+*   **Timeout & Retry Behavior:** Configure the `http.Client` for the Mailgun call with a strict 5-second timeout. Do not implement automatic application-level retries for timeouts or 5xx errors; rely on the frontend client to prompt the user to manually click "Resend" to avoid stalling the synchronous API response.
+
+**9. Resend Edge Cases**
+*   If an email is submitted to `/resend-otp` that does not exist in the `users` table, the service must return `404 Not Found`.
+*   If an email is submitted to `/resend-otp` but the user's `account_status` is already `ACTIVE`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
 
 ### Observability & Error Handling
 To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.

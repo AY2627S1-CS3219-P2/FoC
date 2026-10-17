@@ -11,7 +11,7 @@
 //   2026-09-21 (later): the session now carries email and contact, which
 //   user-service's UserResponse/RestrictedUserResponse gained in 72fe5a5.
 //   2026-10-10 (Claude Code, Opus 5.5): the three OTP calls now reach
-//   user-service's OTP endpoints (PR #14) through the gateway's D-041 routes;
+//   user-service's OTP endpoints (PR #14) through the gateway's D-043 routes;
 //   verify no longer signs in (LoginPage logs in afterwards), an unverified
 //   login is its own error, and a rate-limited code request carries when the
 //   block ends.
@@ -49,9 +49,9 @@ const ROUTES = {
   register: "/auth/register",
   refresh: "/auth/refresh",
   logout: "/auth/logout",
-  /** F1.1.2.7 — D-041, onto user-service's /api/v1/users/verify-otp. */
+  /** F1.1.2.7 — D-043, onto user-service's /api/v1/users/verify-otp. */
   verify: "/auth/verify-otp",
-  /** F1.1.2.4 — D-041, onto user-service's /api/v1/users/resend-otp. */
+  /** F1.1.2.4 — D-043, onto user-service's /api/v1/users/resend-otp. */
   resend: "/auth/resend-otp",
   /** The profile route; `/{uid}` is appended. */
   profile: "/api/users",
@@ -108,7 +108,10 @@ export interface AuthResult {
   tokens: TokenPair;
 }
 
-function initialsOf(value: string): string {
+// AI-generated (edited by nigeltzy): exported so App can refresh the avatar
+// initials after a username change.
+/** Two-letter avatar initials for a username, e.g. "nigeltzy" → "NI". */
+export function initialsOf(value: string): string {
   const cleaned = value.replace(/[^a-zA-Z0-9]+/g, " ").trim();
   if (!cleaned) return "NU";
   const parts = cleaned.split(/\s+/);

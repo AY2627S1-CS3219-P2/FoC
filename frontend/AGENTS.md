@@ -24,8 +24,9 @@ rest of the frontend stack, but this file wrongly listed it as unchosen until
 transform, so there is no second build pipeline to keep in step. Tests live
 beside the code as `*.test.ts`. Only logic is covered today: validation rules,
 the OTP fixture's timing, the authorized transport's refresh and retry, the
-gateway login, refresh, restore and logout calls, the suppliers fixture, and
-the remembered view. There is no component testing
+gateway login, refresh, restore and logout calls, the suppliers fixture, the
+remembered view, and the user-service profile client (`usersApi.ts`) with the
+contact and new-password checks. There is no component testing
 library, so rendering is still unverified; adding one is a separate stack
 decision and still needs asking.
 
@@ -75,7 +76,9 @@ src/
 │   │                  suppliersFixture.ts (fixture builds only)
 │   ├── errands/       NewErrandView, MyErrandsView    [MOCK]
 │   ├── credits/       CreditsView                     [MOCK]
-│   └── profile/       ProfileView
+│   ├── profile/       ProfileView, ProfileEditForms (one modal per
+│   │                  field), usersApi.ts (user-service /api/users/{uid})
+│   └── admin/         AdminView (ADMIN sessions only; uses profile's usersApi)
 ├── components/        shared only — AppShell, Modal, Toast, MockBadge, icons
 ├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
 │                      tokens.ts (AT store), jwt.ts, lastView.ts
@@ -84,8 +87,9 @@ src/
 └── main.tsx
 ```
 
-Every feature folder maps to one backend service. `suppliers/`, `auth/` and
-`profile/` are backed by real services through the gateway; `errands/` and
+Every feature folder maps to one backend service; `auth/`, `profile/` and
+`admin/` all map to user-service. `suppliers/`, `auth/`, `profile/` and
+`admin/` are backed by real services through the gateway; `errands/` and
 `credits/` still use fixtures. A fixture build (`VITE_USE_FIXTURES=true`)
 puts `auth/` and `suppliers/` on fixtures too, so it makes no gateway call;
 the suppliers fixture is supplier-service's seed CSV, loaded the way its
@@ -108,6 +112,29 @@ forwards `/auth` and `/api` to the gateway (D-033). These rules apply:
   coupling is the goal). Shared UI primitives stay inside `frontend/`;
   nothing is shared with a backend service.
 
+<!-- AI-generated (edited by nigeltzy): the section below transcribes the owner's instruction in chat, 2026-10-11, recorded by Claude Code (Opus 5.5). -->
+## Profile editing and the admin screen
+
+Recorded from the owner's instruction (2026-10-11): "implement the front end
+for the changing of a user's own password, phone number and username. it
+should be individual modals (instead of changing all at once, change one by
+one). Admin dashboard can be implemented at the same time with the lookin gup
+of another user's profile (but this lookup should only be available to ADMIN
+users). Same thing with the admin resetting user's password".
+
+- Each of username, contact number and password has its own modal on the
+  Profile screen and sends only that field in user-service's
+  `UpdateProfileRequest` (its `api/openapi.yaml` on `main`).
+- A password change signs the user out: user-service revokes every session of
+  the account on success, the current one included.
+- The Admin nav item and view render only for an ADMIN session. **That is an
+  affordance, not access control** (see Gotchas): user-service's
+  `GET /api/v1/users/{uid}` answers any signed-in caller, with the restricted
+  fields for a non-admin. Making the lookup itself admin-only would be a
+  user-service change for its owner.
+- Lookup is by account ID because user-service has no endpoint to list or
+  search users.
+
 ## Mock services — read before touching them
 
 `order-service` and `credit-service` do not exist. So the frontend can be
@@ -117,10 +144,10 @@ own folders instead (`src/lib/mock.ts` has the full note).
 `authApi.ts` holds **two** clients — the fixtures, and a gateway-backed one
 implementing D-010..D-015 — and `App.tsx` picks between them once: the
 gateway, unless `VITE_USE_FIXTURES=true`. Every path in `ROUTES` is
-recorded: the two OTP paths (`verify`, `resend`) are the gateway's D-041
+recorded: the two OTP paths (`verify`, `resend`) are the gateway's D-043
 routes onto user-service's OTP endpoints (PR #14). `<MockBadge />` on the login and profile screens
 shows only in a fixture build.
-<!-- AI-generated (edited by nigeltzy): the OTP-paths sentence above was updated by Claude Code (Opus 5.5, 2026-10-10) when the frontend was wired to D-041. -->
+<!-- AI-generated (edited by nigeltzy): the OTP-paths sentence above was updated by Claude Code (Opus 5.5, 2026-10-10) when the frontend was wired to D-043. -->
 
 **Those shapes are not a contract.** They were invented here to have something
 to render. An API interface belongs to its service's owner (root §1), and a

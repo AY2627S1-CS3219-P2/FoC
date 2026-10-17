@@ -31,6 +31,14 @@ func (f *fakeAuthRepository) Create(_ context.Context, account *User) error {
 	return nil
 }
 
+func (f *fakeAuthRepository) CreateWithTask(_ context.Context, account *User, task func() error) error {
+	if err := task(); err != nil {
+		return err
+	}
+	f.user = account
+	return nil
+}
+
 func (f *fakeAuthRepository) HasAdmin(context.Context) (bool, error) {
 	return false, nil
 }
@@ -82,6 +90,8 @@ func (f *fakeAuthRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.U
 	return nil
 }
 
+func (f *fakeAuthRepository) ActivateUser(context.Context, string) error { return nil }
+
 type fakeTokenIssuer struct {
 	pair      TokenPair
 	err       error
@@ -102,11 +112,12 @@ func TestAuthenticatorAuthenticate(t *testing.T) {
 	accountID := uuid.New()
 	issuerFailure := errors.New("issuer unavailable")
 	tests := map[string]struct {
-		accountStatus AccountStatus
-		password      string
-		lookupErr     error
-		issuerErr     error
-		wantErr       error
+		accountStatus  AccountStatus
+		password       string
+		lookupErr      error
+		issuerErr      error
+		wantErr        error
+		wantIssuerCall bool
 	}{
 		"issues tokens for valid active credentials": {
 			accountStatus: AccountStatusActive,
@@ -127,11 +138,19 @@ func TestAuthenticatorAuthenticate(t *testing.T) {
 			password:      "ValidPass1",
 			wantErr:       ErrAccountSuspended,
 		},
-		"returns token issuer error": {
-			accountStatus: AccountStatusActive,
+		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — covers the
+		// owner-recorded OTP gate after valid credential verification. Author review: ZI YANG - validated correctness.
+		"rejects unverified account without issuing tokens": {
+			accountStatus: AccountStatusUnverified,
 			password:      "ValidPass1",
-			issuerErr:     issuerFailure,
-			wantErr:       issuerFailure,
+			wantErr:       ErrAccountUnverified,
+		},
+		"returns token issuer error": {
+			accountStatus:  AccountStatusActive,
+			password:       "ValidPass1",
+			issuerErr:      issuerFailure,
+			wantErr:        issuerFailure,
+			wantIssuerCall: true,
 		},
 	}
 
@@ -156,6 +175,9 @@ func TestAuthenticatorAuthenticate(t *testing.T) {
 			if tt.wantErr != nil {
 				if got != (TokenPair{}) {
 					t.Fatalf("tokens = %#v, want empty pair", got)
+				}
+				if !tt.wantIssuerCall && issuer.issuedFor != uuid.Nil {
+					t.Fatalf("issuer was called for rejected authentication, got user ID %v", issuer.issuedFor)
 				}
 				return
 			}

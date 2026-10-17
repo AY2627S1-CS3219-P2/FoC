@@ -94,3 +94,12 @@ Once scaffolded: `go run ./cmd/api`, `go test ./...`,
 - Unit tests against an in-memory fake repository (root §7) cannot demonstrate
   atomicity or isolation — concurrency claims need the integration tier, a real
   Postgres, and several goroutines at once.
+
+## Git Commit Guidelines
+- **Commit Scope:** Limit commits to one logical change at a time. Do not bundle unrelated features, fixes, or formatting changes.
+- **Commit Message Format:** Follow Conventional Commits: `<type>: <short description in imperative mood, lower case, no trailing period>`.
+  - Allowed types: `feat`, `fix`, `chore`, `docs`, `style`, `refactor`, `test`.
+  - Subject line length limit: 50 characters.
+- **Message Body:** If a body is required, leave a blank line after the subject. Wrap text at 72 characters. Explain *why* and *what* was changed, not *how*.
+- **Forbidden Actions:** Never commit hardcoded secrets, API keys, credentials, large datasets, or auto-generated build artifacts.
+- **Size Limits:** If a change exceeds 500 lines of substantial code, halt and prompt the user to review the scope or create a design issue before committing.

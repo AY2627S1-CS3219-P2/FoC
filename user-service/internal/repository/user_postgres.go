@@ -61,6 +61,7 @@ const (
 				ELSE tokens_valid_after
 			END
 		WHERE uid = $3`
+	activateUserByEmailQuery = `UPDATE users SET account_status = 'ACTIVE' WHERE LOWER(email) = LOWER($1) AND account_status = 'UNVERIFIED'`
 )
 
 // AI-generated (edited by ZI YANG): documents the exported repository adapter
@@ -78,7 +79,44 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 // Create inserts a user and fills Go-generated fields that were not supplied.
 func (r *PostgresRepository) Create(ctx context.Context, u *user.User) error {
 	prepared := prepareForCreate(*u, time.Now())
-	_, err := r.pool.Exec(ctx, insertUserQuery,
+	if err := insertUser(ctx, r.pool, prepared); err != nil {
+		return err
+	}
+	*u = prepared
+	return nil
+}
+
+// CreateWithTask inserts a user, runs task while the PostgreSQL transaction
+// remains open, and commits only when task succeeds.
+func (r *PostgresRepository) CreateWithTask(ctx context.Context, u *user.User, task func() error) error {
+	if task == nil {
+		return errors.New("create task is required")
+	}
+	prepared := prepareForCreate(*u, time.Now())
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin create user transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := insertUser(ctx, tx, prepared); err != nil {
+		return err
+	}
+	if err := task(); err != nil {
+		return fmt.Errorf("run create user task: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit create user transaction: %w", err)
+	}
+	*u = prepared
+	return nil
+}
+
+type userInserter interface {
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func insertUser(ctx context.Context, executor userInserter, prepared user.User) error {
+	_, err := executor.Exec(ctx, insertUserQuery,
 		prepared.UID,
 		prepared.Username,
 		prepared.Email,
@@ -93,7 +131,6 @@ func (r *PostgresRepository) Create(ctx context.Context, u *user.User) error {
 	if err != nil {
 		return fmt.Errorf("create user: %w", mapDatabaseError(err))
 	}
-	*u = prepared
 	return nil
 }
 
@@ -172,6 +209,31 @@ func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uu
 	return nil
 }
 
+// ActivateUser locks and activates a pending account in one transaction.
+func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin activation transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var status user.AccountStatus
+	if err := tx.QueryRow(ctx, `SELECT account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`, email).Scan(&status); err != nil {
+		return fmt.Errorf("lock account for activation: %w", mapDatabaseError(err))
+	}
+	// AI-generated (edited by James Teo): only an UNVERIFIED account activates;
+	// SUSPENDED, like ACTIVE, is refused instead of reported as verified.
+	if status != user.AccountStatusUnverified {
+		return user.ErrAccountAlreadyVerified
+	}
+	if _, err := tx.Exec(ctx, activateUserByEmailQuery, email); err != nil {
+		return fmt.Errorf("activate user: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit activation transaction: %w", err)
+	}
+	return nil
+}
+
 type rowScanner interface {
 	Scan(dest ...any) error
 }
@@ -215,7 +277,7 @@ func prepareForCreate(u user.User, now time.Time) user.User {
 		u.AccountRole = user.AccountRoleStudent
 	}
 	if u.AccountStatus == "" {
-		u.AccountStatus = user.AccountStatusActive
+		u.AccountStatus = user.AccountStatusUnverified
 	}
 	if u.TokensValidAfter.IsZero() {
 		// AI-generated (edited by ZI YANG).

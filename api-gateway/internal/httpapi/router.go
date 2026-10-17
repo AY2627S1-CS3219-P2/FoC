@@ -11,7 +11,7 @@
 //   again, and the auth routes gained one constructor each for the refresh
 //   token's cookie. 2026-10-10 (Claude Code, Opus 5.5): /auth/resend-otp and
 //   /auth/verify-otp added as passthroughs for user-service's OTP endpoints
-//   (PR #14), recorded as D-041.
+//   (PR #14), recorded as D-043.
 // Author review: Nigeltzy - Directed and checked the ouput of the AI code, intention and
 //   changes are as seen above. I also checked externally to see if practices
 //   such as importing third-party packages were reasonable and safe.
@@ -63,7 +63,7 @@ func passthrough(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
 func authRoutes() []authRoute {
 	return []authRoute{
 		{"register", passthrough},
-		// AI-generated (edited by nigeltzy): the OTP routes added by D-041.
+		// AI-generated (edited by nigeltzy): the OTP routes added by D-043.
 		// verify-otp only activates the account and returns no tokens, so the
 		// client logs in afterwards through /auth/login.
 		{"resend-otp", passthrough},
@@ -79,7 +79,7 @@ func authRoutes() []authRoute {
 // NewRouter builds the gateway's handler: /healthz, the six public /auth
 // routes and the /api/<service> prefixes behind RequireToken. Clients call
 // these public paths, so renaming one, or moving one out of RequireToken,
-// changes the gateway's API (D-027 and D-041 in ai/decisions.md).
+// changes the gateway's API (D-027 and D-043 in ai/decisions.md).
 func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)

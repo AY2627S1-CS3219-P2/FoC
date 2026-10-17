@@ -19,6 +19,15 @@ type RegisterRequest struct {
 	Password string `json:"password"`
 }
 
+type OTPEmailRequest struct {
+	Email string `json:"email"`
+}
+
+type VerifyOTPRequest struct {
+	Email string `json:"email"`
+	OTP   string `json:"otp"`
+}
+
 // LoginRequest is the JSON body accepted by login.
 type LoginRequest struct {
 	Identifier string `json:"identifier"`

@@ -28,11 +28,294 @@ func TestAccountServiceRegisterHashesPasswordAndSetsDefaults(t *testing.T) {
 	if repository.user != account {
 		t.Fatalf("created account pointer = %p, want %p", repository.user, account)
 	}
-	if account.Email != "student@u.nus.edu" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusActive {
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — asserts the
+	// owner-recorded OTP gate for every new registration. Author review: verified correctness.
+	if account.Email != "student@u.nus.edu" || account.Username != "student" || account.AccountRole != AccountRoleStudent || account.AccountStatus != AccountStatusUnverified {
 		t.Fatalf("created account = %#v", account)
 	}
 	if account.PasswordHash == "ValidPass1" || !hash.CheckPassword(account.PasswordHash, "ValidPass1") {
 		t.Fatal("registration password was not stored as a valid hash")
+	}
+}
+
+func TestAccountServiceRegisterWithOTPStoresOnlyHashInsideCreateTask(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	store := &fakeOTPStore{count: 1}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — exercises the
+	// owner-recorded pre-flight count and transactional Redis-write boundary. Author review: ZI YANG - validated correctness.
+	account, otp, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !repository.createWithTaskCalled || repository.user != account {
+		t.Fatalf("CreateWithTask state = called %t, account %#v", repository.createWithTaskCalled, repository.user)
+	}
+	if account.AccountStatus != AccountStatusUnverified || store.storedEmail != account.Email {
+		t.Fatalf("account/store = %#v / %q", account, store.storedEmail)
+	}
+	if otp == "" || store.storedHash != HashOTP(otp) || store.storedHash == otp {
+		t.Fatalf("OTP/hash = %q/%q", otp, store.storedHash)
+	}
+}
+
+func TestAccountServiceRegisterWithOTPRejectsRateLimitBeforePersistence(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: OTPRequestLimit + 1})
+
+	_, _, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, ErrOTPRequestLimit) {
+		t.Fatalf("error = %v, want ErrOTPRequestLimit", err)
+	}
+	if repository.createWithTaskCalled || repository.user != nil {
+		t.Fatal("rate-limited registration reached PostgreSQL persistence")
+	}
+}
+
+func TestAccountServiceRegisterWithOTPStopsOnCountPreflightFailure(t *testing.T) {
+	redisFailure := errors.New("Redis unavailable")
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{incrementErr: redisFailure})
+
+	_, _, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, redisFailure) {
+		t.Fatalf("error = %v, want Redis failure", err)
+	}
+	if repository.createWithTaskCalled || repository.user != nil {
+		t.Fatal("failed rate-limit pre-flight reached PostgreSQL persistence")
+	}
+}
+
+func TestAccountServiceRegisterWithOTPRollsBackOnRedisFailure(t *testing.T) {
+	redisFailure := errors.New("Redis unavailable")
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: 1, storeErr: redisFailure})
+
+	_, _, err := service.RegisterWithOTP(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, redisFailure) {
+		t.Fatalf("error = %v, want Redis failure", err)
+	}
+	if !repository.createWithTaskCalled || repository.user != nil {
+		t.Fatal("failed Redis write must not leave a persisted account")
+	}
+}
+
+func TestAccountServiceRegisterDeliversOTPAfterPersistingUnverifiedAccount(t *testing.T) {
+	repository := &fakeAccountRepository{}
+	store := &fakeOTPStore{count: 1}
+	deliverer := &fakeOTPDeliverer{}
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+	account, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if repository.user != account || account.AccountStatus != AccountStatusUnverified {
+		t.Fatal("registration did not retain the unverified account before delivery")
+	}
+	if deliverer.email != account.Email || deliverer.otp == "" {
+		t.Fatal("delivery did not receive the persisted account email and OTP")
+	}
+	if store.storedHash != HashOTP(deliverer.otp) {
+		t.Fatal("stored hash does not match delivered OTP")
+	}
+}
+
+func TestAccountServiceRegisterRetainsUnverifiedAccountWhenDeliveryFails(t *testing.T) {
+	deliveryFailure := errors.New("Mailgun unavailable")
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: 1}, &fakeOTPDeliverer{err: deliveryFailure})
+
+	_, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
+	if !errors.Is(err, deliveryFailure) {
+		t.Fatalf("error = %v, want delivery failure", err)
+	}
+	if repository.user == nil || repository.user.AccountStatus != AccountStatusUnverified {
+		t.Fatal("delivery failure must not remove the persisted unverified account")
+	}
+}
+
+func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGeneratingOTP(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		account *User
+		wantErr error
+	}{
+		"unknown": {account: nil, wantErr: ErrNotFound},
+		"active":  {account: &User{AccountStatus: AccountStatusActive}, wantErr: ErrAccountAlreadyVerified},
+	} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeOTPStore{count: 1}
+			deliverer := &fakeOTPDeliverer{}
+			service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: testCase.account}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+			err := service.ResendOTP(context.Background(), "student@u.nus.edu")
+			if !errors.Is(err, testCase.wantErr) {
+				t.Fatalf("error = %v, want %v", err, testCase.wantErr)
+			}
+			if store.storedHash != "" || deliverer.otp != "" {
+				t.Fatal("unknown or active account must not generate or deliver an OTP")
+			}
+		})
+	}
+}
+
+func TestAccountServiceResendOTPReplacesHashAndDeliversReplacement(t *testing.T) {
+	store := &fakeOTPStore{count: 2}
+	deliverer := &fakeOTPDeliverer{}
+	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+	if err := service.ResendOTP(context.Background(), "student@u.nus.edu"); err != nil {
+		t.Fatal(err)
+	}
+	if store.storedHash != HashOTP(deliverer.otp) || deliverer.email != "student@u.nus.edu" {
+		t.Fatal("resend did not store and deliver the replacement OTP")
+	}
+}
+
+func TestAccountServiceResendOTPEnforcesRequestLimit(t *testing.T) {
+	store := &fakeOTPStore{count: OTPRequestLimit + 1}
+	deliverer := &fakeOTPDeliverer{}
+	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+
+	err := service.ResendOTP(context.Background(), "student@u.nus.edu")
+	if !errors.Is(err, ErrOTPRequestLimit) {
+		t.Fatalf("error = %v, want ErrOTPRequestLimit", err)
+	}
+	if store.storedHash != "" || deliverer.otp != "" {
+		t.Fatal("over-limit resend must not generate or deliver an OTP")
+	}
+}
+
+func TestAccountServiceVerifyOTPActivatesAndCleansUp(t *testing.T) {
+	store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+	if err := service.VerifyOTP(context.Background(), "student@u.nus.edu", "123456"); err != nil {
+		t.Fatal(err)
+	}
+	if repository.status != AccountStatusActive {
+		t.Fatal("account was not activated")
+	}
+}
+
+func TestAccountServiceVerifyOTPRejectsMissingMismatchedAndLimited(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		store *fakeOTPStore
+		otp   string
+		want  error
+	}{
+		"missing":  {store: &fakeOTPStore{}, otp: "123456", want: ErrNotFound},
+		"mismatch": {store: &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}, otp: "000000", want: ErrInvalidOTP},
+		"limited":  {store: &fakeOTPStore{count: OTPRequestLimit + 1, requestFound: true}, otp: "123456", want: ErrOTPRequestLimit},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := NewAccountServiceWithOTP(&fakeAccountRepository{}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, testCase.store).VerifyOTP(context.Background(), "student@u.nus.edu", testCase.otp)
+			if !errors.Is(err, testCase.want) {
+				t.Fatalf("error = %v, want %v", err, testCase.want)
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo): the attempt after OTPAttemptLimit wrong
+// guesses is refused and discards the code, so the right code no longer works.
+func TestAccountServiceVerifyOTPDiscardsCodeAfterAttemptLimit(t *testing.T) {
+	for name, guessAfterLimit := range map[string]string{"wrong code": "000000", "right code": "123456"} {
+		t.Run(name, func(t *testing.T) {
+			store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+			repository := &fakeAccountRepository{}
+			service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+			ctx := context.Background()
+
+			for attempt := 1; attempt <= OTPAttemptLimit; attempt++ {
+				if err := service.VerifyOTP(ctx, "student@u.nus.edu", "000000"); !errors.Is(err, ErrInvalidOTP) {
+					t.Fatalf("wrong guess %d error = %v, want ErrInvalidOTP", attempt, err)
+				}
+			}
+			if err := service.VerifyOTP(ctx, "student@u.nus.edu", guessAfterLimit); !errors.Is(err, ErrOTPAttemptsExceeded) {
+				t.Fatalf("attempt after the limit error = %v, want ErrOTPAttemptsExceeded", err)
+			}
+			if store.hashFound {
+				t.Fatal("code was not discarded after the attempt limit")
+			}
+			if err := service.VerifyOTP(ctx, "student@u.nus.edu", "123456"); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("right code after the limit error = %v, want ErrNotFound", err)
+			}
+			if repository.status == AccountStatusActive {
+				t.Fatal("account was activated after the attempt limit")
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo): the right code still verifies on the last
+// attempt within the limit.
+func TestAccountServiceVerifyOTPAcceptsRightCodeWithinAttemptLimit(t *testing.T) {
+	store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+	repository := &fakeAccountRepository{}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+	ctx := context.Background()
+
+	for attempt := 1; attempt < OTPAttemptLimit; attempt++ {
+		if err := service.VerifyOTP(ctx, "student@u.nus.edu", "000000"); !errors.Is(err, ErrInvalidOTP) {
+			t.Fatalf("wrong guess %d error = %v, want ErrInvalidOTP", attempt, err)
+		}
+	}
+	if err := service.VerifyOTP(ctx, "student@u.nus.edu", "123456"); err != nil {
+		t.Fatalf("right code on attempt %d: %v", OTPAttemptLimit, err)
+	}
+	if repository.status != AccountStatusActive || !store.deleted {
+		t.Fatalf("status = %q, OTP keys deleted = %t; want ACTIVE and deleted", repository.status, store.deleted)
+	}
+}
+
+// AI-generated (edited by James Teo): a resent code starts a fresh attempt count.
+func TestAccountServiceResendOTPResetsAttemptCount(t *testing.T) {
+	store := &fakeOTPStore{count: 1, hash: HashOTP("123456"), hashFound: true}
+	deliverer := &fakeOTPDeliverer{}
+	repository := &fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+	ctx := context.Background()
+
+	for attempt := 1; attempt <= OTPAttemptLimit; attempt++ {
+		if err := service.VerifyOTP(ctx, "student@u.nus.edu", "000000"); !errors.Is(err, ErrInvalidOTP) {
+			t.Fatalf("wrong guess %d error = %v, want ErrInvalidOTP", attempt, err)
+		}
+	}
+	if err := service.ResendOTP(ctx, "student@u.nus.edu"); err != nil {
+		t.Fatalf("resend OTP: %v", err)
+	}
+	wrongGuess := "000000"
+	if deliverer.otp == wrongGuess {
+		wrongGuess = "111111"
+	}
+	for attempt := 1; attempt < OTPAttemptLimit; attempt++ {
+		if err := service.VerifyOTP(ctx, "student@u.nus.edu", wrongGuess); !errors.Is(err, ErrInvalidOTP) {
+			t.Fatalf("wrong guess %d after resend error = %v, want ErrInvalidOTP", attempt, err)
+		}
+	}
+	if err := service.VerifyOTP(ctx, "student@u.nus.edu", deliverer.otp); err != nil {
+		t.Fatalf("resent code on attempt %d after resend: %v", OTPAttemptLimit, err)
+	}
+	if repository.status != AccountStatusActive {
+		t.Fatal("account was not activated with the resent code")
+	}
+}
+
+// AI-generated (edited by James Teo): when the repository refuses activation
+// because the account is not UNVERIFIED, the OTP keys stay in place.
+func TestAccountServiceVerifyOTPKeepsKeysWhenActivationRefused(t *testing.T) {
+	store := &fakeOTPStore{hash: HashOTP("123456"), hashFound: true}
+	repository := &fakeAccountRepository{activateErr: ErrAccountAlreadyVerified}
+	service := NewAccountServiceWithOTP(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store)
+
+	err := service.VerifyOTP(context.Background(), "student@u.nus.edu", "123456")
+	if !errors.Is(err, ErrAccountAlreadyVerified) {
+		t.Fatalf("error = %v, want ErrAccountAlreadyVerified", err)
+	}
+	if store.deleted || !store.hashFound {
+		t.Fatal("OTP keys were removed although activation was refused")
 	}
 }
 
@@ -247,6 +530,46 @@ func TestAccountServiceUpdateProfileChangesPasswordAndRevokesSessions(t *testing
 	}
 	if sessions.uid != uid {
 		t.Fatalf("sessions revoked for = %s, want %s", sessions.uid, uid)
+	}
+}
+
+// AI-generated (edited by nigeltzy): a sub-second clock, so the cutoff must be
+// truncated; a token issued later in the same second has iat == cutoff.
+func TestAccountServicePasswordChangeCutoffIsWholeSeconds(t *testing.T) {
+	uid := uuid.New()
+	oldHash, err := hash.HashPassword("OldPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	timestamp := time.Date(2026, 10, 11, 12, 0, 5, 734_000_000, time.UTC)
+	repository := &fakeAccountRepository{user: &User{UID: uid, PasswordHash: oldHash}}
+	service := NewAccountServiceWithClock(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, func() time.Time { return timestamp })
+
+	updated, err := service.UpdateProfile(context.Background(), uid, "", "", "OldPass1", "NewPass1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 10, 11, 12, 0, 5, 0, time.UTC)
+	if !updated.TokensValidAfter.Equal(want) {
+		t.Fatalf("tokens valid after = %s, want %s", updated.TokensValidAfter, want)
+	}
+}
+
+// AI-generated (edited by nigeltzy): suspension writes the same whole-second
+// cutoff to Redis and to PostgreSQL.
+func TestAccountServiceSuspensionCutoffIsWholeSeconds(t *testing.T) {
+	uid := uuid.New()
+	timestamp := time.Date(2026, 10, 11, 12, 0, 5, 734_000_000, time.UTC)
+	repository := &fakeAccountRepository{user: &User{UID: uid}}
+	writer := &fakeSuspensionWriter{}
+	service := NewAccountServiceWithClock(repository, writer, &fakeAccountSessionRepository{}, time.Minute, func() time.Time { return timestamp })
+
+	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
+		t.Fatal(err)
+	}
+	want := time.Date(2026, 10, 11, 12, 0, 5, 0, time.UTC)
+	if !writer.at.Equal(want) || !repository.tokensValidAfter.Equal(want) {
+		t.Fatalf("cutoff = redis %s, postgres %s, want %s for both", writer.at, repository.tokensValidAfter, want)
 	}
 }
 

@@ -11,6 +11,10 @@
 //   remembers which view the tab was on across that reload. 2026-10-10
 //   (Claude Code, Opus 5.5): wires the gateway client's real OTP calls,
 //   including resumeVerification for unverified logins.
+//   2026-10-11 (Claude Code, Opus 5.5): one authorized transport now backs
+//   both the suppliers and the user-service profile client; profile edits
+//   update the session, a password change signs the user out, and the
+//   admin view renders for ADMIN sessions only.
 // Author review: Nigeltzy - Used to create the original boilerplate generation,
 // afterall most react App.tsx files follow a similar pattern, and then afterwards it was used to update the changes based on my updated requirements, seems to have validly made 
 // updates thereafter according to updating requirements and changes to other files.
@@ -35,6 +39,8 @@ import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
 import { HomeView } from "./features/home/HomeView";
 import { ProfileView } from "./features/profile/ProfileView";
+import { createUsersApi, type UserProfile } from "./features/profile/usersApi";
+import { AdminView } from "./features/admin/AdminView";
 import { SuppliersView } from "./features/suppliers/SuppliersView";
 import type { ViewName } from "./views";
 
@@ -75,17 +81,19 @@ export function App() {
   const [tokens] = useState(createTokenStore);
 
   /**
-   * The authorized transport and the suppliers client built over it, made
-   * once per TokenStore so concurrent requests share one in-flight refresh.
+   * The authorized transport and the clients built over it, made once per
+   * TokenStore so concurrent requests share one in-flight refresh.
    *
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const suppliers = useMemo(() => {
+  const { suppliers, usersApi } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
-    if (!usingGateway) return createSuppliersFixture();
+    // AI-generated (edited by nigeltzy): and there is no user-service to edit a
+    // profile in, so usersApi is null and the edit controls stay hidden.
+    if (!usingGateway) return { suppliers: createSuppliersFixture(), usersApi: null };
     const authorizedSend = createAuthorizedSend({
       tokens,
       refresh: authApi.refreshAccessTokenViaGateway,
@@ -95,7 +103,10 @@ export function App() {
         setView("home");
       },
     });
-    return createSuppliersApi(authorizedSend);
+    return {
+      suppliers: createSuppliersApi(authorizedSend),
+      usersApi: createUsersApi(authorizedSend),
+    };
   }, [tokens]);
 
   // Restored from sessionStorage so a reload lands where the tab was, not on
@@ -181,29 +192,72 @@ export function App() {
     setView("home");
   }, [tokens]);
 
+  // AI-generated (edited by nigeltzy).
+  /** A username or contact change: the saved values replace the session's. */
+  const handleProfileUpdated = useCallback((profile: UserProfile) => {
+    setSession((current) =>
+      current
+        ? {
+            ...current,
+            username: profile.username || current.username,
+            contact: profile.contact,
+            initials: authApi.initialsOf(profile.username || current.username),
+          }
+        : current,
+    );
+  }, []);
+
+  // AI-generated (edited by nigeltzy).
+  /**
+   * user-service revokes every session on a password change, this one
+   * included, so the refresh cookie is already dead. Clear local state and
+   * send the user to the login page; no logout call, since the gateway would
+   * only find a revoked session to end. Logging back in automatically is not
+   * attempted: a login in the same second as the change can be issued a
+   * refresh token user-service then rejects (its iat is whole seconds,
+   * tokens_valid_after is not).
+   */
+  const handlePasswordChanged = useCallback(() => {
+    tokens.clear();
+    clearLastView();
+    setSession(null);
+    setView("home");
+    setToast({ text: "Password changed. Log in with your new password.", kind: "success" });
+  }, [tokens]);
+
   if (restoring) {
     return <div className="app-loading" aria-busy="true" />;
   }
 
   if (!session) {
     return (
-      <LoginPage
-        onAuthenticated={handleAuthenticated}
-        logIn={authClient.logIn}
-        signUp={authClient.signUp}
-        verifyRegistration={authClient.verifyRegistration}
-        resendOtp={authClient.resendOtp}
-        resumeVerification={authClient.resumeVerification}
-        isMock={!usingGateway}
-      />
+      <>
+        <LoginPage
+          onAuthenticated={handleAuthenticated}
+          logIn={authClient.logIn}
+          signUp={authClient.signUp}
+          verifyRegistration={authClient.verifyRegistration}
+          resendOtp={authClient.resendOtp}
+          resumeVerification={authClient.resumeVerification}
+          isMock={!usingGateway}
+        />
+        {/* AI-generated (edited by nigeltzy): carries the password-changed
+            notice onto the login page. */}
+        <Toast message={toast} onDismiss={dismissToast} />
+      </>
     );
   }
+
+  // AI-generated (edited by nigeltzy).
+  // A remembered "admin" view can outlive the account's ADMIN role, so a
+  // non-admin session falls back to Home rather than rendering it.
+  const shownView: ViewName = view === "admin" && session.role !== "ADMIN" ? "home" : view;
 
   return (
     <>
       <AppShell
         session={session}
-        view={view}
+        view={shownView}
         onNavigate={setView}
         mode={mode}
         onModeChange={setMode}
@@ -211,9 +265,9 @@ export function App() {
         held={held}
         onLogOut={handleLogOut}
       >
-        {view === "home" && <HomeView mode={mode} onNavigate={setView} />}
+        {shownView === "home" && <HomeView mode={mode} onNavigate={setView} />}
 
-        {view === "new-errand" && (
+        {shownView === "new-errand" && (
           <NewErrandView
             suppliersApi={suppliers}
             suppliersMock={!usingGateway}
@@ -223,9 +277,9 @@ export function App() {
           />
         )}
 
-        {view === "my-errands" && <MyErrandsView mode={mode} />}
+        {shownView === "my-errands" && <MyErrandsView mode={mode} />}
 
-        {view === "suppliers" && (
+        {shownView === "suppliers" && (
           <SuppliersView
             api={suppliers}
             isMock={!usingGateway}
@@ -234,16 +288,25 @@ export function App() {
           />
         )}
 
-        {view === "credits" && <CreditsView />}
+        {shownView === "credits" && <CreditsView />}
 
-        {view === "profile" && (
+        {shownView === "profile" && (
           <ProfileView
             session={session}
             isMock={!usingGateway}
+            usersApi={usersApi}
+            onProfileUpdated={handleProfileUpdated}
+            onPasswordChanged={handlePasswordChanged}
+            onNotify={setToast}
             mode={mode}
             onModeChange={setMode}
             onLogOut={handleLogOut}
           />
+        )}
+
+        {/* AI-generated (edited by nigeltzy). */}
+        {shownView === "admin" && (
+          <AdminView usersApi={usersApi} currentUserId={session.userId} onNotify={setToast} />
         )}
       </AppShell>
 

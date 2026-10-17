@@ -87,7 +87,7 @@ trade-off rationale and it is the team's to write.
 | API contract | OpenAPI 3.1, spec-first (`<service>/api/openapi.yaml`) |
 | | Exception: `api-gateway` is written code-first, not spec-first |
 | Service-to-service | gRPC |
-| Message broker | Kafka |
+| Message broker | RabbitMQ |
 | Tests | stdlib `testing` + `testify`; `testcontainers-go` for integration |
 | Containers | Docker + Docker Compose |
 | CI | GitHub Actions — agreed, but no workflow is committed yet |
@@ -312,6 +312,17 @@ stack:
 curl -X POST http://localhost:8080/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"email":"student2@u.nus.edu","username":"student2","password":"Student123"}'
+```
+
+Registering leaves the account unverified until its emailed code is checked.
+Compose runs user-service with `OTP_DELIVERY=log`, so read the code from its
+log and verify it:
+
+```bash
+docker compose logs user-service | grep 'verification code' | tail -1
+curl -X POST http://localhost:8080/auth/verify-otp \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"student2@u.nus.edu","otp":"<code from the log>"}'
 ```
 
 If your database already has an admin account or a `student2` row from

@@ -5,6 +5,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  CONTACT_MAX,
+  validateContact,
   validateEmail,
   validateOtp,
   validatePassword,
@@ -131,5 +133,24 @@ describe("validateRegistration (F1.1.1)", () => {
       password: "x",
     });
     expect(message).toContain("u.nus.edu");
+  });
+});
+
+// AI-generated (edited by nigeltzy).
+describe("validateContact (user-service phone_num, maxLength 20)", () => {
+  it.each(["91234567", "+65 9123 4567", "x".repeat(CONTACT_MAX)])("accepts %s", (contact) => {
+    expect(validateContact(contact)).toBeNull();
+  });
+
+  it.each([
+    ["", "empty"],
+    ["   ", "whitespace only"],
+    ["x".repeat(CONTACT_MAX + 1), "over the limit"],
+  ])("rejects %j (%s)", (contact) => {
+    expect(validateContact(contact)).not.toBeNull();
+  });
+
+  it("measures the trimmed value", () => {
+    expect(validateContact(`  ${"x".repeat(CONTACT_MAX)}  `)).toBeNull();
   });
 });
