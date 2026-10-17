@@ -87,7 +87,7 @@ trade-off rationale and it is the team's to write.
 | API contract | OpenAPI 3.1, spec-first (`<service>/api/openapi.yaml`) |
 | | Exception: `api-gateway` is written code-first, not spec-first |
 | Service-to-service | gRPC |
-| Message broker | Kafka |
+| Message broker | RabbitMQ |
 | Tests | stdlib `testing` + `testify`; `testcontainers-go` for integration |
 | Containers | Docker + Docker Compose |
 | CI | GitHub Actions — agreed, but no workflow is committed yet |
