@@ -12,14 +12,28 @@ import (
 
 var timePattern = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 
+// AI-generated (edited by James Teo).
+// ErrandCounter reports how many errands that are not finished yet reference
+// a supplier. Errands belong to order-service, so the implementation asks it
+// (internal/orderclient); the service layer only depends on this interface so
+// a delete can be unit-tested without it.
+type ErrandCounter interface {
+	ActiveErrands(ctx context.Context, supplierID string) (int, error)
+}
+
 // Service holds the business rules for supplier management (FR F2), on
 // top of a storage-agnostic Repository.
 type Service struct {
 	repo Repository
+	// AI-generated (edited by James Teo).
+	errands ErrandCounter
 }
 
-func NewService(repo Repository) *Service {
-	return &Service{repo: repo}
+// AI-generated (edited by James Teo).
+// NewService returns a Service that stores suppliers in repo and asks
+// errands before every delete. Both must be non-nil.
+func NewService(repo Repository, errands ErrandCounter) *Service {
+	return &Service{repo: repo, errands: errands}
 }
 
 func (s *Service) List(ctx context.Context, filter ListFilter) ([]*Supplier, error) {
@@ -105,17 +119,27 @@ func (s *Service) Update(ctx context.Context, id string, in *Supplier) (*Supplie
 	return existing, nil
 }
 
-// Delete soft-deletes a supplier (FR F2.2.3).
+// AI-generated (edited by James Teo).
+// Delete soft-deletes a supplier, unless an errand that is not finished
+// still references it, in which case it returns ErrInUse (FR F2.2.3).
 //
-// Interim design: hard-deletion should be blocked while a supplier is
-// referenced by a non-terminal errand, but that check depends on the
-// Order Service, which does not exist yet. Until that integration is
-// wired up, Delete always soft-deletes (marks the record inactive and
-// sets DeletedAt) instead of removing the row, so no data referenced by
-// an in-flight or historical order is ever lost.
+// When the count cannot be had, Delete refuses with the counter's error:
+// F2.2.3 forbids deleting a supplier an unfinished errand references, and
+// without the count that cannot be ruled out.
+//
+// The delete itself stays soft (marks the record inactive and sets
+// DeletedAt) instead of removing the row, so no data referenced by a
+// historical order is ever lost.
 func (s *Service) Delete(ctx context.Context, id string) error {
 	if _, err := s.Get(ctx, id); err != nil {
 		return err
+	}
+	n, err := s.errands.ActiveErrands(ctx, id)
+	if err != nil {
+		return fmt.Errorf("count unfinished errands for supplier %s: %w", id, err)
+	}
+	if n > 0 {
+		return ErrInUse
 	}
 	return s.repo.SoftDelete(ctx, id)
 }

@@ -16,6 +16,8 @@ import (
 
 	"foc/supplier-service/internal/config"
 	"foc/supplier-service/internal/httpapi"
+	// AI-generated (edited by James Teo).
+	"foc/supplier-service/internal/orderclient"
 	"foc/supplier-service/internal/repository"
 	"foc/supplier-service/internal/supplier"
 	"foc/supplier-service/seed"
@@ -36,12 +38,15 @@ func main() {
 	}
 
 	repo := repository.NewPostgresRepository(pool)
+	// AI-generated (edited by James Teo).
+	errands := orderclient.New(cfg.OrderBaseURL)
+	svc := supplier.NewService(repo, errands)
 
-	if err := seed.EnsureSeeded(ctx, repo, cfg.SeedCSVPath); err != nil {
+	// AI-generated (edited by James Teo).
+	if err := seed.EnsureSeeded(ctx, repo, svc, cfg.SeedCSVPath); err != nil {
 		log.Fatalf("seed suppliers: %v", err)
 	}
 
-	svc := supplier.NewService(repo)
 	router := httpapi.NewRouter(svc)
 
 	log.Printf("supplier-service listening on :%s", cfg.Port)
