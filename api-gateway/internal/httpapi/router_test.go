@@ -128,42 +128,54 @@ func stubService(rec *recorder) *httptest.Server {
 }
 
 // AI-generated (edited by nigeltzy).
+// AI-generated (edited by James Teo): order-service and credit-service get
+// their own recorders.
 type harness struct {
-	router  http.Handler
-	issuer  *issuer
-	userRec *recorder
-	suppRec *recorder
+	router    http.Handler
+	issuer    *issuer
+	userRec   *recorder
+	suppRec   *recorder
+	orderRec  *recorder
+	creditRec *recorder
 }
 
 // AI-generated (edited by nigeltzy).
+// AI-generated (edited by James Teo): every downstream gets its own stub, so a
+// route pointed at the wrong service fails the test that checks its callee.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
 	iss := newIssuer(t)
 	jwks := httptest.NewServer(iss.jwksHandler())
 	t.Cleanup(jwks.Close)
 
-	userRec, suppRec := &recorder{}, &recorder{}
+	userRec, suppRec, orderRec, creditRec := &recorder{}, &recorder{}, &recorder{}, &recorder{}
 	userSvc := stubService(userRec)
 	t.Cleanup(userSvc.Close)
 	suppSvc := stubService(suppRec)
 	t.Cleanup(suppSvc.Close)
+	orderSvc := stubService(orderRec)
+	t.Cleanup(orderSvc.Close)
+	creditSvc := stubService(creditRec)
+	t.Cleanup(creditSvc.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
 	router, err := httpapi.NewRouter(config.Downstream{
 		User:     userSvc.URL,
 		Supplier: suppSvc.URL,
-		Order:    suppSvc.URL,
-		Credit:   suppSvc.URL,
+		Order:    orderSvc.URL,
+		Credit:   creditSvc.URL,
 	}, verifier, testRefreshTTL)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
 
 	return &harness{
-		router:  router,
-		issuer:  iss,
-		userRec: userRec,
-		suppRec: suppRec,
+		router:    router,
+		issuer:    iss,
+		userRec:   userRec,
+		suppRec:   suppRec,
+		orderRec:  orderRec,
+		creditRec: creditRec,
 	}
 }
 
@@ -171,6 +183,27 @@ func (h *harness) do(req *http.Request) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	h.router.ServeHTTP(w, req)
 	return w
+}
+
+// AI-generated (edited by James Teo).
+// downstreamCalls lists every stub service that received a request, as
+// "service path", so a test can check that a request stopped at the gateway.
+func (h *harness) downstreamCalls() []string {
+	var calls []string
+	for _, d := range []struct {
+		service string
+		rec     *recorder
+	}{
+		{"user-service", h.userRec},
+		{"supplier-service", h.suppRec},
+		{"order-service", h.orderRec},
+		{"credit-service", h.creditRec},
+	} {
+		if d.rec.path != "" {
+			calls = append(calls, d.service+" "+d.rec.path)
+		}
+	}
+	return calls
 }
 
 func TestHealthz(t *testing.T) {
@@ -341,19 +374,117 @@ func TestUserRouteRetainsBearerAndStillAssertsIdentity(t *testing.T) {
 	}
 }
 
-func TestOtherServicesNeverReceiveTheBearerToken(t *testing.T) {
-	h := newHarness(t)
+// AI-generated (edited by James Teo).
+// D-041 has every service verify the bearer token itself, so every service
+// route forwards it, alongside the claim headers the gateway still injects
+// (D-022).
+func TestServiceRoutesKeepTheBearerToken(t *testing.T) {
+	cases := []struct {
+		path, service string
+		// callee picks the stub that stands in for service.
+		callee func(*harness) *recorder
+	}{
+		{"/api/suppliers/42", "supplier-service", func(h *harness) *recorder { return h.suppRec }},
+		{"/api/orders/open", "order-service", func(h *harness) *recorder { return h.orderRec }},
+		{"/api/credits/accounts/me", "credit-service", func(h *harness) *recorder { return h.creditRec }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+			req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
 
+			if got := h.do(req); got.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+			}
+			callee := tc.callee(h)
+			if callee.path == "" {
+				t.Fatalf("%s was not called; the request reached %v", tc.service, h.downstreamCalls())
+			}
+			if authz := callee.header.Get("Authorization"); authz != "Bearer "+token {
+				t.Errorf("%s received Authorization = %q, want the caller's bearer token", tc.service, authz)
+			}
+			if id := callee.header.Get("X-User-Id"); id != "uid-123" {
+				t.Errorf("%s received X-User-Id = %q, want uid-123", tc.service, id)
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo).
+// /api/credits/accounts/* is rewritten onto credit-service's account prefix.
+func TestCreditAccountRouteReachesCreditServicePrefix(t *testing.T) {
+	h := newHarness(t)
 	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
-	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/credits/accounts/me/transactions", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 
 	if got := h.do(req); got.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", got.Code)
+		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
 	}
-	// Only /api/users keeps Authorization; the other /api/ service routes strip it.
-	if authz := h.suppRec.header.Get("Authorization"); authz != "" {
-		t.Errorf("supplier-service received Authorization = %q, want it stripped", authz)
+	if want := "/api/v1/credits/accounts/me/transactions"; h.creditRec.path != want {
+		t.Errorf("credit-service saw path %q, want %q", h.creditRec.path, want)
+	}
+}
+
+// AI-generated (edited by James Teo).
+// credit-service's reservation routes are for order-service alone: from the
+// browser they are not routed, not even through dot segments, so a requester
+// cannot lower their own hold.
+func TestCreditWriteRoutesAreNotPublic(t *testing.T) {
+	cases := []struct{ method, path string }{
+		{http.MethodPost, "/api/credits/reservations"},
+		{http.MethodPatch, "/api/credits/reservations/0b6f3c1e-5f0a-4c8e-9a51-6d2f4a8b7c10"},
+		{http.MethodPost, "/api/credits/api/v1/credits/reservations"},
+		{http.MethodGet, "/api/credits"},
+		// Dot segments, raw and percent-encoded, which credit-service could
+		// resolve onto its reservation routes. httptest.NewRequest parses the
+		// target as a server does, so they reach the router as sent.
+		{http.MethodPost, "/api/credits/accounts/../reservations"},
+		{http.MethodPost, "/api/credits/accounts/%2e%2e/reservations"},
+		{http.MethodPost, "/api/credits/accounts/..%2freservations"},
+		{http.MethodGet, "/api/credits/accounts/./me"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{"newReward":1}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			got := h.do(req)
+			if got.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 (body %s)", got.Code, got.Body.String())
+			}
+			if ct := got.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+				t.Errorf("Content-Type = %q, want the gateway's JSON 404", ct)
+			}
+			if calls := h.downstreamCalls(); len(calls) != 0 {
+				t.Errorf("the request reached %v; nothing should leave the gateway", calls)
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo).
+// The dot-segment guard runs before every route, not only /api/credits.
+func TestDotSegmentsAreRejectedOnEveryRoute(t *testing.T) {
+	for _, path := range []string{"/api/suppliers/../orders", "/auth/../api/orders", "/../healthz"} {
+		t.Run(path, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			got := h.do(req)
+			if got.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 (body %s)", got.Code, got.Body.String())
+			}
+			if calls := h.downstreamCalls(); len(calls) != 0 {
+				t.Errorf("the request reached %v; nothing should leave the gateway", calls)
+			}
+		})
 	}
 }
 
