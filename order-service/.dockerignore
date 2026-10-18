@@ -1,0 +1,27 @@
+# The build context is order-service/ (compose.yaml). The image needs only
+# go.mod, go.sum, the Go sources and migrations/.
+
+# Local configuration and secrets
+.env
+.env.*
+
+# Tests and their artefacts
+**/*_test.go
+**/testdata
+**/*.test
+**/*.out
+**/coverage.*
+
+# Documentation, and the spec internal/gen is generated from (the generated
+# code is committed, so the build does not read the spec)
+**/*.md
+docs/
+api/
+
+# Editor and OS files
+**/.DS_Store
+.idea/
+.vscode/
+
+Dockerfile
+.dockerignore

@@ -2,8 +2,14 @@
 # Tool: Codex (GPT-5), date: 2026-09-18
 # Scope: Added local PostgreSQL 16 and user-service API containers.
 # Author review: COMPLETED BY ZI YANG
-
-# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5), date: 2026-09-19
+# Scope: Compose baseline — extends the supplier-service/frontend stack from
+#   PR #1 with Redis and the API Gateway, and closes the public ports that
+#   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
+#   which landed PR #1's half of this file; comments brought up to date. Later
+#   that day: the frontend service was removed — the gateway serves the built
+#   SPA, so the browser has one origin (D-033).
+# Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
 # Tool: Claude Code (model: Sonnet 5), date: 2026-10-01
 # Scope: Merged two top-level `services:` maps left over from PR #4/#5 landing
 #   separately (invalid YAML — a duplicate mapping key — made `docker compose`
@@ -26,29 +32,21 @@ services:
       timeout: 5s
       retries: 5
 
-# Tool: Claude Code (model: Opus 5), date: 2026-09-19
-# Scope: Compose baseline — extends the supplier-service/frontend stack from
-#   PR #1 with Redis and the API Gateway, and closes the public ports that
-#   ai/decisions.md D-010 says must be internal. 2026-09-22: merge with main,
-#   which landed PR #1's half of this file; comments brought up to date. Later
-#   that day: the frontend service was removed — the gateway serves the built
-#   SPA, so the browser has one origin (D-033).
-# Author review: Nigeltzy - I checked the output of this generated code and asked for some explanation as this was generated alongside the proxy package that I had guided the AI to create. The generated code seems to be a typical implementation of a docker-compose file for an API gateway, with proper service definitions and environment variables. Though of course this will be updated in the future as well with future eidts and merges.
-
 # Only services with a `ports:` key are reachable from the host; api-gateway
 # (host port 8080) is the only one other machines can reach, and rabbitmq
-# listens on 127.0.0.1 only. Downstream services trust the gateway's
-# X-User-Id and X-User-Role headers, so publishing any other service lets a
-# client skip token verification (D-010 in ai/decisions.md).
+# listens on 127.0.0.1 only. supplier-service still trusts the gateway's
+# X-User-Id and X-User-Role headers, so publishing it lets a client skip
+# token verification (D-010 in ai/decisions.md).
 #
-# Services with no code yet (order-service, credit-service) are not listed.
+# credit-service is not in this file yet.
 # The frontend is not in this file either: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
   # ---- Redis ------------------------------------------------------------
   # AI-generated (edited by nigeltzy) — rewritten for D-024.
-  # Used only by user-service, which is not in this file yet. No `ports:` key,
-  # so it is reachable only inside this network.
+  # user-service's store, including the access-token revocation keys that
+  # order-service reads. No `ports:` key, so it is reachable only inside this
+  # network.
   redis:
     image: redis:7-alpine
     # Append-only persistence, so the jti blocklist survives a restart.
@@ -164,12 +162,54 @@ services:
       retries: 5
       start_period: 20s
 
+  # ---- Order service and its database ----------------------------------
+  order-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: orders
+    volumes:
+      - order-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+    # Only its database: it starts without the services it calls and retries them.
+    depends_on:
+      order-db:
+        condition: service_healthy
+    environment:
+      PORT: 8083
+      ORDER_DB_URL: postgres://postgres:postgres@order-db:5432/orders?sslmode=disable
+      SUPPLIER_BASE_URL: http://supplier-service:8082
+      CREDIT_BASE_URL: http://credit-service:8084
+      # Must match the foc user in rabbitmq/definitions.json.
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+      # Overridable from the shell; the e2e suite sets T and C in seconds.
+      ORDER_EXPIRY_PERIOD: ${ORDER_EXPIRY_PERIOD:-2h}
+      ORDER_MAX_ACTIVE_ASSIGNMENTS: ${ORDER_MAX_ACTIVE_ASSIGNMENTS:-2}
+      ORDER_CONFIRMATION_WINDOW: ${ORDER_CONFIRMATION_WINDOW:-24h}
+    restart: on-failure
+    # Above cmd/api's 20s shutdown budget, so Docker doesn't kill a request mid-write.
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/orders.
+
 
 volumes:
   user-db-data:
   redis-data:
   supplier-db-data:
   rabbitmq-data:
+  order-db-data:
 
 
 
