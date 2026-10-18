@@ -35,7 +35,8 @@ export interface HttpResponse {
 export interface SendOptions {
   baseUrl: string;
   path: string;
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  // AI-generated (edited by James Teo): PATCH, for user-service's account-status route.
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** Serialised as JSON; the Content-Type header is set for you. */
   body?: unknown;
   headers?: Record<string, string>;

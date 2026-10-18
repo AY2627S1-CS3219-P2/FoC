@@ -6,18 +6,29 @@
 // Author review: nigeltzy - Checked that the component was generated and 
 // updated according to the format and requirements that were previously discussed and set.
 
-import { useState, type FormEvent } from "react";
+// AI-generated (edited by James Teo): useEffect, for an account handed over
+// from an errand's detail.
+import { useEffect, useState, type FormEvent } from "react";
 import { MockBadge } from "../../components/MockBadge";
 import { Modal } from "../../components/Modal";
 import type { ToastMessage } from "../../components/Toast";
 import { NewPasswordFields, validateNewPassword } from "../profile/ProfileEditForms";
 import type { UserProfile, UsersApi } from "../profile/usersApi";
+// AI-generated (edited by James Teo): the app's date format.
+import { formatDateTime } from "../errands/time";
 
 interface AdminViewProps {
   /** Null in a fixture build, which has no user-service to call. */
   usersApi: UsersApi | null;
   /** The signed-in admin's own ID, so the reset is not offered on it. */
   currentUserId: string;
+  // AI-generated (edited by James Teo).
+  /**
+   * An account ID handed over from an errand's detail (Look up account),
+   * filled in and looked up as the screen opens. App remounts this view for
+   * each hand-over.
+   */
+  initialAccountId?: string | null;
   onNotify: (message: ToastMessage) => void;
 }
 
@@ -30,12 +41,25 @@ interface AdminViewProps {
  * Lookup is by account ID because that is the only key user-service's API
  * offers: it has no endpoint to list or search users.
  */
-export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps) {
-  const [query, setQuery] = useState("");
+// AI-generated (edited by James Teo): initialAccountId.
+export function AdminView({
+  usersApi,
+  currentUserId,
+  initialAccountId,
+  onNotify,
+}: AdminViewProps) {
+  const [query, setQuery] = useState(initialAccountId ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [resetting, setResetting] = useState(false);
+
+  // AI-generated (edited by James Teo): a handed-over account is looked up once,
+  // as the screen opens.
+  useEffect(() => {
+    if (usersApi && initialAccountId) void findAccount(usersApi, initialAccountId.trim());
+    // Once per mount, by design: App remounts this view for each hand-over.
+  }, []);
 
   if (!usersApi) {
     return (
@@ -50,9 +74,14 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
   }
   const api = usersApi;
 
+  // AI-generated (edited by James Teo): the lookup itself moved into
+  // findAccount, which the hand-over from an errand's detail also uses.
   async function lookUp(e: FormEvent) {
     e.preventDefault();
-    const uid = query.trim();
+    await findAccount(api, query.trim());
+  }
+
+  async function findAccount(client: UsersApi, uid: string) {
     // UX only: user-service answers 404 to anything that is not a UUID.
     if (!UUID_PATTERN.test(uid)) {
       setError("Enter a full account ID, like 3f2b8c1e-…, as shown on that user's Profile.");
@@ -62,7 +91,7 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
     setError(null);
     setProfile(null);
     try {
-      setProfile(await api.getUser(uid));
+      setProfile(await client.getUser(uid));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The lookup failed. Try again.");
     } finally {
@@ -160,10 +189,11 @@ function Row({ label, value }: { label: string; value?: string }) {
   );
 }
 
+// AI-generated (edited by James Teo): "18 Oct, 20:37", the errand screens'
+// format, instead of the browser's locale string.
 function formatDate(iso?: string): string | undefined {
   if (!iso) return undefined;
-  const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  return formatDateTime(iso) || iso;
 }
 
 interface ResetPasswordFormProps {

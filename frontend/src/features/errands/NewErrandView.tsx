@@ -6,310 +6,124 @@
 // Author review: Nigeltzy - AI built it according to the prototype our team designed and the requirements provided.
 // Per code and viewed UI, it seems valid and works as intended.
 
-import { useEffect, useState } from "react";
-import { MockBadge } from "../../components/MockBadge";
-import { SearchIcon } from "../../components/icons";
+// AI-generated (edited by James Teo): rebuilt as Post an errand on the shared
+// ErrandForm, posting to order-service with one duplicate-submission key per
+// submission.
+import { useState } from "react";
 import type { ToastMessage } from "../../components/Toast";
 import type { SuppliersApi } from "../suppliers/suppliersApi";
-import type { Supplier } from "../suppliers/types";
-import * as errandsApi from "./errandsApi";
+import { emptyErrandForm, ErrandForm, toCreateRequest, type ErrandFormValues } from "./ErrandForm";
+import { createErrorMessage, creditsText, isShortOfCredits } from "./format";
+import { newRequestId, type OrdersApi } from "./ordersApi";
 
 interface NewErrandViewProps {
   /** Injected by App, which owns the token store the transport reads. */
   suppliersApi: SuppliersApi;
-  // AI-generated (edited by nigeltzy).
-  /** True when `suppliersApi` is the fixture rather than supplier-service. */
-  suppliersMock: boolean;
+  // AI-generated (edited by James Teo).
+  /** order-service's client, built by App over the same transport. */
+  ordersApi: OrdersApi;
+  // AI-generated (edited by James Teo): null while the balance is unknown,
+  // which leaves the hint out rather than guessing.
   /** Spendable credits, for the "leaves you N available" hint. */
-  available: number;
+  available: number | null;
   onNotify: (message: ToastMessage) => void;
+  // AI-generated (edited by James Teo): posting, leaving and the Credits link
+  // are told apart.
+  /** After a post succeeds: App refreshes the balance and shows My errands. */
   onPosted: () => void;
+  /** Leaves without posting. */
+  onCancel: () => void;
+  /** Opens Credits, from the not-enough-credits message. */
+  onOpenCredits: () => void;
 }
 
-/** Campus delivery locations, hard-coded because no service owns them yet. */
-const DELIVERY_LOCATIONS = [
-  "COM1 Level 1 study benches",
-  "COM3 Lobby",
-  "Central Library entrance",
-  "UTown Residences lobby",
-  "The Deck, AS8",
-  "Science Frontier Food Court",
-];
+// AI-generated (edited by James Teo): why the last post failed.
+interface PostFailure {
+  message: string;
+  /** 422: the reward is more than the available credits. */
+  shortOfCredits: boolean;
+}
 
 export function NewErrandView({
   suppliersApi,
-  suppliersMock,
+  ordersApi,
   available,
   onNotify,
   onPosted,
+  onCancel,
+  onOpenCredits,
 }: NewErrandViewProps) {
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
-  const [supplierError, setSupplierError] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<Supplier | null>(null);
-
-  const [items, setItems] = useState<string[]>([""]);
-  const [deliverTo, setDeliverTo] = useState(DELIVERY_LOCATIONS[0]!);
-  const [findMe, setFindMe] = useState("");
-  const [reward, setReward] = useState(10);
+  // AI-generated (edited by James Teo): the post and its duplicate-submission
+  // key (F7.2). The key is minted when the form opens and again only after a
+  // post succeeds; every retry of a failed or unanswered post reuses it, so
+  // the retry cannot post a second errand.
   const [posting, setPosting] = useState(false);
+  const [requestId, setRequestId] = useState(newRequestId);
+  const [failure, setFailure] = useState<PostFailure | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const timer = setTimeout(() => {
-      suppliersApi
-        .listSuppliers({ search })
-        .then((result) => {
-          if (!cancelled) {
-            setSuppliers(result);
-            setSupplierError(null);
-          }
-        })
-        .catch((err: unknown) => {
-          if (!cancelled) {
-            setSuppliers([]);
-            setSupplierError(
-              err instanceof Error ? err.message : "Could not load suppliers.",
-            );
-          }
-        });
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [search]);
-
-  const setItem = (index: number, value: string) =>
-    setItems((prev) => prev.map((item, i) => (i === index ? value : item)));
-
-  const filledItems = items.map((i) => i.trim()).filter(Boolean);
-  const canPost = selected !== null && filledItems.length > 0 && !posting;
-
-  const post = async () => {
-    if (!selected) return;
+  async function post(values: ErrandFormValues) {
     setPosting(true);
+    setFailure(null);
+    let reward: number;
     try {
-      await errandsApi.createErrand({
-        supplierId: selected.id,
-        supplierName: selected.name,
-        items: filledItems,
-        deliverTo,
-        findMe,
-        reward,
-      });
-      onNotify({ text: `Errand posted · ${reward} credits held`, kind: "success" });
-      onPosted();
+      const detail = await ordersApi.createErrand(toCreateRequest(values), requestId);
+      // A 200 for a key already used answers with the errand the first
+      // attempt created, so its reward is the one held.
+      reward = detail.errand.reward;
     } catch (err) {
-      onNotify({
-        text: err instanceof Error ? err.message : "Could not post errand",
-        kind: "error",
-      });
-    } finally {
+      setFailure({ message: createErrorMessage(err), shortOfCredits: isShortOfCredits(err) });
       setPosting(false);
+      return;
     }
-  };
+    setRequestId(newRequestId());
+    setPosting(false);
+    onNotify({ text: `Errand posted · ${creditsText(reward)} held`, kind: "success" });
+    onPosted();
+  }
 
+  // AI-generated (edited by James Teo): the page around the shared form. The
+  // expiry time is not quoted: order-service sets it, and the errand's
+  // detail shows the real deadline once it is posted.
   return (
     <section>
       <div className="page-head">
-        <h1>Request an errand</h1>
+        <h1>Post an errand</h1>
         <p className="page-sub">
-          Credits are held the moment you post, and released if nobody accepts
-          within 2 hours.
+          Credits are held the moment you post. They come back to you if you cancel, or if
+          nobody accepts the errand before it expires.
         </p>
       </div>
 
-      <MockBadge service="order-service" />
-      {suppliersMock && <MockBadge service="supplier-service" />}
-
-      <div className="two-col">
-        <div>
-          <label className="field-label" htmlFor="supplier-search">
-            Collect from
-          </label>
-          <div style={{ position: "relative", marginBottom: 12 }}>
-            <span
-              style={{
-                position: "absolute",
-                top: 10,
-                left: 11,
-                color: "var(--text-muted)",
-              }}
-            >
-              <SearchIcon />
-            </span>
-            <input
-              id="supplier-search"
-              type="search"
-              style={{ paddingLeft: 36 }}
-              placeholder="Search suppliers and campus locations"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-          </div>
-
-          {supplierError && (
-            <p className="status error">
-              Could not load suppliers: {supplierError}
-              <br />
-              {/* AI-generated (edited by nigeltzy). */}
-              <span className="status-hint">
-                The server isn't responding. Try again in a moment.
-              </span>
-            </p>
-          )}
-
-          {!supplierError && (
-            <div className="picker">
-              {suppliers.length === 0 && (
-                <div style={{ padding: 14, color: "var(--text-muted)" }}>
-                  No suppliers match that search.
-                </div>
-              )}
-              {suppliers.map((supplier) => (
-                <button
-                  key={supplier.id}
-                  className={`picker-row ${
-                    selected?.id === supplier.id ? "selected" : ""
-                  }`}
-                  onClick={() => setSelected(supplier)}
-                >
-                  <span className="tag-building">{supplier.building}</span>
-                  <span>
-                    <span className="picker-row-name">{supplier.name}</span>
-                    <br />
-                    <span className="picker-row-meta">
-                      {supplier.type}
-                      {supplier.opening_time && supplier.closing_time
-                        ? ` · ${supplier.opening_time}–${supplier.closing_time}`
-                        : ""}
-                    </span>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-
-          <label className="field-label" style={{ marginTop: 18 }}>
-            What to get
-          </label>
-          <div className="item-list">
-            {items.map((item, index) => (
-              <div className="item-row" key={index}>
-                <input
-                  type="text"
-                  value={item}
-                  placeholder="1 × Iced latte, less ice"
-                  onChange={(e) => setItem(index, e.target.value)}
-                />
-                {items.length > 1 && (
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() =>
-                      setItems((prev) => prev.filter((_, i) => i !== index))
-                    }
-                    aria-label={`Remove item ${index + 1}`}
-                  >
-                    ×
+      <ErrandForm
+        suppliersApi={suppliersApi}
+        ordersApi={ordersApi}
+        initial={emptyErrandForm()}
+        alreadyHeld={0}
+        available={available}
+        submitting={posting}
+        submitLabel={(reward) =>
+          reward === null ? "Post errand" : `Post errand · hold ${creditsText(reward)}`
+        }
+        busyLabel="Posting…"
+        cancelLabel="Cancel"
+        onSubmit={(values) => void post(values)}
+        onCancel={onCancel}
+        feedback={
+          failure && (
+            <p className="status error" role="alert">
+              {failure.message}
+              {failure.shortOfCredits && (
+                <>
+                  {" "}
+                  <button type="button" className="link-btn" onClick={onOpenCredits}>
+                    See your credits
                   </button>
-                )}
-              </div>
-            ))}
-          </div>
-          <button
-            className="btn btn-secondary"
-            style={{ marginTop: 10 }}
-            onClick={() => setItems((prev) => [...prev, ""])}
-          >
-            + Add item
-          </button>
-        </div>
-
-        <div>
-          <label className="field-label">Deliver to</label>
-          <div className="field">
-            <label htmlFor="deliver-to">Campus location</label>
-            <select
-              id="deliver-to"
-              value={deliverTo}
-              onChange={(e) => setDeliverTo(e.target.value)}
-            >
-              {DELIVERY_LOCATIONS.map((loc) => (
-                <option key={loc} value={loc}>
-                  {loc}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="field">
-            <label htmlFor="find-me">
-              How to find you <span className="field-optional">optional</span>
-            </label>
-            <textarea
-              id="find-me"
-              value={findMe}
-              placeholder="Third table from the window, grey backpack"
-              onChange={(e) => setFindMe(e.target.value)}
-            />
-          </div>
-
-          <label className="field-label">Reward</label>
-          <div className="stepper">
-            <button
-              onClick={() => setReward((r) => Math.max(1, r - 1))}
-              aria-label="Decrease reward"
-            >
-              −
-            </button>
-            <div>
-              <div className="stepper-value">{reward}</div>
-              <div className="stepper-unit">credits</div>
-            </div>
-            <button
-              onClick={() => setReward((r) => r + 1)}
-              aria-label="Increase reward"
-            >
-              +
-            </button>
-          </div>
-          <p className="balance-label" style={{ margin: "8px 0 18px" }}>
-            Leaves you {Math.max(0, available - reward)} credits available while
-            this errand is open.
-          </p>
-
-          <div className="card">
-            <dl style={{ margin: 0 }}>
-              <div className="summary-row">
-                <dt>Collect from</dt>
-                <dd>{selected ? selected.name : "Not chosen"}</dd>
-              </div>
-              <div className="summary-row">
-                <dt>Deliver to</dt>
-                <dd>{deliverTo}</dd>
-              </div>
-              <div className="summary-row">
-                <dt>Expires</dt>
-                <dd>2 hours after posting</dd>
-              </div>
-            </dl>
-
-            <div className="btn-row">
-              <button className="btn btn-secondary" onClick={onPosted}>
-                Cancel
-              </button>
-              <button
-                className="btn btn-primary"
-                disabled={!canPost}
-                onClick={post}
-              >
-                {posting ? "Posting…" : `Post errand · hold ${reward} credits`}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+                </>
+              )}
+            </p>
+          )
+        }
+      />
     </section>
   );
 }

@@ -162,25 +162,40 @@ export function ProfileView({
           </p>
         )}
 
-        <h2 className="section-label">Acting as</h2>
-        <div className="mode-toggle" style={{ display: "inline-flex" }}>
-          <button
-            className={mode === "requesting" ? "active" : ""}
-            onClick={() => onModeChange("requesting")}
-          >
-            Requesting
-          </button>
-          <button
-            className={mode === "delivering" ? "active" : ""}
-            onClick={() => onModeChange("delivering")}
-          >
-            Delivering
-          </button>
-        </div>
-        <p className="balance-label" style={{ marginTop: 8 }}>
-          Requesters post errands; couriers fulfil them. Which switches are
-          allowed, and when, is decided by user-service and order-service.
-        </p>
+        {/* AI-generated (edited by James Teo): the acting mode is a student's
+            only; an admin never posts or carries an errand. */}
+        {session.role === "STUDENT" && (
+          <>
+            <h2 className="section-label" id="profile-acting-as">
+              Acting as
+            </h2>
+            <div
+              className="mode-toggle"
+              style={{ display: "inline-flex" }}
+              role="group"
+              aria-labelledby="profile-acting-as"
+            >
+              <button
+                className={mode === "requesting" ? "active" : ""}
+                aria-pressed={mode === "requesting"}
+                onClick={() => onModeChange("requesting")}
+              >
+                Requesting
+              </button>
+              <button
+                className={mode === "delivering" ? "active" : ""}
+                aria-pressed={mode === "delivering"}
+                onClick={() => onModeChange("delivering")}
+              >
+                Delivering
+              </button>
+            </div>
+            <p className="balance-label" style={{ marginTop: 8 }}>
+              Requesters post errands; couriers fulfil them. Which switches are
+              allowed, and when, is decided by user-service and order-service.
+            </p>
+          </>
+        )}
 
         <div className="btn-row">
           <button className="btn btn-secondary" onClick={onLogOut}>

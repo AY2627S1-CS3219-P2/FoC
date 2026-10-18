@@ -36,12 +36,13 @@ interface LoginPageProps {
    * startup.
    */
   logIn: (identifier: string, password: string) => Promise<AuthResult>;
+  // AI-generated (edited by James Teo): no contact number. user-service's
+  // register takes none, so it is added from Profile after signing in.
   /** F1.1.2.7: opens a registration, which is not complete until verified. */
   signUp: (
     email: string,
     username: string,
     password: string,
-    contact: string,
   ) => Promise<PendingRegistration>;
   /** Activates the account on the correct code. Returns no session. */
   verifyRegistration: (
@@ -58,6 +59,13 @@ interface LoginPageProps {
   resumeVerification: (email: string) => Promise<PendingRegistration>;
   /** True when the fixture client is in use; shows the mock notice. */
   isMock: boolean;
+  // AI-generated (edited by James Teo).
+  /**
+   * True when the app ended the session rather than the user logging out: a
+   * refresh failed, as when a background poll finds the session revoked. The
+   * card then says they were signed out.
+   */
+  sessionEnded?: boolean;
 }
 
 type Tab = "login" | "signup";
@@ -75,16 +83,20 @@ export function LoginPage({
   resendOtp,
   resumeVerification,
   isMock,
+  // AI-generated (edited by James Teo).
+  sessionEnded = false,
 }: LoginPageProps) {
   const [tab, setTab] = useState<Tab>("login");
   const [identifier, setIdentifier] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
-  const [contact, setContact] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suspended, setSuspended] = useState(false);
+  // AI-generated (edited by James Teo): set at the next submit or tab switch, so
+  // the signed-out notice never sits above a later login error.
+  const [signedOutSeen, setSignedOutSeen] = useState(false);
 
   // F1.1.2.7 — set once registration is open and awaiting its code. While
   // this is non-null the OTP step replaces the form entirely: there is no
@@ -114,6 +126,8 @@ export function LoginPage({
     setTab(next);
     setError(null);
     setSuspended(false);
+    // AI-generated (edited by James Teo).
+    setSignedOutSeen(true);
   };
 
   const submit = async (e: FormEvent) => {
@@ -121,6 +135,8 @@ export function LoginPage({
     setBusy(true);
     setError(null);
     setSuspended(false);
+    // AI-generated (edited by James Teo).
+    setSignedOutSeen(true);
     try {
       if (tab === "login") {
         onAuthenticated(await logIn(identifier, password));
@@ -132,7 +148,8 @@ export function LoginPage({
           setError(problem);
           return;
         }
-        openOtpStep(await signUp(email, username, password, contact), email.trim());
+        // AI-generated (edited by James Teo): no contact number to send.
+        openOtpStep(await signUp(email, username, password), email.trim());
       }
     } catch (err) {
       if (err instanceof UnverifiedAccountError) {
@@ -205,6 +222,17 @@ export function LoginPage({
 
         {isMock && <MockBadge service="user-service" />}
 
+        {/* AI-generated (edited by James Teo): why sign-in is showing when the
+            user did not log out. An alert is read out as it appears. It
+            gives no reason, so a suspended account learns that only from
+            the login error, as before. Gone once the user submits or
+            switches tab. */}
+        {sessionEnded && !signedOutSeen && (
+          <p className="status signed-out" role="alert">
+            You were signed out. Sign in again to continue.
+          </p>
+        )}
+
         <div className="tabs">
           <button
             type="button"
@@ -267,18 +295,14 @@ export function LoginPage({
                 <p className="status-hint">Letters and numbers only.</p>
               </div>
 
+              {/* AI-generated (edited by James Teo): the contact number field
+                  is gone, since user-service's register does not take one;
+                  this says where to add it instead. */}
               <div className="field">
-                <label htmlFor="auth-contact">
-                  Contact number <span className="field-optional">for couriers</span>
-                </label>
-                <input
-                  id="auth-contact"
-                  type="tel"
-                  value={contact}
-                  onChange={(e) => setContact(e.target.value)}
-                  placeholder="9123 4567"
-                  autoComplete="tel"
-                />
+                <p className="status-hint">
+                  You can add a contact number for couriers on your Profile
+                  once you&rsquo;re signed in.
+                </p>
               </div>
             </>
           )}

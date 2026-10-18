@@ -49,9 +49,14 @@
   --sidebar-active-bg: #ffffff;
   --sidebar-active-text: #0b2545;
 
-  /* Credits are always orange, everywhere. Never use it for anything else. */
+  /* Credits are orange everywhere, except the reward of a finished errand that
+     earned or spent nothing (cancelled, expired, released), which is grey.
+     Never use orange for anything else. */
   --credit: #e8730c;
   --credit-soft: #fdf0e3;
+  /* AI-generated (edited by James Teo): a darker orange for credit figures in
+     small text, which --credit is too light to read on white (3:1). */
+  --credit-text: #b85a06;
 
   /* Ledger signs */
   --positive: #1f9254;
@@ -191,7 +196,9 @@ h3 {
   border-radius: var(--radius-sm);
 }
 
-.sidebar-link:hover:not(:disabled) {
+/* AI-generated (edited by James Teo): not on the active item, so the pointer
+   does not swap its "you are here" pill for the hover tint. */
+.sidebar-link:not(.active):hover:not(:disabled) {
   color: var(--text-inverse);
   background: rgba(255, 255, 255, 0.08);
 }
@@ -330,7 +337,9 @@ h3 {
 .mode-toggle button {
   padding: 5px 14px;
   font-size: 13px;
-  color: var(--text-muted);
+  /* AI-generated (edited by James Teo): was --text-muted, 4.28:1 on the
+     toggle's sunken background. */
+  color: #5a6577;
   cursor: pointer;
   background: none;
   border: none;
@@ -356,7 +365,8 @@ h3 {
 
 .credit-pill strong {
   font-size: 14px;
-  color: var(--credit);
+  /* AI-generated (edited by James Teo): readable at this size. */
+  color: var(--credit-text);
 }
 
 .credit-pill span {
@@ -385,7 +395,9 @@ h3 {
 .page-sub {
   max-width: 62ch;
   margin: 6px 0 0;
-  color: var(--text-muted);
+  /* AI-generated (edited by James Teo): was --text-muted, 4.06:1 on the page
+     background. */
+  color: #5a6577;
 }
 
 /* ------------------------------------------------------------ mock flag --- */
@@ -411,15 +423,6 @@ h3 {
 /* AI-generated (edited by nigeltzy). */
 .mock-flag + .mock-flag {
   margin-left: 8px;
-}
-
-/* The top-bar balance is fixture data too; this marks it where a full badge
-   will not fit. */
-.credit-pill .credit-pill-mock {
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 /* ---------------------------------------------------------------- cards --- */
@@ -450,7 +453,9 @@ h3 {
 
 .field-optional {
   font-weight: 400;
-  color: var(--border-strong);
+  /* AI-generated (edited by James Teo): was --border-strong, too faint to read;
+     --text-muted is 4.06:1 on the page background. */
+  color: #5a6577;
 }
 
 input[type="text"],
@@ -458,6 +463,8 @@ input[type="search"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
+/* AI-generated (edited by James Teo): the Profile contact number's field. */
+input[type="tel"],
 select,
 textarea {
   width: 100%;
@@ -766,10 +773,14 @@ textarea {
   padding: 22px;
 }
 
+/* A 36px square to tap or click, placed so the × sits where it always has. */
 .modal-close {
   position: absolute;
-  top: 10px;
-  right: 12px;
+  top: 4px;
+  right: 7px;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0;
   font-size: 22px;
   line-height: 1;
   color: var(--text-muted);
@@ -819,6 +830,14 @@ textarea {
   margin: 0 0 12px;
 }
 
+/* AI-generated (edited by James Teo): a confirmation step for an action that
+   undoes a restriction, such as reactivating an account, so it does not
+   wear the danger colours of the destructive steps. */
+.confirm-box.neutral {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
 /* --------------------------------------------------------------- toasts --- */
 
 .toast {
@@ -837,6 +856,25 @@ textarea {
 
 .toast.error {
   background: var(--danger);
+}
+
+/* AI-generated (edited by James Teo): a long message, such as an errand that
+   could not be accepted, wraps inside the screen instead of in half of it. */
+.toast {
+  width: max-content;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+}
+
+/* AI-generated (edited by James Teo): on a narrow screen the bottom of the
+   view is where a form's or a step's buttons end up, so the toast sits just
+   under the top bar instead, over the page heading. Taps go through it. */
+@media (max-width: 860px) {
+  .toast {
+    top: calc(var(--topbar-h) + 8px);
+    bottom: auto;
+    pointer-events: none;
+  }
 }
 
 /* -------------------------------------------------------------- credits --- */
@@ -927,7 +965,9 @@ textarea {
 }
 
 .ledger-amount.positive {
-  color: var(--positive);
+  /* AI-generated (edited by James Teo): --positive is too light for this size
+     on white; the "+" says it is a credit either way. */
+  color: var(--success-text);
 }
 
 .ledger-running {
@@ -941,7 +981,9 @@ textarea {
   margin: 22px 0 10px;
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-muted);
+  /* AI-generated (edited by James Teo): was --text-muted, 4.06:1 on the page
+     background. */
+  color: #5a6577;
 }
 
 /* -------------------------------------------------------------- errands --- */
@@ -1051,7 +1093,8 @@ textarea {
 .errand-reward {
   font-size: 17px;
   font-weight: 700;
-  color: var(--credit);
+  /* AI-generated (edited by James Teo): readable at this size. */
+  color: var(--credit-text);
   white-space: nowrap;
 }
 
@@ -1390,6 +1433,15 @@ button.service-card:hover {
   word-break: break-all;
 }
 
+/* The Edit link is a 36px target. Negative margins give back the padding, so
+   the word stays where it was and the row grows by only 3px. */
+.detail-list dd.with-action .link-btn {
+  min-width: 36px;
+  min-height: 36px;
+  padding: 0 6px;
+  margin: -6px;
+}
+
 .link-btn {
   flex-shrink: 0;
   padding: 0;
@@ -1409,4 +1461,519 @@ button.service-card:hover {
 .link-btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+/* AI-generated (edited by James Teo): the errand and credit screens. Errand
+   cards that open a detail, the detail's status line, parties, actions and
+   history timeline, the shared errand form, list toggles and empty states,
+   and helpers for screen readers and keyboard focus. Existing tokens only,
+   except one darker grey (#5a6577) for small text these screens put on the
+   page background or a highlighted row, where --text-muted reads below
+   4.5:1. */
+
+/* Read by screen readers, not shown. */
+.visually-hidden,
+.credit-pill span.visually-hidden {
+  position: absolute;
+  display: inline;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Keyboard focus stays visible on every control these screens add; inputs
+   keep their own ring. */
+.btn:focus-visible,
+.link-btn:focus-visible,
+.party-contact:focus-visible,
+.errand-card-open:focus-visible,
+.picker-row:focus-visible,
+.stepper button:focus-visible,
+.mode-toggle button:focus-visible,
+.detail-title:focus-visible,
+.page-head h1:focus-visible,
+.status[tabindex="-1"]:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* The dialog takes focus only so Tab starts inside it; no ring needed. */
+.modal:focus {
+  outline: none;
+}
+
+/* The modal's close button sits over the top-right corner of the title. */
+.modal-body > .detail-title:first-child {
+  margin-top: 0;
+  padding-right: 28px;
+}
+
+/* -------------------------------------------------------- errand lists --- */
+
+.mode-toggle.list-scope {
+  display: inline-flex;
+  margin-bottom: 16px;
+}
+
+.list-note {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: #5a6577;
+}
+
+.empty-state {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.empty-state p {
+  margin: 0;
+}
+
+.errand-card.has-open {
+  gap: 0;
+  padding: 0;
+}
+
+.errand-card-open {
+  display: flex;
+  flex: 1 1 260px;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 15px 16px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: none;
+  border: none;
+  border-radius: var(--radius-lg);
+}
+
+.errand-card-open.static {
+  cursor: default;
+}
+
+.errand-card-open:not(.static):hover .errand-title {
+  text-decoration: underline;
+}
+
+.errand-card-body {
+  display: flex;
+  flex: 1 1 200px;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.errand-card-body .errand-title {
+  overflow-wrap: anywhere;
+}
+
+.errand-card-side {
+  display: flex;
+  flex-shrink: 0;
+  gap: 12px;
+  align-items: center;
+}
+
+.errand-line {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* The reward of an errand that was cancelled, expired or withdrawn from:
+   offered, never paid, so it is not shown in the credit orange of a reward
+   earned or spent. 4.59:1 on the card. */
+.errand-reward.muted {
+  color: var(--text-muted);
+}
+
+/* A delivery waiting on the requester: an accent bar down the left edge and
+   a bold line, on top of the line's own words. Not a ring, which is what
+   keyboard focus looks like; and no tint, which would take the reward's
+   orange below 4.5:1. */
+.errand-card.needs-you {
+  border-left: 4px solid var(--primary);
+}
+
+.errand-card.needs-you .errand-line {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.errand-card-actions {
+  display: flex;
+  align-items: center;
+  padding: 0 16px 15px;
+}
+
+/* Across the foot of a card, such as why Accept was refused. */
+.errand-card-note {
+  flex: 1 1 100%;
+  padding: 8px 12px;
+  margin: 0 16px 15px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border-radius: var(--radius-sm);
+}
+
+@media (min-width: 521px) {
+  .errand-card-actions {
+    padding: 15px 16px 15px 0;
+  }
+}
+
+/* ------------------------------------------------------- errand detail --- */
+
+.detail-title {
+  overflow-wrap: anywhere;
+}
+
+.detail-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.detail-deadline {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* What the last action did. Always on the page so a screen reader hears it
+   change; takes no room while empty. */
+.detail-notice {
+  padding: 8px 12px;
+  margin: 0 0 12px;
+  font-weight: 600;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: var(--radius-sm);
+}
+
+.detail-notice:empty {
+  padding: 0;
+  margin: 0;
+}
+
+/* The errand's facts are place names and free text: they wrap between words
+   and break inside one only when it cannot fit, where the shared rule breaks
+   anywhere for account IDs. The label keeps its width, so "Collect from"
+   stays on one line. */
+.detail-list.errand-facts dt {
+  flex-shrink: 0;
+  max-width: 45%;
+}
+
+.detail-list.errand-facts dd {
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+.detail-list dd.multiline {
+  word-break: normal;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.party {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
+}
+
+.party-id {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* The other person's number, which calls it. */
+.party-contact {
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.party-none {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* On a phone each fact is a label line over its value, left-aligned, so a
+   long place name, a note or an account ID gets the full width instead of
+   a narrow right-hand column. */
+@media (max-width: 520px) {
+  .detail-list.errand-facts > div {
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .detail-list.errand-facts dt {
+    max-width: none;
+    font-size: 12px;
+  }
+
+  .detail-list.errand-facts dd {
+    text-align: left;
+  }
+
+  .detail-list.errand-facts .party {
+    align-items: flex-start;
+  }
+}
+
+.btn-row.start {
+  justify-content: flex-start;
+}
+
+.detail-actions {
+  margin-top: 14px;
+}
+
+.timeline {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  border-left: 2px solid var(--border);
+}
+
+.timeline > li {
+  position: relative;
+  padding: 0 0 12px 16px;
+}
+
+.timeline > li:last-child {
+  padding-bottom: 0;
+}
+
+.timeline > li::before {
+  position: absolute;
+  top: 5px;
+  left: -6px;
+  width: 10px;
+  height: 10px;
+  content: "";
+  background: var(--surface);
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+}
+
+.timeline-what {
+  font-weight: 600;
+}
+
+.timeline-when {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.timeline-changes {
+  padding-left: 18px;
+  margin: 4px 0 0;
+  font-size: 13px;
+}
+
+/* --------------------------------------------------------- errand form --- */
+
+.field-hint.form-notice {
+  margin: 0 0 14px;
+}
+
+/* Two columns where there is room (the Post an errand page), one inside the
+   detail's modal and on phones. */
+.errand-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  gap: 0 22px;
+  align-items: start;
+  min-width: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+}
+
+.errand-form-col {
+  min-width: 0;
+}
+
+/* Post an errand puts the form's labels on the page background, where
+   --text-muted is 4.06:1. */
+.errand-form .field > label,
+.errand-form .field-label {
+  color: #5a6577;
+}
+
+.field-spaced {
+  margin-top: 18px;
+}
+
+.search-field {
+  position: relative;
+  margin-bottom: 6px;
+}
+
+.search-field-icon {
+  position: absolute;
+  top: 10px;
+  left: 11px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.search-field input {
+  padding-left: 36px;
+}
+
+.field-hint {
+  margin: 4px 0 10px;
+  font-size: 12px;
+  color: #5a6577;
+}
+
+.field-error {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.char-count {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #5a6577;
+  text-align: right;
+}
+
+.char-count.over {
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.picker-empty {
+  padding: 14px;
+  margin: 0;
+  color: var(--text-muted);
+}
+
+/* A highlighted row's meta line: --text-muted on --primary-soft is 3.90:1. */
+.picker-row:hover .picker-row-meta,
+.picker-row.selected .picker-row-meta {
+  color: #5a6577;
+}
+
+.picker-row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.picker-row:disabled,
+.picker-row:disabled:hover {
+  cursor: not-allowed;
+  background: var(--surface-sunken);
+}
+
+.picker-row-chosen {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.stepper button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* The reward is typed or stepped; it looks like the old stepper value. */
+.stepper input.stepper-input {
+  width: 96px;
+  padding: 0;
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--credit);
+  text-align: center;
+  appearance: textfield;
+  background: none;
+  border: none;
+}
+
+/* The reward field has no border, so the input rule's pale shadow is all
+   that would show focus; it gets the buttons' ring instead. */
+.stepper input.stepper-input:focus-visible {
+  border-radius: var(--radius-sm);
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.stepper input.stepper-input::-webkit-outer-spin-button,
+.stepper input.stepper-input::-webkit-inner-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.form-summary {
+  margin-top: 18px;
+}
+
+.summary-list {
+  margin: 0;
+}
+
+.summary-row dd {
+  overflow-wrap: anywhere;
+}
+
+/* Sign-in after the app ended the session: a plain notice above the tabs. */
+.status.signed-out {
+  margin: 0 0 16px;
+  font-weight: 600;
+  color: var(--primary);
+  text-align: left;
+  background: var(--primary-soft);
+  border-color: var(--primary-soft);
+}
+
+/* Phone tap targets: the reward stepper's buttons, the segmented toggles
+   (Active/History, Requesting/Delivering) and a Retry or other action inside
+   a status or field message are at least 36px each way. */
+@media (max-width: 520px) {
+  .stepper button {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mode-toggle button {
+    min-width: 36px;
+    min-height: 36px;
+  }
+
+  .status .link-btn,
+  .field-error .link-btn {
+    min-width: 36px;
+    min-height: 36px;
+    padding: 0 12px;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-sm);
+  }
 }
