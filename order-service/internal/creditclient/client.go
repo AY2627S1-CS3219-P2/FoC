@@ -89,6 +89,10 @@ type adjustRequest struct {
 // order.ErrCreditRejected on 400, 401, 403 or 404, and any other error when
 // the outcome is not known. A transport error, a timeout or a 5xx is retried
 // once with the same errandId, and never past ctx.
+//
+// AI-generated (edited by James Teo).
+// A 422 on the retry is an unknown outcome, not insufficient credits: the
+// first attempt may have made the hold that leaves too little for the retry.
 func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 	body, err := json.Marshal(reserveRequest{ErrandID: r.ErrandID, Amount: r.Amount})
 	if err != nil {
@@ -119,6 +123,14 @@ func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 			// so whose it is is unknown. The create's queued refund for this
 			// errandId settles it either way (D-047).
 			return fmt.Errorf("reserve credits for errand %s: credit-service already holds a reservation for it; outcome unknown", r.ErrandID)
+		// AI-generated (edited by James Teo).
+		case status == http.StatusUnprocessableEntity && attempt > 1:
+			// credit-service may check the balance before it sees the first
+			// attempt's hold for this errandId, and that hold may be what
+			// leaves too little. The create's queued refund releases it (D-047).
+			c.log.WarnContext(ctx, "credit reservation retry answered 422; the first attempt may have reserved, so the outcome is unknown",
+				"errand_id", r.ErrandID, "request_id", r.CorrelationID)
+			return fmt.Errorf("reserve credits for errand %s: the retry answered %d after an attempt with no answer; outcome unknown", r.ErrandID, status)
 		case status == http.StatusUnprocessableEntity:
 			return fmt.Errorf("reserve credits for errand %s: %w", r.ErrandID, order.ErrInsufficientCredits)
 		case status == http.StatusBadRequest, status == http.StatusUnauthorized,

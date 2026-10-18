@@ -13,7 +13,9 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -81,6 +83,11 @@ func applied(o order.Order, tr order.Transition) order.Order {
 	o.StateChangedAt = tr.Now
 	o.UpdatedAt = tr.Now
 	o.Version++
+	// AI-generated (edited by James Teo): a withdrawal's courier joins the errand's
+	// WithdrawnCouriers (D-060).
+	if tr.History.Action == order.ActionWithdraw && tr.History.CourierID != nil {
+		o.WithdrawnCouriers = append(o.WithdrawnCouriers, *tr.History.CourierID)
+	}
 	return o
 }
 
@@ -223,6 +230,72 @@ func (e *env) testCreate(t *testing.T) {
 		another.RequestKey = "key-twice"
 		require.NoError(t, e.repo.Create(t.Context(), another, createdEntry(another), e.queueGuard(t, another).EventID),
 			"a key is unique per requester only")
+	})
+
+	// AI-generated (edited by James Teo).
+	t.Run("returns ErrTooManyOpen, writes nothing and keeps the refund queued past five OPEN errands", func(t *testing.T) {
+		e.reset(t)
+		requester := uuid.New()
+		for i := range order.MaxOpenErrands {
+			o := openErrand(requester, at(time.Duration(i)*time.Minute))
+			require.NoError(t, e.repo.Create(t.Context(), o, createdEntry(o), e.queueGuard(t, o).EventID))
+		}
+		sixth := openErrand(requester, at(10*time.Minute))
+		guard := e.queueGuard(t, sixth)
+
+		err := e.repo.Create(t.Context(), sixth, createdEntry(sixth), guard.EventID)
+
+		require.ErrorIs(t, err, order.ErrTooManyOpen)
+		_, err = e.repo.Get(t.Context(), sixth.ID)
+		require.ErrorIs(t, err, order.ErrNotFound)
+		require.Empty(t, e.history(t, sixth.ID))
+		require.Equal(t, 1, e.count(t, `SELECT count(*) FROM outbox WHERE event_id = $1 AND published_at IS NULL`, guard.EventID),
+			"its refund stays queued, so its reservation is released")
+
+		other := openErrand(uuid.New(), at(10*time.Minute))
+		require.NoError(t, e.repo.Create(t.Context(), other, createdEntry(other), e.queueGuard(t, other).EventID),
+			"the limit is per requester")
+	})
+
+	// AI-generated (edited by James Teo).
+	t.Run("counts only OPEN errands before their deadline", func(t *testing.T) {
+		e.reset(t)
+		requester := uuid.New()
+		now := at(time.Hour)
+		for i := range order.MaxOpenErrands - 1 {
+			e.insert(t, openErrand(requester, at(time.Duration(i)*time.Minute)))
+		}
+		dueNow := openErrand(requester, at(0))
+		dueNow.ExpiresAt = ptr(now) // the sweeper has not caught up yet
+		e.insert(t, dueNow)
+		for i, s := range slices.Concat(order.ActiveStates()[1:], order.FinalStates()) {
+			e.insert(t, inState(openErrand(requester, at(0)), s, uuid.New(), at(time.Duration(i)*time.Minute)))
+		}
+
+		fifth := openErrand(requester, now)
+		require.NoError(t, e.repo.Create(t.Context(), fifth, createdEntry(fifth), e.queueGuard(t, fifth).EventID))
+		sixth := openErrand(requester, now.Add(time.Minute))
+		err := e.repo.Create(t.Context(), sixth, createdEntry(sixth), e.queueGuard(t, sixth).EventID)
+		require.ErrorIs(t, err, order.ErrTooManyOpen)
+	})
+
+	// AI-generated (edited by James Teo).
+	t.Run("reports a duplicate request key before the limit", func(t *testing.T) {
+		e.reset(t)
+		requester := uuid.New()
+		var last order.Order
+		for i := range order.MaxOpenErrands {
+			last = openErrand(requester, at(time.Duration(i)*time.Minute))
+			last.RequestKey = fmt.Sprintf("key-%d", i)
+			require.NoError(t, e.repo.Create(t.Context(), last, createdEntry(last), e.queueGuard(t, last).EventID))
+		}
+		twin := openErrand(requester, at(10*time.Minute))
+		twin.RequestKey = last.RequestKey
+
+		err := e.repo.Create(t.Context(), twin, createdEntry(twin), e.queueGuard(t, twin).EventID)
+
+		require.ErrorIs(t, err, order.ErrDuplicateRequestKey,
+			"the twin is replayed, not refused for the place its first attempt took")
 	})
 }
 
@@ -431,6 +504,24 @@ func (e *env) testAccept(t *testing.T) {
 		})
 	})
 
+	// AI-generated (edited by James Teo).
+	t.Run("returns ErrNoMatch when the courier withdrew from the errand", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(requester, at(0))
+		e.insert(t, o)
+		e.insertHistory(t, withdrawalEntry(o, courier, at(time.Minute)))
+
+		_, err := e.repo.Accept(t.Context(), acceptCmd(o, courier, now, 2))
+
+		require.ErrorIs(t, err, order.ErrNoMatch)
+		want := o
+		want.WithdrawnCouriers = []uuid.UUID{courier}
+		require.Equal(t, want, e.get(t, o.ID), "the row is unchanged")
+		require.Len(t, e.history(t, o.ID), 1, "no ACCEPT row")
+		_, err = e.repo.Accept(t.Context(), acceptCmd(o, uuid.New(), now, 2))
+		require.NoError(t, err, "another courier may still accept it")
+	})
+
 	t.Run("counts only ACCEPTED and PICKED_UP towards K", func(t *testing.T) {
 		for _, tc := range []struct {
 			name      string
@@ -604,10 +695,11 @@ func (e *env) testQueueLocked(t *testing.T) {
 		e.insert(t, o)
 		var seen order.Order
 		var ev order.OutboxEvent
-		require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (order.OutboxEvent, error) {
+		// AI-generated (edited by James Teo): fn returns a pointer, nil for no event.
+		require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
 			seen = cur
 			ev = rewardSetEvent(cur, at(5*time.Minute), "corr-amend")
-			return ev, nil
+			return &ev, nil
 		}))
 		require.Equal(t, o, seen)
 		require.Equal(t, o, e.get(t, o.ID), "the row is unchanged")
@@ -625,7 +717,8 @@ func (e *env) testQueueLocked(t *testing.T) {
 		o := openErrand(uuid.New(), at(0))
 		e.insert(t, o)
 		failed := &order.Error{Kind: order.KindUnavailable, Msg: "could not build the event"}
-		err := e.repo.QueueLocked(t.Context(), o.ID, func(order.Order) (order.OutboxEvent, error) { return order.OutboxEvent{}, failed })
+		// AI-generated (edited by James Teo).
+		err := e.repo.QueueLocked(t.Context(), o.ID, func(order.Order) (*order.OutboxEvent, error) { return nil, failed })
 		require.Same(t, failed, err)
 		e.requireUntouched(t, o)
 	})
@@ -633,13 +726,28 @@ func (e *env) testQueueLocked(t *testing.T) {
 	t.Run("an unknown errand is ErrNotFound and fn is not called", func(t *testing.T) {
 		e.reset(t)
 		called := false
-		err := e.repo.QueueLocked(t.Context(), uuid.New(), func(order.Order) (order.OutboxEvent, error) {
+		// AI-generated (edited by James Teo).
+		err := e.repo.QueueLocked(t.Context(), uuid.New(), func(order.Order) (*order.OutboxEvent, error) {
 			called = true
-			return order.OutboxEvent{}, nil
+			return nil, nil
 		})
 		require.ErrorIs(t, err, order.ErrNotFound)
 		require.False(t, called)
 		require.Zero(t, e.count(t, `SELECT count(*) FROM outbox`), "no event")
+	})
+
+	// AI-generated (edited by James Teo).
+	t.Run("a nil event inserts nothing", func(t *testing.T) {
+		e.reset(t)
+		o := endedAs(openErrand(uuid.New(), at(0)), order.StateCancelled, at(time.Minute))
+		e.insert(t, o)
+		var seen order.Order
+		require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
+			seen = cur
+			return nil, nil
+		}))
+		require.Equal(t, o, seen)
+		e.requireUntouched(t, o)
 	})
 }
 
@@ -692,6 +800,8 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		slog.New(slog.DiscardHandler))
 	requester := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
 	courier := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
+	// AI-generated (edited by James Teo): takes the first errand once the courier withdraws (D-060).
+	other := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
 	admin := order.Caller{UserID: uuid.New(), Role: order.RoleAdmin}
 
 	post := func(key string) (order.Order, bool) {
@@ -720,7 +830,9 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		return keys
 	}
 
-	// Post, replay, accept, withdraw, accept again, pick up, deliver, confirm.
+	// AI-generated (edited by James Teo).
+	// Post, replay, accept, withdraw, refuse the withdrawn courier, accept by
+	// another, pick up, deliver, confirm.
 	first, replayed := post("first")
 	require.False(t, replayed)
 	again, replayed := post("first")
@@ -731,11 +843,14 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	step("accept", order.StateAccepted, func() (order.Order, error) { return svc.Accept(ctx, courier, first.ID, 1, "corr-accept") })
 	withdrawn := step("withdraw", order.StateOpen, func() (order.Order, error) { return svc.Withdraw(ctx, courier, first.ID, "corr-withdraw") })
 	require.Equal(t, clock.Now().Add(2*time.Hour), *withdrawn.ExpiresAt, "expiry restarts on withdrawal")
+	// AI-generated (edited by James Teo).
+	_, err := svc.Accept(ctx, courier, first.ID, withdrawn.Version, "corr-accept")
+	require.Equal(t, order.KindConflict, order.KindOf(err), "the courier who withdrew cannot take it back: %v", err)
 	step("accept again", order.StateAccepted, func() (order.Order, error) {
-		return svc.Accept(ctx, courier, first.ID, withdrawn.Version, "corr-accept")
+		return svc.Accept(ctx, other, first.ID, withdrawn.Version, "corr-accept")
 	})
-	step("pick up", order.StatePickedUp, func() (order.Order, error) { return svc.PickUp(ctx, courier, first.ID, "corr-pickup") })
-	delivered := step("deliver", order.StateDelivered, func() (order.Order, error) { return svc.Deliver(ctx, courier, first.ID, "corr-deliver") })
+	step("pick up", order.StatePickedUp, func() (order.Order, error) { return svc.PickUp(ctx, other, first.ID, "corr-pickup") })
+	delivered := step("deliver", order.StateDelivered, func() (order.Order, error) { return svc.Deliver(ctx, other, first.ID, "corr-deliver") })
 	require.Equal(t, clock.Now().Add(24*time.Hour), *delivered.ConfirmBy)
 	step("confirm", order.StateCompleted, func() (order.Order, error) { return svc.Confirm(ctx, requester, first.ID, "corr-confirm") })
 	require.Equal(t, []string{order.RoutingCompleted}, routingKeys(first.ID))
@@ -800,10 +915,14 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	for _, a := range assignments {
 		got = append(got, ending{a.OrderID, a.Outcome})
 	}
+	// AI-generated (edited by James Teo): the first errand was completed by the other courier.
 	require.Equal(t, []ending{
 		{fourth.ID, order.OutcomeCancelled},
 		{third.ID, order.OutcomeCompleted},
-		{first.ID, order.OutcomeCompleted},
 		{first.ID, order.OutcomeReleased},
 	}, got)
+	theirs, err := svc.ListAssignmentHistory(ctx, other)
+	require.NoError(t, err)
+	require.Len(t, theirs, 1)
+	require.Equal(t, ending{first.ID, order.OutcomeCompleted}, ending{theirs[0].OrderID, theirs[0].Outcome})
 }

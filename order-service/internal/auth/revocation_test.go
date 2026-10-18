@@ -10,6 +10,10 @@ package auth
 import (
 	"context"
 	"errors"
+	"fmt"
+	"io"
+	"net"
+	"syscall"
 	"testing"
 	"time"
 
@@ -76,10 +80,44 @@ func TestRevoked(t *testing.T) {
 	}
 }
 
+// AI-generated (edited by James Teo).
+// replyError stands in for an error reply from Redis: go-redis's own type is
+// internal, and redis.Error is matched by its RedisError method.
+type replyError string
+
+func (e replyError) Error() string { return string(e) }
+
+func (replyError) RedisError() {}
+
+// AI-generated (edited by James Teo).
 func TestRevokedWhenRedisDoesNotAnswer(t *testing.T) {
-	down := errors.New("dial tcp: connection refused")
-	_, err := NewRevocations(&fakeRedis{err: down}).Revoked(context.Background(), Claims{UserID: uuid.New(), TokenID: "j"})
-	require.ErrorIs(t, err, down)
+	// D-056: only a lookup that never reached Redis may skip the check. One
+	// Redis answered with an error, such as a missing password or a cluster's
+	// redirect, must not.
+	cases := []struct {
+		name        string
+		err         error
+		unreachable bool
+	}{
+		{"connection refused", &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}, true},
+		{"no such host", &net.DNSError{Err: "no such host", Name: "redis", IsNotFound: true}, true},
+		{"the lookup's deadline", context.DeadlineExceeded, true},
+		{"a closed client", redis.ErrClosed, true},
+		{"the connection dropped mid-reply", io.ErrUnexpectedEOF, true},
+		{"NOAUTH", replyError("NOAUTH Authentication required."), false},
+		{"WRONGPASS", replyError("WRONGPASS invalid username-password pair or user is disabled."), false},
+		{"CROSSSLOT", replyError("CROSSSLOT Keys in request don't hash to the same slot"), false},
+		{"MOVED", replyError("MOVED 3999 127.0.0.1:6381"), false},
+		{"READONLY", replyError("READONLY You can't write against a read only replica."), false},
+		{"a wrapped error reply", fmt.Errorf("%w", replyError("LOADING Redis is loading the dataset in memory")), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NewRevocations(&fakeRedis{err: tc.err}).Revoked(context.Background(), Claims{UserID: uuid.New(), TokenID: "j"})
+			require.ErrorIs(t, err, tc.err, "the cause is kept for the log")
+			assert.Equal(t, tc.unreachable, errors.Is(err, ErrRedisUnreachable))
+		})
+	}
 }
 
 func TestTokenOnTheContext(t *testing.T) {

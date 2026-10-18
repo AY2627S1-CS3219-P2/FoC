@@ -582,12 +582,68 @@ func TestWithdrawReopensTheErrandWithAFreshDeadline(t *testing.T) {
 	assert.Equal(t, "corr-withdraw", w.CorrelationID)
 	assert.Empty(t, f.repo.EventsFor(o.ID), "withdrawing settles nothing")
 
-	// Back in OPEN, any student but the requester may take it, including the
-	// courier who withdrew.
-	assert.ElementsMatch(t, []order.APIAction{order.APIAccept}, order.AllowedActions(got, f.courier, now))
+	// AI-generated (edited by James Teo).
+	// Back in OPEN, any student but the requester may take it, except the
+	// courier who withdrew (D-060).
+	assert.Equal(t, []uuid.UUID{f.courier.UserID}, got.WithdrawnCouriers)
+	assert.Empty(t, order.AllowedActions(got, f.courier, now))
+	assert.ElementsMatch(t, []order.APIAction{order.APIAccept}, order.AllowedActions(got, f.stranger, now))
 	again, err := f.svc.Accept(f.ctx, f.stranger, o.ID, got.Version, "corr-accept-2")
 	require.NoError(t, err)
 	assert.Equal(t, ptr(f.stranger.UserID), again.CourierID)
+}
+
+// AI-generated (edited by James Teo).
+func TestACourierWhoWithdrewCannotAcceptAgain(t *testing.T) {
+	// D-060: a withdrawal gives the errand up for good to that courier, so
+	// accept and withdraw cannot be cycled to keep the requester's credits
+	// held and the errand off the ADMIN's stalled list. Anyone else may still
+	// take it.
+	f := newFixture(t)
+	o := f.post()
+	_, err := f.svc.Accept(f.ctx, f.courier, o.ID, o.Version, "corr-accept")
+	require.NoError(t, err)
+	reopened, err := f.svc.Withdraw(f.ctx, f.courier, o.ID, "corr-withdraw")
+	require.NoError(t, err)
+	now := f.clock.Now()
+
+	assert.Empty(t, order.AllowedActions(reopened, f.courier, now), "accept is not offered to them")
+	open, err := f.svc.ListOpen(f.ctx, f.courier)
+	require.NoError(t, err)
+	require.Len(t, open, 1, "they still see it listed")
+	assert.Empty(t, order.AllowedActions(open[0], f.courier, now), "without accept")
+	before := f.stored(o.ID)
+
+	_, err = f.svc.Accept(f.ctx, f.courier, o.ID, reopened.Version, "corr-accept-again")
+
+	requireKind(t, err, order.KindConflict)
+	assert.Equal(t, "you withdrew from this errand, so you cannot accept it again", order.MessageOf(err))
+	f.requireUnchanged(before)
+	f.requireNoWriteSince(before)
+
+	got, err := f.svc.Accept(f.ctx, f.stranger, o.ID, reopened.Version, "corr-accept-other")
+	require.NoError(t, err)
+	assert.Equal(t, ptr(f.stranger.UserID), got.CourierID)
+	assert.Equal(t, []uuid.UUID{f.courier.UserID}, got.WithdrawnCouriers)
+}
+
+// AI-generated (edited by James Teo).
+func TestTheAcceptWriteRefusesACourierWhoWithdrew(t *testing.T) {
+	// The accept's conditional write checks D-060 itself, as acceptSQL does,
+	// so the rule holds for a command the check in Go did not refuse.
+	f := newFixture(t)
+	o := f.post()
+	_, err := f.svc.Accept(f.ctx, f.courier, o.ID, o.Version, "corr-accept")
+	require.NoError(t, err)
+	reopened, err := f.svc.Withdraw(f.ctx, f.courier, o.ID, "corr-withdraw")
+	require.NoError(t, err)
+
+	_, err = f.repo.Accept(f.ctx, order.AcceptCommand{
+		OrderID: o.ID, CourierID: f.courier.UserID, ExpectedVersion: reopened.Version,
+		Now: f.clock.Now(), MaxActive: maxActive,
+	})
+
+	require.ErrorIs(t, err, order.ErrNoMatch)
 }
 
 func TestTheSweepUsesTheDeadlineAWithdrawSets(t *testing.T) {

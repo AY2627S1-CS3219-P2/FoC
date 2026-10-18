@@ -89,7 +89,8 @@ func TestRouterOverPostgres(t *testing.T) {
 
 		rec := serve(t, routerFor(h), http.MethodPost, "/", body, as(student()))
 
-		requireError(t, rec, http.StatusBadRequest, "the item description cannot contain a NUL character")
+		// AI-generated (edited by James Teo): NUL is one of the control characters the text rule refuses.
+		requireError(t, rec, http.StatusBadRequest, "the item description cannot contain line breaks or control characters")
 		assert.Empty(t, h.credit.Reserves())
 	})
 }

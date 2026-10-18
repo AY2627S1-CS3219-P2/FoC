@@ -418,10 +418,19 @@ func (r *hookedRepo) attemptedWrites() []string {
 	return slices.Clone(r.writes)
 }
 
+// AI-generated (edited by James Teo).
 // attempt records a write to method, then runs its beforeNext hook, if any.
 func (r *hookedRepo) attempt(method string) {
 	r.mu.Lock()
 	r.writes = append(r.writes, method)
+	r.mu.Unlock()
+	r.runBefore(method)
+}
+
+// AI-generated (edited by James Teo).
+// runBefore runs, and clears, method's beforeNext hook, if any.
+func (r *hookedRepo) runBefore(method string) {
+	r.mu.Lock()
 	fn := r.before[method]
 	delete(r.before, method)
 	r.mu.Unlock()
@@ -505,6 +514,14 @@ func (r *hookedRepo) CountActiveBySupplier(ctx context.Context, supplierID uuid.
 	return r.Repository.CountActiveBySupplier(ctx, supplierID)
 }
 
+// AI-generated (edited by James Teo).
+// CountOpenByRequester runs its beforeNext hook, which is not a write, so a
+// test can land a competing create between create's key lookup and its count.
+func (r *hookedRepo) CountOpenByRequester(ctx context.Context, requesterID uuid.UUID, now time.Time) (int, error) {
+	r.runBefore("CountOpenByRequester")
+	return r.Repository.CountOpenByRequester(ctx, requesterID, now)
+}
+
 func (r *hookedRepo) FindByRequestKey(ctx context.Context, requesterID uuid.UUID, key string) (order.Order, error) {
 	r.mu.Lock()
 	err := r.findErr
@@ -545,12 +562,13 @@ func (r *hookedRepo) Amend(ctx context.Context, id uuid.UUID, fn func(order.Orde
 	})
 }
 
-func (r *hookedRepo) QueueLocked(ctx context.Context, id uuid.UUID, fn func(order.Order) (order.OutboxEvent, error)) error {
+// AI-generated (edited by James Teo): fn returns a nil event for "queue nothing".
+func (r *hookedRepo) QueueLocked(ctx context.Context, id uuid.UUID, fn func(order.Order) (*order.OutboxEvent, error)) error {
 	r.mu.Lock()
 	r.queueCtxDone = append(r.queueCtxDone, ctx.Err() != nil)
 	r.mu.Unlock()
 	r.attempt("QueueLocked")
-	return r.Repository.QueueLocked(ctx, id, func(cur order.Order) (order.OutboxEvent, error) {
+	return r.Repository.QueueLocked(ctx, id, func(cur order.Order) (*order.OutboxEvent, error) {
 		r.locked.Store(true)
 		defer r.locked.Store(false)
 		return fn(cur)

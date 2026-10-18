@@ -77,10 +77,13 @@ instead of every test timing out on its own.
 | `TestConcurrentAcceptsHaveOneWinner` | ten couriers accept one errand at once: one 200, nine 409, one courier assigned |
 | `TestCourierAtCapacityCannotAccept` | a courier holding K errands gets 409 on the next accept, and can accept again once one is delivered |
 | `TestRequesterCannotAcceptOwnErrand` | 403, and the errand stays `OPEN` |
-| `TestWithdrawnErrandCanBeAcceptedAgain` | withdraw puts the errand back to `OPEN` with a fresh deadline, a second courier takes it, and the first keeps a `RELEASED` record |
+| `TestWithdrawnErrandCanBeAcceptedAgain` | withdraw puts the errand back to `OPEN` with a fresh deadline, the courier who withdrew gets 409 and no accept action, a second courier takes it, and the first keeps a `RELEASED` record |
 | `TestUnconfirmedDeliveryAutoConfirms` | a delivery nobody confirms completes after C and pays the courier |
 | `TestAdminCancelsAcceptedErrand` | the requester cannot cancel once accepted; an ADMIN can, refunding the requester and paying the courier nothing |
 | `TestBrowserCannotWriteCredits` | `POST /api/credits/reservations` and `PATCH /api/credits/reservations/{errandId}` answer 404 or 405, and no credits move |
+| `TestRewardChangeMovesTheHold` | raising and then lowering a reward moves the hold each time, and cancelling returns all of it |
+| `TestLogoutRevokesTheAccessToken` | a student's token works on `GET /api/orders/open`, and after `POST /auth/logout` the same token gets 401 |
+| `TestSuspensionRevokesTheAccessToken` | after an ADMIN suspends a student with `PATCH /api/users/{uid}/status`, the token the student already holds gets 401 on `GET /api/orders/open` |
 
 ## Notes
 

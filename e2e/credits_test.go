@@ -63,3 +63,35 @@ func TestBrowserCannotWriteCredits(t *testing.T) {
 	s.requireBalance(t, requester, held)
 	require.Equal(t, reward, s.errand(t, requester, e.ID).Errand.Reward)
 }
+
+// AI-generated (edited by James Teo).
+// TestRewardChangeMovesTheHold raises an errand's reward, lowers it, then
+// cancels it, and follows the requester's credits after each step: the hold
+// tracks the reward (D-057), and the cancel returns all of it, whatever the
+// hold was, because errand.cancelled settles by its amount and credit-service
+// returns any hold left over (D-059).
+func TestRewardChangeMovesTheHold(t *testing.T) {
+	t.Parallel()
+	s := newStack(t)
+	requester := s.newStudent(t)
+	start := s.startingBalance(t, requester)
+	holding := func(reward int) balance {
+		return balance{start.available - reward, start.reserved + reward}
+	}
+
+	const posted, raised, lowered = 3, 8, 2
+	e := s.createErrand(t, requester, s.errandInput(t, requester, posted)).Errand
+	s.requireBalance(t, requester, holding(posted))
+
+	e = s.amendReward(t, requester, e, raised)
+	require.Equal(t, raised, e.Reward)
+	s.waitForBalance(t, requester, holding(raised))
+
+	e = s.amendReward(t, requester, e, lowered)
+	require.Equal(t, lowered, e.Reward)
+	s.waitForBalance(t, requester, holding(lowered))
+
+	e = detailOf(t, s.act(t, requester, e.ID, "cancel"), http.StatusOK).Errand
+	require.Equal(t, stateCancelled, e.State)
+	s.waitForBalance(t, requester, start)
+}

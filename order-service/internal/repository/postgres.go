@@ -45,13 +45,28 @@ const (
 		state, version, request_key, created_at, updated_at, state_changed_at,
 		expires_at, confirm_by`
 
+	// AI-generated (edited by James Teo).
+	// withdrawnCouriersColumn lists the couriers who withdrew from the errand,
+	// oldest first, from its WITHDRAW history rows (D-060). It names the row
+	// being read as "orders", so it goes only in a query on orders that does
+	// not alias the table.
+	withdrawnCouriersColumn = `ARRAY(SELECT h.courier_id FROM order_history h
+			WHERE h.order_id = orders.id AND h.action = 'WITHDRAW' AND h.courier_id IS NOT NULL
+			ORDER BY h.id)`
+
+	// orderSelect is what every read of an errand selects: orderColumns, then
+	// withdrawnCouriersColumn, in the order scanOrder reads them.
+	orderSelect = orderColumns + `, ` + withdrawnCouriersColumn
+
 	// historyColumns is every order_history column, in the order scanHistory reads them.
 	historyColumns = `id, order_id, action, from_state, to_state, actor_id,
 		actor_kind, courier_id, changes, occurred_at, correlation_id`
 
-	getOrderSQL = `SELECT ` + orderColumns + ` FROM orders WHERE id = $1`
+	// AI-generated (edited by James Teo): this read and every list below select
+	// orderSelect, so each errand comes with its WithdrawnCouriers (D-060).
+	getOrderSQL = `SELECT ` + orderSelect + ` FROM orders WHERE id = $1`
 
-	findByRequestKeySQL = `SELECT ` + orderColumns + `
+	findByRequestKeySQL = `SELECT ` + orderSelect + `
 		FROM orders
 		WHERE requester_id = $1 AND request_key = $2`
 
@@ -60,25 +75,25 @@ const (
 		WHERE order_id = $1
 		ORDER BY id`
 
-	listOpenSQL = `SELECT ` + orderColumns + `
+	listOpenSQL = `SELECT ` + orderSelect + `
 		FROM orders
 		WHERE state = 'OPEN' AND expires_at > $1
 		ORDER BY created_at DESC
 		LIMIT $2`
 
-	listByRequesterSQL = `SELECT ` + orderColumns + `
+	listByRequesterSQL = `SELECT ` + orderSelect + `
 		FROM orders
 		WHERE requester_id = $1 AND state = ANY($2)
 		ORDER BY state_changed_at DESC
 		LIMIT $3`
 
-	listByCourierSQL = `SELECT ` + orderColumns + `
+	listByCourierSQL = `SELECT ` + orderSelect + `
 		FROM orders
 		WHERE courier_id = $1 AND state = ANY($2)
 		ORDER BY state_changed_at DESC
 		LIMIT $3`
 
-	listActiveSQL = `SELECT ` + orderColumns + `
+	listActiveSQL = `SELECT ` + orderSelect + `
 		FROM orders
 		WHERE state IN ('OPEN', 'ACCEPTED', 'PICKED_UP', 'DELIVERED')
 		ORDER BY state_changed_at
@@ -87,6 +102,14 @@ const (
 	countActiveBySupplierSQL = `SELECT count(*)
 		FROM orders
 		WHERE supplier_id = $1 AND state IN ('OPEN', 'ACCEPTED', 'PICKED_UP', 'DELIVERED')`
+
+	// AI-generated (edited by James Teo).
+	// countOpenByRequesterSQL counts the requester's errands that are OPEN
+	// with a deadline after $2 (D-058); Create runs it too, under the
+	// requester's lock.
+	countOpenByRequesterSQL = `SELECT count(*)
+		FROM orders
+		WHERE requester_id = $1 AND state = 'OPEN' AND expires_at > $2`
 
 	dueForExpirySQL = `SELECT id
 		FROM orders
@@ -200,6 +223,16 @@ func (p *Postgres) CountActiveBySupplier(ctx context.Context, supplierID uuid.UU
 	return n, nil
 }
 
+// AI-generated (edited by James Teo).
+// CountOpenByRequester implements order.Repository.
+func (p *Postgres) CountOpenByRequester(ctx context.Context, requesterID uuid.UUID, now time.Time) (int, error) {
+	var n int
+	if err := p.pool.QueryRow(ctx, countOpenByRequesterSQL, requesterID, now).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count open errands of requester %s: %w", requesterID, err)
+	}
+	return n, nil
+}
+
 // DueForExpiry implements order.Repository.
 func (p *Postgres) DueForExpiry(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
 	return p.listIDs(ctx, "list errands due to expire", dueForExpirySQL, now, limitArg(limit))
@@ -257,7 +290,9 @@ func (p *Postgres) inTx(ctx context.Context, fn func(tx pgx.Tx) error) error {
 	return nil
 }
 
-// scanOrder reads one row of orderColumns. Times come back in UTC.
+// AI-generated (edited by James Teo).
+// scanOrder reads one row of orderSelect. Times come back in UTC, and an
+// errand nobody withdrew from has nil WithdrawnCouriers.
 func scanOrder(row pgx.Row) (order.Order, error) {
 	var (
 		o          order.Order
@@ -268,10 +303,13 @@ func scanOrder(row pgx.Row) (order.Order, error) {
 		&o.ID, &o.RequesterID, &o.CourierID, &o.Supplier.ID, &o.Supplier.Name,
 		&o.Supplier.Location, &o.ItemDescription, &o.DeliveryLocation, &o.DeliveryNote, &o.Reward,
 		&state, &o.Version, &requestKey, &o.CreatedAt, &o.UpdatedAt, &o.StateChangedAt,
-		&o.ExpiresAt, &o.ConfirmBy,
+		&o.ExpiresAt, &o.ConfirmBy, &o.WithdrawnCouriers,
 	)
 	if err != nil {
 		return order.Order{}, err
+	}
+	if len(o.WithdrawnCouriers) == 0 {
+		o.WithdrawnCouriers = nil
 	}
 	o.State = order.State(state)
 	if requestKey != nil {

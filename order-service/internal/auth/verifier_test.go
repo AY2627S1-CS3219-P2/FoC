@@ -99,10 +99,13 @@ func sign(t *testing.T, method jwt.SigningMethod, key any, kid string, claims jw
 	return s
 }
 
-// accessClaims are the claims user-service puts on an access token.
+// AI-generated (edited by James Teo).
+// accessClaims are the claims user-service puts on an access token, its iss
+// and aud included (user-service/internal/jwt/jwt.go).
 func accessClaims(sub uuid.UUID, now time.Time) jwt.MapClaims {
 	return jwt.MapClaims{
 		"sub": sub.String(), "role": "STUDENT", "typ": "access", "jti": uuid.NewString(),
+		"iss": "campusrun-user-service", "aud": []string{"campusrun-api"},
 		"iat": now.Unix(), "exp": now.Add(15 * time.Minute).Unix(),
 	}
 }
@@ -146,6 +149,12 @@ func TestVerifyRefusals(t *testing.T) {
 		{"no jti", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { delete(c, "jti") })), ErrMalformed},
 		{"sub not a UUID", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { c["sub"] = "student2" })), ErrMalformed},
 		{"a refresh token", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { c["typ"] = "refresh" })), ErrWrongType},
+		// AI-generated (edited by James Teo): iss and aud exactly as user-service issues them.
+		{"another issuer", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { c["iss"] = "campusrun-other-service" })), ErrInvalidSignature},
+		{"no issuer", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { delete(c, "iss") })), ErrMalformed},
+		{"another audience", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { c["aud"] = []string{"campusrun-internal"} })), ErrInvalidSignature},
+		{"the audience as a plain string", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { c["aud"] = "campusrun-other" })), ErrInvalidSignature},
+		{"no audience", sign(t, jwt.SigningMethodRS256, a, "k1", with(func(c jwt.MapClaims) { delete(c, "aud") })), ErrMalformed},
 		{"no kid", sign(t, jwt.SigningMethodRS256, a, "", accessClaims(uuid.New(), now)), ErrMalformed},
 		{"signed by another key", sign(t, jwt.SigningMethodRS256, b, "k1", accessClaims(uuid.New(), now)), ErrInvalidSignature},
 		{"HS256 with the public key as the secret", sign(t, jwt.SigningMethodHS256, pubDER, "k1", accessClaims(uuid.New(), now)), ErrInvalidSignature},

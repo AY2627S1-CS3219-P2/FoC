@@ -13,16 +13,19 @@ package repository
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
 
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/order/ordertest"
 )
 
 // acceptAll releases every command at the same moment, one goroutine each,
@@ -275,10 +278,11 @@ func (e *env) testQueueLockedHoldsRowLock(t *testing.T) {
 
 	var ev order.OutboxEvent
 	inFn, release, locked := holdInCallback(t, func(wait func()) error {
-		return e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (order.OutboxEvent, error) {
+		// AI-generated (edited by James Teo): fn returns a pointer, nil for no event.
+		return e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
 			wait()
 			ev = rewardSetEvent(cur, at(5*time.Minute), "corr-amend")
-			return ev, nil
+			return &ev, nil
 		})
 	})
 	receive(t, inFn, "QueueLocked to lock the row")
@@ -302,4 +306,210 @@ func (e *env) testQueueLockedHoldsRowLock(t *testing.T) {
 	require.Equal(t, order.StateCancelled, got.State)
 	require.Equal(t, 2, got.Version, "QueueLocked itself changed no errand column")
 	require.Contains(t, e.outbox(t, ev.EventID).payload, `"version": 1`, "the event carries the version it saw")
+}
+
+// AI-generated (edited by James Teo).
+// testConcurrentCreatesRespectTheOpenLimit is D-058 under contention: ten
+// creates by one requester at once, with none OPEN before, save exactly five,
+// because the requester's advisory lock makes each count see the creates
+// before it. The rest write nothing and keep their refunds queued. It runs
+// several rounds, since without the lock only some races would pass the limit.
+func (e *env) testConcurrentCreatesRespectTheOpenLimit(t *testing.T) {
+	const rounds, creates = 3, 10
+	for round := range rounds {
+		e.reset(t)
+		requester := uuid.New()
+		errands := make([]order.Order, creates)
+		guards := make([]uuid.UUID, creates)
+		for i := range errands {
+			errands[i] = openErrand(requester, at(time.Duration(i)*time.Second))
+			guards[i] = e.queueGuard(t, errands[i]).EventID
+		}
+
+		errs := make([]error, creates)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, o := range errands {
+			wg.Go(func() {
+				<-start
+				errs[i] = e.repo.Create(t.Context(), o, createdEntry(o), guards[i])
+			})
+		}
+		close(start)
+		wg.Wait()
+
+		saved := 0
+		for i, err := range errs {
+			switch {
+			case err == nil:
+				saved++
+			case errors.Is(err, order.ErrTooManyOpen):
+				require.Equal(t, 1, e.count(t, `SELECT count(*) FROM outbox WHERE event_id = $1 AND published_at IS NULL`, guards[i]),
+					"round %d, create %d: a refused create keeps its refund queued", round, i)
+			default:
+				t.Fatalf("round %d, create %d: %v", round, i, err)
+			}
+		}
+		require.Equal(t, order.MaxOpenErrands, saved, "round %d: creates that saved", round)
+		require.Equal(t, order.MaxOpenErrands, e.count(t, `SELECT count(*) FROM orders WHERE requester_id = $1`, requester),
+			"round %d: errands the requester has", round)
+	}
+}
+
+// AI-generated (edited by James Teo).
+// serviceOn runs the domain service on repo, with ordertest's clock, credit
+// and supplier fakes, T = 2h, K = 2 and C = 24h.
+func serviceOn(repo order.Repository) (*order.Service, *ordertest.Clock, *ordertest.Credit, order.Supplier) {
+	clock := ordertest.NewClock(at(0))
+	credit := ordertest.NewCredit()
+	supplier := order.Supplier{
+		ID: uuid.New(), Name: "Spinelli Coffee", Building: "COM3", Floor: "1",
+		LocationDescription: "next to the lift", Available: true,
+	}
+	svc := order.NewService(repo, credit, ordertest.NewSuppliers(supplier), clock,
+		order.Config{ExpiryPeriod: 2 * time.Hour, MaxActive: 2, ConfirmWindow: 24 * time.Hour},
+		slog.New(slog.DiscardHandler))
+	return svc, clock, credit, supplier
+}
+
+// AI-generated (edited by James Teo).
+// heldAdjust makes credit's next Adjust wait inside the call, as a slow
+// credit-service would while the amend holds the errand's row lock (D-057),
+// until release is called, then answer with apply and err. The test's
+// cleanup releases it too, so a failing test never leaves a transaction open.
+func heldAdjust(t *testing.T, credit *ordertest.Credit, apply bool, err error) (inAdjust <-chan struct{}, release func()) {
+	t.Helper()
+	entered := make(chan struct{})
+	gate := make(chan struct{})
+	release = sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(release)
+	credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) {
+		close(entered)
+		<-gate
+		return apply, err
+	}
+	return entered, release
+}
+
+// AI-generated (edited by James Teo).
+// testAcceptIsJudgedAtArrival pins down that a user action is judged as of
+// when it arrived. An accept that arrives a second before the deadline T,
+// then waits on the row lock an amend holds across its credit call (D-057)
+// until T has passed, still goes through, recorded at its arrival time, and
+// the sweeper then finds nothing to expire.
+func (e *env) testAcceptIsJudgedAtArrival(t *testing.T) {
+	e.reset(t)
+	ctx := t.Context()
+	svc, clock, credit, supplier := serviceOn(e.repo)
+	requester := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
+	courier := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
+	o, _, err := svc.Create(ctx, requester, order.CreateInput{
+		SupplierID: supplier.ID, ItemDescription: latte, DeliveryLocation: "COM3 Lobby", Reward: 5, CorrelationID: "corr-create",
+	})
+	require.NoError(t, err)
+	clock.Advance(2*time.Hour - time.Second)
+	arrival := clock.Now()
+
+	inAdjust, release := heldAdjust(t, credit, false, order.ErrInsufficientCredits)
+	amended := make(chan error, 1)
+	go func() {
+		_, err := svc.Amend(ctx, requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(9), CorrelationID: "corr-amend"})
+		amended <- err
+	}()
+	receive(t, inAdjust, "the amend to hold the row across its credit call")
+	accepted := make(chan error, 1)
+	go func() {
+		_, err := svc.Accept(ctx, courier, o.ID, o.Version, "corr-accept")
+		accepted <- err
+	}()
+	e.waitForLockWait(t)
+	clock.Advance(2 * time.Second)
+	require.True(t, clock.Now().After(*o.ExpiresAt), "T has passed while the accept waits")
+
+	release()
+	require.Equal(t, order.KindInsufficientCredits, order.KindOf(receive(t, amended, "the amend to be refused")))
+	require.NoError(t, receive(t, accepted, "the accept to go through"))
+	got := e.get(t, o.ID)
+	require.Equal(t, order.StateAccepted, got.State)
+	require.Equal(t, arrival, got.StateChangedAt, "recorded at its arrival")
+	history := e.history(t, o.ID)
+	require.Equal(t, order.ActionAccept, history[len(history)-1].Action)
+	require.Equal(t, arrival, history[len(history)-1].OccurredAt)
+	expired, err := svc.Expire(ctx, o.ID, "corr-sweep")
+	require.NoError(t, err)
+	require.False(t, expired, "nothing left for the sweeper")
+}
+
+// AI-generated (edited by James Teo).
+// queueAfter is the PostgreSQL repository with QueueLocked held back until
+// wait returns, so a test can let another write commit first.
+type queueAfter struct {
+	*Postgres
+	wait func()
+}
+
+func (q *queueAfter) QueueLocked(ctx context.Context, id uuid.UUID, fn func(order.Order) (*order.OutboxEvent, error)) error {
+	q.wait()
+	return q.Postgres.QueueLocked(ctx, id, fn)
+}
+
+// AI-generated (edited by James Teo).
+// testNoRewardSetBehindASettlement is the race that would put a hold back on
+// a settled reservation. An amend's credit call has an unknown outcome while
+// the requester's cancel waits on its row lock; the cancel then commits
+// errand.cancelled before the amend's reward_set can be queued. The errand is
+// final by then, so no reward_set is queued behind the settlement, which
+// settles the reward the errand kept (D-059).
+func (e *env) testNoRewardSetBehindASettlement(t *testing.T) {
+	e.reset(t)
+	ctx := t.Context()
+	cancelled := make(chan error, 1)
+	cancelDone := make(chan struct{})
+	repo := &queueAfter{Postgres: e.repo, wait: func() {
+		select {
+		case <-cancelDone:
+		case <-time.After(10 * time.Second):
+		}
+	}}
+	svc, _, credit, supplier := serviceOn(repo)
+	requester := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
+	o, _, err := svc.Create(ctx, requester, order.CreateInput{
+		SupplierID: supplier.ID, ItemDescription: latte, DeliveryLocation: "COM3 Lobby", Reward: 5, CorrelationID: "corr-create",
+	})
+	require.NoError(t, err)
+
+	// credit applies the raise, but its answer is lost.
+	inAdjust, release := heldAdjust(t, credit, true, ordertest.ErrInjected)
+	amended := make(chan error, 1)
+	go func() {
+		_, err := svc.Amend(ctx, requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
+		amended <- err
+	}()
+	receive(t, inAdjust, "the amend to hold the row across its credit call")
+	go func() {
+		_, err := svc.Cancel(ctx, requester, o.ID, "corr-cancel")
+		cancelled <- err
+		close(cancelDone)
+	}()
+	e.waitForLockWait(t)
+
+	release()
+	require.Equal(t, order.KindUnavailable, order.KindOf(receive(t, amended, "the amend to fail")))
+	require.NoError(t, receive(t, cancelled, "the cancel to commit"))
+	require.Equal(t, order.StateCancelled, e.get(t, o.ID).State)
+	rows, err := e.pool.Query(ctx, `SELECT routing_key, (payload->>'amount')::int FROM outbox
+		WHERE payload->>'errandId' = $1 ORDER BY created_at`, o.ID.String())
+	require.NoError(t, err)
+	type queued struct {
+		key    string
+		amount int
+	}
+	events, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (queued, error) {
+		var q queued
+		return q, row.Scan(&q.key, &q.amount)
+	})
+	require.NoError(t, err)
+	require.Equal(t, []queued{{order.RoutingCancelled, 5}}, events, "the settlement alone, at the reward the errand kept")
+	held, _ := credit.Hold(o.ID)
+	require.Equal(t, 8, held, "credit holds the lost raise; settling by amount returns the rest to the requester")
 }

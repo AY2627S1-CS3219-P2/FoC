@@ -151,6 +151,16 @@ func TestAmendValidatesLikeCreate(t *testing.T) {
 		{"141-character note", order.AmendInput{DeliveryNote: ptr(strings.Repeat("n", 141))}},
 		{"item with a NUL", order.AmendInput{ItemDescription: ptr("a\x00b")}},
 		{"note with a NUL", order.AmendInput{DeliveryNote: ptr("a\x00b")}},
+		// AI-generated (edited by James Teo): create's text rule (F3.7.2).
+		{"item of only a zero-width space", order.AmendInput{ItemDescription: ptr("\u200b")}},
+		{"item with a line break", order.AmendInput{ItemDescription: ptr("Two kaya\ntoast sets")}},
+		{"item with a right-to-left override", order.AmendInput{ItemDescription: ptr("\u202egnp.exe")}},
+		{"note with a tab", order.AmendInput{DeliveryNote: ptr("Hall 3\tRoom 12")}},
+		{"note with a direction isolate", order.AmendInput{DeliveryNote: ptr("Room \u206621\u2069")}},
+		// AI-generated (edited by James Teo).
+		{"item with a line separator", order.AmendInput{ItemDescription: ptr("Two kaya\u2028toast sets")}},
+		{"note with a paragraph separator", order.AmendInput{DeliveryNote: ptr("Hall 3\u2029Room 12")}},
+		{"item of only blank fillers", order.AmendInput{ItemDescription: ptr("\u3164\u2800")}},
 		{"reward 0", order.AmendInput{Reward: ptr(0)}},
 		{"negative reward", order.AmendInput{Reward: ptr(-3)}},
 	}
@@ -501,6 +511,47 @@ func TestAmendLogsWhenTheRewardSetCannotBeQueued(t *testing.T) {
 	cause, ok := attrs["err"].(error)
 	require.True(t, ok, "the failure is logged with its cause")
 	assert.ErrorIs(t, cause, ordertest.ErrInjected)
+}
+
+// AI-generated (edited by James Teo).
+func TestAmendQueuesNoRewardSetOnceTheErrandIsFinal(t *testing.T) {
+	// The PATCH's outcome is unknown, and the errand settles before the
+	// reward_set is queued. Its settlement event settles by its own amount
+	// and credit returns any hold left over (D-059), so a reward_set behind
+	// it could only put back a hold that nothing would release.
+	cases := []struct {
+		name   string
+		settle func(f *fixture, o order.Order)
+		key    string
+	}{
+		{"cancelled by the requester", func(f *fixture, o order.Order) {
+			_, err := f.svc.Cancel(f.ctx, f.requester, o.ID, "corr-cancel")
+			require.NoError(f.t, err)
+		}, order.RoutingCancelled},
+		{"expired by the sweeper", func(f *fixture, o order.Order) {
+			f.clock.Advance(expiryPeriod)
+			ok, err := f.svc.Expire(f.ctx, o.ID, "corr-sweep")
+			require.NoError(f.t, err)
+			require.True(f.t, ok)
+		}, order.RoutingExpired},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			o := f.post()
+			f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
+			f.repo.beforeNext("QueueLocked", func() { tc.settle(f, o) })
+
+			_, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
+
+			requireKind(t, err, order.KindUnavailable)
+			assert.Contains(t, f.repo.attemptedWrites(), "QueueLocked", "the errand was read under its row lock")
+			events := f.repo.EventsFor(o.ID)
+			require.Len(t, events, 1, "the settlement event only, no reward_set")
+			assert.Equal(t, tc.key, events[0].RoutingKey)
+			assert.Equal(t, 5, events[0].Payload.Amount, "it settles the reward the errand kept")
+		})
+	}
 }
 
 func TestAmendWritesRewardSetWithTheRewardChange(t *testing.T) {

@@ -187,8 +187,11 @@ type TokenVerifier interface {
 	Verify(ctx context.Context, token string) (auth.Claims, error)
 }
 
+// AI-generated (edited by James Teo).
 // RevocationChecker reports whether user-service revoked a verified token
-// (D-054). *auth.Revocations satisfies it; an error means Redis did not answer.
+// (D-054). *auth.Revocations satisfies it. An error wrapping
+// auth.ErrRedisUnreachable means Redis could not be reached; any other error
+// means the revocation keys could not be read.
 type RevocationChecker interface {
 	Revoked(ctx context.Context, c auth.Claims) (bool, error)
 }
@@ -201,8 +204,14 @@ type RevocationChecker interface {
 // A missing, malformed, invalid, expired or revoked token is a 401, and
 // nothing else is, because the frontend treats a 401 as an expired token.
 // When user-service's keys cannot be loaded nothing can be verified, so the
-// answer is 503. When Redis does not answer, the revocation check is skipped
-// and the skip is logged (D-056).
+// answer is 503.
+//
+// AI-generated (edited by James Teo).
+// Only when Redis cannot be reached is the revocation check skipped, and the
+// skip logged (D-056). When Redis answers with an error instead, such as a
+// missing password or a cluster's redirect, the keys cannot be read and the
+// answer is 503: skipping then would turn revocation off for as long as the
+// misconfiguration lasts.
 func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -229,10 +238,22 @@ func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func
 				return
 			}
 			revoked, err := rev.Revoked(ctx, claims)
+			// AI-generated (edited by James Teo).
 			switch {
-			case err != nil:
-				log.ErrorContext(ctx, "revocation check skipped: Redis did not answer",
+			case err != nil && ctx.Err() != nil:
+				// The request ended during the lookup, most often because the
+				// client hung up: nothing is wrong with Redis, so nothing is
+				// logged beyond the access log line. Still refused.
+				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
+				return
+			case errors.Is(err, auth.ErrRedisUnreachable):
+				log.ErrorContext(ctx, "revocation check skipped: Redis could not be reached",
 					"request_id", order.CorrelationID(ctx), "user_id", claims.UserID.String(), "err", err)
+			case err != nil:
+				log.ErrorContext(ctx, "cannot read the revocation keys in Redis; refusing the request",
+					"request_id", order.CorrelationID(ctx), "user_id", claims.UserID.String(), "err", err)
+				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
+				return
 			case revoked:
 				writeError(w, http.StatusUnauthorized, msgUnauthenticated)
 				return

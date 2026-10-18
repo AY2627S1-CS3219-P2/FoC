@@ -116,6 +116,10 @@ type Order struct {
 	ExpiresAt *time.Time
 	// ConfirmBy is set only while DELIVERED (D-049, D-050).
 	ConfirmBy *time.Time
+	// AI-generated (edited by James Teo).
+	// WithdrawnCouriers are the couriers who withdrew from the errand, read
+	// from its history; none of them may accept it again (D-060).
+	WithdrawnCouriers []uuid.UUID
 }
 
 // ActorKind records who performed a history entry.

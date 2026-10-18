@@ -154,11 +154,20 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 // not reach, bounded by queueTimeout, because the client may already have
 // gone. A failure is logged: credit's hold may then differ from the errand's
 // reward until the requester's next reward change.
+//
+// AI-generated (edited by James Teo).
+// Nothing is queued once the errand is final: its settlement event, already
+// written, settles by its own amount (D-059), and a reward_set behind it could
+// only put back a hold that nothing would release.
 func (s *Service) queueRewardSet(ctx context.Context, id uuid.UUID, correlationID string) {
 	qctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), queueTimeout)
 	defer cancel()
-	err := s.repo.QueueLocked(qctx, id, func(cur Order) (OutboxEvent, error) {
-		return *rewardSetEvent(cur, s.clock.Now(), correlationID), nil
+	// AI-generated (edited by James Teo).
+	err := s.repo.QueueLocked(qctx, id, func(cur Order) (*OutboxEvent, error) {
+		if cur.State.Final() {
+			return nil, nil
+		}
+		return rewardSetEvent(cur, s.clock.Now(), correlationID), nil
 	})
 	if err != nil {
 		s.log.ErrorContext(ctx, "could not queue errand.reward_set after a failed amend; credit's hold may differ from the errand's reward",

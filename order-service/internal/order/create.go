@@ -13,9 +13,16 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode"
 
 	"github.com/google/uuid"
 )
+
+// AI-generated (edited by James Teo).
+// MaxOpenErrands is how many errands OPEN before their deadlines stop a
+// requester posting another (D-058). Only create checks it: a withdraw can
+// still return an errand to OPEN past it.
+const MaxOpenErrands = 5
 
 // CreateInput is a new errand as the requester submitted it (F3.1.1).
 type CreateInput struct {
@@ -51,13 +58,40 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 			return Order{}, false, unavailable("could not post the errand; please try again", err)
 		}
 		defer unlock()
-		existing, err := s.repo.FindByRequestKey(ctx, c.UserID, in.RequestKey)
-		if err == nil {
+		// AI-generated (edited by James Teo).
+		existing, found, err := s.findReplay(ctx, c.UserID, in.RequestKey)
+		if err != nil {
+			return Order{}, false, err
+		}
+		if found {
 			return existing, true, nil
 		}
-		if !errors.Is(err, ErrNotFound) {
-			return Order{}, false, unavailable("could not post the errand; please try again", err)
+	}
+
+	// AI-generated (edited by James Teo).
+	// D-058: a requester at the limit is told so here, before credit is
+	// touched. Two creates can both pass this count; the one repo.Create makes
+	// under the requester's lock is what stops the second.
+	open, err := s.repo.CountOpenByRequester(ctx, c.UserID, s.clock.Now())
+	if err != nil {
+		return Order{}, false, unavailable("could not post the errand; please try again", err)
+	}
+	if open >= MaxOpenErrands {
+		// AI-generated (edited by James Teo).
+		// The errand that filled the last place may be this submission's own,
+		// saved after the lookup above by a twin on another replica, where the
+		// per-key lock does not reach. That twin is replayed, not refused
+		// (D-047).
+		if in.RequestKey != "" {
+			existing, found, err := s.findReplay(ctx, c.UserID, in.RequestKey)
+			if err != nil {
+				return Order{}, false, err
+			}
+			if found {
+				return existing, true, nil
+			}
 		}
+		return Order{}, false, tooManyOpen()
 	}
 
 	snapshot, err := s.supplierSnapshot(ctx, in.SupplierID)
@@ -138,6 +172,11 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 		return existing, true, nil
 	case errors.Is(err, ErrGuardGone):
 		return Order{}, false, unavailable("posting took too long and was undone; your credits will be returned", err)
+	// AI-generated (edited by James Teo).
+	case errors.Is(err, ErrTooManyOpen):
+		// A concurrent create took the last place after the count above; this
+		// attempt's reservation is released by its queued refund (D-047).
+		return Order{}, false, tooManyOpenAfterReserve()
 	default:
 		return Order{}, false, unavailable("could not post the errand; please try again", err)
 	}
@@ -159,13 +198,53 @@ func validateCreate(in CreateInput) error {
 	return validateReward(in.Reward)
 }
 
+// AI-generated (edited by James Teo).
+// tooManyOpen is D-058's refusal of a create past MaxOpenErrands.
+func tooManyOpen() error {
+	return conflict(fmt.Sprintf(
+		"you already have %d open errands; cancel one or wait for one to be accepted before posting another", MaxOpenErrands))
+}
+
+// AI-generated (edited by James Teo).
+// tooManyOpenAfterReserve is the same refusal once credit was reserved for the
+// errand, which its queued refund returns (D-047).
+func tooManyOpenAfterReserve() error {
+	return conflict(fmt.Sprintf(
+		"you already have %d open errands, so this errand was not posted; your credits will be returned", MaxOpenErrands))
+}
+
+// AI-generated (edited by James Teo).
+// findReplay looks up the errand requesterID already created with key. found
+// is false when there is none; err is the answer to give when the lookup fails.
+func (s *Service) findReplay(ctx context.Context, requesterID uuid.UUID, key string) (o Order, found bool, err error) {
+	o, err = s.repo.FindByRequestKey(ctx, requesterID, key)
+	switch {
+	case err == nil:
+		return o, true, nil
+	case errors.Is(err, ErrNotFound):
+		return Order{}, false, nil
+	default:
+		return Order{}, false, unavailable("could not post the errand; please try again", err)
+	}
+}
+
+// AI-generated (edited by James Teo).
+// validateItem and validateNote are the one text rule create and amend share
+// (F3.7.2). Neither may hold a control character or a line break, except that
+// the note may keep newlines ("\n"); that also keeps out NUL, the one character
+// a PostgreSQL text column cannot store. Neither may hold a text-direction
+// control, which can make what a courier reads differ from what is stored. An
+// item must show at least one visible character: format characters such as a
+// zero-width space, and blank fillers, do not count.
 func validateItem(item string) error {
-	if item == "" {
+	if !strings.ContainsFunc(item, isVisible) {
 		return invalid("describe the item to pick up")
 	}
-	// NUL is the one character a PostgreSQL text column cannot store.
-	if strings.ContainsRune(item, 0) {
-		return invalid("the item description cannot contain a NUL character")
+	if strings.ContainsFunc(item, isLineBreakOrControl) {
+		return invalid("the item description cannot contain line breaks or control characters")
+	}
+	if strings.ContainsFunc(item, isBidiControl) {
+		return invalid("the item description cannot contain text-direction control characters")
 	}
 	if charLen(item) > MaxItemDescription {
 		return invalid("the item description can be at most 280 characters")
@@ -180,14 +259,56 @@ func validateLocation(loc string) error {
 	return nil
 }
 
+// AI-generated (edited by James Teo).
 func validateNote(note string) error {
-	if strings.ContainsRune(note, 0) {
-		return invalid("the note cannot contain a NUL character")
+	if strings.ContainsFunc(note, isNoteControl) {
+		return invalid("the note can contain newlines but no other line breaks or control characters")
+	}
+	if strings.ContainsFunc(note, isBidiControl) {
+		return invalid("the note cannot contain text-direction control characters")
 	}
 	if charLen(note) > MaxDeliveryNote {
 		return invalid("the note can be at most 140 characters")
 	}
 	return nil
+}
+
+// AI-generated (edited by James Teo).
+// isVisible reports whether r shows on screen: graphic, not a space and not a
+// blank filler. A format character (Unicode category Cf) is not graphic.
+func isVisible(r rune) bool {
+	return unicode.IsGraphic(r) && !unicode.IsSpace(r) && !isBlankFiller(r)
+}
+
+// AI-generated (edited by James Teo).
+// isBlankFiller reports whether r is a letter or symbol that draws nothing,
+// though Go counts it as graphic: the Hangul fillers (U+115F, U+1160, U+3164,
+// U+FFA0) and the blank Braille pattern (U+2800).
+func isBlankFiller(r rune) bool {
+	switch r {
+	case '\u115F', '\u1160', '\u3164', '\uFFA0', '\u2800':
+		return true
+	}
+	return false
+}
+
+// AI-generated (edited by James Teo).
+// isLineBreakOrControl reports whether r is a C0 or C1 control character, or
+// one of the two line breaks that are not: U+2028 LINE SEPARATOR and U+2029
+// PARAGRAPH SEPARATOR.
+func isLineBreakOrControl(r rune) bool {
+	return unicode.IsControl(r) || r == '\u2028' || r == '\u2029'
+}
+
+// AI-generated (edited by James Teo).
+// isNoteControl is isLineBreakOrControl without the newline a note may keep.
+func isNoteControl(r rune) bool { return r != '\n' && isLineBreakOrControl(r) }
+
+// AI-generated (edited by James Teo).
+// isBidiControl reports whether r is a text-direction embedding or override
+// (U+202A to U+202E) or isolate (U+2066 to U+2069).
+func isBidiControl(r rune) bool {
+	return ('\u202A' <= r && r <= '\u202E') || ('\u2066' <= r && r <= '\u2069')
 }
 
 // validateReward enforces F3.1.2: a positive whole number of credits.

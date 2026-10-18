@@ -17,6 +17,13 @@ import (
 
 // Accept assigns c as the errand's courier (F3.3). version is the errand
 // version c was shown; if it moved, the errand changed and c must refresh.
+//
+// AI-generated (edited by James Teo).
+// The accept is judged as of when it arrived: now is read once, before the
+// errand is loaded, and the conditional write compares the deadline with it.
+// An accept that arrived before T but then waited on the errand's row lock,
+// held by an amend across its credit call (D-057), still goes through after T,
+// and is recorded at its arrival time.
 func (s *Service) Accept(ctx context.Context, c Caller, id uuid.UUID, version int, correlationID string) (Order, error) {
 	now := s.clock.Now()
 	by := userActor(c)
@@ -159,6 +166,12 @@ func (s *Service) systemTransition(ctx context.Context, id uuid.UUID, a Action, 
 // buildTransition turns a checked action into D-046's conditional write: the
 // expected state, people and deadline, the row after the action, its history
 // row and, for the four settlement outcomes, its event (D-048).
+//
+// AI-generated (edited by James Teo).
+// A user action is judged as of when it arrived, as Accept is: now is the
+// time read before the errand was loaded, and the deadline the write checks,
+// the state change and the history row all carry it, however long the write
+// then waits on the row lock.
 func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, correlationID string) Transition {
 	r, _ := ruleFor(a)
 	version := o.Version

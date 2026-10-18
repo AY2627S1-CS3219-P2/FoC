@@ -54,11 +54,12 @@ type Reservation struct {
 // CreditClient calls credit-service synchronously. Settlement is by events
 // only (D-048), so these are the only two calls.
 type CreditClient interface {
+	// AI-generated (edited by James Teo).
 	// Reserve returns nil once the credits are held, ErrInsufficientCredits on
-	// credit's 422, ErrCreditRejected on another definite refusal, and any
-	// other error when the outcome is not known. After a retry even
-	// ErrCreditRejected cannot prove nothing was held, so callers rely on
-	// D-047's queued refund either way.
+	// credit's 422 to the first attempt, ErrCreditRejected on another definite
+	// refusal, and any other error when the outcome is not known, a 422 to a
+	// retry included. After a retry even ErrCreditRejected cannot prove
+	// nothing was held, so callers rely on D-047's queued refund either way.
 	Reserve(ctx context.Context, r Reservation) error
 	// Adjust sets the held amount for an errand to newReward (an absolute
 	// amount, D-057). It returns nil when applied, ErrInsufficientCredits on
@@ -135,6 +136,11 @@ const (
 
 // Repository is order-service's persistence port, implemented by
 // internal/repository against PostgreSQL and by fakes in tests.
+//
+// AI-generated (edited by James Teo).
+// Every Order it returns, and every one it passes to a callback, has
+// WithdrawnCouriers filled from the errand's history as committed, plus the
+// courier of a withdrawal the same call writes (D-060).
 type Repository interface {
 	// Get returns ErrNotFound for an unknown id.
 	Get(ctx context.Context, id uuid.UUID) (Order, error)
@@ -160,6 +166,10 @@ type Repository interface {
 	ListActive(ctx context.Context, limit int) ([]Order, error)
 	// CountActiveBySupplier counts errands that are not final and name the supplier.
 	CountActiveBySupplier(ctx context.Context, supplierID uuid.UUID) (int, error)
+	// AI-generated (edited by James Teo).
+	// CountOpenByRequester counts the requester's errands that are OPEN with a
+	// deadline after now (D-058).
+	CountOpenByRequester(ctx context.Context, requesterID uuid.UUID, now time.Time) (int, error)
 	// DueForExpiry and DueForAutoConfirm return ids whose deadline is at or
 	// before now, oldest deadline first. They take no locks: each id is
 	// re-checked under the write (F3.14.1).
@@ -173,6 +183,13 @@ type Repository interface {
 	// (and writes nothing) unless exactly one unpublished guard row was deleted,
 	// and ErrDuplicateRequestKey (and writes nothing) when the requester already
 	// used o.RequestKey.
+	//
+	// AI-generated (edited by James Teo).
+	// It also returns ErrTooManyOpen (and writes nothing) when saving o would
+	// give the requester more than MaxOpenErrands errands OPEN with a deadline
+	// after o.CreatedAt. A per-requester lock in the same transaction makes
+	// concurrent creates count one after another, so none can pass the limit
+	// (D-058). A duplicate request key is reported before the limit.
 	Create(ctx context.Context, o Order, h HistoryEntry, guardEventID uuid.UUID) error
 	// Transition applies t (see Transition) and returns the row after it, or
 	// ErrNoMatch when the row no longer matches.
@@ -192,5 +209,8 @@ type Repository interface {
 	// the outbox event fn returns in the same transaction, so the event reflects
 	// the row no later write has yet changed (D-057). It returns ErrNotFound for
 	// an unknown id and fn's error unchanged.
-	QueueLocked(ctx context.Context, id uuid.UUID, fn func(current Order) (OutboxEvent, error)) error
+	//
+	// AI-generated (edited by James Teo).
+	// A nil event from fn inserts nothing.
+	QueueLocked(ctx context.Context, id uuid.UUID, fn func(current Order) (*OutboxEvent, error)) error
 }

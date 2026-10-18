@@ -11,8 +11,11 @@ It holds no credit balances. It reserves an errand's reward through
 credit-service before saving the errand, adjusts the hold when the reward is
 amended and publishes `errand.reward_set` so the hold always comes back in line
 with the reward, and settles by publishing lifecycle events to RabbitMQ through
-the outbox. It verifies every caller's access token itself. A sweeper expires
-errands and auto-confirms deliveries every 5 seconds.
+the outbox. Each settlement event (`errand.completed`, `errand.cancelled`,
+`errand.expired`, `errand.failed`) carries in `amount` the errand's reward at
+that transition, which is what settles; credit-service returns any hold left
+over to the requester. It verifies every caller's access token itself. A
+sweeper expires errands and auto-confirms deliveries every 5 seconds.
 
 Owner: James Teo. Requirements: [`docs/requirements.md`](docs/requirements.md).
 Decisions: the D-0xx rows in [`ai/decisions.md`](../ai/decisions.md). The HTTP
@@ -78,20 +81,23 @@ duration that is not positive Go syntax such as `2h` or `30s`, a K below 1, a
 `RABBITMQ_URL` or `REDIS_URL` that does not parse as an `amqp(s)://` or
 `redis(s)://` URL, or a `JWKS_URL` that is not `http(s)://`) stops the service
 at startup. Neither user-service nor Redis has to be up for it to start: the
-keys are fetched on first use, and while Redis does not answer the revocation
-check is skipped and logged.
+keys are fetched on first use, and Redis is pinged once at startup, with an
+error logged if it does not answer. While Redis cannot be reached the
+revocation check is skipped and logged; while it answers with an error, such as
+a missing or wrong password, every request with a token answers 503.
 
 ## Routes
 
 The browser calls `/api/orders` plus the path below; the gateway strips that
 prefix and forwards the access token. Every route except `/health` needs a valid
 token and answers 401 without one, and 503 while user-service's keys cannot be
-loaded. Errors are `{"error": "<message>"}`.
+loaded or Redis answers the revocation lookup with an error. Errors are
+`{"error": "<message>"}`.
 
 | Method | Service path | Browser path | Who | What |
 | --- | --- | --- | --- | --- |
 | `GET` | `/health` | not for the browser | anyone | Liveness and database readiness |
-| `POST` | `/` | `/api/orders` | a STUDENT | Post an errand in `OPEN`. A repeated `X-Request-Id` returns the errand it created with 200 and touches no credits |
+| `POST` | `/` | `/api/orders` | a STUDENT with fewer than 5 errands `OPEN` | Post an errand in `OPEN`. A repeated `X-Request-Id` returns the errand it created with 200 and touches no credits |
 | `GET` | `/?scope=active` | `/api/orders?scope=active` | ADMIN | Every errand that is not final, oldest state change first |
 | `GET` | `/open` | `/api/orders/open` | anyone signed in | `OPEN` errands before their deadline, newest first |
 | `GET` | `/requested?scope=active\|history` | `/api/orders/requested?scope=…` | anyone signed in | The caller's own errands |
@@ -100,7 +106,7 @@ loaded. Errors are `{"error": "<message>"}`.
 | `GET` | `/suppliers/{supplierId}/active-errands` | not for the browser | ADMIN, through supplier-service's delete check | How many errands that are not final name a supplier |
 | `GET` | `/{errandId}` | `/api/orders/{errandId}` | its requester, its courier, ADMIN; anyone while `OPEN` | One errand with its history |
 | `PATCH` | `/{errandId}` | `/api/orders/{errandId}` | its requester | Amend an `OPEN` errand; send `version` and the fields to change |
-| `POST` | `/{errandId}/accept` | `/api/orders/{errandId}/accept` | a STUDENT other than the requester | `OPEN` to `ACCEPTED`; send the `version` you were shown |
+| `POST` | `/{errandId}/accept` | `/api/orders/{errandId}/accept` | a STUDENT other than the requester who has not withdrawn from it | `OPEN` to `ACCEPTED`; send the `version` you were shown |
 | `POST` | `/{errandId}/withdraw` | `/api/orders/{errandId}/withdraw` | its courier | `ACCEPTED` back to `OPEN`, with a fresh deadline |
 | `POST` | `/{errandId}/pickup` | `/api/orders/{errandId}/pickup` | its courier | `ACCEPTED` to `PICKED_UP` |
 | `POST` | `/{errandId}/deliver` | `/api/orders/{errandId}/deliver` | its courier | `PICKED_UP` to `DELIVERED`; starts C |
@@ -127,6 +133,6 @@ What order-service needs at run time, and what it does while each is down:
   down, both answer 503.
 - **user-service**: publishes the keys access tokens are verified with
   (`JWKS_URL`) and writes the revocation keys in Redis (`REDIS_URL`). The keys
-  are fetched on first use; while Redis does not answer, the revocation check
-  is skipped and logged.
+  are fetched on first use; while Redis cannot be reached, the revocation check
+  is skipped and logged, and while it answers with an error, requests answer 503.
 - **RabbitMQ**: receives the events. Until it answers, they wait in the outbox.

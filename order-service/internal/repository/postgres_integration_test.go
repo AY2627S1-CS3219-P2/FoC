@@ -46,6 +46,9 @@ func TestPostgres(t *testing.T) {
 	t.Run("ListActive", e.testListActive)
 	t.Run("ListAssignmentHistory", e.testListAssignmentHistory)
 	t.Run("CountActiveBySupplier", e.testCountActiveBySupplier)
+	// AI-generated (edited by James Teo).
+	t.Run("CountOpenByRequester", e.testCountOpenByRequester)
+	t.Run("WithdrawnCouriers", e.testWithdrawnCouriers)
 	t.Run("DueForExpiry", e.testDueForExpiry)
 	t.Run("DueForAutoConfirm", e.testDueForAutoConfirm)
 
@@ -63,6 +66,10 @@ func TestPostgres(t *testing.T) {
 	t.Run("AcceptLatency", e.testAcceptLatency)
 	t.Run("AmendHoldsRowLock", e.testAmendHoldsRowLock)
 	t.Run("QueueLockedHoldsRowLock", e.testQueueLockedHoldsRowLock)
+	// AI-generated (edited by James Teo).
+	t.Run("ConcurrentCreatesRespectTheOpenLimit", e.testConcurrentCreatesRespectTheOpenLimit)
+	t.Run("AcceptIsJudgedAtArrival", e.testAcceptIsJudgedAtArrival)
+	t.Run("NoRewardSetBehindASettlement", e.testNoRewardSetBehindASettlement)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.
@@ -383,6 +390,23 @@ func amendEntry(o order.Order, now time.Time, changes []order.FieldChange) order
 		Changes:       changes,
 		OccurredAt:    now,
 		CorrelationID: "corr-amend",
+	}
+}
+
+// AI-generated (edited by James Teo).
+// withdrawalEntry is the WITHDRAW history row of courier giving o back (F3.12),
+// the row D-060 reads.
+func withdrawalEntry(o order.Order, courier uuid.UUID, now time.Time) order.HistoryEntry {
+	return order.HistoryEntry{
+		OrderID:       o.ID,
+		Action:        order.ActionWithdraw,
+		FromState:     order.StateAccepted,
+		ToState:       order.StateOpen,
+		ActorID:       ptr(courier),
+		ActorKind:     order.ActorCourier,
+		CourierID:     ptr(courier),
+		OccurredAt:    now,
+		CorrelationID: "corr-withdraw",
 	}
 }
 
@@ -745,6 +769,97 @@ func (e *env) testCountActiveBySupplier(t *testing.T) {
 			require.Equal(t, tc.want, got)
 		})
 	}
+}
+
+// AI-generated (edited by James Teo).
+func (e *env) testCountOpenByRequester(t *testing.T) {
+	e.reset(t)
+	now := at(time.Hour)
+	requester := uuid.New()
+	for i, s := range allStates() {
+		e.insert(t, inState(openErrand(requester, at(0)), s, uuid.New(), at(time.Duration(i)*time.Minute)))
+	}
+	another := openErrand(requester, at(time.Minute))
+	dueNow := openErrand(requester, at(2*time.Minute))
+	dueNow.ExpiresAt = ptr(now) // the sweeper has not caught up yet
+	e.insert(t, another, dueNow, openErrand(uuid.New(), at(0)))
+
+	for _, tc := range []struct {
+		name      string
+		requester uuid.UUID
+		want      int
+	}{
+		{"counts OPEN errands with a deadline after now only", requester, 2},
+		{"a requester with none", uuid.New(), 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := e.repo.CountOpenByRequester(t.Context(), tc.requester, now)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// AI-generated (edited by James Teo).
+// testWithdrawnCouriers is D-060's read side: every read of an errand lists
+// the couriers its WITHDRAW history rows name, oldest first, and an errand
+// with none reads back nil, as in the fake.
+func (e *env) testWithdrawnCouriers(t *testing.T) {
+	e.reset(t)
+	requester, first, second, holder := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+	o := openErrand(requester, at(0))
+	o.RequestKey = "key-withdrawn"
+	plain := openErrand(requester, at(time.Minute))
+	e.insert(t, o, plain)
+	e.insertHistory(t, createdEntry(o))
+	e.insertHistory(t, withdrawalEntry(o, first, at(time.Minute)))
+	e.insertHistory(t, withdrawalEntry(o, second, at(2*time.Minute)))
+	// An ACCEPT row names its courier too, but is no withdrawal.
+	e.insertHistory(t, acceptCmd(o, holder, at(3*time.Minute), 2).History)
+	want := o
+	want.WithdrawnCouriers = []uuid.UUID{first, second}
+
+	require.Equal(t, want, e.get(t, o.ID), "Get")
+	require.Nil(t, e.get(t, plain.ID).WithdrawnCouriers, "an errand nobody withdrew from")
+	found, err := e.repo.FindByRequestKey(t.Context(), requester, "key-withdrawn")
+	require.NoError(t, err)
+	require.Equal(t, want, found, "FindByRequestKey")
+	open, err := e.repo.ListOpen(t.Context(), at(time.Hour), 0)
+	require.NoError(t, err)
+	requireList(t, []order.Order{plain, want}, open)
+	requested, err := e.repo.ListByRequester(t.Context(), requester, order.ActiveStates(), 0)
+	require.NoError(t, err)
+	requireList(t, []order.Order{plain, want}, requested)
+	active, err := e.repo.ListActive(t.Context(), 0)
+	require.NoError(t, err)
+	requireList(t, []order.Order{want, plain}, active)
+	var underAmend, underQueue order.Order
+	_, err = e.repo.Amend(t.Context(), o.ID, func(cur order.Order) (*order.AmendResult, error) {
+		underAmend = cur
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
+		underQueue = cur
+		return nil, nil
+	}))
+	require.Equal(t, want, underAmend, "the row Amend locks")
+	require.Equal(t, want, underQueue, "the row QueueLocked locks")
+
+	t.Run("an accept's row, and a withdrawal written now, read back the same", func(t *testing.T) {
+		accepted, err := e.repo.Accept(t.Context(), acceptCmd(want, holder, at(4*time.Minute), 2))
+		require.NoError(t, err)
+		require.Equal(t, []uuid.UUID{first, second}, accepted.WithdrawnCouriers, "Accept's RETURNING")
+
+		tr := move(accepted, order.ActionWithdraw, order.StateOpen, at(5*time.Minute))
+		tr.ExpectCourierID = ptr(holder)
+		tr.CourierID = nil
+		tr.ExpiresAt = ptr(at(5*time.Minute + 2*time.Hour))
+		withdrawn, err := e.repo.Transition(t.Context(), tr)
+		require.NoError(t, err)
+		require.Equal(t, []uuid.UUID{first, second, holder}, withdrawn.WithdrawnCouriers, "the withdrawal it wrote counts")
+		require.Equal(t, withdrawn, e.get(t, o.ID), "as a read now has it")
+	})
 }
 
 func (e *env) testDueForExpiry(t *testing.T) {

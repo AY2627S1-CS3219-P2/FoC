@@ -35,8 +35,10 @@ var (
 	// ErrMalformed covers a token that is absent, not a JWT, unparseable, or
 	// missing a claim order-service needs.
 	ErrMalformed = errors.New("auth: malformed token")
-	// ErrInvalidSignature covers a token whose signature does not verify, or
-	// which names a key user-service does not publish.
+	// AI-generated (edited by James Teo).
+	// ErrInvalidSignature covers a token whose signature does not verify,
+	// which names a key user-service does not publish, or whose iss or aud is
+	// not the one user-service issues.
 	ErrInvalidSignature = errors.New("auth: invalid signature")
 	// ErrExpired covers a token past its exp or before its nbf, after clockSkew leeway.
 	ErrExpired = errors.New("auth: token expired")
@@ -51,6 +53,16 @@ var (
 // clockSkew is the leeway on exp and nbf, so a few seconds of drift between
 // user-service and order-service does not reject a valid token.
 const clockSkew = 5 * time.Second
+
+// AI-generated (edited by James Teo).
+// The iss and aud user-service puts on every token it signs, and requires
+// back in its own Verify (user-service/internal/jwt/jwt.go). Checking them
+// here too means a token the same keys sign for anything else is not taken
+// as a user's session.
+const (
+	issuer   = "campusrun-user-service"
+	audience = "campusrun-api"
+)
 
 // minRefreshInterval throttles key refetches. An unknown kid triggers one, so
 // without this a client could force unbounded requests to user-service by
@@ -112,6 +124,9 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 		// not be compared with a suspension time.
 		jwt.WithExpirationRequired(),
 		jwt.WithIssuedAt(),
+		// AI-generated (edited by James Teo).
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
 	)
 	if err != nil {
 		switch {

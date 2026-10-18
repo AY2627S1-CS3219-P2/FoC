@@ -99,6 +99,8 @@ type ports struct {
 	dir    order.SupplierDirectory
 	db     httpapi.Pinger
 	credit order.CreditClient
+	// AI-generated (edited by James Teo).
+	revocations httpapi.RevocationChecker
 }
 
 // routerWith builds another router over the harness's fakes, for a test that
@@ -116,12 +118,16 @@ func (h *harness) routerWith(p ports) http.Handler {
 	if p.credit == nil {
 		p.credit = h.credit
 	}
+	// AI-generated (edited by James Teo).
+	if p.revocations == nil {
+		p.revocations = h.revoked
+	}
 	svc := order.NewService(p.repo, p.credit, p.dir, h.clock, order.Config{
 		ExpiryPeriod:  expiryPeriod,
 		MaxActive:     maxActive,
 		ConfirmWindow: confirmWindow,
 	}, h.log)
-	return httpapi.NewRouter(svc, p.db, h.tokens, h.revoked, h.log)
+	return httpapi.NewRouter(svc, p.db, h.tokens, p.revocations, h.log)
 }
 
 type reqOption func(*http.Request)
@@ -161,19 +167,25 @@ func (f *fakeTokens) Verify(_ context.Context, token string) (auth.Claims, error
 	return auth.Claims{UserID: id, Role: parts[2], TokenID: parts[3], IssuedAt: startTime()}, nil
 }
 
-// fakeRevocations reports the token ids in revoked as revoked, or fails every
-// check while down is set, as Redis being unreachable would.
+// AI-generated (edited by James Teo).
+// fakeRevocations reports the token ids in revoked as revoked. While down is
+// set it fails every check as Redis being unreachable would, and while
+// refusing is set, as Redis answering with an error reply would.
 type fakeRevocations struct {
-	mu      sync.Mutex
-	revoked map[string]bool
-	down    bool
+	mu       sync.Mutex
+	revoked  map[string]bool
+	down     bool
+	refusing bool
 }
 
 func (f *fakeRevocations) Revoked(_ context.Context, c auth.Claims) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.down {
-		return false, errors.New("redis: connection refused")
+		return false, fmt.Errorf("read revocation keys: %w: dial tcp: connection refused", auth.ErrRedisUnreachable)
+	}
+	if f.refusing {
+		return false, errors.New("read revocation keys: NOAUTH Authentication required")
 	}
 	return f.revoked[c.TokenID], nil
 }
@@ -191,6 +203,13 @@ func (f *fakeRevocations) setDown(down bool) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.down = down
+}
+
+// AI-generated (edited by James Teo).
+func (f *fakeRevocations) setRefusing(refusing bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.refusing = refusing
 }
 
 func withRequestID(id string) reqOption {

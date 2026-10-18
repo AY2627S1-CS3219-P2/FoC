@@ -85,6 +85,16 @@ func TestRequestValidation(t *testing.T) {
 		{name: "delivery location not on the list", method: http.MethodPost, target: "/", body: createWith("deliveryLocation", "Mars"), msg: "choose a delivery location from the campus list"},
 		{name: "item of 281 characters", method: http.MethodPost, target: "/", body: createWith("itemDescription", strings.Repeat("x", 281)), msg: "the item description can be at most 280 characters"},
 		{name: "note of 141 characters", method: http.MethodPost, target: "/", body: createWith("deliveryNote", strings.Repeat("x", 141)), msg: "the note can be at most 140 characters"},
+		// AI-generated (edited by James Teo): the text rule create and amend share.
+		{name: "item of only a zero-width space", method: http.MethodPost, target: "/", body: createWith("itemDescription", "\u200b"), msg: "describe the item to pick up"},
+		{name: "item with a control character", method: http.MethodPost, target: "/", body: createWith("itemDescription", "gnp.exe\u0007"), msg: "the item description cannot contain line breaks or control characters"},
+		{name: "item with a right-to-left override", method: http.MethodPost, target: "/", body: createWith("itemDescription", "\u202egnp.exe"), msg: "the item description cannot contain text-direction control characters"},
+		{name: "note with a tab", method: http.MethodPost, target: "/", body: createWith("deliveryNote", "Hall 3\tRoom 12"), msg: "the note can contain newlines but no other line breaks or control characters"},
+		// AI-generated (edited by James Teo).
+		{name: "note with a line separator", method: http.MethodPost, target: "/", body: createWith("deliveryNote", "Hall 3\u2028Room 12"), msg: "the note can contain newlines but no other line breaks or control characters"},
+		{name: "item with a paragraph separator", method: http.MethodPost, target: "/", body: createWith("itemDescription", "Two kaya\u2029toast sets"), msg: "the item description cannot contain line breaks or control characters"},
+		{name: "item of only Hangul fillers", method: http.MethodPost, target: "/", body: createWith("itemDescription", "\u3164\u3164"), msg: "describe the item to pick up"},
+		{name: "amended note with a direction isolate", method: http.MethodPatch, target: errand, body: map[string]any{"version": 3, "deliveryNote": "Room \u206621\u2069"}, msg: "the note cannot contain text-direction control characters"},
 		{name: "reward of zero", method: http.MethodPost, target: "/", body: createWith("reward", 0), msg: "the reward must be at least 1 credit"},
 		{name: "reward not a number", method: http.MethodPost, target: "/", body: createWith("reward", "five"), msg: "reward has the wrong type"},
 		{name: "supplier id in the body not a UUID", method: http.MethodPost, target: "/", body: createWith("supplierId", "spinelli"), substr: "invalid value"},
@@ -176,6 +186,33 @@ func TestServiceErrorsMapToStatusCodes(t *testing.T) {
 				return h.do(t, http.MethodPost, "/"+o.ID.String()+"/accept", map[string]any{"version": o.Version}, as(student()))
 			},
 			status: http.StatusConflict, msg: "this errand is no longer open",
+		},
+		// AI-generated (edited by James Teo).
+		{
+			name: "a sixth open errand",
+			run: func(t *testing.T, h *harness) *httptest.ResponseRecorder {
+				requester := student()
+				for range order.MaxOpenErrands {
+					h.create(t, requester)
+				}
+				return h.do(t, http.MethodPost, "/", h.createBody(), as(requester))
+			},
+			status: http.StatusConflict, msg: "you already have 5 open errands; cancel one or wait for one to be accepted before posting another",
+		},
+		{
+			name: "accepting an errand you withdrew from",
+			run: func(t *testing.T, h *harness) *httptest.ResponseRecorder {
+				courier := student()
+				d := h.create(t, student())
+				id := "/" + d.Errand.Id.String()
+				rec := h.do(t, http.MethodPost, id+"/accept", map[string]any{"version": d.Errand.Version}, as(courier))
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				rec = h.do(t, http.MethodPost, id+"/withdraw", nil, as(courier))
+				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+				reopened := decodeAs[gen.ErrandDetail](t, rec).Errand
+				return h.do(t, http.MethodPost, id+"/accept", map[string]any{"version": reopened.Version}, as(courier))
+			},
+			status: http.StatusConflict, msg: "you withdrew from this errand, so you cannot accept it again",
 		},
 		{
 			name: "credit-service refusing the reservation",
@@ -626,6 +663,74 @@ func TestHistoryHidesDeliveryNoteChangesFromStrangers(t *testing.T) {
 	own := decodeAs[gen.ErrandDetail](t, rec)
 	require.NotNil(t, own.History[2].Changes)
 	assert.Equal(t, []gen.FieldChange{{Field: gen.DeliveryNote, From: "room 12, knock twice", To: "room 14"}}, *own.History[2].Changes)
+}
+
+// AI-generated (edited by James Teo).
+func TestHistoryHidesDeliveryNoteValuesFromTheCourier(t *testing.T) {
+	// The courier reads the note as it is now. An AMEND entry shows them that
+	// the note changed, and when, but not a note the requester has since
+	// cleared or replaced; the requester still sees both values.
+	t.Parallel()
+	h := newHarness(t)
+	requester, courier := student(), student()
+	id := "/" + h.create(t, requester).Errand.Id.String()
+	rec := h.do(t, http.MethodPatch, id, map[string]any{"version": 1, "deliveryNote": "hp 9123 4567, hall 3 room 12"}, as(requester))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	rec = h.do(t, http.MethodPatch, id, map[string]any{"version": 2, "deliveryNote": ""}, as(requester))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	rec = h.do(t, http.MethodPost, id+"/accept", map[string]any{"version": 3}, as(courier))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+
+	rec = h.do(t, http.MethodGet, id, nil, as(courier))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.NotContains(t, rec.Body.String(), "9123")
+	seen := decodeAs[gen.ErrandDetail](t, rec)
+	require.Len(t, seen.History, 4)
+	for _, entry := range seen.History[1:3] {
+		require.NotNil(t, entry.Changes)
+		assert.Equal(t, []gen.FieldChange{{Field: gen.DeliveryNote, From: "", To: ""}}, *entry.Changes)
+	}
+
+	rec = h.do(t, http.MethodGet, id, nil, as(requester))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	own := decodeAs[gen.ErrandDetail](t, rec)
+	require.NotNil(t, own.History[2].Changes)
+	assert.Equal(t, []gen.FieldChange{{Field: gen.DeliveryNote, From: "hp 9123 4567, hall 3 room 12", To: ""}}, *own.History[2].Changes)
+}
+
+// AI-generated (edited by James Teo).
+func TestAcceptIsNotOfferedToACourierWhoWithdrew(t *testing.T) {
+	// D-060: the open list and the errand itself both leave accept out of the
+	// actions of the courier who gave it back, and keep it for everyone else.
+	t.Parallel()
+	h := newHarness(t)
+	courier, other := student(), student()
+	d := h.create(t, student())
+	id := "/" + d.Errand.Id.String()
+	rec := h.do(t, http.MethodPost, id+"/accept", map[string]any{"version": d.Errand.Version}, as(courier))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	rec = h.do(t, http.MethodPost, id+"/withdraw", nil, as(courier))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Empty(t, decodeAs[gen.ErrandDetail](t, rec).Errand.Actions, "the withdraw's own answer")
+
+	for _, viewer := range []struct {
+		name string
+		as   order.Caller
+		want []gen.ErrandAction
+	}{
+		{"the courier who withdrew", courier, []gen.ErrandAction{}},
+		{"another student", other, []gen.ErrandAction{gen.Accept}},
+	} {
+		rec = h.do(t, http.MethodGet, id, nil, as(viewer.as))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		assert.Equal(t, viewer.want, decodeAs[gen.ErrandDetail](t, rec).Errand.Actions, viewer.name)
+
+		rec = h.do(t, http.MethodGet, "/open", nil, as(viewer.as))
+		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+		list := decodeAs[gen.ErrandList](t, rec)
+		require.Len(t, list.Items, 1, viewer.name)
+		assert.Equal(t, viewer.want, list.Items[0].Actions, viewer.name)
+	}
 }
 
 func TestAssignedLists(t *testing.T) {

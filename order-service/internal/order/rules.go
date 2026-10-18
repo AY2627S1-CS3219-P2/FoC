@@ -92,6 +92,9 @@ func (a actor) relationship(o Order) Relationship {
 // check runs D-046's checks for one action, in the order that fixes the status
 // code: relationship (403), then state (409), then deadlines (409). Version and
 // K are checked where the write happens. It returns nil when a may run now.
+//
+// AI-generated (edited by James Teo).
+// Last, an accept by a courier who withdrew from the errand is a 409 (D-060).
 func check(o Order, a Action, by actor, now time.Time) error {
 	r, ok := ruleFor(a)
 	if !ok {
@@ -109,7 +112,15 @@ func check(o Order, a Action, by actor, now time.Time) error {
 		}
 		return stateConflict(o.State)
 	}
-	return checkDeadline(o, a, now)
+	// AI-generated (edited by James Teo).
+	if err := checkDeadline(o, a, now); err != nil {
+		return err
+	}
+	// checkWho let only a signed-in student through on an accept, so by.caller is set.
+	if a == ActionAccept && slices.Contains(o.WithdrawnCouriers, by.caller.UserID) {
+		return conflict("you withdrew from this errand, so you cannot accept it again")
+	}
+	return nil
 }
 
 func checkWho(o Order, a Action, r rule, by actor) error {

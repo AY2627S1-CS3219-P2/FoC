@@ -45,6 +45,10 @@ const sweepInterval = 5 * time.Second
 // startup order).
 const dbReadyTimeout = 60 * time.Second
 
+// AI-generated (edited by James Teo).
+// redisPingTimeout bounds the startup check of Redis.
+const redisPingTimeout = 2 * time.Second
+
 // shutdownTimeout bounds graceful shutdown. It is longer than a write's 10s
 // deadline (internal/httpapi's writeTimeout) plus the 5s a failed amend may
 // spend queueing D-057's errand.reward_set (internal/order's queueTimeout), so
@@ -128,6 +132,8 @@ func run(log *slog.Logger) error {
 			log.Warn("close Redis client", "err", err)
 		}
 	}()
+	// AI-generated (edited by James Teo).
+	pingRedis(ctx, rdb, log)
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 
 	server := &http.Server{
@@ -193,6 +199,19 @@ func waitForDatabase(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) 
 		case <-time.After(backoff):
 		}
 		backoff = min(backoff*2, 5*time.Second)
+	}
+}
+
+// AI-generated (edited by James Teo).
+// pingRedis checks Redis once at startup, so a wrong REDIS_URL or password
+// shows at deploy time rather than only in each request's log line. A failure
+// is logged and startup goes on: Redis may come up later (root AGENTS.md §5).
+func pingRedis(ctx context.Context, rdb *redis.Client, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(ctx, redisPingTimeout)
+	defer cancel()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Error("Redis ping at startup failed; while it cannot be reached, revocation checks are skipped, "+
+			"and while it answers with an error, every request with a token is refused with 503", "err", err)
 	}
 }
 

@@ -115,7 +115,9 @@ func TestReserveOutcomes(t *testing.T) {
 		{name: "429 is not retried", steps: answers(http.StatusTooManyRequests), want: unknown, wantAttempts: 1},
 		{name: "500, then 201", steps: answers(http.StatusInternalServerError, http.StatusCreated), want: applied, wantAttempts: 2},
 		{name: "502, then 409: the first attempt had reserved", steps: answers(http.StatusBadGateway, http.StatusConflict), want: applied, wantAttempts: 2},
-		{name: "503, then 422", steps: answers(http.StatusServiceUnavailable, http.StatusUnprocessableEntity), want: insufficient, wantAttempts: 2},
+		// AI-generated (edited by James Teo): the first attempt's own hold may be
+		// what leaves too little for the retry, so its 422 proves nothing.
+		{name: "503, then 422: the first attempt may have reserved", steps: answers(http.StatusServiceUnavailable, http.StatusUnprocessableEntity), want: unknown, wantAttempts: 2},
 		{name: "500, then 401", steps: answers(http.StatusInternalServerError, http.StatusUnauthorized), want: rejected, wantAttempts: 2},
 		{name: "500, then 429", steps: answers(http.StatusInternalServerError, http.StatusTooManyRequests), want: unknown, wantAttempts: 2},
 		{name: "two 500s", steps: answers(http.StatusInternalServerError, http.StatusInternalServerError), want: unknown, wantAttempts: 2},
@@ -131,6 +133,15 @@ func TestReserveOutcomes(t *testing.T) {
 				return []step{drop(t), respond(http.StatusConflict, `{"error":"duplicate reservation"}`)}
 			},
 			want:         applied,
+			wantAttempts: 2,
+		},
+		// AI-generated (edited by James Teo).
+		{
+			name: "a dropped connection, then 422: the first attempt may have reserved",
+			steps: func(t *testing.T) []step {
+				return []step{drop(t), respond(http.StatusUnprocessableEntity, `{"error":"insufficient credits"}`)}
+			},
+			want:         unknown,
 			wantAttempts: 2,
 		},
 		{

@@ -120,3 +120,45 @@ func TestHistoryHidesNoteChangesFromNonParties(t *testing.T) {
 	assert.ElementsMatch(t, []string{order.FieldDeliveryNote, order.FieldReward}, fields(f.admin))
 	assert.ElementsMatch(t, []string{order.FieldReward}, fields(f.stranger))
 }
+
+// AI-generated (edited by James Teo).
+// The courier may read the note as it is now, but not what it was: a note the
+// requester cleared or replaced, perhaps one written for an earlier courier,
+// stays with the requester and ADMIN. The courier still sees that it changed.
+func TestHistoryShowsTheCourierNoteChangesWithoutTheirValues(t *testing.T) {
+	f := newFixture(t)
+	o := f.post()
+	amended, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: o.Version, DeliveryNote: ptr(""), Reward: ptr(6), CorrelationID: "corr-amend",
+	})
+	require.NoError(t, err)
+	_, err = f.svc.Accept(f.ctx, f.courier, o.ID, amended.Version, "corr-accept")
+	require.NoError(t, err)
+
+	amendOf := func(c order.Caller) []order.FieldChange {
+		t.Helper()
+		_, history, err := f.svc.Get(f.ctx, c, o.ID)
+		require.NoError(t, err)
+		for _, h := range history {
+			if h.Action == order.ActionAmend {
+				return h.Changes
+			}
+		}
+		t.Fatal("no AMEND entry")
+		return nil
+	}
+
+	full := []order.FieldChange{
+		{Field: order.FieldDeliveryNote, From: "Blue shirt, by the lift", To: ""},
+		{Field: order.FieldReward, From: "5", To: "6"},
+	}
+	assert.Equal(t, full, amendOf(f.requester))
+	assert.Equal(t, full, amendOf(f.admin))
+	assert.Equal(t, []order.FieldChange{
+		{Field: order.FieldDeliveryNote, From: "", To: ""},
+		{Field: order.FieldReward, From: "5", To: "6"},
+	}, amendOf(f.courier))
+	_, history, err := f.svc.Get(f.ctx, f.requester, o.ID)
+	require.NoError(t, err)
+	assert.Equal(t, full, history[1].Changes, "blanking the courier's copy left the stored entry alone")
+}

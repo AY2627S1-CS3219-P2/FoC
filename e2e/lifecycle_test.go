@@ -197,9 +197,11 @@ func TestRequesterCannotAcceptOwnErrand(t *testing.T) {
 	require.Empty(t, d.Errand.CourierID)
 }
 
+// AI-generated (edited by James Teo).
 // TestWithdrawnErrandCanBeAcceptedAgain has a courier give an errand back: it
-// is OPEN again with a fresh deadline, another courier can take it, and the
-// first keeps a record of the release (F3.12, F3.5.3, D-049).
+// is OPEN again with a fresh deadline, the courier who gave it back cannot
+// take it again but another courier can, and the first keeps a record of the
+// release (F3.12, F3.5.3, D-049, D-060).
 func TestWithdrawnErrandCanBeAcceptedAgain(t *testing.T) {
 	t.Parallel()
 	s := newStack(t)
@@ -214,6 +216,10 @@ func TestWithdrawnErrandCanBeAcceptedAgain(t *testing.T) {
 	e = detailOf(t, s.act(t, first, e.ID, "withdraw"), http.StatusOK).Errand
 	require.Equal(t, stateOpen, e.State)
 	require.Empty(t, e.CourierID)
+	// AI-generated (edited by James Teo): the courier who withdrew cannot take
+	// it back, and is not offered to (D-060).
+	require.NotContains(t, e.Actions, "accept")
+	expectStatus(t, s.accept(t, first, e), http.StatusConflict)
 	// Withdrawing restarts T (D-049). Both deadlines are read back from
 	// PostgreSQL at microsecond precision, so one that was kept, or recomputed
 	// from created_at, compares equal; only a restart is strictly later.

@@ -25,13 +25,16 @@ const (
 // EventPayload is the JSON body of a lifecycle event: credit-service's
 // documented fields plus eventType and correlationId (D-051).
 type EventPayload struct {
-	EventID     uuid.UUID  `json:"eventId"`
-	EventType   string     `json:"eventType"`
-	ErrandID    uuid.UUID  `json:"errandId"`
-	RequesterID uuid.UUID  `json:"requesterId"`
-	Amount      int        `json:"amount"`
-	OccurredAt  time.Time  `json:"occurredAt"`
-	CourierID   *uuid.UUID `json:"courierId,omitempty"`
+	EventID     uuid.UUID `json:"eventId"`
+	EventType   string    `json:"eventType"`
+	ErrandID    uuid.UUID `json:"errandId"`
+	RequesterID uuid.UUID `json:"requesterId"`
+	// AI-generated (edited by James Teo).
+	// Amount is the errand's reward: what a settlement event settles (D-059),
+	// or what errand.reward_set sets the hold to (D-057).
+	Amount     int        `json:"amount"`
+	OccurredAt time.Time  `json:"occurredAt"`
+	CourierID  *uuid.UUID `json:"courierId,omitempty"`
 	// CorrelationID ties the event to the request or sweep that caused it
 	// (NFR7.1, D-047).
 	CorrelationID string `json:"correlationId"`
@@ -42,6 +45,12 @@ type EventPayload struct {
 
 // newEvent builds an outbox event for o. occurredAt is the transition time;
 // the relay may publish later.
+//
+// AI-generated (edited by James Teo).
+// amount is o's reward. On errand.completed, errand.cancelled,
+// errand.expired and errand.failed it is the reward at that transition and is
+// what settles: credit-service pays or refunds amount, not the hold it has,
+// and returns any hold left over to the requester (D-059).
 func newEvent(eventID uuid.UUID, routingKey string, o Order, courierID *uuid.UUID, occurredAt time.Time, correlationID string) *OutboxEvent {
 	return &OutboxEvent{
 		EventID:    eventID,

@@ -81,8 +81,12 @@ func (s *Service) Get(ctx context.Context, c Caller, id uuid.UUID) (Order, []His
 	if err != nil {
 		return Order{}, nil, fmt.Errorf("load history of %s: %w", id, err)
 	}
-	if !CanSeePrivate(o, c) {
+	// AI-generated (edited by James Teo).
+	switch RelationshipOf(o, c) {
+	case RelNone:
 		h = withoutPrivateChanges(h)
+	case RelCourier:
+		h = withoutNoteValues(h)
 	}
 	return o, h, nil
 }
@@ -95,6 +99,25 @@ func withoutPrivateChanges(history []HistoryEntry) []HistoryEntry {
 		h.Changes = slices.DeleteFunc(slices.Clone(h.Changes), func(fc FieldChange) bool {
 			return fc.Field == FieldDeliveryNote
 		})
+		out = append(out, h)
+	}
+	return out
+}
+
+// AI-generated (edited by James Teo).
+// withoutNoteValues keeps every delivery-note change but blanks its values, so
+// the courier sees that the note changed and when (F3.7.7), but not a note the
+// requester has since replaced or cleared, perhaps one written for an earlier
+// courier. The requester and ADMIN keep the values.
+func withoutNoteValues(history []HistoryEntry) []HistoryEntry {
+	out := make([]HistoryEntry, 0, len(history))
+	for _, h := range history {
+		h.Changes = slices.Clone(h.Changes)
+		for i := range h.Changes {
+			if h.Changes[i].Field == FieldDeliveryNote {
+				h.Changes[i].From, h.Changes[i].To = "", ""
+			}
+		}
 		out = append(out, h)
 	}
 	return out

@@ -45,7 +45,14 @@ const (
 	ordersPath    = "/api/orders"
 	creditsPath   = "/api/credits"
 	suppliersPath = "/api/suppliers"
+	// AI-generated (edited by James Teo).
+	usersPath = "/api/users"
 )
+
+// AI-generated (edited by James Teo).
+// refreshCookie is the cookie the gateway keeps the refresh token in; logout
+// reads it (D-033).
+const refreshCookie = "foc_refresh"
 
 // Errand states (D-045).
 const (
@@ -76,20 +83,25 @@ func newHTTPClient() *http.Client {
 	return &http.Client{Timeout: requestTimeout}
 }
 
+// AI-generated (edited by James Teo).
 // user is a signed-in account. id is the access token's subject, which each
-// service reads from the token itself (D-056).
+// service reads from the token itself (D-056). refresh is the refresh token
+// the gateway set as a cookie at login, which logout needs back.
 type user struct {
 	id       string
 	username string
 	role     string
 	token    string
+	refresh  string
 }
 
+// AI-generated (edited by James Teo).
 // response is one answer from the gateway, kept whole for failure messages.
 type response struct {
 	method string
 	path   string
 	status int
+	header http.Header
 	body   []byte
 }
 
@@ -141,7 +153,8 @@ func (s *stack) request(ctx context.Context, method, path, token string, body an
 	if err != nil {
 		return response{}, fmt.Errorf("read the answer to %s %s: %w", method, path, err)
 	}
-	return response{method: method, path: path, status: res.StatusCode, body: raw}, nil
+	// AI-generated (edited by James Teo).
+	return response{method: method, path: path, status: res.StatusCode, header: res.Header, body: raw}, nil
 }
 
 // send is request for a test, where a failed round trip fails the test.
@@ -294,7 +307,43 @@ func (s *stack) login(ctx context.Context, identifier, password string) (user, e
 	if err != nil {
 		return user{}, fmt.Errorf("log in as %s: %w", identifier, err)
 	}
-	return user{id: claims.Subject, username: identifier, role: claims.Role, token: body.AccessToken}, nil
+	// AI-generated (edited by James Teo).
+	u := user{id: claims.Subject, username: identifier, role: claims.Role, token: body.AccessToken}
+	for _, c := range (&http.Response{Header: r.header}).Cookies() {
+		if c.Name == refreshCookie {
+			u.refresh = c.Value
+		}
+	}
+	return u, nil
+}
+
+// AI-generated (edited by James Teo).
+// logout signs u out through the gateway, sending the refresh cookie the way
+// a browser does, so user-service ends the session and blocklists u's access
+// token in the shared Redis (D-054).
+func (s *stack) logout(t *testing.T, u user) {
+	t.Helper()
+	require.NotEmpty(t, u.refresh, "the gateway set no %s cookie when %s logged in", refreshCookie, u.username)
+	header := http.Header{}
+	header.Set("Cookie", (&http.Cookie{Name: refreshCookie, Value: u.refresh}).String())
+	r, err := s.request(t.Context(), http.MethodPost, "/auth/logout", u.token, struct{}{}, header)
+	require.NoError(t, err)
+	expectStatus(t, r, http.StatusNoContent)
+}
+
+// AI-generated (edited by James Teo).
+// statusRequest is user-service's UpdateStatusRequest.
+type statusRequest struct {
+	Status string `json:"status"`
+}
+
+// AI-generated (edited by James Teo).
+// suspend has admin suspend u's account, which writes the suspension key every
+// service checks in the shared Redis (D-054).
+func (s *stack) suspend(t *testing.T, admin, u user) {
+	t.Helper()
+	r := s.send(t, http.MethodPatch, usersPath+"/"+u.id+"/status", admin.token, statusRequest{Status: "SUSPENDED"})
+	expectStatus(t, r, http.StatusOK)
 }
 
 type tokenClaims struct {
@@ -419,6 +468,13 @@ type versionRequest struct {
 	Version int `json:"version"`
 }
 
+// AI-generated (edited by James Teo).
+// amendRewardRequest is order-service's AmendErrandRequest changing only the reward.
+type amendRewardRequest struct {
+	Version int `json:"version"`
+	Reward  int `json:"reward"`
+}
+
 // supplierSummary is the part of supplier-service's list the suite reads; the
 // list is a bare JSON array with snake_case names (D-036, D-037).
 type supplierSummary struct {
@@ -478,6 +534,15 @@ func (s *stack) createErrand(t *testing.T, u user, in createErrandRequest) erran
 	d := detailOf(t, r, http.StatusCreated)
 	require.Equal(t, stateOpen, d.Errand.State)
 	return d
+}
+
+// AI-generated (edited by James Teo).
+// amendReward changes e's reward as its requester u, sending the version u was
+// shown; credit's hold follows at once (D-057).
+func (s *stack) amendReward(t *testing.T, u user, e errand, reward int) errand {
+	t.Helper()
+	r := s.send(t, http.MethodPatch, errandPath(e.ID), u.token, amendRewardRequest{Version: e.Version, Reward: reward})
+	return detailOf(t, r, http.StatusOK).Errand
 }
 
 // accept sends the version u was shown, as accept requires (D-046).

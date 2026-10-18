@@ -18,7 +18,8 @@ implements one the owner has recorded (root §1) and stops.
 - **Credits are not this service's state.** Reserve and adjust a reward
   through `credit-service`'s API, and bring its hold back in line with
   `errand.reward_set`; settle only through the lifecycle events this service
-  publishes via its outbox. Never read or write its tables, never recompute a balance here, never persist "the
+  publishes via its outbox, whose `amount` is the errand's reward at that
+  transition and is what settles (D-059). Never read or write its tables, never recompute a balance here, never persist "the
   requester could afford it" on the order. For an order's credit outcome, ask
   `credit-service` or consume its event.
 - **Pickup locations are validated, not owned.** A supplier ID is checked
@@ -58,13 +59,14 @@ Graded D3 architecture decisions, off-limits to an agent (root §1). Do not
 propose answers; implement the decision the owner recorded. The rows in
 `ai/decisions.md` that record them:
 
-- the set of states, and which transitions are legal — D-045, D-046;
+- the set of states, and which transitions are legal — D-045, D-046, D-060;
+- how many `OPEN` errands stop a requester posting another — D-058;
 - how concurrent acceptance of the same errand is made safe — D-046;
 - whether credit reservation happens before, or atomically with, persisting the
   order — D-047;
 - what happens to an errand that stalls after acceptance — D-050;
 - which lifecycle events are published asynchronously, and what they carry —
-  D-048, D-051, D-057 (D-042 binds four of the keys; `errand.reward_set`'s
+  D-048, D-051, D-057, D-059 (D-042 binds four of the keys; `errand.reward_set`'s
   binding and a cross-service row fixing the payload are still pending with
   credit-service's owner and the team).
 

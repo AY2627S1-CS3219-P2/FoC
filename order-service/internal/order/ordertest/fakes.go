@@ -206,6 +206,26 @@ func (r *Repository) takeFail(method string) error {
 	return err
 }
 
+// AI-generated (edited by James Teo).
+// withHistory returns o with WithdrawnCouriers read from the history rows
+// written so far, as the real adapter reads them (D-060).
+func (r *Repository) withHistory(o order.Order) order.Order {
+	o.WithdrawnCouriers = nil
+	for _, h := range r.history {
+		if h.OrderID == o.ID && h.Action == order.ActionWithdraw && h.CourierID != nil {
+			o.WithdrawnCouriers = append(o.WithdrawnCouriers, *h.CourierID)
+		}
+	}
+	return o
+}
+
+// AI-generated (edited by James Teo).
+// withdrewFrom reports whether courierID's withdrawal from the errand is in
+// its history (D-060).
+func (r *Repository) withdrewFrom(orderID, courierID uuid.UUID) bool {
+	return slices.Contains(r.withHistory(order.Order{ID: orderID}).WithdrawnCouriers, courierID)
+}
+
 // Put stores o as is, for tests that start from a given state.
 func (r *Repository) Put(o order.Order) {
 	r.mu.Lock()
@@ -256,7 +276,8 @@ func (r *Repository) Get(_ context.Context, id uuid.UUID) (order.Order, error) {
 	if !ok {
 		return order.Order{}, order.ErrNotFound
 	}
-	return o, nil
+	// AI-generated (edited by James Teo).
+	return r.withHistory(o), nil
 }
 
 // History implements order.Repository.
@@ -278,17 +299,19 @@ func (r *Repository) FindByRequestKey(_ context.Context, requesterID uuid.UUID, 
 	defer r.mu.Unlock()
 	for _, o := range r.orders {
 		if o.RequesterID == requesterID && o.RequestKey != "" && o.RequestKey == key {
-			return o, nil
+			// AI-generated (edited by James Teo).
+			return r.withHistory(o), nil
 		}
 	}
 	return order.Order{}, order.ErrNotFound
 }
 
+// AI-generated (edited by James Teo).
 func (r *Repository) filter(keep func(order.Order) bool) []order.Order {
 	var out []order.Order
 	for _, o := range r.orders {
 		if keep(o) {
-			out = append(out, o)
+			out = append(out, r.withHistory(o))
 		}
 	}
 	return out
@@ -386,6 +409,21 @@ func (r *Repository) CountActiveBySupplier(_ context.Context, supplierID uuid.UU
 	return len(r.filter(func(o order.Order) bool { return o.Supplier.ID == supplierID && !o.State.Final() })), nil
 }
 
+// AI-generated (edited by James Teo).
+// CountOpenByRequester implements order.Repository.
+func (r *Repository) CountOpenByRequester(_ context.Context, requesterID uuid.UUID, now time.Time) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.countOpen(requesterID, now), nil
+}
+
+// AI-generated (edited by James Teo).
+func (r *Repository) countOpen(requesterID uuid.UUID, now time.Time) int {
+	return len(r.filter(func(o order.Order) bool {
+		return o.RequesterID == requesterID && o.State == order.StateOpen && o.ExpiresAt != nil && o.ExpiresAt.After(now)
+	}))
+}
+
 // DueForExpiry implements order.Repository.
 func (r *Repository) DueForExpiry(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
 	r.mu.Lock()
@@ -445,6 +483,10 @@ func (r *Repository) Create(_ context.Context, o order.Order, h order.HistoryEnt
 			}
 		}
 	}
+	// AI-generated (edited by James Teo).
+	if r.countOpen(o.RequesterID, o.CreatedAt) >= order.MaxOpenErrands {
+		return order.ErrTooManyOpen
+	}
 	delete(r.outbox, guardEventID)
 	r.orders[o.ID] = o
 	r.appendHistory(h)
@@ -480,7 +522,8 @@ func (r *Repository) Transition(_ context.Context, t order.Transition) (order.Or
 	if t.Event != nil {
 		r.outbox[t.Event.EventID] = &outboxRow{event: *t.Event}
 	}
-	return o, nil
+	// AI-generated (edited by James Teo).
+	return r.withHistory(o), nil
 }
 
 func matches(o order.Order, t order.Transition) bool {
@@ -518,8 +561,9 @@ func (r *Repository) Accept(_ context.Context, c order.AcceptCommand) (order.Ord
 		return order.Order{}, order.ErrCourierAtCapacity
 	}
 	o, ok := r.orders[c.OrderID]
+	// AI-generated (edited by James Teo): a courier who withdrew is refused too (D-060).
 	if !ok || o.State != order.StateOpen || o.ExpiresAt == nil || !o.ExpiresAt.After(c.Now) ||
-		o.RequesterID == c.CourierID || o.Version != c.ExpectedVersion {
+		o.RequesterID == c.CourierID || o.Version != c.ExpectedVersion || r.withdrewFrom(o.ID, c.CourierID) {
 		return order.Order{}, order.ErrNoMatch
 	}
 	courier := c.CourierID
@@ -531,7 +575,8 @@ func (r *Repository) Accept(_ context.Context, c order.AcceptCommand) (order.Ord
 	o.Version++
 	r.orders[o.ID] = o
 	r.appendHistory(c.History)
-	return o, nil
+	// AI-generated (edited by James Teo).
+	return r.withHistory(o), nil
 }
 
 // Amend implements order.Repository. fn runs with the repository locked, the
@@ -543,6 +588,8 @@ func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current orde
 	if !ok {
 		return order.Order{}, order.ErrNotFound
 	}
+	// AI-generated (edited by James Teo).
+	cur = r.withHistory(cur)
 	res, err := fn(cur)
 	if err != nil {
 		return order.Order{}, err
@@ -560,12 +607,14 @@ func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current orde
 	if res.Event != nil {
 		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
 	}
-	return res.Order, nil
+	// AI-generated (edited by James Teo).
+	return r.withHistory(res.Order), nil
 }
 
+// AI-generated (edited by James Teo).
 // QueueLocked implements order.Repository. fn runs with the repository locked,
 // the way the real adapter holds the row lock.
-func (r *Repository) QueueLocked(_ context.Context, id uuid.UUID, fn func(current order.Order) (order.OutboxEvent, error)) error {
+func (r *Repository) QueueLocked(_ context.Context, id uuid.UUID, fn func(current order.Order) (*order.OutboxEvent, error)) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.takeFail("QueueLocked"); err != nil {
@@ -575,11 +624,14 @@ func (r *Repository) QueueLocked(_ context.Context, id uuid.UUID, fn func(curren
 	if !ok {
 		return order.ErrNotFound
 	}
-	e, err := fn(cur)
+	// AI-generated (edited by James Teo).
+	e, err := fn(r.withHistory(cur))
 	if err != nil {
 		return err
 	}
-	r.outbox[e.EventID] = &outboxRow{event: e}
+	if e != nil {
+		r.outbox[e.EventID] = &outboxRow{event: *e}
+	}
 	return nil
 }
 

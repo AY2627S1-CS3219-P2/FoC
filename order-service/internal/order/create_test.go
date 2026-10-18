@@ -148,6 +148,36 @@ func TestCreateValidatesTheErrand(t *testing.T) {
 		{"item with a NUL", func(in *order.CreateInput) { in.ItemDescription = "a\x00b" }, false},
 		{"note with a NUL", func(in *order.CreateInput) { in.DeliveryNote = "a\x00b" }, false},
 		{"no note", func(in *order.CreateInput) { in.DeliveryNote = "" }, true},
+		// AI-generated (edited by James Teo): the text rule create and amend share.
+		{"item of only a zero-width space", func(in *order.CreateInput) { in.ItemDescription = "\u200b" }, false},
+		{"item of only format characters and spaces", func(in *order.CreateInput) { in.ItemDescription = "\u200b \u2060\ufeff" }, false},
+		{"item with a line break", func(in *order.CreateInput) { in.ItemDescription = "Two kaya\ntoast sets" }, false},
+		{"item with a tab", func(in *order.CreateInput) { in.ItemDescription = "Two\tkaya toast sets" }, false},
+		{"item with a C1 control", func(in *order.CreateInput) { in.ItemDescription = "Two\u009bkaya toast sets" }, false},
+		{"item with a BEL", func(in *order.CreateInput) { in.ItemDescription = "gnp.exe\u0007" }, false},
+		{"item with a right-to-left override", func(in *order.CreateInput) { in.ItemDescription = "\u202egnp.exe" }, false},
+		{"item with a direction embedding", func(in *order.CreateInput) { in.ItemDescription = "Two \u202akaya\u202c toast sets" }, false},
+		{"item with a direction isolate", func(in *order.CreateInput) { in.ItemDescription = "Two \u2066kaya\u2069 toast sets" }, false},
+		{"item with a zero-width joiner in an emoji", func(in *order.CreateInput) { in.ItemDescription = "Sticker \U0001F469\u200d\U0001F4BB" }, true},
+		{"item with a right-to-left script", func(in *order.CreateInput) { in.ItemDescription = "\u0642\u0647\u0648\u0629" }, true},
+		{"note with line breaks", func(in *order.CreateInput) { in.DeliveryNote = "Hall 3\nRoom 12" }, true},
+		{"note with a carriage return", func(in *order.CreateInput) { in.DeliveryNote = "Hall 3\r\nRoom 12" }, false},
+		{"note with a tab", func(in *order.CreateInput) { in.DeliveryNote = "Hall 3\tRoom 12" }, false},
+		{"note with a BEL", func(in *order.CreateInput) { in.DeliveryNote = "Hall 3\u0007" }, false},
+		{"note with a C1 control", func(in *order.CreateInput) { in.DeliveryNote = "Hall\u0085 3" }, false},
+		{"note with a right-to-left override", func(in *order.CreateInput) { in.DeliveryNote = "Room \u202e21" }, false},
+		{"note with a direction isolate", func(in *order.CreateInput) { in.DeliveryNote = "Room \u206721\u2069" }, false},
+		// AI-generated (edited by James Teo): line and paragraph separators are
+		// line breaks, and blank fillers are not visible.
+		{"item with a line separator", func(in *order.CreateInput) { in.ItemDescription = "Two kaya\u2028toast sets" }, false},
+		{"item with a paragraph separator", func(in *order.CreateInput) { in.ItemDescription = "Two kaya\u2029toast sets" }, false},
+		{"note with a line separator", func(in *order.CreateInput) { in.DeliveryNote = "Hall 3\u2028Room 12" }, false},
+		{"note with a paragraph separator", func(in *order.CreateInput) { in.DeliveryNote = "Hall 3\u2029Room 12" }, false},
+		{"item of only Hangul fillers", func(in *order.CreateInput) { in.ItemDescription = "\u3164\u115f\u1160\uffa0" }, false},
+		{"item of only blank Braille", func(in *order.CreateInput) { in.ItemDescription = "\u2800\u2800" }, false},
+		{"item of only blank fillers, spaces and format characters", func(in *order.CreateInput) { in.ItemDescription = "\u3164 \u200b\u2800" }, false},
+		{"item in Korean", func(in *order.CreateInput) { in.ItemDescription = "\uae40\ubc25 \ub450 \uc904" }, true},
+		{"item in Braille", func(in *order.CreateInput) { in.ItemDescription = "\u2803\u2817\u2811\u2811\u2819" }, true},
 		{"reward 0", func(in *order.CreateInput) { in.Reward = 0 }, false},
 		{"negative reward", func(in *order.CreateInput) { in.Reward = -1 }, false},
 		{"reward 1", func(in *order.CreateInput) { in.Reward = 1 }, true},
@@ -418,6 +448,201 @@ func TestCreateReplaysARepeatedRequestKey(t *testing.T) {
 	assert.Len(t, f.errandsOf(f.requester), 1)
 	assert.Len(t, f.history(first.ID), 1)
 	assert.Empty(t, f.repo.Events())
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateReplayIgnoresADifferentBody(t *testing.T) {
+	// D-047: the key alone names the submission. A create under a key the
+	// requester already used returns the errand that key created, even if the
+	// form was edited before the retry; nothing in the new body is saved,
+	// looked up or reserved.
+	f := newFixture(t)
+	in := f.createInput()
+	in.RequestKey = "form-1"
+	first, _, err := f.svc.Create(f.ctx, f.requester, in)
+	require.NoError(t, err)
+	lookups := f.suppliers.calls.Load()
+
+	edited := in
+	edited.SupplierID = f.otherSupplier.ID
+	edited.ItemDescription = "Two sandwiches"
+	edited.DeliveryLocation = "Central Library entrance"
+	edited.DeliveryNote = ""
+	edited.Reward = 50
+	got, replayed, err := f.svc.Create(f.ctx, f.requester, edited)
+
+	require.NoError(t, err)
+	assert.True(t, replayed)
+	assert.Equal(t, first, got, "the stored errand, not the edited body")
+	assert.Len(t, f.credit.Reserves(), 1, "the edited reward is not reserved")
+	assert.Equal(t, lookups, f.suppliers.calls.Load(), "the edited supplier is not looked up")
+	assert.Len(t, f.errandsOf(f.requester), 1)
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateStopsAtTheOpenErrandLimit(t *testing.T) {
+	// D-058: a requester with five errands OPEN cannot post a sixth. It is
+	// refused before supplier-service or credit is asked, so nothing is held.
+	f := newFixture(t)
+	for range order.MaxOpenErrands {
+		f.post()
+	}
+	lookups := f.suppliers.calls.Load()
+
+	_, _, err := f.svc.Create(f.ctx, f.requester, f.createInput())
+
+	requireKind(t, err, order.KindConflict)
+	assert.Equal(t, "you already have 5 open errands; cancel one or wait for one to be accepted before posting another",
+		order.MessageOf(err))
+	assert.Equal(t, lookups, f.suppliers.calls.Load(), "no supplier lookup")
+	assert.Len(t, f.credit.Reserves(), order.MaxOpenErrands, "no reservation")
+	assert.Empty(t, f.repo.Events(), "no queued refund")
+	assert.Len(t, f.errandsOf(f.requester), order.MaxOpenErrands)
+
+	_, _, err = f.svc.Create(f.ctx, f.stranger, f.createInput())
+	require.NoError(t, err, "the limit is per requester")
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateCountsOnlyErrandsStillOpen(t *testing.T) {
+	// D-058 counts OPEN errands before their deadline: one past it is as good
+	// as expired before the sweeper gets to it (D-049), and errands that left
+	// OPEN do not count.
+	f := newFixture(t)
+	for _, s := range []order.State{
+		order.StateAccepted, order.StatePickedUp, order.StateDelivered,
+		order.StateCompleted, order.StateCancelled, order.StateExpired,
+	} {
+		f.seed(s)
+	}
+	for range order.MaxOpenErrands - 1 {
+		f.seed(order.StateOpen)
+	}
+	due := f.seed(order.StateOpen)
+	due.ExpiresAt = ptr(f.clock.Now())
+	f.repo.Put(due)
+
+	_, _, err := f.svc.Create(f.ctx, f.requester, f.createInput())
+	require.NoError(t, err, "four open errands and one past its deadline leave one place")
+
+	_, _, err = f.svc.Create(f.ctx, f.requester, f.createInput())
+	requireKind(t, err, order.KindConflict)
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateReplaysAnErrandThatFilledTheLastPlace(t *testing.T) {
+	// A retry of the create that filled the fifth place gets its errand back,
+	// not the limit's 409 (D-047, D-058).
+	f := newFixture(t)
+	for range order.MaxOpenErrands - 1 {
+		f.post()
+	}
+	in := f.createInput()
+	in.RequestKey = "req-last"
+	first, _, err := f.svc.Create(f.ctx, f.requester, in)
+	require.NoError(t, err)
+
+	again, replayed, err := f.svc.Create(f.ctx, f.requester, in)
+
+	require.NoError(t, err)
+	assert.True(t, replayed)
+	assert.Equal(t, first, again)
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateLosingTheLastPlaceToAConcurrentCreate(t *testing.T) {
+	// Two creates pass the count together; the second to save is refused by
+	// the count repo.Create makes under the requester's lock, and its
+	// reservation is released by its queued refund (D-047, D-058).
+	f := newFixture(t)
+	now := f.clock.Now()
+	for range order.MaxOpenErrands - 1 {
+		f.post()
+	}
+	f.repo.beforeNext("Create", func() { f.seed(order.StateOpen) })
+
+	_, _, err := f.svc.Create(f.ctx, f.requester, f.createInput())
+
+	requireKind(t, err, order.KindConflict)
+	// AI-generated (edited by James Teo): this attempt held credits, so it says
+	// they come back.
+	assert.Equal(t, "you already have 5 open errands, so this errand was not posted; your credits will be returned",
+		order.MessageOf(err))
+	assert.Len(t, f.errandsOf(f.requester), order.MaxOpenErrands)
+	reserves := f.credit.Reserves()
+	require.Len(t, reserves, order.MaxOpenErrands, "four posts and this attempt")
+	f.requireQueuedRefund(reserves[len(reserves)-1], now, refundDelay)
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateReplaysATwinThatFilledTheLastPlaceOnAnotherReplica(t *testing.T) {
+	// The twin of this create, sent to another replica where the per-key lock
+	// does not reach, saves the errand that fills the fifth place between this
+	// request's key lookup and its count. This request replays the twin rather
+	// than refusing the requester their own errand, and touches neither
+	// supplier-service nor credit (D-047, D-058).
+	f := newFixture(t)
+	for range order.MaxOpenErrands - 1 {
+		f.post()
+	}
+	lookups := f.suppliers.calls.Load()
+	in := f.createInput()
+	in.RequestKey = "req-last"
+	twin := f.twinOnAnotherReplica(in)
+	f.repo.beforeNext("CountOpenByRequester", func() { f.repo.Put(twin) })
+
+	got, replayed, err := f.svc.Create(f.ctx, f.requester, in)
+
+	require.NoError(t, err)
+	assert.True(t, replayed)
+	assert.Equal(t, twin, got)
+	assert.Equal(t, lookups, f.suppliers.calls.Load(), "no supplier lookup")
+	assert.Len(t, f.credit.Reserves(), order.MaxOpenErrands-1, "no reservation")
+	assert.Empty(t, f.repo.Events(), "no queued refund")
+	assert.Len(t, f.errandsOf(f.requester), order.MaxOpenErrands)
+}
+
+// AI-generated (edited by James Teo).
+func TestCreateAtTheLimitWithAKeyLooksItUpAgain(t *testing.T) {
+	// A create with an X-Request-Id that finds the requester at the limit
+	// looks the key up again before refusing (D-047, D-058).
+	cases := []struct {
+		name    string
+		between func(f *fixture) // runs between the first lookup and the count
+		kind    order.Kind
+		msg     string
+	}{
+		{
+			name:    "a key nothing was saved under is refused",
+			between: func(*fixture) {},
+			kind:    order.KindConflict,
+			msg:     "you already have 5 open errands; cancel one or wait for one to be accepted before posting another",
+		},
+		{
+			name:    "a second lookup that fails is a 503",
+			between: func(f *fixture) { f.repo.failFindWith(ordertest.ErrInjected) },
+			kind:    order.KindUnavailable,
+			msg:     "could not post the errand; please try again",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			for range order.MaxOpenErrands {
+				f.post()
+			}
+			in := f.createInput()
+			in.RequestKey = "req-new"
+			f.repo.beforeNext("CountOpenByRequester", func() { tc.between(f) })
+
+			_, _, err := f.svc.Create(f.ctx, f.requester, in)
+
+			requireKind(t, err, tc.kind)
+			assert.Equal(t, tc.msg, order.MessageOf(err))
+			assert.Len(t, f.credit.Reserves(), order.MaxOpenErrands, "no reservation")
+			assert.Empty(t, f.repo.Events(), "no queued refund")
+		})
+	}
 }
 
 func TestCreateRequestKeysArePerRequester(t *testing.T) {

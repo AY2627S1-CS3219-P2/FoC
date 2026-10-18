@@ -88,6 +88,10 @@ var (
 	// ErrGuardGone: the queued refund was already published, so the errand must
 	// not be saved (D-047).
 	ErrGuardGone = errors.New("queued refund already published")
+	// AI-generated (edited by James Teo).
+	// ErrTooManyOpen: saving the errand would give the requester more than
+	// MaxOpenErrands errands OPEN before their deadlines (D-058).
+	ErrTooManyOpen = errors.New("requester has the most open errands allowed")
 	// ErrNotDue: a system action's deadline has not passed yet.
 	ErrNotDue = errors.New("deadline not reached")
 

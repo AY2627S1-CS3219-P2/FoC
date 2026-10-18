@@ -104,7 +104,8 @@ func TestRevokedTokensAreRefused(t *testing.T) {
 }
 
 func TestRedisDownSkipsTheRevocationCheck(t *testing.T) {
-	// D-056: when Redis does not answer, the request goes on with a verified
+	// AI-generated (edited by James Teo).
+	// D-056: when Redis cannot be reached, the request goes on with a verified
 	// token and the skipped check is logged at ERROR.
 	t.Parallel()
 	h := newHarness(t)
@@ -119,6 +120,67 @@ func TestRedisDownSkipsTheRevocationCheck(t *testing.T) {
 	})
 	assert.Contains(t, line["msg"], "revocation check skipped")
 	assert.Equal(t, caller.UserID.String(), line["user_id"])
+}
+
+// AI-generated (edited by James Teo).
+func TestARedisErrorReplyIsA503(t *testing.T) {
+	// D-056: a Redis that answers the lookup with an error, such as NOAUTH
+	// from a missing password, has not lost the keys; skipping the check then
+	// would let every revoked token through for as long as that lasts. The
+	// request is refused, and not with a 401 the frontend would answer by
+	// refreshing the token.
+	t.Parallel()
+	h := newHarness(t)
+	caller := student()
+	h.revoked.setRefusing(true)
+
+	rec := h.do(t, http.MethodGet, "/open", nil, as(caller), withRequestID("redis-refusing"))
+
+	requireError(t, rec, http.StatusServiceUnavailable, "sign-in cannot be checked right now; please try again")
+	line := h.findLog(t, func(l map[string]any) bool {
+		return l["level"] == "ERROR" && l["request_id"] == "redis-refusing"
+	})
+	assert.Contains(t, line["msg"], "revocation keys")
+	assert.Contains(t, line["err"], "NOAUTH")
+	assert.Equal(t, http.StatusOK, h.do(t, http.MethodGet, "/health", nil).Code, "health reads no revocation keys")
+
+	h.revoked.setRefusing(false)
+	require.Equal(t, http.StatusOK, h.do(t, http.MethodGet, "/open", nil, as(caller)).Code, "answered again once Redis is")
+}
+
+// AI-generated (edited by James Teo).
+func TestARequestThatEndsDuringTheRevocationLookupLogsNoError(t *testing.T) {
+	// A client that hangs up while its token's revocation keys are read is not
+	// a fault in Redis, so no ERROR line is written for it. The request is
+	// still refused, and the access log still records it.
+	t.Parallel()
+	h := newHarness(t)
+	ctx, hangUp := context.WithCancel(t.Context())
+	defer hangUp()
+	router := h.routerWith(ports{revocations: hangUpDuringLookup{hangUp: hangUp}})
+	withContext := func(r *http.Request) { *r = *r.WithContext(ctx) }
+
+	rec := serve(t, router, http.MethodGet, "/open", nil, as(student()), withRequestID("client-gone"), withContext)
+
+	requireError(t, rec, http.StatusServiceUnavailable, "sign-in cannot be checked right now; please try again")
+	assert.EqualValues(t, http.StatusServiceUnavailable, h.accessLine(t, "client-gone")["status"])
+	for _, line := range h.logLines(t) {
+		assert.NotEqual(t, "ERROR", line["level"], "logged: %v", line)
+	}
+}
+
+// AI-generated (edited by James Teo).
+// hangUpDuringLookup ends the request's context in the middle of the
+// revocation lookup, as a client hanging up would, and fails the lookup with
+// the context's error, as go-redis does.
+type hangUpDuringLookup struct {
+	hangUp context.CancelFunc
+}
+
+func (h hangUpDuringLookup) Revoked(ctx context.Context, _ auth.Claims) (bool, error) {
+	h.hangUp()
+	<-ctx.Done()
+	return false, ctx.Err()
 }
 
 func TestUnavailableKeysAreA503(t *testing.T) {

@@ -16,11 +16,13 @@ info:
 
     Every route except `/health` needs `Authorization: Bearer <access token>`,
     the token `user-service` issued. order-service verifies it itself:
-    the RS256 signature against `user-service`'s published keys, its expiry,
+    the RS256 signature against `user-service`'s published keys, its issuer
+    (`campusrun-user-service`) and audience (`campusrun-api`), its expiry,
     and that `user-service` has not revoked it. The caller is the
     token's `sub` and `role` (`STUDENT` or `ADMIN`); `X-User-Id` and
     `X-User-Role` are ignored. A missing, invalid, expired or revoked token is
-    401. When `user-service`'s keys cannot be loaded the answer is 503.
+    401. When `user-service`'s keys cannot be loaded, or Redis answers the
+    revocation lookup with an error, the answer is 503.
 
     `X-Request-Id` is the correlation id for logs and events. On `POST /` it is
     also the duplicate-submission key: a create whose key the server has already
@@ -60,7 +62,9 @@ paths:
       summary: Post an errand (F3.1)
       description: |
         Validates the reward, supplier and delivery location, reserves the reward
-        through credit-service, then saves the errand in `OPEN`.
+        through credit-service, then saves the errand in `OPEN`. A requester who
+        already has 5 errands `OPEN` before their deadlines cannot post another:
+        the create is refused with 409.
       parameters:
         - $ref: "#/components/parameters/RequestId"
       requestBody:
@@ -88,6 +92,12 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "409":
+          description: The requester already has 5 errands `OPEN` before their deadlines, so cannot post another
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "413":
           $ref: "#/components/responses/TooLarge"
         "422":
@@ -283,7 +293,10 @@ paths:
     post:
       operationId: acceptErrand
       summary: Accept an `OPEN` errand as its courier (F3.3)
-      description: Send the `version` you were shown; if the errand changed since, the answer is 409.
+      description: |
+        Send the `version` you were shown; if the errand changed since, the answer
+        is 409. A courier who withdrew from an errand cannot accept it again: the
+        answer is 409, and the errand's `actions` never offer them `accept`.
       requestBody:
         required: true
         content:
@@ -636,7 +649,10 @@ components:
           type: string
           format: date-time
         changes:
-          description: Present on AMEND entries (F3.7.7).
+          description: |
+            Present on AMEND entries (F3.7.7). A `deliveryNote` change is left out
+            for a viewer who may not see the note, and shown to the assigned
+            courier with empty `from` and `to`.
           type: array
           items:
             $ref: "#/components/schemas/FieldChange"
@@ -738,12 +754,20 @@ components:
           type: string
           minLength: 1
           maxLength: 280
+          description: |
+            At least one visible character. No control characters (line breaks
+            included), no line or paragraph separators (U+2028, U+2029) and no
+            text-direction controls (U+202A to U+202E, U+2066 to U+2069).
         deliveryLocation:
           type: string
           description: One of `GET /locations`.
         deliveryNote:
           type: string
           maxLength: 140
+          description: |
+            Newlines (`\n`) are allowed. Other control characters, the line and
+            paragraph separators (U+2028, U+2029) and text-direction controls
+            (U+202A to U+202E, U+2066 to U+2069) are not.
         reward:
           type: integer
           minimum: 1
@@ -762,11 +786,19 @@ components:
           type: string
           minLength: 1
           maxLength: 280
+          description: |
+            At least one visible character. No control characters (line breaks
+            included), no line or paragraph separators (U+2028, U+2029) and no
+            text-direction controls (U+202A to U+202E, U+2066 to U+2069).
         deliveryLocation:
           type: string
         deliveryNote:
           type: string
           maxLength: 140
+          description: |
+            Newlines (`\n`) are allowed. Other control characters, the line and
+            paragraph separators (U+2028, U+2029) and text-direction controls
+            (U+202A to U+202E, U+2066 to U+2069) are not.
         reward:
           type: integer
           minimum: 1

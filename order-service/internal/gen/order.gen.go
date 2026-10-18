@@ -268,12 +268,20 @@ func (e ListRequestedErrandsParamsScope) Valid() bool {
 
 // AmendErrandRequest `version` plus at least one field to change. An empty `deliveryNote` clears the note.
 type AmendErrandRequest struct {
-	DeliveryLocation *string             `json:"deliveryLocation,omitempty"`
-	DeliveryNote     *string             `json:"deliveryNote,omitempty"`
-	ItemDescription  *string             `json:"itemDescription,omitempty"`
-	Reward           *int                `json:"reward,omitempty"`
-	SupplierId       *openapi_types.UUID `json:"supplierId,omitempty"`
-	Version          int                 `json:"version"`
+	DeliveryLocation *string `json:"deliveryLocation,omitempty"`
+
+	// DeliveryNote Newlines (`\n`) are allowed. Other control characters, the line and
+	// paragraph separators (U+2028, U+2029) and text-direction controls
+	// (U+202A to U+202E, U+2066 to U+2069) are not.
+	DeliveryNote *string `json:"deliveryNote,omitempty"`
+
+	// ItemDescription At least one visible character. No control characters (line breaks
+	// included), no line or paragraph separators (U+2028, U+2029) and no
+	// text-direction controls (U+202A to U+202E, U+2066 to U+2069).
+	ItemDescription *string             `json:"itemDescription,omitempty"`
+	Reward          *int                `json:"reward,omitempty"`
+	SupplierId      *openapi_types.UUID `json:"supplierId,omitempty"`
+	Version         int                 `json:"version"`
 }
 
 // AssignedList defines model for AssignedList.
@@ -305,11 +313,19 @@ type AssignmentRecordOutcome string
 // CreateErrandRequest defines model for CreateErrandRequest.
 type CreateErrandRequest struct {
 	// DeliveryLocation One of `GET /locations`.
-	DeliveryLocation string             `json:"deliveryLocation"`
-	DeliveryNote     *string            `json:"deliveryNote,omitempty"`
-	ItemDescription  string             `json:"itemDescription"`
-	Reward           int                `json:"reward"`
-	SupplierId       openapi_types.UUID `json:"supplierId"`
+	DeliveryLocation string `json:"deliveryLocation"`
+
+	// DeliveryNote Newlines (`\n`) are allowed. Other control characters, the line and
+	// paragraph separators (U+2028, U+2029) and text-direction controls
+	// (U+202A to U+202E, U+2066 to U+2069) are not.
+	DeliveryNote *string `json:"deliveryNote,omitempty"`
+
+	// ItemDescription At least one visible character. No control characters (line breaks
+	// included), no line or paragraph separators (U+2028, U+2029) and no
+	// text-direction controls (U+202A to U+202E, U+2066 to U+2069).
+	ItemDescription string             `json:"itemDescription"`
+	Reward          int                `json:"reward"`
+	SupplierId      openapi_types.UUID `json:"supplierId"`
 }
 
 // Errand defines model for Errand.
@@ -395,7 +411,9 @@ type HistoryAction string
 type HistoryEntry struct {
 	Action HistoryAction `json:"action"`
 
-	// Changes Present on AMEND entries (F3.7.7).
+	// Changes Present on AMEND entries (F3.7.7). A `deliveryNote` change is left out
+	// for a viewer who may not see the note, and shown to the assigned
+	// courier with empty `from` and `to`.
 	Changes    *[]FieldChange `json:"changes,omitempty"`
 	FromState  *ErrandState   `json:"fromState,omitempty"`
 	OccurredAt time.Time      `json:"occurredAt"`
