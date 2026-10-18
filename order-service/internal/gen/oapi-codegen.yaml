@@ -1,0 +1,7 @@
+# oapi-codegen settings for api/openapi.yaml. Regenerate with
+# `go generate ./internal/gen` from order-service/.
+package: gen
+output: order.gen.go
+generate:
+  chi-server: true
+  models: true
