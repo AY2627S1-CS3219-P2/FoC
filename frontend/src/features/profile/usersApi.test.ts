@@ -135,3 +135,62 @@ describe("usersApi failures", () => {
     expect((err as UsersApiError).status).toBe(0);
   });
 });
+
+// AI-generated (edited by James Teo): suspend and reactivate, against
+// user-service's PATCH /api/v1/users/{uid}/status (UpdateStatusRequest).
+describe("usersApi account status", () => {
+  const changes: [string, (api: ReturnType<typeof createUsersApi>) => Promise<void>, string][] = [
+    ["suspendUser", (api) => api.suspendUser(UID), "SUSPENDED"],
+    ["reactivateUser", (api) => api.reactivateUser(UID), "ACTIVE"],
+  ];
+
+  it.each(changes)("%s sends PATCH /api/users/{uid}/status with %s", async (_name, call, status) => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: null });
+    await call(api);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      path: `/api/users/${UID}/status`,
+      method: "PATCH",
+    });
+    expect(send.mock.calls[0]![0].body).toEqual({ status });
+  });
+
+  it("resolves with nothing on user-service's empty 200", async () => {
+    const { api } = stubSend({ ok: true, status: 200, body: null });
+    await expect(api.suspendUser(UID)).resolves.toBeUndefined();
+  });
+
+  it("encodes the account ID into the status path", async () => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: null });
+    await api.reactivateUser("a/b");
+    expect(send.mock.calls[0]![0].path).toBe("/api/users/a%2Fb/status");
+  });
+
+  it("keeps the last-admin conflict's message and status", async () => {
+    const { api } = stubSend({
+      ok: false,
+      status: 409,
+      body: { error: "cannot suspend the last active admin" },
+    });
+    await expect(api.suspendUser(UID)).rejects.toMatchObject({
+      name: "UsersApiError",
+      message: "cannot suspend the last active admin",
+      status: 409,
+    });
+  });
+
+  it("keeps a refusal's message and status", async () => {
+    const { api } = stubSend({ ok: false, status: 403, body: { error: "admin access required" } });
+    await expect(api.reactivateUser(UID)).rejects.toMatchObject({
+      message: "admin access required",
+      status: 403,
+    });
+  });
+
+  it("turns a status change that never arrived into status 0", async () => {
+    const { api } = stubSend(new NetworkError(""));
+    const err = await api.suspendUser(UID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UsersApiError);
+    expect((err as UsersApiError).status).toBe(0);
+  });
+});

@@ -6,12 +6,19 @@
 // Author review: nigeltzy - Checked that the component was generated and 
 // updated according to the format and requirements that were previously discussed and set.
 
-import { useState, type FormEvent } from "react";
+// AI-generated (edited by James Teo): useEffect, useRef, UsersApiError and
+// AccountStatus, for the suspend and reactivate control.
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { MockBadge } from "../../components/MockBadge";
 import { Modal } from "../../components/Modal";
 import type { ToastMessage } from "../../components/Toast";
 import { NewPasswordFields, validateNewPassword } from "../profile/ProfileEditForms";
-import type { UserProfile, UsersApi } from "../profile/usersApi";
+import {
+  UsersApiError,
+  type AccountStatus,
+  type UserProfile,
+  type UsersApi,
+} from "../profile/usersApi";
 
 interface AdminViewProps {
   /** Null in a fixture build, which has no user-service to call. */
@@ -36,6 +43,28 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [resetting, setResetting] = useState(false);
+  // AI-generated (edited by James Teo): the account-status control. Its
+  // confirmation step replaces the button row, and its buttons are disabled
+  // while the change is in flight, so focus would be lost twice: focus goes
+  // back to the control's button once the step closes, and to the confirm
+  // button once a failed change re-enables it.
+  const [confirmingStatus, setConfirmingStatus] = useState(false);
+  const [changingStatus, setChangingStatus] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const statusButtonRef = useRef<HTMLButtonElement>(null);
+  const refocusStatusButton = useRef(false);
+  useEffect(() => {
+    if (confirmingStatus || !refocusStatusButton.current) return;
+    refocusStatusButton.current = false;
+    statusButtonRef.current?.focus();
+  }, [confirmingStatus, profile]);
+  const confirmButtonRef = useRef<HTMLButtonElement>(null);
+  const refocusConfirmButton = useRef(false);
+  useEffect(() => {
+    if (changingStatus || !refocusConfirmButton.current) return;
+    refocusConfirmButton.current = false;
+    confirmButtonRef.current?.focus();
+  }, [changingStatus]);
 
   if (!usersApi) {
     return (
@@ -61,6 +90,10 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
     setLoading(true);
     setError(null);
     setProfile(null);
+    // AI-generated (edited by James Teo): a new lookup closes any open
+    // confirmation step, so it cannot act on the next account shown.
+    setConfirmingStatus(false);
+    setStatusError(null);
     try {
       setProfile(await api.getUser(uid));
     } catch (err) {
@@ -81,6 +114,42 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
   }
 
   const isSelf = profile?.uid === currentUserId;
+  // AI-generated (edited by James Teo): which status control this account gets,
+  // and the handlers for its confirmation step.
+  const control = statusControlFor(profile?.status, isSelf);
+  const statusAction = STATUS_ACTIONS[control];
+
+  function cancelStatusChange() {
+    setConfirmingStatus(false);
+    setStatusError(null);
+    refocusStatusButton.current = true;
+  }
+
+  async function changeStatus() {
+    if (!profile || !statusAction) return;
+    const target = profile;
+    setChangingStatus(true);
+    setStatusError(null);
+    try {
+      await statusAction.run(api, target.uid);
+    } catch (err) {
+      refocusConfirmButton.current = true;
+      setStatusError(statusErrorMessage(err));
+      setChangingStatus(false);
+      return;
+    }
+    onNotify({ text: statusAction.done(target.username || "The user"), kind: "success" });
+    try {
+      setProfile(await api.getUser(target.uid));
+    } catch {
+      // The change succeeded, so the Status row shows its result even when
+      // the lookup that would confirm it fails.
+      setProfile({ ...target, status: statusAction.result });
+    }
+    refocusStatusButton.current = true;
+    setConfirmingStatus(false);
+    setChangingStatus(false);
+  }
 
   return (
     <section>
@@ -101,7 +170,12 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
             spellCheck={false}
             autoComplete="off"
           />
-          <button className="btn btn-primary" disabled={loading || !query.trim()}>
+          {/* AI-generated (edited by James Teo): also disabled while a status
+              change is in flight, so its result cannot land on another account. */}
+          <button
+            className="btn btn-primary"
+            disabled={loading || changingStatus || !query.trim()}
+          >
             {loading ? "Looking up…" : "Look up"}
           </button>
         </form>
@@ -120,16 +194,67 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
               <Row label="Created" value={formatDate(profile.createdAt)} />
             </dl>
 
+            {/* AI-generated (edited by James Teo): the status control sits beside
+                Reset password; its confirmation step replaces that row, as
+                SupplierDetail's delete step does. A failed change shows its
+                error inside the step, above the buttons, so it stays beside
+                the action on a narrow screen. */}
             {isSelf ? (
               <p className="balance-label">
                 This is your own account. Change your password from your Profile instead.
               </p>
-            ) : (
-              <div className="btn-row" style={{ justifyContent: "flex-start" }}>
-                <button className="btn btn-secondary" onClick={() => setResetting(true)}>
-                  Reset password
-                </button>
+            ) : confirmingStatus && statusAction ? (
+              <div
+                className={statusAction.confirmBoxClass}
+                role="group"
+                aria-labelledby="status-confirm-question"
+              >
+                <p id="status-confirm-question">
+                  {statusAction.verb} <strong>{profile.username || "this account"}</strong>?{" "}
+                  {statusAction.consequence}
+                </p>
+                {statusError && (
+                  <p className="status error" role="alert">
+                    {statusError}
+                  </p>
+                )}
+                <div className="btn-row" style={{ justifyContent: "flex-start", marginTop: 0 }}>
+                  <button
+                    ref={confirmButtonRef}
+                    className={`btn ${statusAction.buttonClass}`}
+                    onClick={changeStatus}
+                    disabled={changingStatus}
+                  >
+                    {changingStatus ? statusAction.busyLabel : statusAction.confirmLabel}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={cancelStatusChange}
+                    disabled={changingStatus}
+                    autoFocus
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
+            ) : (
+              <>
+                <div className="btn-row" style={{ justifyContent: "flex-start" }}>
+                  <button className="btn btn-secondary" onClick={() => setResetting(true)}>
+                    Reset password
+                  </button>
+                  {statusAction && (
+                    <button
+                      ref={statusButtonRef}
+                      className={`btn ${statusAction.buttonClass}`}
+                      onClick={() => setConfirmingStatus(true)}
+                    >
+                      {statusAction.label}
+                    </button>
+                  )}
+                </div>
+                {control === "not-verified" && <p className="balance-label">Not verified yet.</p>}
+              </>
             )}
           </>
         )}
@@ -151,6 +276,94 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
 /** A canonical 8-4-4-4-12 hex UUID, any case. */
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// AI-generated (edited by James Teo): the suspend and reactivate control —
+// which one an account gets, and the wording and call for each.
+
+/**
+ * The account-status control the Admin screen shows for a looked-up account.
+ * `not-verified` shows no control, only a note saying so.
+ */
+export type StatusControl = "suspend" | "reactivate" | "not-verified" | "none";
+
+/**
+ * Picks the status control for an account. ACTIVE accounts can be suspended
+ * and SUSPENDED ones reactivated. An UNVERIFIED account gets no control,
+ * because setting it ACTIVE would skip its email code. Your own account gets
+ * none either, as with Reset password, and neither does a profile without a
+ * status. This only picks a button: user-service decides whether the change
+ * is allowed.
+ */
+export function statusControlFor(
+  status: AccountStatus | undefined,
+  isSelf: boolean,
+): StatusControl {
+  if (isSelf) return "none";
+  if (status === "ACTIVE") return "suspend";
+  if (status === "SUSPENDED") return "reactivate";
+  if (status === "UNVERIFIED") return "not-verified";
+  return "none";
+}
+
+/** The wording and the call behind one status control. */
+interface StatusAction {
+  label: string;
+  buttonClass: string;
+  /** Danger colours for suspending; neutral ones for reactivating. */
+  confirmBoxClass: string;
+  /** Starts the confirmation question, which goes on with the username. */
+  verb: string;
+  consequence: string;
+  confirmLabel: string;
+  busyLabel: string;
+  run: (api: UsersApi, uid: string) => Promise<void>;
+  /** The status the account has once the call succeeds. */
+  result: AccountStatus;
+  done: (name: string) => string;
+}
+
+const STATUS_ACTIONS: Partial<Record<StatusControl, StatusAction>> = {
+  suspend: {
+    label: "Suspend account",
+    buttonClass: "btn-danger",
+    confirmBoxClass: "confirm-box",
+    verb: "Suspend",
+    // What user-service does today: login and refresh are refused, but an
+    // access token already issued works until it expires. That lifetime is
+    // user-service's JWT_ACCESS_TOKEN_TTL setting, so the wording names no
+    // time that could stop matching it.
+    consequence:
+      "They can't sign in again until you reactivate them, and their current session ends when it next refreshes. Their errands don't change.",
+    confirmLabel: "Yes, suspend",
+    busyLabel: "Suspending…",
+    run: (api, uid) => api.suspendUser(uid),
+    result: "SUSPENDED",
+    done: (name) => `${name} is suspended.`,
+  },
+  reactivate: {
+    label: "Reactivate account",
+    buttonClass: "btn-primary",
+    confirmBoxClass: "confirm-box neutral",
+    verb: "Reactivate",
+    consequence: "They can sign in again with their password.",
+    confirmLabel: "Yes, reactivate",
+    busyLabel: "Reactivating…",
+    run: (api, uid) => api.reactivateUser(uid),
+    result: "ACTIVE",
+    done: (name) => `${name} can sign in again.`,
+  },
+};
+
+/**
+ * user-service's message as it sends it (the last-admin 409, a 403, a 404),
+ * or a plain one when no response arrived.
+ */
+function statusErrorMessage(err: unknown): string {
+  if (err instanceof UsersApiError && err.status === 0) {
+    return "Couldn't reach the server. Try again.";
+  }
+  return err instanceof Error ? err.message : "The change failed. Try again.";
+}
+
 function Row({ label, value }: { label: string; value?: string }) {
   return (
     <div>
@@ -160,10 +373,24 @@ function Row({ label, value }: { label: string; value?: string }) {
   );
 }
 
-function formatDate(iso?: string): string | undefined {
+// AI-generated (edited by James Teo): the Credits screen's date format instead
+// of the browser's locale string.
+/**
+ * A date and time as "18 Oct, 20:37", in the device's time zone unless
+ * `timeZone` names one. An unreadable date is shown as sent.
+ */
+export function formatDate(iso?: string, timeZone?: string): string | undefined {
   if (!iso) return undefined;
   const date = new Date(iso);
-  return Number.isNaN(date.getTime()) ? iso : date.toLocaleString();
+  if (Number.isNaN(date.getTime())) return iso;
+  const day = date.toLocaleDateString("en-SG", { day: "numeric", month: "short", timeZone });
+  const time = date.toLocaleTimeString("en-SG", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone,
+  });
+  return `${day}, ${time}`;
 }
 
 interface ResetPasswordFormProps {
