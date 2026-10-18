@@ -102,8 +102,10 @@ func TestStripsClientSuppliedClaimHeaders(t *testing.T) {
 	if uid := got.Get(proxy.ClaimHeaderUserID); uid != "real-uid" {
 		t.Errorf("user id header = %q, want %q", uid, "real-uid")
 	}
+	// AI-generated (edited by James Teo): New, unlike NewRetainingToken, drops the
+	// bearer token.
 	if authz := got.Get("Authorization"); authz != "" {
-		t.Errorf("Authorization = %q, want it stripped on an authenticated route", authz)
+		t.Errorf("Authorization = %q, want New to strip it", authz)
 	}
 }
 

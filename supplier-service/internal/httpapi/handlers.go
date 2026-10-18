@@ -3,10 +3,14 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	// AI-generated (edited by James Teo).
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	// AI-generated (edited by James Teo).
+	"foc/supplier-service/internal/orderclient"
 	"foc/supplier-service/internal/supplier"
 )
 
@@ -84,11 +88,16 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toResponse(updated))
 }
 
+// AI-generated (edited by James Teo).
 // Delete handles DELETE /suppliers/{id} (FR F2.2.3, admin-only). See the
-// comment on supplier.Service.Delete for why this is a soft delete.
+// comment on supplier.Service.Delete for the unfinished-errand check and
+// why this is a soft delete.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	err := h.svc.Delete(r.Context(), id)
+	// order-service answers the errand check only for an ADMIN's token, so
+	// the admin's own Authorization header goes along with it.
+	ctx := orderclient.WithToken(r.Context(), r.Header.Get("Authorization"))
+	err := h.svc.Delete(ctx, id)
 	if handleServiceError(w, err) {
 		return
 	}
@@ -113,7 +122,14 @@ func handleServiceError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, supplier.ErrDuplicate):
 		writeError(w, http.StatusConflict, err.Error())
+	// AI-generated (edited by James Teo).
+	case errors.Is(err, supplier.ErrInUse):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
+		// AI-generated (edited by James Teo).
+		// The client only gets a generic message, so this line is the one
+		// place the cause shows up (e.g. order-service refusing the token).
+		log.Printf("internal server error: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
 	return true

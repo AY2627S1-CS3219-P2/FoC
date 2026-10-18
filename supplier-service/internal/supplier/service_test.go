@@ -61,6 +61,26 @@ func (f *fakeRepository) Count(_ context.Context) (int, error) {
 	return len(f.byID), nil
 }
 
+// AI-generated (edited by James Teo).
+// fakeErrandCounter answers count and err, and records what it was asked.
+// Its zero value reports no unfinished errands.
+type fakeErrandCounter struct {
+	count int
+	err   error
+
+	calls  int
+	gotID  string
+	gotCtx context.Context
+}
+
+// AI-generated (edited by James Teo).
+func (f *fakeErrandCounter) ActiveErrands(ctx context.Context, supplierID string) (int, error) {
+	f.calls++
+	f.gotID = supplierID
+	f.gotCtx = ctx
+	return f.count, f.err
+}
+
 func validSupplier() *Supplier {
 	return &Supplier{
 		Name:                "Cool Spot",
@@ -76,7 +96,8 @@ func validSupplier() *Supplier {
 
 func TestCreate_Success(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	svc := NewService(repo, &fakeErrandCounter{})
 
 	created, err := svc.Create(context.Background(), validSupplier())
 
@@ -87,7 +108,8 @@ func TestCreate_Success(t *testing.T) {
 
 func TestCreate_MissingRequiredField(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	svc := NewService(repo, &fakeErrandCounter{})
 
 	in := validSupplier()
 	in.Name = ""
@@ -100,7 +122,8 @@ func TestCreate_MissingRequiredField(t *testing.T) {
 
 func TestCreate_InvalidLatitude(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	svc := NewService(repo, &fakeErrandCounter{})
 
 	in := validSupplier()
 	in.Latitude = 200
@@ -114,7 +137,8 @@ func TestCreate_InvalidLatitude(t *testing.T) {
 func TestCreate_DuplicateRejected(t *testing.T) {
 	repo := newFakeRepository()
 	repo.duplicates["Cool Spot|Com2|Opp LT16"] = true
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	svc := NewService(repo, &fakeErrandCounter{})
 
 	_, err := svc.Create(context.Background(), validSupplier())
 
@@ -124,7 +148,8 @@ func TestCreate_DuplicateRejected(t *testing.T) {
 
 func TestGet_NotFound(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	svc := NewService(repo, &fakeErrandCounter{})
 
 	_, err := svc.Get(context.Background(), "missing-id")
 
@@ -134,7 +159,8 @@ func TestGet_NotFound(t *testing.T) {
 
 func TestDelete_SoftDeletesAndRemovesFromActiveSet(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	svc := NewService(repo, &fakeErrandCounter{})
 	created, err := svc.Create(context.Background(), validSupplier())
 	require.NoError(t, err)
 
@@ -147,10 +173,85 @@ func TestDelete_SoftDeletesAndRemovesFromActiveSet(t *testing.T) {
 
 func TestDelete_NotFound(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo)
+	// AI-generated (edited by James Teo).
+	errands := &fakeErrandCounter{}
+	svc := NewService(repo, errands)
 
 	err := svc.Delete(context.Background(), "missing-id")
 
 	require.Error(t, err)
 	assert.True(t, errors.Is(err, ErrNotFound))
+	// AI-generated (edited by James Teo).
+	assert.Zero(t, errands.calls, "a missing supplier needs no errand check")
+}
+
+// AI-generated (edited by James Teo).
+func TestDelete_ChecksForUnfinishedErrands(t *testing.T) {
+	errOrderService := errors.New("order-service did not answer")
+
+	tests := []struct {
+		name        string
+		count       int
+		countErr    error
+		wantErr     error // nil: the delete goes through
+		wantDeleted bool
+	}{
+		{name: "no unfinished errands: soft-deleted", count: 0, wantDeleted: true},
+		{name: "one unfinished errand: refused", count: 1, wantErr: ErrInUse},
+		{name: "several unfinished errands: refused", count: 4, wantErr: ErrInUse},
+		{name: "count unavailable: refused", countErr: errOrderService, wantErr: errOrderService},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newFakeRepository()
+			errands := &fakeErrandCounter{count: tc.count, err: tc.countErr}
+			svc := NewService(repo, errands)
+			created, err := svc.Create(context.Background(), validSupplier())
+			require.NoError(t, err)
+
+			err = svc.Delete(context.Background(), created.ID)
+
+			if tc.wantErr == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.True(t, errors.Is(err, tc.wantErr))
+			}
+			if tc.countErr != nil {
+				assert.False(t, errors.Is(err, ErrInUse), "an unanswered check is a failure, not a conflict")
+			}
+			assert.Equal(t, 1, errands.calls)
+
+			_, getErr := svc.Get(context.Background(), created.ID)
+			if tc.wantDeleted {
+				assert.True(t, errors.Is(getErr, ErrNotFound), "soft-deleted supplier should no longer be gettable")
+			} else {
+				require.NoError(t, getErr, "a refused delete must leave the supplier in place")
+				assert.Nil(t, repo.byID[created.ID].DeletedAt)
+				assert.True(t, repo.byID[created.ID].IsAvailable)
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo).
+// ctxMarker tags a context so a test can tell whether it reached the counter.
+type ctxMarker struct{}
+
+// AI-generated (edited by James Teo).
+func TestDelete_GivesTheCounterTheCallersContextAndID(t *testing.T) {
+	repo := newFakeRepository()
+	errands := &fakeErrandCounter{}
+	svc := NewService(repo, errands)
+	created, err := svc.Create(context.Background(), validSupplier())
+	require.NoError(t, err)
+
+	// The counter's adapter reads the admin's token from the context, so the
+	// counter must get the caller's context, not a fresh one.
+	ctx := context.WithValue(context.Background(), ctxMarker{}, "Bearer admin-token")
+	require.NoError(t, svc.Delete(ctx, created.ID))
+
+	assert.Equal(t, created.ID, errands.gotID)
+	require.NotNil(t, errands.gotCtx)
+	assert.Equal(t, "Bearer admin-token", errands.gotCtx.Value(ctxMarker{}))
 }
