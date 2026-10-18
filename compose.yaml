@@ -138,6 +138,8 @@ services:
     environment:
       PORT: 8082
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
+      # Asked before each delete; deletes are refused while it is unreachable.
+      ORDER_BASE_URL: http://order-service:8083
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
   rabbitmq:

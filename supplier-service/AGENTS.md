@@ -28,11 +28,12 @@ decide, and must be recorded before an agent builds to them (root §1).
 
 ## Boundaries
 
-- **`order-service` (does not exist yet).** The pressure here is real: knowing
-  whether a supplier is referenced by a live errand needs order data. Do not add
-  an orders table, a foreign key, or a second connection string to reach for it.
-  When `order-service` exists, ask it over its API or consume its events. Until
-  then the interim soft delete below is the answer.
+- **`order-service`.** The pressure here is real: knowing whether a supplier is
+  referenced by a live errand needs order data. Do not add an orders table, a
+  foreign key, or a second connection string to reach for it. Delete asks
+  order-service's `GET /suppliers/{id}/active-errands` over its API
+  (`internal/orderclient`, `ORDER_BASE_URL`), forwarding the admin's token
+  (F2.2.3).
 - **`user-service`.** Admin-only endpoints need a role, not a user. Do not query
   the users table and do not fetch a user record to inspect it — the role
   arrives with the request (see Gotchas).
@@ -56,12 +57,15 @@ Module path `foc/supplier-service`. The per-file detail the other services
 mirror:
 
 ```
-cmd/api/             wiring only — config, pool, migrate, seed, router, listen
+cmd/api/             wiring only — config, pool, migrate, order client, seed,
+                     router, listen
 internal/supplier/   the domain: model.go, service.go (business rules),
                      repository.go (the Repository *interface*), errors.go
                      (sentinel errors the transport layer maps to status codes),
                      service_test.go
 internal/repository/ Postgres adapter implementing supplier.Repository, via pgx
+internal/orderclient/ order-service client for the delete check, implementing
+                      supplier.ErrandCounter
 internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go
 internal/middleware/ request guards (currently the admin-role check)
 internal/config/     Load() reads env once into a Config struct, then passed down
@@ -73,11 +77,12 @@ migrations/          golang-migrate .up/.down pairs, applied at startup from
 ## Local development
 
 Port **8082** (root §3). Env vars `PORT`, `SUPPLIER_DB_URL`, `SEED_CSV_PATH`,
-with placeholders in the root `.env.example` and this folder's own.
+`ORDER_BASE_URL`, with placeholders in the root `.env.example` and this
+folder's own.
 
 ```bash
 go run ./cmd/api     # from supplier-service/; migrates then seeds on startup
-go test ./...        # unit tests: service layer + CSV parser, no Docker needed
+go test ./...        # unit tests: service layer, order-service client (httptest), CSV parser, no Docker needed
 docker compose up supplier-service supplier-db    # from the repo root
 ```
 
@@ -92,10 +97,11 @@ docker compose up supplier-service supplier-db    # from the repo root
   (`compose.yaml` sets `context: .` with `dockerfile: supplier-service/Dockerfile`),
   because the image needs that shared CSV, so paths inside it start with
   `supplier-service/`. Unusual — do not copy it as the pattern elsewhere.
-- **DELETE is a soft delete** — `Service.Delete` calls `repo.SoftDelete`, which
-  sets `deleted_at` and flips `is_available` to false rather than removing the
-  row. Interim, because the rule it should enforce depends on `order-service`.
-  Revisit when that service lands.
+- **DELETE checks order-service, then soft-deletes** — `Service.Delete` first
+  asks order-service how many unfinished errands name the supplier (F2.2.3):
+  any, and it returns `ErrInUse` (409); no answer, and it refuses rather than
+  deletes. Otherwise it calls `repo.SoftDelete`, which sets `deleted_at` and
+  flips `is_available` to false rather than removing the row.
 - **Admin auth trusts an `X-User-Role: ADMIN` header** — interim, and not
   secure. Swapping `HeaderRoleExtractor` for the real mechanism is the only
   change needed here once the team decides it.

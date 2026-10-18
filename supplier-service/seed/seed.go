@@ -107,10 +107,13 @@ func normalizeHours(v string) string {
 	return v[:2] + ":" + v[2:]
 }
 
+// AI-generated (edited by James Teo).
 // EnsureSeeded loads the CSV and inserts every row whose (name, building,
 // location_description) doesn't already exist, so it's safe to call on
-// every startup without duplicating rows across restarts.
-func EnsureSeeded(ctx context.Context, repo supplier.Repository, csvPath string) error {
+// every startup without duplicating rows across restarts. Rows go in
+// through svc, so they get the same validation as an admin's create; repo
+// only answers whether the table is empty.
+func EnsureSeeded(ctx context.Context, repo supplier.Repository, svc *supplier.Service, csvPath string) error {
 	count, err := repo.Count(ctx)
 	if err != nil {
 		return fmt.Errorf("count existing suppliers: %w", err)
@@ -124,7 +127,6 @@ func EnsureSeeded(ctx context.Context, repo supplier.Repository, csvPath string)
 		return err
 	}
 
-	svc := supplier.NewService(repo)
 	for _, s := range suppliers {
 		if _, err := svc.Create(ctx, s); err != nil {
 			return fmt.Errorf("seed %q: %w", s.Name, err)

@@ -10,7 +10,7 @@ directly.
 | FR | Behaviour |
 |---|---|
 | F2.1.1–F2.1.3 | Supplier record fields; listing filtered by category and searched by name; full detail on selection |
-| F2.2, F2.2.1–F2.2.3 | Admin create/update/delete with validation, duplicate (name+location) rejection, and soft-delete on removal |
+| F2.2, F2.2.1–F2.2.3 | Admin create/update/delete with validation, duplicate (name+location) rejection, and soft-delete on removal, refused while an unfinished errand references the supplier |
 | F2.3, F2.3.1 | Seeds itself from `data/csv/supplier-seed-data.csv` on first boot |
 
 ## Running locally
@@ -21,7 +21,9 @@ go run ./cmd/api
 
 Requires a Postgres instance reachable at `SUPPLIER_DB_URL` (see
 `.env.example`). Migrations run automatically on startup, followed by a
-one-time seed from the CSV if the table is empty.
+one-time seed from the CSV if the table is empty. Deleting a supplier also
+needs order-service at `ORDER_BASE_URL` (default `http://localhost:8083`);
+without it every delete is refused.
 
 Via Docker Compose (from the repo root):
 
@@ -38,7 +40,7 @@ docker compose up supplier-service supplier-db
 | GET | `/suppliers/{id}` | none | full detail |
 | POST | `/suppliers` | ADMIN | create |
 | PUT | `/suppliers/{id}` | ADMIN | update |
-| DELETE | `/suppliers/{id}` | ADMIN | soft-delete (see below) |
+| DELETE | `/suppliers/{id}` | ADMIN | soft-delete; 409 while an unfinished errand references it (see below) |
 
 ### Auth (interim)
 
@@ -48,14 +50,30 @@ yet. Admin endpoints currently check a plain `X-User-Role: ADMIN` header
 and test against. Swap `HeaderRoleExtractor` for a real JWT/gateway-based
 extractor once that's decided — no other code needs to change.
 
-### Delete is a soft delete (interim)
+### Delete checks for unfinished errands, then soft-deletes
 
-F2.2.3 requires that a supplier referenced by a non-terminal errand can't
-be deleted. That check depends on the Order Service, which doesn't exist
-yet. Until that integration exists, `DELETE /suppliers/{id}` always
-soft-deletes (sets `deleted_at`, flips `is_available` to false) instead
-of removing the row — so nothing an order already points to can vanish
-underneath it. Revisit once Order Service can be queried.
+F2.2.3 requires that a supplier referenced by an errand that is not
+finished can't be deleted. Before deleting, `DELETE /suppliers/{id}` asks
+order-service at `ORDER_BASE_URL` with
+`GET /suppliers/{id}/active-errands`, which counts the errands naming the
+supplier that are not yet `COMPLETED`, `CANCELLED` or `EXPIRED`
+(`internal/orderclient`). A supplier that doesn't exist is still a 404,
+without asking.
+
+- **Count above 0:** `409 Conflict` with
+  `{"error": "supplier is referenced by an errand that is not finished"}`.
+  Nothing changes.
+- **order-service can't be asked** (unreachable, no answer within 3
+  seconds, any status other than 200, or a malformed body): `500`. Nothing
+  changes; with the count unknown, the supplier may still be in use.
+- **Count 0:** soft delete (sets `deleted_at`, flips `is_available` to
+  false) instead of removing the row, so nothing an order already points
+  to can vanish underneath it.
+
+order-service answers only an ADMIN's access token, so the delete handler
+forwards the incoming request's own `Authorization` header. If the API
+Gateway does not pass that header through on `/api/suppliers`,
+order-service answers 401 and every delete is refused with `500`.
 
 ## Tests
 
@@ -63,6 +81,7 @@ underneath it. Revisit once Order Service can be queried.
 go test ./...
 ```
 
-Unit tests cover the service layer (validation, duplicate rejection,
-soft delete) against an in-memory fake repository, and the CSV seed
+Unit tests cover the service layer (validation, duplicate rejection, the
+unfinished-errand check before a soft delete) against in-memory fakes, the
+order-service client against an `httptest` server, and the CSV seed
 parser against the actual template seed file.
