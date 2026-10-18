@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -19,12 +20,23 @@ import (
 	"foc/user-service/internal/httpapi/router"
 	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/jwt"
+	"foc/user-service/internal/relay"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
 	"foc/user-service/internal/user"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+)
+
+// AI-generated (edited by James Teo).
+const (
+	// eventsExchange is the topic exchange RabbitMQ's definitions declare;
+	// the relay publishes every outbox event to it and never declares it.
+	eventsExchange = "foc.events"
+	// defaultRabbitMQURL is the broker a host-run service uses when
+	// RABBITMQ_URL is unset: Compose's RabbitMQ published on localhost.
+	defaultRabbitMQURL = "amqp://foc:foc-dev-password@localhost:5672/foc"
 )
 
 func main() {
@@ -102,6 +114,21 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := bootstrapInitialAdmin(ctx, accountService, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
 		return fmt.Errorf("bootstrap initial admin: %w", err)
 	}
+	// AI-generated (edited by James Teo): the background outbox worker. The
+	// publisher dials RabbitMQ on its first publish, so the broker is not
+	// needed to start; events wait in outbox_events until it is reachable.
+	rabbitMQURL, err := parseRabbitMQURL(cfg.RabbitMQURL)
+	if err != nil {
+		return fmt.Errorf("parse RabbitMQ URL: %w", err)
+	}
+	publisher := relay.NewAMQPPublisher(rabbitMQURL, eventsExchange, logger)
+	defer func() {
+		if err := publisher.Close(); err != nil {
+			logger.Warn("close RabbitMQ connection", "error", err)
+		}
+	}()
+	stopRelay := startBackground(ctx, relay.New(relay.NewPostgresStore(pool), publisher, logger, relay.Options{}).Run)
+	defer stopRelay()
 	authenticator := session.NewAuthenticator(userRepository, jwtService)
 	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)
 	// AI-generated (edited by ZI YANG): supply the recorded Redis refresh lock through the composition root.
@@ -201,4 +228,38 @@ func parseTokenTTL(value string, defaultValue time.Duration) (time.Duration, err
 		return 0, errors.New("TTL must be positive")
 	}
 	return ttl, nil
+}
+
+// AI-generated (edited by James Teo).
+// parseRabbitMQURL returns value, or defaultRabbitMQURL when it is empty,
+// once it is known to be an amqp:// or amqps:// URL. The URL carries the
+// broker password, so the error is fixed text that never quotes or wraps the
+// value: net/url's error quotes the whole URL. Rejecting what net/url cannot
+// parse here also means the AMQP client's dial error, which would quote it,
+// never arises.
+func parseRabbitMQURL(value string) (string, error) {
+	if value == "" {
+		return defaultRabbitMQURL, nil
+	}
+	if u, err := url.Parse(value); err != nil || (u.Scheme != "amqp" && u.Scheme != "amqps") {
+		return "", errors.New("RABBITMQ_URL must be an amqp:// or amqps:// URL with reserved characters in the user and password percent-encoded")
+	}
+	return value, nil
+}
+
+// AI-generated (edited by James Teo).
+// startBackground runs work in its own goroutine until the returned stop is
+// called. stop cancels work's context and waits for work to return, so the
+// relay's claim in flight ends before the database pool it uses is closed.
+func startBackground(ctx context.Context, work func(context.Context)) (stop func()) {
+	ctx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		work(ctx)
+	}()
+	return func() {
+		cancel()
+		<-done
+	}
 }

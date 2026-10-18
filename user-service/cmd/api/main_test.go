@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -83,5 +84,73 @@ func TestNewHealthCheckIncludesRedis(t *testing.T) {
 				t.Fatalf("health check error = %v, want %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+// AI-generated (edited by James Teo): RABBITMQ_URL defaults for local
+// development and is rejected, without echoing its password, unless it is an
+// AMQP URL.
+func TestParseRabbitMQURL(t *testing.T) {
+	const password = "s3cret-password"
+	tests := map[string]struct {
+		value     string
+		want      string
+		wantError bool
+	}{
+		"uses the local default when unset":  {want: defaultRabbitMQURL},
+		"keeps an amqp URL":                  {value: "amqp://foc:" + password + "@rabbitmq:5672/foc", want: "amqp://foc:" + password + "@rabbitmq:5672/foc"},
+		"keeps an amqps URL":                 {value: "amqps://foc:" + password + "@broker.example:5671/foc", want: "amqps://foc:" + password + "@broker.example:5671/foc"},
+		"rejects another scheme":             {value: "http://foc:" + password + "@rabbitmq:5672/foc", wantError: true},
+		"rejects a URL net/url cannot parse": {value: "amqp://foc:" + password + "@rabbitmq:56 72/foc", wantError: true},
+		"rejects a value with no scheme":     {value: "rabbitmq:5672", wantError: true},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			got, err := parseRabbitMQURL(tt.value)
+			if (err != nil) != tt.wantError {
+				t.Fatalf("parseRabbitMQURL() error = %v, wantError %v", err, tt.wantError)
+			}
+			if err != nil {
+				if strings.Contains(err.Error(), password) {
+					t.Fatalf("parseRabbitMQURL() error %q leaks the broker password", err)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("parseRabbitMQURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// AI-generated (edited by James Teo): stopping the outbox worker waits for it to
+// return, so it never outlives the database pool it uses.
+func TestStartBackgroundStopsAndWaitsForWork(t *testing.T) {
+	started := make(chan struct{})
+	var returned bool
+	stop := startBackground(context.Background(), func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		returned = true
+	})
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("background work did not start within 5s")
+	}
+
+	stopped := make(chan struct{})
+	go func() {
+		stop()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(5 * time.Second):
+		t.Fatal("stop did not return within 5s of cancelling the work")
+	}
+	if !returned {
+		t.Fatal("stop returned before the background work did")
 	}
 }

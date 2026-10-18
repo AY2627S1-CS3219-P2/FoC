@@ -82,6 +82,8 @@ services:
       MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
       MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
       MAILGUN_SENDER_EMAIL: ${MAILGUN_SENDER_EMAIL:-}
+      # Must match the foc user in rabbitmq/definitions.json.
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
     depends_on:
       user-db:
         condition: service_healthy
