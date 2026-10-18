@@ -10,22 +10,26 @@ those services when it needs more than an ID.
 
 ## Owner
 
-TBD — one developer owns this folder (root §3). Everything under "Owner's
-decisions" is theirs; an agent implements one the owner has recorded (root §1)
-and stops.
+James Teo (D-044). Everything under "Owner's decisions" is theirs; an agent
+implements one the owner has recorded (root §1) and stops.
 
 ## Boundaries
 
-- **Credits are not this service's state.** Reserve and settle through
-  `credit-service`'s API. Never read or write its tables, never recompute a
-  balance here, never persist "the requester could afford it" on the order. For
-  an order's credit outcome, ask `credit-service` or consume its event.
+- **Credits are not this service's state.** Reserve and adjust a reward
+  through `credit-service`'s API, and bring its hold back in line with
+  `errand.reward_set`; settle only through the lifecycle events this service
+  publishes via its outbox, whose `amount` is the errand's reward at that
+  transition and is what settles (D-059). Never read or write its tables, never recompute a balance here, never persist "the
+  requester could afford it" on the order. For an order's credit outcome, ask
+  `credit-service` or consume its event.
 - **Pickup locations are validated, not owned.** A supplier ID is checked
   against `supplier-service`. Treat that service as something that can be slow
   or down: bounded timeout, retry with a deadline, and a defined behaviour when
-  it does not answer — assuming it is up is exactly the temporal coupling root
-  §5 calls out. Keep the ID; do not copy supplier fields into the order (a whole
-  `Supplier` where an ID would do is stamp coupling).
+  it does not answer — assuming it is up is exactly the temporal
+  coupling root §5 calls out. Keep the ID, plus the supplier's name and location
+  copied at create and amend so a later deactivation or deletion cannot erase
+  them from an errand. Copy nothing else: a whole `Supplier` where those
+  fields would do is stamp coupling.
 - **User IDs, not user records.** Names, contact details and ratings belong to
   `user-service`; resolve them at the edge, never denormalised into an order.
 - If a change here looks like it needs an edit inside `credit-service/`,
@@ -52,27 +56,39 @@ testable against a fake repository, with no database.
 ## Owner's decisions
 
 Graded D3 architecture decisions, off-limits to an agent (root §1). Do not
-propose answers; implement the decision the owner recorded:
+propose answers; implement the decision the owner recorded. The rows in
+`ai/decisions.md` that record them:
 
-- the set of states, and which transitions are legal;
-- how concurrent acceptance of the same errand is made safe;
+- the set of states, and which transitions are legal — D-045, D-046, D-060;
+- how many `OPEN` errands stop a requester posting another — D-058;
+- how concurrent acceptance of the same errand is made safe — D-046;
 - whether credit reservation happens before, or atomically with, persisting the
-  order;
-- what happens to an errand that stalls after acceptance;
-- which lifecycle events are published asynchronously, and what they carry.
+  order — D-047;
+- what happens to an errand that stalls after acceptance — D-050;
+- which lifecycle events are published asynchronously, and what they carry —
+  D-048, D-051, D-057, D-059 (D-042 binds four of the keys; `errand.reward_set`'s
+  binding and a cross-service row fixing the payload are still pending with
+  credit-service's owner and the team).
+
+The order requirements themselves are in `docs/requirements.md`.
 
 ## Local development
 
-**Status: not implemented on any branch** — the folder holds only these
-instruction files and empty `Dockerfile` / `README.md` stubs. The first PR
-scaffolds `go.mod`, the packages above, an empty `migrations/` and the
-`/health` endpoint that `supplier-service` already exposes. Adding
-`order-service` and its database to the root `compose.yaml` and `.env.example`
-touches shared files, so flag it in the PR.
+**Status:** every request through the gateway answers 401 until the gateway
+keeps `Authorization` on `/api/orders`. Posting an errand, or amending its
+reward, answers 503 until credit-service runs in Compose with reserve and adjust
+endpoints that accept the forwarded token. Until `rabbitmq/definitions.json`
+binds `errand.reward_set`, the outbox relay retries each of those events every
+30 seconds.
 
-Port **8083**, database URL `ORDER_DB_URL`, plus one `<SERVICE>_BASE_URL` per
-service it calls (root §3). From `order-service/`: `go run ./cmd/api`,
-`go test ./...`, and `go test -tags=integration ./...` (needs Docker).
+Port **8083**, database URL `ORDER_DB_URL`, `SUPPLIER_BASE_URL`,
+`CREDIT_BASE_URL`, `RABBITMQ_URL`, `JWKS_URL`, `REDIS_URL`, and T, K and C as
+`ORDER_EXPIRY_PERIOD`, `ORDER_MAX_ACTIVE_ASSIGNMENTS` and
+`ORDER_CONFIRMATION_WINDOW`. From `order-service/`: `go run ./cmd/api`,
+`go test ./...`, and
+`go test -tags=integration ./...` (needs Docker). After changing
+`api/openapi.yaml`, run `go generate ./internal/gen` and commit the result.
+The whole-stack suite lives in the root `e2e/` module.
 
 ## Gotchas
 
@@ -81,7 +97,10 @@ service it calls (root §3). From `order-service/`: `go run ./cmd/api`,
 - Expiry of never-accepted errands needs a clock. Inject it instead of calling
   `time.Now()` in the domain, so expiry is testable without waiting (root §7:
   never sleep in a test).
-- How identity and role travel between services is undecided; the interim
-  `X-User-Role` header in `supplier-service` exists only so it has something to
-  test against. Requester-vs-courier authorisation here depends on the real
-  mechanism, so build nothing load-bearing on that header.
+- Identity comes from the caller's access token, verified in one middleware
+  against user-service's keys and its revocation keys in the shared Redis;
+  nothing else reads it, and `X-User-Id` and `X-User-Role` are ignored. The per-errand
+  relationship (requester, assigned courier, ADMIN or none) is computed from
+  the token's `sub` and `role` on every action. Calls to `credit-service`
+  forward the token the request arrived with; only the requester reserves or
+  amends, so it is always the requester's.

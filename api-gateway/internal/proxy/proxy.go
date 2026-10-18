@@ -97,18 +97,20 @@ type Route struct {
 	AddPrefix string
 }
 
-// New returns a Proxy for an authenticated route. It deletes the
-// Authorization header and injects the verified identity into the claim
-// headers.
+// AI-generated (edited by James Teo).
+// New returns a Proxy that deletes the Authorization header and injects the
+// verified identity into the claim headers, so the callee never receives the
+// bearer token. The gateway's service routes forward the token instead, with
+// NewRetainingToken.
 func New(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: false, injectClaims: true})
 }
 
+// AI-generated (edited by James Teo).
 // NewRetainingToken returns a Proxy like New that also forwards the
-// Authorization header, for user-service, which verifies the access token
-// itself. Client-supplied claim headers are still stripped and the verified
-// ones injected. Only user-service's route may use it; every other callee uses
-// New and never receives the bearer token (D-030 in ai/decisions.md).
+// Authorization header, so the callee can verify the access token itself, as
+// D-041 in ai/decisions.md has every service do. Client-supplied claim headers
+// are still stripped and the verified ones injected.
 func NewRetainingToken(route Route) (*Proxy, error) {
 	return build(route, behaviour{forwardToken: true, injectClaims: true})
 }
