@@ -383,7 +383,7 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
     *   Inserts the `UNVERIFIED` user into PostgreSQL.
     *   Generates the OTP, hashes it, and stores it in Redis.
     *   Dispatches the plaintext OTP to the Email Service (via Mailgun).
-    *   Does *not* publish the `UserRegistered` event for the Credit Service yet. (will be done in the later stage of the project)
+    *   Does *not* publish the `UserRegistered` event for the Credit Service. (`verify-otp` queues it once the account is activated.)
 *   **New `POST /api/v1/users/resend-otp`:**
     *   Accepts `{"email": "string"}`.
     *   Checks the `otp:count:<email>` rate limit. If under the limit, generates a new OTP, overwrites the hash in Redis with a 5-minute TTL, and dispatches the email.
@@ -391,7 +391,7 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   **New `POST /api/v1/users/verify-otp`:**
     *   Accepts `{"email": "string", "otp": "string"}`.
     *   Hashes the provided OTP and compares it against the Redis `otp:hash:<email>` value.
-    *   **Success:** If matched, open a database transaction to update `account_status` to `ACTIVE`, delete the Redis OTP keys, and publish the `UserRegistered` event to the outbox for the Credit Service (outbox will be done in the later stage of the project). Return `200 OK`.
+    *   **Success:** If matched, open a database transaction to update `account_status` to `ACTIVE`, delete the Redis OTP keys, and publish the `UserRegistered` event to the outbox for the Credit Service (a `user.registered` row in `outbox_events`, written in the same transaction). Return `200 OK`.
     *   **Failure:** Return `400 Bad Request` for a mismatch, or `404 Not Found` if the OTP expired.
 
 **5. Authentication Blocking**
@@ -415,7 +415,7 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
     * The repository executes `SELECT ... FOR UPDATE` to lock the user row.
     * If the user is missing, it returns `user.ErrNotFound` -> API returns `404 Not Found`.
     * If the user is already `ACTIVE`, it returns `user.ErrAccountAlreadyVerified` -> API returns `409 Conflict`.
-    * Updates `account_status` to `ACTIVE` and inserts the `UserRegistered` outbox event (outbox event can be done in a later iteration for now).
+    * Updates `account_status` to `ACTIVE` and inserts the `UserRegistered` outbox event (routing key `user.registered`; payload `eventId`, `eventType`, `userId`, `occurredAt`).
 *   PostgreSQL (Commit): Commit the transaction. The user is now officially active and the Credit Service will eventually receive the outbox event.
 *   Redis (Cleanup): Delete the `otp:hash:<email>`, `otp:count:<email>` and `otp:attempts:<email>` keys to prevent reuse.
     * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
@@ -455,7 +455,7 @@ The `main.go` file should construct its dependencies in the following order:
 3. Initialize the JWT Key Manager (parsing PEMs and generating kids).
 4. Instantiate the Repositories (UserRepository, SessionRepository).
 5. Add default admin account if `users` table does not have at least 1 user with ADMIN role.
-6. Instantiate the background Outbox worker goroutine. (to be done at the last stage of the project)
+6. Instantiate the background Outbox worker goroutine (`internal/relay`), which publishes `outbox_events` rows to RabbitMQ's `foc.events` exchange.
 7. Instantiate the Domain Service (injecting repos, redis client, and JWT manager).
 8. Instantiate the HTTP Handlers and mount them to the Chi router.
 
@@ -465,7 +465,11 @@ In the case where the PostgreSQL fails after the Redis operation completes the i
 1. Returns a 500 Internal Server Error.
 2. The frontend (which still holds the valid refresh token) automatically retries the logout request. The Go service overwrites the exact same Redis key with the same TTL, and the database eventually commits.
 
-Implementation for event sending to an event service shall also be deferred
+Events are sent to the message broker through the outbox: `internal/relay` publishes each `outbox_events` row to RabbitMQ (`RABBITMQ_URL`) with publisher confirms and retries a failed publish. The service starts without the broker; events wait in the outbox until it is reachable.
+
+Accounts activated before user-service started queuing `user.registered` get that event once, from a one-off migration (`000006`): one `user.registered` row for every `ACTIVE` `STUDENT` account that has none yet, with `occurredAt` set to the account's `date_created`. `ADMIN`, `UNVERIFIED` and `SUSPENDED` accounts get none from it. An `UNVERIFIED` account gets its event when it verifies its email through `verify-otp`; the admin status route (`PATCH /api/v1/users/{uid}/status`) queues none, a gap tracked in issue #30. Re-running the migration queues nothing more, and rolling it back leaves the queued rows in place.
+
+Never prune `user.registered` rows from `outbox_events`: `000006`'s duplicate guard relies on them to skip accounts that already have their event.
 
 ## Local development
 

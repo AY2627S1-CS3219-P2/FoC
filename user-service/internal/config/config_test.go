@@ -21,6 +21,8 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 	t.Setenv("MAILGUN_DOMAIN", "mg.example.test")
 	t.Setenv("MAILGUN_SENDER_EMAIL", "verify@example.test")
 	t.Setenv("OTP_DELIVERY", "log") // AI-generated (edited by James Teo).
+	// AI-generated (edited by James Teo).
+	t.Setenv("RABBITMQ_URL", "amqp://foc:secret@rabbitmq:5672/foc")
 
 	got := Load()
 
@@ -38,6 +40,8 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 		MailgunDomain:        "mg.example.test",
 		MailgunSenderEmail:   "verify@example.test",
 		OTPDelivery:          "log", // AI-generated (edited by James Teo).
+		// AI-generated (edited by James Teo).
+		RabbitMQURL: "amqp://foc:secret@rabbitmq:5672/foc",
 	}
 	if got != want {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
@@ -59,6 +63,8 @@ func TestLoadUsesEmptyValuesWhenEnvironmentIsUnset(t *testing.T) {
 		"MAILGUN_DOMAIN",
 		"MAILGUN_SENDER_EMAIL",
 		"OTP_DELIVERY", // AI-generated (edited by James Teo).
+		// AI-generated (edited by James Teo).
+		"RABBITMQ_URL",
 	} {
 		t.Setenv(name, "")
 	}

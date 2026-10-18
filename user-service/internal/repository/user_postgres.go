@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -62,6 +63,9 @@ const (
 			END
 		WHERE uid = $3`
 	activateUserByEmailQuery = `UPDATE users SET account_status = 'ACTIVE' WHERE LOWER(email) = LOWER($1) AND account_status = 'UNVERIFIED'`
+	// AI-generated (edited by James Teo).
+	lockUserForActivationQuery = `SELECT uid, account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`
+	insertOutboxEventQuery     = `INSERT INTO outbox_events (event_id, routing_key, payload) VALUES ($1, $2, $3)`
 )
 
 // AI-generated (edited by ZI YANG): documents the exported repository adapter
@@ -209,15 +213,22 @@ func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uu
 	return nil
 }
 
-// ActivateUser locks and activates a pending account in one transaction.
+// AI-generated (edited by James Teo): the user.registered outbox row is written
+// in the activation transaction, so the event exists exactly when the account
+// became ACTIVE.
+// ActivateUser locks and activates a pending account, and queues its
+// user.registered event in the outbox_events table, in one transaction. Only
+// an UNVERIFIED account is changed; any other status leaves the row and the
+// outbox untouched.
 func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin activation transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var uid uuid.UUID
 	var status user.AccountStatus
-	if err := tx.QueryRow(ctx, `SELECT account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`, email).Scan(&status); err != nil {
+	if err := tx.QueryRow(ctx, lockUserForActivationQuery, email).Scan(&uid, &status); err != nil {
 		return fmt.Errorf("lock account for activation: %w", mapDatabaseError(err))
 	}
 	// AI-generated (edited by James Teo): only an UNVERIFIED account activates;
@@ -228,8 +239,27 @@ func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) err
 	if _, err := tx.Exec(ctx, activateUserByEmailQuery, email); err != nil {
 		return fmt.Errorf("activate user: %w", err)
 	}
+	event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())
+	if err := insertOutboxEvent(ctx, tx, event.EventID, user.RoutingUserRegistered, event); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit activation transaction: %w", err)
+	}
+	return nil
+}
+
+// AI-generated (edited by James Teo).
+// insertOutboxEvent queues payload, encoded as JSON, for the relay to publish
+// under routingKey. It runs on the caller's transaction so the event commits
+// or rolls back with the change it reports.
+func insertOutboxEvent(ctx context.Context, executor userInserter, eventID uuid.UUID, routingKey string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode %s event %s: %w", routingKey, eventID, err)
+	}
+	if _, err := executor.Exec(ctx, insertOutboxEventQuery, eventID, routingKey, string(body)); err != nil {
+		return fmt.Errorf("queue %s event %s: %w", routingKey, eventID, err)
 	}
 	return nil
 }
