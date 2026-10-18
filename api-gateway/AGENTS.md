@@ -13,10 +13,8 @@
 The single public entry point (**D-010**). Every request from the UI arrives
 here; `user-service`, `supplier-service`, `order-service` and `credit-service`
 are not publicly reachable. The gateway verifies the access token's RS256
-signature, passes the verified identity on, and forwards the request.
-**D-013** records gRPC for this hop, decided but not built yet; until it is,
-the code here forwards over HTTP. Do not build new REST-specific forwarding on
-the assumption that HTTP is the rule.
+signature, passes the verified identity on, and forwards the request over
+HTTP: **D-055** keeps this hop on REST, with gRPC on hold.
 
 Owner: **Nigeltzy** (**D-026**).
 
@@ -47,7 +45,7 @@ with claim-header strip-and-inject. Unit and router tests pass.
 - No shared auth package with the services (root §4.2). If the gateway and a
   service both parse a claim, the duplication is correct.
 
-## The route surface (D-027, amended by D-043)
+## The route surface (D-027, amended by D-043 and D-056)
 
 ```
 TERMINATED (public, no token required)
@@ -55,11 +53,13 @@ TERMINATED (public, no token required)
   POST /auth/resend-otp  /auth/verify-otp     (D-043)
        -> rewritten onto user-service's /api/v1/users/*
 
-PROXIED (token verified, headers stripped then injected)
-  /api/users/*      -> USER_BASE_URL
-  /api/suppliers/*  -> SUPPLIER_BASE_URL
-  /api/orders/*     -> ORDER_BASE_URL
-  /api/credits/*    -> CREDIT_BASE_URL
+PROXIED (token verified, headers stripped then injected, bearer token kept)
+  /api/users/*              -> USER_BASE_URL     /api/v1/users/*
+  /api/suppliers/*          -> SUPPLIER_BASE_URL /suppliers/*
+  /api/orders/*             -> ORDER_BASE_URL    /*
+  /api/credits/accounts/*   -> CREDIT_BASE_URL   /api/v1/credits/accounts/*  (D-056)
+  (nothing else under /api/credits is routed: credit-service's reservation
+   routes are for order-service alone)
 
   GET /healthz      the gateway's own
 ```
@@ -77,8 +77,9 @@ This is meant to be a small, local change:
    `compose.yaml`.
 
 Token verification, the header strip, the injection and the 401/503 handling
-all come for free. You should not need to touch `internal/auth` or
-`internal/proxy`.
+all come for free. Every service row keeps the bearer token
+(`proxy.NewRetainingToken`) so the service can verify it itself. You should
+not need to touch `internal/auth` or `internal/proxy`.
 
 ## The line not to break
 
@@ -103,7 +104,7 @@ domain and no Postgres. `internal/auth` and `internal/proxy` have no
 cmd/api/              process wiring: config, verifier, router, shutdown
 internal/config/      env read once, passed down (root §4.4)
 internal/auth/        RS256 verification against the JWKS (D-023)
-internal/proxy/       claim-to-header translation and forwarding (D-013)
+internal/proxy/       claim-to-header translation and forwarding (D-055)
 internal/httpapi/     router, route table and the bearer-token middleware
 api/                  openapi.yaml - empty; see D-028
 ```
