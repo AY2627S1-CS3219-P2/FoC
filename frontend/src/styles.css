@@ -191,7 +191,9 @@ h3 {
   border-radius: var(--radius-sm);
 }
 
-.sidebar-link:hover:not(:disabled) {
+/* AI-generated (edited by James Teo): not on the active item, so the pointer
+   does not swap its "you are here" pill for the hover tint. */
+.sidebar-link:not(.active):hover:not(:disabled) {
   color: var(--text-inverse);
   background: rgba(255, 255, 255, 0.08);
 }
@@ -458,6 +460,8 @@ input[type="search"],
 input[type="email"],
 input[type="password"],
 input[type="number"],
+/* AI-generated (edited by James Teo): the Profile contact number's field. */
+input[type="tel"],
 select,
 textarea {
   width: 100%;
@@ -819,6 +823,14 @@ textarea {
   margin: 0 0 12px;
 }
 
+/* AI-generated (edited by James Teo): a confirmation step for an action that
+   undoes a restriction, such as reactivating an account, so it does not
+   wear the danger colours of the destructive steps. */
+.confirm-box.neutral {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+
 /* --------------------------------------------------------------- toasts --- */
 
 .toast {
@@ -837,6 +849,17 @@ textarea {
 
 .toast.error {
   background: var(--danger);
+}
+
+/* AI-generated (edited by James Teo): on a narrow screen the bottom of the
+   view is where a form's or a step's buttons end up, so the toast sits just
+   under the top bar instead, over the page heading. Taps go through it. */
+@media (max-width: 860px) {
+  .toast {
+    top: calc(var(--topbar-h) + 8px);
+    bottom: auto;
+    pointer-events: none;
+  }
 }
 
 /* -------------------------------------------------------------- credits --- */

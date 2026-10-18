@@ -67,7 +67,8 @@ describe("signUpViaGateway", () => {
     vi.useFakeTimers({ now: 1_000_000 });
     const fetchMock = stubFetch(jsonResponse(201, null));
 
-    const result = await signUpViaGateway(` ${EMAIL} `, "student", "Passw0rd", "91234567");
+    // AI-generated (edited by James Teo): signUpViaGateway takes no contact.
+    const result = await signUpViaGateway(` ${EMAIL} `, "student", "Passw0rd");
 
     const { url, method, body } = request(fetchMock);
     expect(url).toMatch(/\/auth\/register$/);
@@ -87,8 +88,9 @@ describe("signUpViaGateway", () => {
   it("sends nothing when the form is invalid", async () => {
     const fetchMock = stubFetch();
 
+    // AI-generated (edited by James Teo): no contact argument.
     await expect(
-      signUpViaGateway("someone@gmail.com", "student", "Passw0rd", ""),
+      signUpViaGateway("someone@gmail.com", "student", "Passw0rd"),
     ).rejects.toBeInstanceOf(AuthError);
     expect(fetchMock).not.toHaveBeenCalled();
   });
@@ -100,8 +102,9 @@ describe("signUpViaGateway", () => {
   ])("names a %i outcome", async (status, message) => {
     stubFetch(jsonResponse(status, { error: "whatever" }));
 
+    // AI-generated (edited by James Teo): no contact argument.
     await expect(
-      signUpViaGateway(EMAIL, "student", "Passw0rd", ""),
+      signUpViaGateway(EMAIL, "student", "Passw0rd"),
     ).rejects.toThrow(message);
   });
 });

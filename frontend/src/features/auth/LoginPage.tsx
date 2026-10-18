@@ -36,12 +36,13 @@ interface LoginPageProps {
    * startup.
    */
   logIn: (identifier: string, password: string) => Promise<AuthResult>;
+  // AI-generated (edited by James Teo): no contact number. user-service's
+  // register takes none, so it is added from Profile after signing in.
   /** F1.1.2.7: opens a registration, which is not complete until verified. */
   signUp: (
     email: string,
     username: string,
     password: string,
-    contact: string,
   ) => Promise<PendingRegistration>;
   /** Activates the account on the correct code. Returns no session. */
   verifyRegistration: (
@@ -80,7 +81,6 @@ export function LoginPage({
   const [identifier, setIdentifier] = useState("");
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
-  const [contact, setContact] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +132,8 @@ export function LoginPage({
           setError(problem);
           return;
         }
-        openOtpStep(await signUp(email, username, password, contact), email.trim());
+        // AI-generated (edited by James Teo): no contact number to send.
+        openOtpStep(await signUp(email, username, password), email.trim());
       }
     } catch (err) {
       if (err instanceof UnverifiedAccountError) {
@@ -267,18 +268,14 @@ export function LoginPage({
                 <p className="status-hint">Letters and numbers only.</p>
               </div>
 
+              {/* AI-generated (edited by James Teo): the contact number field
+                  is gone, since user-service's register does not take one;
+                  this says where to add it instead. */}
               <div className="field">
-                <label htmlFor="auth-contact">
-                  Contact number <span className="field-optional">for couriers</span>
-                </label>
-                <input
-                  id="auth-contact"
-                  type="tel"
-                  value={contact}
-                  onChange={(e) => setContact(e.target.value)}
-                  placeholder="9123 4567"
-                  autoComplete="tel"
-                />
+                <p className="status-hint">
+                  You can add a contact number for couriers on your Profile
+                  once you&rsquo;re signed in.
+                </p>
               </div>
             </>
           )}

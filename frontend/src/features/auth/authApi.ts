@@ -177,6 +177,8 @@ export async function logIn(identifier: string): Promise<AuthResult> {
   return mockDelay(fixtureResult(fixtureSession(email, username)));
 }
 
+// AI-generated (edited by James Teo): no contact parameter, as sign-up no
+// longer asks for one.
 /**
  * Fixture signup (F1.1.2.7). Returns a pending registration, not a session;
  * only verifyRegistration completes it.
@@ -185,7 +187,6 @@ export async function signUp(
   email: string,
   username: string,
   password: string,
-  _contact: string,
 ): Promise<PendingRegistration> {
   const problem = validateRegistration({ email, username, password });
   if (problem) throw new AuthError(problem);
@@ -462,18 +463,19 @@ export async function logInViaGateway(
 }
 
 // AI-generated (edited by nigeltzy).
+// AI-generated (edited by James Teo): the doc's last sentence, and no contact
+// parameter, as sign-up no longer asks for one.
 /**
  * F1.1 and F1.1.2.3: creates the account, unverified, and has user-service
  * email the first code. The account cannot log in until verified (F1.1.2.7).
  *
- * The contact number is not sent: user-service's register takes no phone
- * number.
+ * There is no contact number: user-service's register takes no phone
+ * number, so it is set from Profile after signing in.
  */
 export async function signUpViaGateway(
   email: string,
   username: string,
   password: string,
-  _contact: string,
 ): Promise<PendingRegistration> {
   const problem = validateRegistration({ email, username, password });
   if (problem) throw new AuthError(problem);
