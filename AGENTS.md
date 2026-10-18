@@ -86,7 +86,7 @@ trade-off rationale and it is the team's to write.
 | Database | PostgreSQL via `pgx/v5`; migrations via `golang-migrate` |
 | API contract | OpenAPI 3.1, spec-first (`<service>/api/openapi.yaml`) |
 | | Exception: `api-gateway` is written code-first, not spec-first |
-| Service-to-service | gRPC |
+| Service-to-service | REST; gRPC is on hold |
 | Message broker | RabbitMQ |
 | Tests | stdlib `testing` + `testify`; `testcontainers-go` for integration |
 | Containers | Docker + Docker Compose |
@@ -103,6 +103,7 @@ explicitly in your summary and explaining why the stdlib won't do.
 user-service/      order-service/      frontend/
 supplier-service/  credit-service/     api-gateway/
 data/              compose.yaml        .env.example
+e2e/               rabbitmq/
 ai/usage-log.md    ai/decisions.md
 ```
 
@@ -121,7 +122,7 @@ state its own port but must not restate this table.
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
 | `frontend` | 3001: where `npm run dev` serves the app; in production a static host serves it (D-033) | — |
-| `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of any kind: D-024 keeps it out of Redis entirely) |
+| `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of its own; it is to read the shared Redis revocation keys, §4.1, a check not built yet) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
@@ -134,12 +135,14 @@ one.
 
 1. **A service owns its database exclusively.** No other service connects to it,
    reads its tables, or shares its connection string. Cross-service data comes
-   from that service's HTTP API or from an event it published.
+   from that service's HTTP API or from an event it published. One exception
+   (D-054): every service reads the access-token revocation keys `user-service`
+   writes to the shared Redis; only `user-service` writes them.
 2. **No shared business-logic package.** Go's `internal/` already blocks
    cross-module imports; keep it that way. Duplicating a small struct in two
    services is correct here — deduplicating it couples them.
 3. **Talk over contracts, not internals.** Service-to-service calls go over
-   gRPC against the service's generated client, never a hand-rolled connection.
+   REST against the callee's HTTP API (D-055), never into its internals.
 4. **Config is injected, never global.** Read env vars once in
    `internal/config`, pass the resulting struct down. No package-level mutable
    state, no `init()` side effects, no singletons.
@@ -197,16 +200,17 @@ Rules: no test depends on another test's leftover state or on execution order
 (temporal coupling in disguise). No `time.Sleep` to wait for something — poll
 with a deadline. New behaviour ships with its test in the same PR.
 
-Today only the unit tier exists (`supplier-service`). `testcontainers-go` is in
-no `go.mod` yet and there is no `e2e/`. Build the tier your task needs; never
-report the other two as running.
+Today `api-gateway`, `user-service`, `supplier-service` and `order-service` have
+unit tests; `user-service` and `order-service` also have integration tests
+(`testcontainers-go`); and `e2e/` holds the whole-stack suite, whose preflight
+names what the stack still lacks before it can pass. Build the tier your task
+needs; never report a tier as running unless you ran it.
 
 ## 8. API contracts
 
 Spec-first. `<service>/api/openapi.yaml` is the contract; Go types and the
 server interface are generated from it into `internal/gen/`. This governs the
-public contract each service exposes; internal service-to-service calls are
-gRPC instead, per §4.
+contract each service exposes, to the gateway and to other services alike.
 
 Further reading: [Backend 101 — a guide to OpenAPI and API-first](https://medium.com/@briannqc/backend-101-a-guide-to-openapi-and-api-first-approach-c25297226905).
 
@@ -214,9 +218,10 @@ Further reading: [Backend 101 — a guide to OpenAPI and API-first](https://medi
   `make generate`.
 - Changing the YAML is an interface change — a human decides it, you implement
   it. Say so if a task implies one.
-- No spec is committed on any branch yet, so nothing is generated today.
-  Once CI exists it must fail on stale generated code; until then, regenerate by
-  hand and say that you did.
+- `user-service`, `order-service` and `credit-service` have committed specs;
+  only `order-service` generates code from its spec so far
+  (`go generate ./internal/gen` in that folder). Once CI exists it must fail on
+  stale generated code; until then, regenerate by hand and say that you did.
 
 ## 9. Git
 
@@ -265,12 +270,13 @@ make up / make down       # full stack via Compose
 
 What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
 and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
-carries Redis, the API Gateway, supplier-service and its database. Services
-with no code yet are absent. A service is reachable from the host only if it
-has a `ports:` key — that is how D-010's trust zones are enforced. The frontend
-is not in Compose: `npm run dev` in `frontend/` serves it on 3001 and forwards
-`/auth` and `/api` to the gateway on 8080. Integration tests everywhere are
-spelled `go test -tags=integration ./...`.
+carries Redis, RabbitMQ, the API Gateway, and user-service, supplier-service and
+order-service with their databases; credit-service is not in it yet. A service
+is reachable from the host only if it has a `ports:` key — that is how D-010's
+trust zones are enforced. The frontend is not in Compose: `npm run dev` in
+`frontend/` serves it on 3001 and forwards `/auth` and `/api` to the gateway on
+8080. Integration tests everywhere are spelled
+`go test -tags=integration ./...`.
 
 ## 11. Shared local test accounts
 
