@@ -467,6 +467,10 @@ In the case where the PostgreSQL fails after the Redis operation completes the i
 
 Events are sent to the message broker through the outbox: `internal/relay` publishes each `outbox_events` row to RabbitMQ (`RABBITMQ_URL`) with publisher confirms and retries a failed publish. The service starts without the broker; events wait in the outbox until it is reachable.
 
+Accounts activated before user-service started queuing `user.registered` get that event once, from a one-off migration (`000006`): one `user.registered` row for every `ACTIVE` `STUDENT` account that has none yet, with `occurredAt` set to the account's `date_created`. `ADMIN`, `UNVERIFIED` and `SUSPENDED` accounts get none from it. An `UNVERIFIED` account gets its event when it verifies its email through `verify-otp`; the admin status route (`PATCH /api/v1/users/{uid}/status`) queues none, a gap tracked in issue #30. Re-running the migration queues nothing more, and rolling it back leaves the queued rows in place.
+
+Never prune `user.registered` rows from `outbox_events`: `000006`'s duplicate guard relies on them to skip accounts that already have their event.
+
 ## Local development
 
 Port **8081**, database URL `USER_DB_URL` (root §3). Also the JWT settings
