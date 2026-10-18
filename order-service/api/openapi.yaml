@@ -1,0 +1,779 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
+# Scope: Wrote order-service's HTTP contract: routes, request and response
+#   shapes, errors and authentication.
+# Author review: James Teo — reviewed and verified.
+
+openapi: 3.1.0
+info:
+  title: order-service
+  version: 0.1.0
+  description: |
+    The errand lifecycle (requirements in `order-service/docs/requirements.md`).
+
+    The browser reaches these routes through the API Gateway as `/api/orders`
+    plus the path below; the gateway strips that prefix.
+
+    Every route except `/health` needs `Authorization: Bearer <access token>`,
+    the token `user-service` issued. order-service verifies it itself:
+    the RS256 signature against `user-service`'s published keys, its expiry,
+    and that `user-service` has not revoked it. The caller is the
+    token's `sub` and `role` (`STUDENT` or `ADMIN`); `X-User-Id` and
+    `X-User-Role` are ignored. A missing, invalid, expired or revoked token is
+    401. When `user-service`'s keys cannot be loaded the answer is 503.
+
+    `X-Request-Id` is the correlation id for logs and events. On `POST /` it is
+    also the duplicate-submission key: a create whose key the server has already
+    seen for that requester returns 200 with the existing errand and touches no
+    credits.
+
+    Errors are `{"error": "<message>"}`. Times are RFC 3339 in UTC.
+servers:
+  - url: http://localhost:8083
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and database readiness
+      security: []
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The database cannot be reached
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /:
+    post:
+      operationId: createErrand
+      summary: Post an errand (F3.1)
+      description: |
+        Validates the reward, supplier and delivery location, reserves the reward
+        through credit-service, then saves the errand in `OPEN`.
+      parameters:
+        - $ref: "#/components/parameters/RequestId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateErrandRequest"
+      responses:
+        "201":
+          description: Errand created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandDetail"
+        "200":
+          description: The same `X-Request-Id` was already used by this requester; the errand it created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/InsufficientCredits"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+    get:
+      operationId: listActiveErrands
+      summary: Every errand that is not final (ADMIN only)
+      description: Oldest state change first, so stalled errands come first. At most 100.
+      parameters:
+        - name: scope
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [active]
+      responses:
+        "200":
+          description: Errands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /open:
+    get:
+      operationId: listOpenErrands
+      summary: Errands couriers can accept (F3.2)
+      description: Only `OPEN` errands that have not passed their deadline, most recent first. At most 100.
+      responses:
+        "200":
+          description: Errands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /requested:
+    get:
+      operationId: listRequestedErrands
+      summary: The caller's own errands (F3.4)
+      description: |
+        `active` lists the caller's errands that are not final (F3.4.1);
+        `history` lists the completed, cancelled and expired ones, most recent
+        first, at most 50 (F3.4.3).
+      parameters:
+        - $ref: "#/components/parameters/Scope"
+      responses:
+        "200":
+          description: Errands
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /assigned:
+    get:
+      operationId: listAssignedErrands
+      summary: Errands the caller accepted as courier (F3.5)
+      description: |
+        `active` fills `items` with the caller's assignments that are not final
+        (F3.5.1). `history` fills `history` with ended assignments: completed,
+        cancelled, and released by withdrawal (F3.5.3), most recent first, at
+        most 50.
+      parameters:
+        - $ref: "#/components/parameters/Scope"
+      responses:
+        "200":
+          description: Assignments
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AssignedList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /locations:
+    get:
+      operationId: listDeliveryLocations
+      summary: The campus delivery locations an errand may name
+      responses:
+        "200":
+          description: Locations
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /suppliers/{supplierId}/active-errands:
+    get:
+      operationId: countSupplierActiveErrands
+      summary: How many errands that are not final reference a supplier (F2.2.3)
+      description: Called by supplier-service before it deletes a supplier, with the admin's access token. Only an ADMIN may call it.
+      parameters:
+        - name: supplierId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The count
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SupplierActiveErrands"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /{errandId}:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    get:
+      operationId: getErrand
+      summary: One errand with its history (F3.6)
+      description: |
+        Visible to its requester, its assigned courier and ADMIN, and to any
+        signed-in user while it is `OPEN` (F3.6.2). Anyone else gets 404 (F3.6.3).
+      responses:
+        "200":
+          description: The errand
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    patch:
+      operationId: amendErrand
+      summary: Amend an `OPEN` errand (requester only, F3.7)
+      description: |
+        Send `version` plus only the fields to change. A reward change adjusts the
+        credit reservation. The deadline does not move (F3.7.6).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AmendErrandRequest"
+      responses:
+        "200":
+          description: The amended errand
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "422":
+          $ref: "#/components/responses/InsufficientCredits"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+
+  /{errandId}/accept:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: acceptErrand
+      summary: Accept an `OPEN` errand as its courier (F3.3)
+      description: Send the `version` you were shown; if the errand changed since, the answer is 409.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VersionRequest"
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+
+  /{errandId}/withdraw:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: withdrawErrand
+      summary: The assigned courier gives an `ACCEPTED` errand back (F3.12)
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /{errandId}/pickup:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: pickUpErrand
+      summary: The assigned courier marks the item picked up (F3.8)
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /{errandId}/deliver:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: deliverErrand
+      summary: The assigned courier marks the errand delivered (F3.9)
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /{errandId}/confirm:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: confirmErrand
+      summary: The requester confirms delivery (F3.9.2, F3.9.3)
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /{errandId}/cancel:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: cancelErrand
+      summary: Cancel an errand (F3.11)
+      description: The requester may cancel while `OPEN`; ADMIN may cancel any errand that is not final.
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /{errandId}/complete:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: completeErrand
+      summary: ADMIN completes a `PICKED_UP` or `DELIVERED` errand
+      responses:
+        "200":
+          $ref: "#/components/responses/ErrandAfterAction"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: An access token issued by user-service, verified by order-service itself.
+
+  parameters:
+    ErrandId:
+      name: errandId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Scope:
+      name: scope
+      in: query
+      required: true
+      schema:
+        type: string
+        enum: [active, history]
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: Correlation id; on create, also the duplicate-submission key.
+      schema:
+        type: string
+        maxLength: 64
+
+  responses:
+    ErrandAfterAction:
+      description: The errand after the action
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrandDetail"
+    BadRequest:
+      description: The request is malformed or fails validation
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: The access token is missing, invalid, expired or revoked
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: The caller's relationship to this errand, or their role, does not allow the action
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such errand, or the caller may not see it
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Conflict:
+      description: The errand's state, version or deadline does not allow the action now, or the courier already holds K active errands
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    TooLarge:
+      description: The request body is too large
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InsufficientCredits:
+      description: credit-service reports that the requester's available credits do not cover the reward
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unavailable:
+      description: supplier-service or credit-service did not answer; nothing was changed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [ok, unhealthy]
+
+    ErrandState:
+      type: string
+      enum: [OPEN, ACCEPTED, PICKED_UP, DELIVERED, COMPLETED, CANCELLED, EXPIRED]
+
+    ErrandAction:
+      description: An action the viewer may take now; each maps to the route of the same name.
+      type: string
+      enum: [amend, accept, withdraw, pickup, deliver, confirm, cancel, complete]
+
+    HistoryAction:
+      type: string
+      enum: [CREATE, AMEND, ACCEPT, WITHDRAW, PICK_UP, DELIVER, CONFIRM, AUTO_CONFIRM, CANCEL, EXPIRE, ADMIN_CANCEL, ADMIN_COMPLETE]
+
+    SupplierSnapshot:
+      description: The supplier as it was when the errand was posted or last amended.
+      type: object
+      required: [id, name, location]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        location:
+          type: string
+
+    Errand:
+      type: object
+      required: [id, state, version, supplier, itemDescription, deliveryLocation, reward, createdAt, updatedAt, stateChangedAt, actions]
+      properties:
+        id:
+          type: string
+          format: uuid
+        state:
+          $ref: "#/components/schemas/ErrandState"
+        version:
+          type: integer
+          description: Send this back on amend and accept.
+        supplier:
+          $ref: "#/components/schemas/SupplierSnapshot"
+        itemDescription:
+          type: string
+        deliveryLocation:
+          type: string
+        deliveryNote:
+          type: string
+          description: Present only for the requester, the assigned courier and ADMIN.
+        reward:
+          type: integer
+        requesterId:
+          type: string
+          format: uuid
+          description: Present only for the requester, the assigned courier and ADMIN.
+        courierId:
+          type: string
+          format: uuid
+          description: Present while a courier is assigned.
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        stateChangedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          description: Present while `OPEN` (F3.2.3).
+        confirmBy:
+          type: string
+          format: date-time
+          description: Present while `DELIVERED`; the errand completes on its own after this (F3.4.2, F3.9.4).
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrandAction"
+
+    FieldChange:
+      type: object
+      required: [field, from, to]
+      properties:
+        field:
+          type: string
+          enum: [supplier, itemDescription, deliveryLocation, deliveryNote, reward]
+        from:
+          type: string
+        to:
+          type: string
+
+    HistoryEntry:
+      type: object
+      required: [action, toState, occurredAt]
+      properties:
+        action:
+          $ref: "#/components/schemas/HistoryAction"
+        fromState:
+          $ref: "#/components/schemas/ErrandState"
+        toState:
+          $ref: "#/components/schemas/ErrandState"
+        occurredAt:
+          type: string
+          format: date-time
+        changes:
+          description: Present on AMEND entries (F3.7.7).
+          type: array
+          items:
+            $ref: "#/components/schemas/FieldChange"
+
+    ErrandDetail:
+      type: object
+      required: [errand, history, serverTime]
+      properties:
+        errand:
+          $ref: "#/components/schemas/Errand"
+        history:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryEntry"
+        serverTime:
+          type: string
+          format: date-time
+
+    ErrandList:
+      type: object
+      required: [items, serverTime]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Errand"
+        serverTime:
+          type: string
+          format: date-time
+
+    AssignmentRecord:
+      description: "One ended assignment: how and when it ended, with the errand's current supplier, item, location and reward."
+      type: object
+      required: [errandId, outcome, endedAt, supplier, itemDescription, deliveryLocation, reward]
+      properties:
+        errandId:
+          type: string
+          format: uuid
+        outcome:
+          type: string
+          enum: [COMPLETED, CANCELLED, RELEASED]
+        endedAt:
+          type: string
+          format: date-time
+        supplier:
+          $ref: "#/components/schemas/SupplierSnapshot"
+        itemDescription:
+          type: string
+        deliveryLocation:
+          type: string
+        reward:
+          type: integer
+
+    AssignedList:
+      type: object
+      required: [items, history, serverTime]
+      properties:
+        items:
+          description: Filled for `scope=active`.
+          type: array
+          items:
+            $ref: "#/components/schemas/Errand"
+        history:
+          description: Filled for `scope=history`.
+          type: array
+          items:
+            $ref: "#/components/schemas/AssignmentRecord"
+        serverTime:
+          type: string
+          format: date-time
+
+    LocationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: string
+
+    SupplierActiveErrands:
+      type: object
+      required: [supplierId, activeErrands]
+      properties:
+        supplierId:
+          type: string
+          format: uuid
+        activeErrands:
+          type: integer
+
+    CreateErrandRequest:
+      type: object
+      required: [supplierId, itemDescription, deliveryLocation, reward]
+      properties:
+        supplierId:
+          type: string
+          format: uuid
+        itemDescription:
+          type: string
+          minLength: 1
+          maxLength: 280
+        deliveryLocation:
+          type: string
+          description: One of `GET /locations`.
+        deliveryNote:
+          type: string
+          maxLength: 140
+        reward:
+          type: integer
+          minimum: 1
+
+    AmendErrandRequest:
+      description: "`version` plus at least one field to change. An empty `deliveryNote` clears the note."
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
+        supplierId:
+          type: string
+          format: uuid
+        itemDescription:
+          type: string
+          minLength: 1
+          maxLength: 280
+        deliveryLocation:
+          type: string
+        deliveryNote:
+          type: string
+          maxLength: 140
+        reward:
+          type: integer
+          minimum: 1
+
+    VersionRequest:
+      type: object
+      required: [version]
+      properties:
+        version:
+          type: integer
