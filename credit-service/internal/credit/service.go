@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Added CreateReservation service orchestration and repository port binding per sourceOfTruth.md Phase 4.
+// Scope: Added CreateReservation and AdjustReservationReward service orchestration per sourceOfTruth.md Phases 4 & 5.
 // Author review: PENDING - reviewer to complete
 
 package credit
@@ -81,4 +81,25 @@ func (s *Service) CreateReservation(ctx context.Context, errandID, requesterID u
 	}
 
 	return s.reservationRepo.CreateReservation(ctx, errandID, requesterID, amount)
+}
+
+// AdjustReservationReward validates parameters and requests reward adjustment from the repository.
+func (s *Service) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, currentAmount, newAmount int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
+	if errandID == uuid.Nil {
+		return nil, nil, ErrInvalidErrandID
+	}
+	if operationID == uuid.Nil {
+		return nil, nil, ErrInvalidOperationID
+	}
+	if err := ValidateRewardAmount(currentAmount); err != nil {
+		return nil, nil, err
+	}
+	if err := ValidateRewardAmount(newAmount); err != nil {
+		return nil, nil, err
+	}
+	if s.reservationRepo == nil {
+		return nil, nil, errors.New("reservation repository is required")
+	}
+
+	return s.reservationRepo.AdjustReservationReward(ctx, errandID, currentAmount, newAmount, operationID)
 }
