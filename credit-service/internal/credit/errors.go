@@ -28,6 +28,7 @@ var (
 	ErrLifecycleViolation        = errors.New("non-retryable lifecycle violation")
 	ErrSelfPayoutNotAllowed      = errors.New("requester cannot be courier")
 	ErrReservationAmountMismatch = errors.New("reservation amount mismatch")
+	ErrServiceUnavailable        = errors.New("service unavailable")
 )
 
 // AmountMismatchError provides the authoritative current reservation amount when an adjust command mismatches.
