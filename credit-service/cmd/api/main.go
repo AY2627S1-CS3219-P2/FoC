@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (model: GPT-5), date: 2026-10-12
 // Scope: Generated minimal HTTP startup wiring for credit-service health endpoint.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package main
 
