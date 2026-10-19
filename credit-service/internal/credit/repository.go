@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Defined focused domain repository ports per sourceOfTruth.md Phase 3.
+// Scope: Defined focused repository ports for credit-domain operations and background workers per sourceOfTruth.md.
 // Author review: PENDING - reviewer to complete
 
 package credit
@@ -48,14 +48,14 @@ type ReadRepository interface {
 // PendingRefundRepository claims and manages blocked pending refunds.
 type PendingRefundRepository interface {
 	ClaimDuePendingRefunds(ctx context.Context, limit int) ([]PendingRefund, error)
-	ProcessPendingRefund(ctx context.Context, id uuid.UUID) error
+	ProcessPendingRefund(ctx context.Context, id uuid.UUID, retryInterval time.Duration) error
 	RecordPendingRefundOverdue(ctx context.Context, id uuid.UUID, alertedAt time.Time) error
 }
 
 // PendingPayoutRepository claims and manages delayed pending payouts.
 type PendingPayoutRepository interface {
 	ClaimDuePendingPayouts(ctx context.Context, limit int) ([]PendingPayout, error)
-	ProcessPendingPayout(ctx context.Context, id uuid.UUID) error
+	ProcessPendingPayout(ctx context.Context, id uuid.UUID, retryInterval time.Duration) error
 	RecordPendingPayoutOverdue(ctx context.Context, id uuid.UUID, alertedAt time.Time) error
 }
 
