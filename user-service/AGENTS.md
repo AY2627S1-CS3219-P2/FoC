@@ -387,7 +387,7 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   **New `POST /api/v1/users/resend-otp`:**
     *   Accepts `{"email": "string"}`.
     *   Checks the `otp:count:<email>` rate limit. If under the limit, generates a new OTP, overwrites the hash in Redis with a 5-minute TTL, and dispatches the email.
-    *   A new OTP should not be generated and resent to the client if an email is unknown or is already active
+    *   A new OTP should not be generated and resent to the client if an email is unknown or has any status other than UNVERIFIED
 *   **New `POST /api/v1/users/verify-otp`:**
     *   Accepts `{"email": "string", "otp": "string"}`.
     *   Hashes the provided OTP and compares it against the Redis `otp:hash:<email>` value.
@@ -429,7 +429,8 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 
 **9. Resend Edge Cases**
 *   If an email is submitted to `/resend-otp` that does not exist in the `users` table, the service must return `404 Not Found`.
-*   If an email is submitted to `/resend-otp` but the user's `account_status` is already `ACTIVE`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
+*   If an email is submitted to `/resend-otp` but the user's `account_status` is `ACTIVE` or `SUSPENDED`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — records issue #31's suspended-account rule. -->
 
 ### Observability & Error Handling
 To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.

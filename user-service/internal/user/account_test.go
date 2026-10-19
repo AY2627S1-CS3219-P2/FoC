@@ -143,6 +143,9 @@ func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGenerating
 	}{
 		"unknown": {account: nil, wantErr: ErrNotFound},
 		"active":  {account: &User{AccountStatus: AccountStatusActive}, wantErr: ErrAccountAlreadyVerified},
+		// AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — covers
+		// issue #31's suspended-account refusal case.
+		"suspended": {account: &User{AccountStatus: AccountStatusSuspended}, wantErr: ErrAccountAlreadyVerified},
 	} {
 		t.Run(name, func(t *testing.T) {
 			store := &fakeOTPStore{count: 1}
@@ -153,8 +156,8 @@ func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGenerating
 			if !errors.Is(err, testCase.wantErr) {
 				t.Fatalf("error = %v, want %v", err, testCase.wantErr)
 			}
-			if store.storedHash != "" || deliverer.otp != "" {
-				t.Fatal("unknown or active account must not generate or deliver an OTP")
+			if store.storedHash != "" || deliverer.otp != "" || store.incrementRequestCountCalls != 0 {
+				t.Fatal("unknown, active, or suspended account must not count, generate, or deliver an OTP")
 			}
 		})
 	}

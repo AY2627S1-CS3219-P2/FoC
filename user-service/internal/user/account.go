@@ -111,7 +111,7 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 }
 
 // ResendOTP replaces an unverified account's OTP only after confirming the
-// account exists and has not already been activated.
+// account exists and is still awaiting verification.
 func (s *AccountService) ResendOTP(ctx context.Context, email string) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")
@@ -130,7 +130,9 @@ func (s *AccountService) ResendOTP(ctx context.Context, email string) error {
 	if account == nil {
 		return ErrNotFound
 	}
-	if account.AccountStatus == AccountStatusActive {
+	// AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — issue #31
+	// rejects OTP resends for every account not awaiting verification.
+	if account.AccountStatus != AccountStatusUnverified {
 		return ErrAccountAlreadyVerified
 	}
 	count, err := s.otpStore.IncrementRequestCount(ctx, email)

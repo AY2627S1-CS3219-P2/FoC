@@ -292,7 +292,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Account already active.
+          # AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #31's ACTIVE/SUSPENDED conflict.
+          description: The account is not awaiting verification (ACTIVE or SUSPENDED).
           content:
             application/json:
               schema:
