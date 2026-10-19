@@ -1,17 +1,15 @@
 # AI Assistance Disclosure:
-# Tool: Codex (model: GPT-5), date: 2026-10-12
-# Scope: Transcribed owner-approved credit-service OpenAPI contract from docs/requirements.md Section 7.
+# Tool: Codex (model: GPT-5), date: 2026-10-19
+# Scope: Reconciled the Credit Service OpenAPI contract with docs/sourceOfTruth.md Phase 1.
 # Author review: PENDING - reviewer to complete
 
 openapi: 3.1.0
 info:
   title: Credit Service API
-  version: 0.1.0
-  description: Credit account, reservation, and transaction history API.
+  version: 0.2.0
+  description: Public credit reads and private reservation commands.
 servers:
   - url: http://localhost:8084
-    description: Local development server
-
 security:
   - bearerAuth: []
 
@@ -21,91 +19,116 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   schemas:
+    ErrorCode:
+      type: string
+      enum: [INVALID_REQUEST, WALLET_NOT_READY, INSUFFICIENT_CREDITS, RESERVATION_NOT_FOUND, RESERVATION_STATE_CONFLICT, RESERVATION_AMOUNT_MISMATCH, IDEMPOTENCY_CONFLICT, ACCOUNT_INTEGRITY_FAILURE, CREDIT_LIMIT_EXCEEDED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
     ErrorResponse:
       type: object
       additionalProperties: false
-      required:
-        - error
+      required: [code, message]
       properties:
-        error:
+        code:
+          $ref: "#/components/schemas/ErrorCode"
+        message:
           type: string
-
+    AmountMismatchDetails:
+      type: object
+      additionalProperties: false
+      required: [currentAmount]
+      properties:
+        currentAmount:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+    AmountMismatchErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [code, message, details]
+      properties:
+        code:
+          type: string
+          const: RESERVATION_AMOUNT_MISMATCH
+        message:
+          type: string
+        details:
+          $ref: "#/components/schemas/AmountMismatchDetails"
     HealthResponse:
       type: object
       additionalProperties: false
-      required:
-        - status
+      required: [status]
       properties:
         status:
           type: string
-          enum:
-            - ok
-            - unhealthy
-
+          enum: [ok, unhealthy]
+    CreditStatus:
+      type: string
+      enum: [READY, TEMPORARILY_UNAVAILABLE]
     AccountResponse:
       type: object
       additionalProperties: false
-      required:
-        - userId
-        - availableCredits
-        - reservedCredits
-        - updatedAt
+      required: [userId, creditStatus, updatedAt]
       properties:
         userId:
           type: string
           format: uuid
+        creditStatus:
+          $ref: "#/components/schemas/CreditStatus"
         availableCredits:
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 1000000000
         reservedCredits:
           type: integer
+          format: int64
+          minimum: 0
+          maximum: 1000000000
         updatedAt:
           type: string
           format: date-time
-
     CreateReservationRequest:
       type: object
       additionalProperties: false
-      required:
-        - errandId
-        - amount
+      required: [errandId, requesterId, amount]
       properties:
         errandId:
           type: string
           format: uuid
+        requesterId:
+          type: string
+          format: uuid
         amount:
           type: integer
+          format: int64
           minimum: 1
-
+          maximum: 1000000
     AdjustRewardRequest:
       type: object
       additionalProperties: false
-      required:
-        - newReward
+      required: [currentAmount, newAmount, operationId]
       properties:
-        newReward:
+        currentAmount:
           type: integer
+          format: int64
           minimum: 1
-
+          maximum: 1000000
+        newAmount:
+          type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
+        operationId:
+          type: string
+          format: uuid
     ReservationStatus:
       type: string
-      enum:
-        - RESERVED
-        - PAID_OUT
-        - REFUNDED
-
+      enum: [RESERVED, PAID_OUT, REFUNDED]
     ReservationResponse:
       type: object
       additionalProperties: false
-      required:
-        - id
-        - errandId
-        - requesterId
-        - amount
-        - status
-        - createdAt
-        - updatedAt
+      required: [id, errandId, requesterId, amount, status, createdAt, updatedAt]
       properties:
         id:
           type: string
@@ -118,6 +141,9 @@ components:
           format: uuid
         amount:
           type: integer
+          format: int64
+          minimum: 1
+          maximum: 1000000
         status:
           $ref: "#/components/schemas/ReservationStatus"
         createdAt:
@@ -126,155 +152,123 @@ components:
         updatedAt:
           type: string
           format: date-time
-
     TransactionReason:
       type: string
-      enum:
-        - REGISTRATION_ALLOCATION
-        - ERRAND_RESERVATION
-        - ERRAND_CREATION_FAILED
-        - ERRAND_COMPLETED_PAYOUT
-        - ERRAND_COMPLETED_DEDUCTION
-        - ERRAND_CANCELLED
-        - ERRAND_EXPIRED
-        - REWARD_INCREASED
-        - REWARD_DECREASED
-
-    TransactionItem:
+      enum: [REGISTRATION_ALLOCATION, ERRAND_RESERVATION, ERRAND_FAILED, ERRAND_COMPLETED_PAYOUT, ERRAND_COMPLETED_DEDUCTION, ERRAND_CANCELLED, ERRAND_EXPIRED, REWARD_INCREASED, REWARD_DECREASED]
+    TransactionOperation:
       type: object
       additionalProperties: false
-      required:
-        - id
-        - userId
-        - errandId
-        - operationId
-        - balanceBucket
-        - amount
-        - reason
-        - createdAt
+      required: [operationId, reason, availableDelta, reservedDelta, createdAt]
       properties:
-        id:
-          type: string
-          format: uuid
-        userId:
-          type: string
-          format: uuid
-        errandId:
-          type:
-            - string
-            - "null"
-          format: uuid
         operationId:
           type: string
           format: uuid
-        balanceBucket:
-          type: string
-          enum:
-            - AVAILABLE
-            - RESERVED
-        amount:
-          type: integer
+        errandId:
+          type: [string, "null"]
+          format: uuid
         reason:
           $ref: "#/components/schemas/TransactionReason"
+        availableDelta:
+          type: integer
+          format: int64
+        reservedDelta:
+          type: integer
+          format: int64
+        occurredAt:
+          type: [string, "null"]
+          format: date-time
         createdAt:
           type: string
           format: date-time
-
-    Pagination:
-      type: object
-      additionalProperties: false
-      required:
-        - limit
-        - offset
-        - total
-      properties:
-        limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-        offset:
-          type: integer
-          minimum: 0
-        total:
-          type: integer
-          minimum: 0
-
     TransactionListResponse:
       type: object
       additionalProperties: false
-      required:
-        - items
-        - pagination
+      required: [items]
       properties:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/TransactionItem"
-        pagination:
-          $ref: "#/components/schemas/Pagination"
-
+            $ref: "#/components/schemas/TransactionOperation"
+        nextCursor:
+          type: [string, "null"]
   responses:
     BadRequest:
-      description: Syntax error or invalid input.
+      description: Invalid request.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthorized:
-      description: Missing or invalid token.
+      description: Missing or invalid bearer token.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     NotFound:
-      description: Entity not found.
+      description: Resource not found.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Conflict:
-      description: Duplicate reservation or non-reservable reservation state.
+      description: Command conflicts with current state or a previous command.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: "#/components/schemas/ErrorResponse"
+              - $ref: "#/components/schemas/AmountMismatchErrorResponse"
+    UnprocessableContent:
+      description: Credits are insufficient or a credit limit would be exceeded.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
-    Forbidden:
-      description: Authenticated caller is not authorized for this workflow.
+    ServiceUnavailable:
+      description: A required dependency or financial operation is temporarily unavailable.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
-    UnprocessableEntity:
-      description: Insufficient available credits.
+    InternalError:
+      description: Unexpected internal failure.
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
 
 paths:
-  /api/v1/health:
+  /health/live:
     get:
-      summary: Health check.
-      operationId: getHealth
+      summary: Check process liveness.
+      operationId: getLiveness
       security: []
       responses:
         "200":
-          description: OK.
+          description: Process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /health/ready:
+    get:
+      summary: Check service readiness.
+      operationId: getReadiness
+      security: []
+      responses:
+        "200":
+          description: Service is ready.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthResponse"
         "503":
-          description: Service unavailable.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/HealthResponse"
-
-  /api/v1/credits/reservations:
+          $ref: "#/components/responses/ServiceUnavailable"
+  /internal/v1/credit-reservations:
     post:
-      summary: Reserve credits for an errand.
+      summary: Reserve requester credits for an errand.
       operationId: createReservation
+      security: []
       requestBody:
         required: true
         content:
@@ -282,27 +276,33 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateReservationRequest"
       responses:
+        "200":
+          description: Existing identical reservation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReservationResponse"
         "201":
-          description: Credits reserved.
+          description: Reservation created.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReservationResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-
-  /api/v1/credits/reservations/{errandId}:
+          $ref: "#/components/responses/UnprocessableContent"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /internal/v1/credit-reservations/{errandId}:
     patch:
-      summary: Adjust the reserved reward for an open errand.
+      summary: Adjust the reward secured by a reservation.
       operationId: adjustReservationReward
+      security: []
       parameters:
         - in: path
           name: errandId
@@ -318,44 +318,50 @@ paths:
               $ref: "#/components/schemas/AdjustRewardRequest"
       responses:
         "200":
-          description: Reservation reward adjusted.
+          description: Stored command result.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReservationResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
         "422":
-          $ref: "#/components/responses/UnprocessableEntity"
-
+          $ref: "#/components/responses/UnprocessableContent"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/credits/accounts/me:
     get:
       summary: Get the authenticated user's credit account.
       operationId: getMyCreditAccount
+      security:
+        - bearerAuth: []
       responses:
         "200":
-          description: Credit account.
+          description: Credit account status.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccountResponse"
         "401":
           $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
-
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /api/v1/credits/accounts/me/transactions:
     get:
-      summary: List the authenticated user's credit transactions.
+      summary: List the authenticated user's grouped financial operations.
       operationId: listMyCreditTransactions
+      security:
+        - bearerAuth: []
       parameters:
         - in: query
           name: limit
@@ -366,15 +372,13 @@ paths:
             minimum: 1
             maximum: 100
         - in: query
-          name: offset
+          name: cursor
           required: false
           schema:
-            type: integer
-            default: 0
-            minimum: 0
+            type: string
       responses:
         "200":
-          description: Credit transaction history.
+          description: Grouped credit transaction history.
           content:
             application/json:
               schema:
@@ -383,3 +387,7 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
