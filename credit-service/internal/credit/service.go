@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Added CreateReservation, AdjustReservationReward, and RefundReservation service orchestration per sourceOfTruth.md Phases 4, 5 & 6.
+// Scope: Added CreateReservation, AdjustReservationReward, RefundReservation, and PayoutReservation service orchestration per sourceOfTruth.md Phases 4, 5, 6 & 7.
 // Author review: PENDING - reviewer to complete
 
 package credit
@@ -132,4 +132,25 @@ func (s *Service) RefundReservation(ctx context.Context, errandID, eventID uuid.
 	}
 
 	return s.settlementRepo.RefundReservation(ctx, errandID, eventID, reason, occurredAt)
+}
+
+// PayoutReservation validates completion payout parameters and requests payout settlement from the repository.
+func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error {
+	if errandID == uuid.Nil {
+		return ErrInvalidErrandID
+	}
+	if courierID == uuid.Nil {
+		return ErrInvalidUserID
+	}
+	if eventID == uuid.Nil {
+		return ErrInvalidOperationID
+	}
+	if occurredAt.IsZero() {
+		return errors.New("completion event occurredAt is required")
+	}
+	if s.settlementRepo == nil {
+		return errors.New("settlement repository is required")
+	}
+
+	return s.settlementRepo.PayoutReservation(ctx, errandID, courierID, eventID, occurredAt)
 }
