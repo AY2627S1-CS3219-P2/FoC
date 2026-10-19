@@ -62,6 +62,7 @@ const (
 				ELSE tokens_valid_after
 			END
 		WHERE uid = $3`
+	lockAccountStatusQuery   = `SELECT account_status, account_role FROM users WHERE uid = $1 FOR UPDATE`
 	activateUserByEmailQuery = `UPDATE users SET account_status = 'ACTIVE' WHERE LOWER(email) = LOWER($1) AND account_status = 'UNVERIFIED'`
 	// AI-generated (edited by James Teo).
 	lockUserForActivationQuery = `SELECT uid, account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`
@@ -203,12 +204,43 @@ func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.U
 // reactivating leaves it unchanged. The caller passes the timestamp so it
 // matches the suspension key written to Redis.
 func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
-	result, err := r.pool.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("begin account status transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var currentStatus user.AccountStatus
+	var role user.AccountRole
+	if err := tx.QueryRow(ctx, lockAccountStatusQuery, uid).Scan(&currentStatus, &role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return user.ErrNotFound
+		}
+		return fmt.Errorf("lock account status: %w", mapDatabaseError(err))
+	}
+	if _, err := tx.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid); err != nil {
 		return fmt.Errorf("update account status: %w", mapDatabaseError(err))
 	}
-	if result.RowsAffected() == 0 {
-		return user.ErrNotFound
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — applies D-062's
+	// exactly-once reactivation event guard inside the status transaction.
+	if currentStatus == user.AccountStatusSuspended && status == user.AccountStatusActive && role == user.AccountRoleStudent {
+		event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())
+		const queueMissingRegistrationEventQuery = `
+			INSERT INTO outbox_events (event_id, routing_key, payload)
+			SELECT $1, $2, $3
+			WHERE NOT EXISTS (
+				SELECT 1 FROM outbox_events
+				WHERE routing_key = $2 AND payload->>'userId' = $4
+			)`
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("marshal registration event: %w", err)
+		}
+		if _, err := tx.Exec(ctx, queueMissingRegistrationEventQuery, event.EventID, user.RoutingUserRegistered, payload, uid.String()); err != nil {
+			return fmt.Errorf("queue registration event: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit account status transaction: %w", err)
 	}
 	return nil
 }

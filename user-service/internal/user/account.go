@@ -413,6 +413,11 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	if account == nil {
 		return ErrNotFound
 	}
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — enforces D-062
+	// before any admin or suspension side effect can run.
+	if account.AccountStatus == AccountStatusUnverified {
+		return ErrAccountUnverified
+	}
 	var tokensValidAfter time.Time
 	if status == AccountStatusSuspended {
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — checks the

@@ -624,6 +624,26 @@ func TestAccountServiceUpdateStatusDelegatesRecordedTransitions(t *testing.T) {
 	}
 }
 
+func TestAccountServiceRejectsUnverifiedStatusTransitionsWithoutSideEffects(t *testing.T) {
+	for _, status := range []AccountStatus{AccountStatusActive, AccountStatusSuspended} {
+		t.Run(string(status), func(t *testing.T) {
+			order := []string{}
+			repository := &fakeAccountRepository{
+				user:      &User{AccountStatus: AccountStatusUnverified},
+				callOrder: &order,
+			}
+			service := NewAccountService(repository, &fakeSuspensionWriter{callOrder: &order}, &fakeAccountSessionRepository{callOrder: &order}, time.Minute)
+
+			if err := service.UpdateAccountStatus(context.Background(), uuid.New(), status); !errors.Is(err, ErrAccountUnverified) {
+				t.Fatalf("error = %v, want ErrAccountUnverified", err)
+			}
+			if len(order) != 0 || repository.countActiveAdminsCalls != 0 {
+				t.Fatalf("side effects = order %#v, count calls %d; want none", order, repository.countActiveAdminsCalls)
+			}
+		})
+	}
+}
+
 // AI-generated (edited by ZI YANG): suspension invalidation uses the domain service's injected clock.
 func TestAccountServiceUpdateAccountStatusUsesInjectedClock(t *testing.T) {
 	uid := uuid.New()

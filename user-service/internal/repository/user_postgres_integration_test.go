@@ -9,6 +9,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -93,10 +94,93 @@ func TestPostgresRepositoryUpdateAccountStatusByID(t *testing.T) {
 	if !active.TokensValidAfter.Equal(suspendedAt) {
 		t.Fatalf("tokens_valid_after after reactivation = %s, want preserved %s", active.TokensValidAfter, suspendedAt)
 	}
+	var registrationEvents int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM outbox_events
+		WHERE routing_key = 'user.registered' AND payload->>'userId' = $1`, account.UID.String()).Scan(&registrationEvents); err != nil {
+		t.Fatalf("count registration events: %v", err)
+	}
+	if registrationEvents != 1 {
+		t.Fatalf("registration events after reactivation = %d, want 1", registrationEvents)
+	}
+	if err := repository.UpdateAccountStatusByID(ctx, account.UID, user.AccountStatusActive, suspendedAt.Add(2*time.Hour)); err != nil {
+		t.Fatalf("repeat reactivation: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM outbox_events
+		WHERE routing_key = 'user.registered' AND payload->>'userId' = $1`, account.UID.String()).Scan(&registrationEvents); err != nil {
+		t.Fatalf("count repeated registration events: %v", err)
+	}
+	if registrationEvents != 1 {
+		t.Fatalf("registration events after repeated reactivation = %d, want 1", registrationEvents)
+	}
 
 	if err := repository.UpdateAccountStatusByID(ctx, uuid.New(), user.AccountStatusSuspended, suspendedAt); err != user.ErrNotFound {
 		t.Fatalf("unknown UID error = %v, want %v", err, user.ErrNotFound)
 	}
+}
+
+func TestAccountServiceRejectsUnverifiedStatusTransitionsWithPostgres(t *testing.T) {
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — covers D-062's
+	// full AccountService refusal path against real PostgreSQL and recording fakes.
+	ctx := context.Background()
+	pool := newIntegrationPool(t, ctx)
+	users := NewPostgresRepository(pool)
+
+	for _, status := range []user.AccountStatus{user.AccountStatusActive, user.AccountStatusSuspended} {
+		t.Run(string(status), func(t *testing.T) {
+			resetIntegrationDatabase(t, ctx, pool)
+			account := integrationAccount("unverified-"+string(status), user.AccountRoleStudent)
+			account.AccountStatus = user.AccountStatusUnverified
+			if err := users.Create(ctx, account); err != nil {
+				t.Fatalf("create account: %v", err)
+			}
+
+			writer := &recordingSuspensionWriter{}
+			sessions := &recordingSessionRepository{}
+			service := user.NewAccountService(users, writer, sessions, time.Minute)
+			if err := service.UpdateAccountStatus(ctx, account.UID, status); !errors.Is(err, user.ErrAccountUnverified) {
+				t.Fatalf("status update error = %v, want ErrAccountUnverified", err)
+			}
+
+			got, err := users.GetByID(ctx, account.UID)
+			if err != nil {
+				t.Fatalf("get unchanged account: %v", err)
+			}
+			if got.AccountStatus != user.AccountStatusUnverified {
+				t.Fatalf("account status = %q, want UNVERIFIED", got.AccountStatus)
+			}
+			var events int
+			if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox_events`).Scan(&events); err != nil {
+				t.Fatalf("count outbox events: %v", err)
+			}
+			if events != 0 || writer.calls != 0 || sessions.calls != 0 {
+				t.Fatalf("side effects = outbox %d, suspension %d, sessions %d; want none", events, writer.calls, sessions.calls)
+			}
+		})
+	}
+}
+
+type recordingSuspensionWriter struct{ calls int }
+
+func (w *recordingSuspensionWriter) WriteSuspension(context.Context, uuid.UUID, time.Time, time.Duration) error {
+	w.calls++
+	return nil
+}
+
+type recordingSessionRepository struct{ calls int }
+
+func (*recordingSessionRepository) CreateSession(context.Context, *user.Session) error { return nil }
+func (*recordingSessionRepository) GetSessionByHash(context.Context, string) (*user.Session, error) {
+	return nil, nil
+}
+func (*recordingSessionRepository) RotateSession(context.Context, string, *user.Session) error {
+	return nil
+}
+func (*recordingSessionRepository) RevokeSessionByHash(context.Context, string) error { return nil }
+func (s *recordingSessionRepository) RevokeAllUserSessions(context.Context, uuid.UUID) error {
+	s.calls++
+	return nil
 }
 
 func startPostgres(t *testing.T, ctx context.Context) string {
