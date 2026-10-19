@@ -93,6 +93,10 @@ type adjustRequest struct {
 // AI-generated (edited by James Teo).
 // A 422 on the retry is an unknown outcome, not insufficient credits: the
 // first attempt may have made the hold that leaves too little for the retry.
+//
+// A 200 means held too: it is credit-service's answer to a request identical
+// to a hold it already made, such as a retry after a lost answer. A 409 is an
+// unknown outcome on either attempt (D-073).
 func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 	body, err := json.Marshal(reserveRequest{ErrandID: r.ErrandID, Amount: r.Amount})
 	if err != nil {
@@ -109,20 +113,15 @@ func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 			continue
 		case err != nil:
 			return fmt.Errorf("reserve credits for errand %s: %w", r.ErrandID, err)
-		case status == http.StatusCreated:
-			return nil
-		case status == http.StatusConflict && attempt > 1:
-			// The errandId is new for every create (D-047), so the only hold a
-			// retry can clash with is one the first attempt made despite its
-			// failed answer.
-			c.log.InfoContext(ctx, "credit reservation retry found the first attempt's hold; treating it as reserved",
-				"errand_id", r.ErrandID, "request_id", r.CorrelationID)
+		// A retry that finds the first attempt's hold gets 200, not 409 (D-073).
+		case status == http.StatusCreated, status == http.StatusOK:
 			return nil
 		case status == http.StatusConflict:
-			// On the first attempt no earlier attempt can have made that hold,
-			// so whose it is is unknown. The create's queued refund for this
-			// errandId settles it either way (D-047).
-			return fmt.Errorf("reserve credits for errand %s: credit-service already holds a reservation for it; outcome unknown", r.ErrandID)
+			// credit-service holds a reservation for this errandId that doesn't
+			// match this request: an identical one would have answered 200. So
+			// whose hold it is is unknown on either attempt, and the create's
+			// queued refund for this errandId settles it (D-047).
+			return fmt.Errorf("reserve credits for errand %s: credit-service holds a reservation for it that doesn't match this request; outcome unknown", r.ErrandID)
 		// AI-generated (edited by James Teo).
 		case status == http.StatusUnprocessableEntity && attempt > 1:
 			// credit-service may check the balance before it sees the first
