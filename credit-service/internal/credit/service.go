@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Added CreateReservation and AdjustReservationReward service orchestration per sourceOfTruth.md Phases 4 & 5.
+// Scope: Added CreateReservation, AdjustReservationReward, and RefundReservation service orchestration per sourceOfTruth.md Phases 4, 5 & 6.
 // Author review: PENDING - reviewer to complete
 
 package credit
@@ -44,6 +44,13 @@ func NewService(initialAllocationRepo InitialAllocationRepository, opts ...func(
 func WithReservationRepository(repo ReservationRepository) func(*Service) {
 	return func(s *Service) {
 		s.reservationRepo = repo
+	}
+}
+
+// WithSettlementRepository injects a specific SettlementRepository.
+func WithSettlementRepository(repo SettlementRepository) func(*Service) {
+	return func(s *Service) {
+		s.settlementRepo = repo
 	}
 }
 
@@ -102,4 +109,27 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID uuid.UUI
 	}
 
 	return s.reservationRepo.AdjustReservationReward(ctx, errandID, currentAmount, newAmount, operationID)
+}
+
+// RefundReservation validates refund parameters and requests refund settlement from the repository.
+func (s *Service) RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
+	if errandID == uuid.Nil {
+		return ErrInvalidErrandID
+	}
+	if eventID == uuid.Nil {
+		return ErrInvalidOperationID
+	}
+	if occurredAt.IsZero() {
+		return errors.New("refund event occurredAt is required")
+	}
+	switch reason {
+	case TransactionReasonErrandCancelled, TransactionReasonErrandExpired, TransactionReasonErrandFailed:
+	default:
+		return ErrLifecycleViolation
+	}
+	if s.settlementRepo == nil {
+		return errors.New("settlement repository is required")
+	}
+
+	return s.settlementRepo.RefundReservation(ctx, errandID, eventID, reason, occurredAt)
 }
