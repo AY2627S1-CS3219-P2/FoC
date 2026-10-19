@@ -61,7 +61,15 @@ type PendingPayoutRepository interface {
 
 // ReconciliationRepository handles periodic audit scans and discrepancy detection.
 type ReconciliationRepository interface {
+	// AcquireReconciliationLock attempts to acquire a session-level advisory lock on a dedicated connection.
+	// Returns an unlock function and true if acquired; false if another replica holds the lock.
+	AcquireReconciliationLock(ctx context.Context) (func(), bool, error)
+
+	// ScanAccountsForReconciliation returns a batch of user IDs advancing by keyset cursor.
 	ScanAccountsForReconciliation(ctx context.Context, batchSize int, lastSeenUserID *uuid.UUID) ([]uuid.UUID, *uuid.UUID, error)
+
+	// ReconcileAccount audit-checks an account against the ledger and active reservations, flagging on discrepancy.
+	// Returns true if a discrepancy was flagged, or false if consistent or stale version was discarded.
 	ReconcileAccount(ctx context.Context, userID uuid.UUID) (bool, error)
 }
 
