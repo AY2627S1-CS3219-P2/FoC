@@ -4,7 +4,7 @@
 // Tool: Codex (GPT-5), date: 2026-10-19
 // Scope: Added Redis-container coverage for the access-token and suspension
 //   blocklist writer/reader contract.
-// Author review: PENDING — reviewer to complete
+// Author review: ZI YANG - reviewed and verified correctness
 
 package repository
 
