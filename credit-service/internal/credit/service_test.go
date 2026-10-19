@@ -62,12 +62,12 @@ func TestServiceAllocateInitialCreditsWrapsRepositoryError(t *testing.T) {
 type allocationRepositoryStub struct {
 	called     bool
 	userID     uuid.UUID
-	amount     int
+	amount     int64
 	occurredAt time.Time
 	err        error
 }
 
-func (s *allocationRepositoryStub) AllocateInitialCredits(_ context.Context, userID uuid.UUID, amount int, occurredAt time.Time) error {
+func (s *allocationRepositoryStub) AllocateInitialCredits(_ context.Context, userID uuid.UUID, amount int64, occurredAt time.Time) error {
 	s.called = true
 	s.userID = userID
 	s.amount = amount

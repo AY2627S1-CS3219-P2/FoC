@@ -30,7 +30,7 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 }
 
 // AllocateInitialCredits creates an account and registration-allocation ledger entry once.
-func (r *PostgresRepository) AllocateInitialCredits(ctx context.Context, userID uuid.UUID, amount int, occurredAt time.Time) error {
+func (r *PostgresRepository) AllocateInitialCredits(ctx context.Context, userID uuid.UUID, amount int64, occurredAt time.Time) error {
 	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return fmt.Errorf("begin initial allocation transaction: %w", err)
@@ -59,7 +59,7 @@ func (r *PostgresRepository) AllocateInitialCredits(ctx context.Context, userID 
 	return nil
 }
 
-func insertInitialAccount(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int, occurredAt time.Time) (bool, error) {
+func insertInitialAccount(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int64, occurredAt time.Time) (bool, error) {
 	commandTag, err := tx.Exec(ctx, `
 		INSERT INTO credit_accounts (
 			user_id, available_credits, reserved_credits, version, created_at, updated_at
@@ -74,12 +74,12 @@ func insertInitialAccount(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amou
 	return commandTag.RowsAffected() == 1, nil
 }
 
-func insertInitialAllocationTransaction(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int, occurredAt time.Time) error {
+func insertInitialAllocationTransaction(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int64, occurredAt time.Time) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO credit_transactions (
-			user_id, errand_id, operation_id, balance_bucket, amount, reason, created_at
+			user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 		)
-		VALUES ($1, NULL, $2, 'AVAILABLE', $3, $4, $5)`,
+		VALUES ($1, NULL, $2, 'AVAILABLE', $3, $4, $5, $5)`,
 		userID, uuid.New(), amount, credit.TransactionReasonRegistrationAllocation, occurredAt,
 	)
 	if err != nil {
