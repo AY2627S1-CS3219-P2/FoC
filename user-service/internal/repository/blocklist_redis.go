@@ -111,8 +111,9 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 // AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — updated this comment
 // to remove a stale cross-service reader assertion. Author review: ZI YANG.
 
-// WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt, with
-// the given TTL.
+// WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt in
+// UTC whole-second RFC3339Nano form, with the given TTL. Readers reject a
+// verified token whose iat is at or before this value.
 func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error {
 	if w.client == nil {
 		return errors.New("Redis client is required")

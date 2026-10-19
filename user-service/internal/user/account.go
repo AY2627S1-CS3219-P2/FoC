@@ -453,12 +453,10 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 
 // AI-generated (edited by nigeltzy).
 // tokenCutoff returns the tokens_valid_after value for an invalidation made
-// now, truncated to whole seconds. A JWT's iat is whole seconds, and refresh
-// rejects a token whose iat is before the cutoff, so a sub-second cutoff
-// rejected tokens issued later in the same second — a login right after a
-// password change got a session that failed its first refresh. Tokens issued
-// earlier in that second now pass the iat check; their refresh sessions are
-// revoked by the same invalidation, which refresh checks first.
+// now, truncated to whole seconds. A JWT's iat is whole seconds. Readers with
+// no session reject a token whose iat is at or before this cutoff; refresh
+// keeps its separate before rule because it also checks the refresh session,
+// which is revoked by the same invalidation.
 func (s *AccountService) tokenCutoff() time.Time {
 	return s.now().UTC().Truncate(time.Second)
 }
