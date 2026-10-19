@@ -18,6 +18,7 @@ type Config struct {
 	DatabaseURL             string
 	JWKSURL                 string
 	RabbitMQURL             string
+	RedisURL                string
 	RunMigrations           bool
 	MigrationsSourceURL     string
 	PayoutRetryInterval     time.Duration
@@ -40,6 +41,7 @@ func Load() (Config, error) {
 		DatabaseURL:             os.Getenv("CREDIT_DB_URL"),
 		JWKSURL:                 os.Getenv("JWKS_URL"),
 		RabbitMQURL:             os.Getenv("RABBITMQ_URL"),
+		RedisURL:                envOrDefault("REDIS_URL", "redis://redis:6379"),
 		RunMigrations:           envOrDefaultBool("RUN_MIGRATIONS", true),
 		MigrationsSourceURL:     envOrDefault("MIGRATIONS_SOURCE_URL", "file://migrations"),
 		PayoutRetryInterval:     envOrDefaultDuration("PAYOUT_RETRY_INTERVAL", 1*time.Minute),

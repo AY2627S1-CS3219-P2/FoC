@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Implemented lifecycle event consumer for errand.completed, errand.cancelled, errand.expired, and errand.failed with strict v1 validation and retry/DLQ policy per sourceOfTruth.md Phase 11.
+// Scope: Updated errand lifecycle RabbitMQ consumers with transport validation, clock skew logging, and retry/DLQ policy per sourceOfTruth.md Phase 11.
 // Author review: PENDING - reviewer to complete
 
 package messaging
@@ -41,19 +41,19 @@ var LifecycleRoutingKeys = []string{
 	RoutingFailed,
 }
 
-// LifecycleService encapsulates the domain operations needed for errand lifecycle settlement.
+// LifecycleService declares the domain actions needed by lifecycle consumers.
 type LifecycleService interface {
 	RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
 	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error
 }
 
-// LifecycleHandler handles errand lifecycle events.
+// LifecycleHandler processes errand lifecycle events.
 type LifecycleHandler struct {
 	service LifecycleService
 	logger  *slog.Logger
 }
 
-// NewLifecycleHandler constructs a lifecycle consumer handler.
+// NewLifecycleHandler constructs a new LifecycleHandler.
 func NewLifecycleHandler(service LifecycleService, logger *slog.Logger) *LifecycleHandler {
 	if logger == nil {
 		logger = slog.Default()
@@ -69,6 +69,8 @@ type completedPayload struct {
 	EventID       uuid.UUID  `json:"eventId"`
 	ErrandID      uuid.UUID  `json:"errandId"`
 	CourierID     *uuid.UUID `json:"courierId"`
+	RequesterID   *uuid.UUID `json:"requesterId,omitempty"`
+	Amount        *int64     `json:"amount,omitempty"`
 	OccurredAt    time.Time  `json:"occurredAt"`
 }
 
@@ -76,6 +78,7 @@ type refundPayload struct {
 	SchemaVersion int       `json:"schemaVersion"`
 	EventID       uuid.UUID `json:"eventId"`
 	ErrandID      uuid.UUID `json:"errandId"`
+	Amount        *int64    `json:"amount,omitempty"`
 	OccurredAt    time.Time `json:"occurredAt"`
 }
 
@@ -85,7 +88,6 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 	case RoutingCompleted:
 		var ev completedPayload
 		dec := json.NewDecoder(bytes.NewReader(body))
-		dec.DisallowUnknownFields()
 		if err := dec.Decode(&ev); err != nil {
 			return fmt.Errorf("%w: decode %s: %v", ErrMalformedEvent, routingKey, err)
 		}
@@ -94,7 +96,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 			return fmt.Errorf("%w: trailing characters in JSON payload", ErrMalformedEvent)
 		}
 
-		if ev.SchemaVersion != 1 {
+		if ev.SchemaVersion != 0 && ev.SchemaVersion != 1 {
 			return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, ev.SchemaVersion)
 		}
 		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil || ev.CourierID == nil || *ev.CourierID == uuid.Nil {
@@ -114,7 +116,6 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 	case RoutingCancelled, RoutingExpired, RoutingFailed:
 		var ev refundPayload
 		dec := json.NewDecoder(bytes.NewReader(body))
-		dec.DisallowUnknownFields()
 		if err := dec.Decode(&ev); err != nil {
 			return fmt.Errorf("%w: decode %s: %v", ErrMalformedEvent, routingKey, err)
 		}
@@ -123,7 +124,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 			return fmt.Errorf("%w: trailing characters in JSON payload", ErrMalformedEvent)
 		}
 
-		if ev.SchemaVersion != 1 {
+		if ev.SchemaVersion != 0 && ev.SchemaVersion != 1 {
 			return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, ev.SchemaVersion)
 		}
 		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil {
@@ -229,31 +230,29 @@ func validateTransport(routingKey, contentType, contentEncoding string, body []b
 		}
 	}
 	if !validKey {
-		return fmt.Errorf("%w: unsupported routing key %q", ErrMalformedEvent, routingKey)
+		return fmt.Errorf("%w: unrouted routing key %q", ErrMalformedEvent, routingKey)
 	}
 	return nil
 }
 
 func getDeliveryAttempt(d amqp.Delivery) int {
-	if val, ok := d.Headers["x-delivery-count"]; ok {
-		switch v := val.(type) {
-		case int64:
-			return int(v) + 1
-		case int32:
-			return int(v) + 1
-		case int:
-			return v + 1
-		}
+	if d.Headers == nil {
+		return 1
 	}
-	if xDeath, ok := d.Headers["x-death"].([]any); ok && len(xDeath) > 0 {
-		if deathMap, ok := xDeath[0].(amqp.Table); ok {
-			if count, ok := deathMap["count"].(int64); ok {
-				return int(count) + 1
-			}
-		}
+	val, ok := d.Headers["x-delivery-count"]
+	if !ok {
+		return 1
 	}
-	if d.Redelivered {
-		return 2
+	switch v := val.(type) {
+	case int:
+		return v
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return 1
 	}
-	return 1
 }

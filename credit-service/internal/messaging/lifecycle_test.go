@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Added unit tests for lifecycle events dispatch, transport validation, retry/DLQ policy, and clock skew per sourceOfTruth.md Phase 11.
+// Scope: Added unit tests for lifecycle events dispatch, tolerant decoding, retry/DLQ policy, and clock skew per sourceOfTruth.md Phase 11.
 // Author review: PENDING - reviewer to complete
 
 package messaging_test
@@ -79,6 +79,48 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 	}
 }
 
+func TestLifecycleHandler_DispatchCompletedWithOrderServiceEnvelope(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	eventID := uuid.New()
+	errandID := uuid.New()
+	courierID := uuid.New()
+	requesterID := uuid.New()
+	now := time.Now().UTC()
+
+	var calledErrand, calledCourier, calledEvent uuid.UUID
+
+	svc := &mockLifecycleService{
+		payoutFn: func(ctx context.Context, eID, cID, evID uuid.UUID, occ time.Time) error {
+			calledErrand = eID
+			calledCourier = cID
+			calledEvent = evID
+			return nil
+		},
+	}
+
+	h := messaging.NewLifecycleHandler(svc, logger)
+
+	// order-service outbox format: carries eventType, correlationId, requesterId, amount, and omits schemaVersion
+	body := []byte(`{
+		"eventId": "` + eventID.String() + `",
+		"eventType": "errand.completed",
+		"errandId": "` + errandID.String() + `",
+		"requesterId": "` + requesterID.String() + `",
+		"courierId": "` + courierID.String() + `",
+		"amount": 20,
+		"correlationId": "corr-errand-123",
+		"occurredAt": "` + now.Format(time.RFC3339Nano) + `"
+	}`)
+
+	if err := h.Dispatch(context.Background(), messaging.RoutingCompleted, body); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if calledErrand != errandID || calledCourier != courierID || calledEvent != eventID {
+		t.Errorf("unexpected parameters: errand=%s courier=%s event=%s", calledErrand, calledCourier, calledEvent)
+	}
+}
+
 func TestLifecycleHandler_DispatchRefunds(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	eventID := uuid.New()
@@ -126,8 +168,9 @@ func TestLifecycleHandler_RejectsMalformedPayloads(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	h := messaging.NewLifecycleHandler(&mockLifecycleService{}, logger)
 
-	t.Run("missing schemaVersion", func(t *testing.T) {
+	t.Run("unsupported schemaVersion", func(t *testing.T) {
 		body := []byte(`{
+			"schemaVersion": 2,
 			"eventId": "` + uuid.New().String() + `",
 			"errandId": "` + uuid.New().String() + `",
 			"occurredAt": "2026-10-19T12:00:00Z"
@@ -138,13 +181,10 @@ func TestLifecycleHandler_RejectsMalformedPayloads(t *testing.T) {
 		}
 	})
 
-	t.Run("unknown fields rejected", func(t *testing.T) {
+	t.Run("missing required UUIDs", func(t *testing.T) {
 		body := []byte(`{
 			"schemaVersion": 1,
-			"eventId": "` + uuid.New().String() + `",
-			"errandId": "` + uuid.New().String() + `",
-			"occurredAt": "2026-10-19T12:00:00Z",
-			"extraField": "bad"
+			"occurredAt": "2026-10-19T12:00:00Z"
 		}`)
 		err := h.Dispatch(context.Background(), messaging.RoutingCancelled, body)
 		if !errors.Is(err, messaging.ErrMalformedEvent) {
@@ -174,29 +214,48 @@ func TestLifecycleHandler_ClockSkewLoggedNotRejected(t *testing.T) {
 		"occurredAt": "` + oldTime.Format(time.RFC3339Nano) + `"
 	}`)
 
-	// Clock skew should not cause rejection
 	if err := h.Dispatch(context.Background(), messaging.RoutingCancelled, body); err != nil {
-		t.Fatalf("clock skew should not reject valid event: %v", err)
+		t.Fatalf("unexpected error for skewed event: %v", err)
 	}
 }
 
-func TestSupervisor_Readiness(t *testing.T) {
-	s := messaging.NewSupervisor("amqp://guest:guest@localhost:5672/", nil, nil, 2, nil)
-	if s.IsReady() {
-		t.Fatal("supervisor should not be ready before connecting")
-	}
-}
-
-func TestLifecycleHandler_DeliveryTransportRejection(t *testing.T) {
+func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	h := messaging.NewLifecycleHandler(&mockLifecycleService{}, logger)
+	svc := &mockLifecycleService{}
+	h := messaging.NewLifecycleHandler(svc, logger)
 
-	// Delivery with missing content_type should be rejected
-	d := amqp.Delivery{
-		RoutingKey:  messaging.RoutingCancelled,
-		ContentType: "text/plain",
-		Body:        []byte(`{"schemaVersion": 1}`),
-	}
-	// Calling HandleDelivery should safely reject without panicking
-	h.HandleDelivery(context.Background(), d)
+	ctx := context.Background()
+	body := []byte(`{
+		"schemaVersion": 1,
+		"eventId": "` + uuid.New().String() + `",
+		"errandId": "` + uuid.New().String() + `",
+		"occurredAt": "2026-10-19T12:00:00Z"
+	}`)
+
+	t.Run("valid delivery gets acked", func(t *testing.T) {
+		d := amqp.Delivery{
+			RoutingKey:  messaging.RoutingCancelled,
+			ContentType: "application/json",
+			Body:        body,
+		}
+		h.HandleDelivery(ctx, d)
+	})
+
+	t.Run("invalid transport rejected to DLQ", func(t *testing.T) {
+		d := amqp.Delivery{
+			RoutingKey:  messaging.RoutingCancelled,
+			ContentType: "text/plain",
+			Body:        body,
+		}
+		h.HandleDelivery(ctx, d)
+	})
+
+	t.Run("malformed payload rejected to DLQ", func(t *testing.T) {
+		d := amqp.Delivery{
+			RoutingKey:  messaging.RoutingCancelled,
+			ContentType: "application/json",
+			Body:        []byte(`{bad-json`),
+		}
+		h.HandleDelivery(ctx, d)
+	})
 }

@@ -494,17 +494,17 @@ func TestAdjustReservationReward(t *testing.T) {
 		repo := &mockReservationRepo{
 			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, curr, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 				return &credit.OperationResult{
-						OperationID: opID,
-						ErrandID:    eID,
-						OutcomeCode: credit.OutcomeSuccess,
-					}, &credit.Reservation{
-						ID:        resID,
-						ErrandID:  eID,
-						Amount:    next,
-						Status:    credit.ReservationStatusReserved,
-						CreatedAt: time.Now().UTC(),
-						UpdatedAt: time.Now().UTC(),
-					}, nil
+					OperationID: opID,
+					ErrandID:    eID,
+					OutcomeCode: credit.OutcomeSuccess,
+				}, &credit.Reservation{
+					ID:        resID,
+					ErrandID:  eID,
+					Amount:    next,
+					Status:    credit.ReservationStatusReserved,
+					CreatedAt: time.Now().UTC(),
+					UpdatedAt: time.Now().UTC(),
+				}, nil
 			},
 		}
 

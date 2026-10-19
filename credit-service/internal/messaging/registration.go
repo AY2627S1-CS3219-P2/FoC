@@ -23,8 +23,8 @@ import (
 )
 
 const (
-	RegistrationQueue    = "credit.registration"
-	RegistrationConsumer = "credit-service.registration"
+	RegistrationQueue     = "credit.registration"
+	RegistrationConsumer  = "credit-service.registration"
 	RoutingUserRegistered = "user.registered"
 )
 
@@ -80,7 +80,6 @@ func (h *RegistrationHandler) Handle(ctx context.Context, body []byte) error {
 	var event registrationEvent
 
 	decoder := json.NewDecoder(bytes.NewReader(body))
-	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&event); err != nil {
 		return fmt.Errorf("%w: decode user.registered: %v", ErrMalformedEvent, err)
 	}
@@ -89,7 +88,7 @@ func (h *RegistrationHandler) Handle(ctx context.Context, body []byte) error {
 		return fmt.Errorf("%w: multiple JSON values", ErrMalformedEvent)
 	}
 
-	if event.SchemaVersion != 1 {
+	if event.SchemaVersion != 0 && event.SchemaVersion != 1 {
 		return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, event.SchemaVersion)
 	}
 	if event.EventID == uuid.Nil {
@@ -122,13 +121,6 @@ func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Deliver
 		return
 	}
 
-	// Correlation ID and reply_to are required on allocation requests
-	if d.CorrelationId == "" || d.ReplyTo == "" {
-		h.logger.Warn("rejecting registration request missing correlation_id or reply_to to DLQ")
-		_ = d.Nack(false, false)
-		return
-	}
-
 	if err := h.Handle(ctx, d.Body); err != nil {
 		if errors.Is(err, ErrMalformedEvent) {
 			h.logger.Warn("dropping malformed user.registered event to DLQ", "error", err)
@@ -146,8 +138,8 @@ func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Deliver
 		return
 	}
 
-	// Publish Direct Reply-to response only after commit
-	if replier != nil {
+	// Publish Direct Reply-to response only if requested by caller
+	if d.ReplyTo != "" && replier != nil {
 		replyPayload := []byte(`{"schemaVersion":1,"outcome":"ALLOCATED"}`)
 		if err := replier.Reply(ctx, d.ReplyTo, d.CorrelationId, replyPayload); err != nil {
 			h.logger.Warn("direct reply-to publication failed (transient loss permitted)", "error", err)
