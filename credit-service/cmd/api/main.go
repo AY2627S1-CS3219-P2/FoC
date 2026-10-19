@@ -66,7 +66,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	verifier := auth.NewVerifier(cfg.JWKSURL, nil)
 
 	// HTTP Server Startup with Chi Router
-	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping, verifier))
+	server := newHTTPServer(cfg.Addr(), httpapi.NewRouter(pool.Ping, verifier, creditService))
 
 	errCh := make(chan error, 1)
 	if cfg.RabbitMQURL != "" {
@@ -110,7 +110,7 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      10 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }

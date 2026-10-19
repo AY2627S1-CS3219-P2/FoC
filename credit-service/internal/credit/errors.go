@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Defined distinguishable domain errors and typed amount mismatch error per sourceOfTruth.md Phase 3.
+// Scope: Defined distinguishable domain errors and typed amount mismatch error per sourceOfTruth.md.
 // Author review: PENDING - reviewer to complete
 
 package credit
@@ -12,6 +12,7 @@ import (
 
 // Distinguishable sentinel domain errors.
 var (
+	ErrInvalidRequest            = errors.New("invalid request")
 	ErrInvalidUserID             = errors.New("invalid user ID")
 	ErrInvalidErrandID           = errors.New("invalid errand ID")
 	ErrInvalidOperationID        = errors.New("invalid operation ID")

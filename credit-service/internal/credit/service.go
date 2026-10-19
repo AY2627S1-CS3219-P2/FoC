@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Added CreateReservation, AdjustReservationReward, RefundReservation, and PayoutReservation service orchestration per sourceOfTruth.md Phases 4, 5, 6 & 7.
+// Scope: Added CreateReservation, AdjustReservationReward, RefundReservation, PayoutReservation, GetAccount, and ListTransactions service orchestration per sourceOfTruth.md.
 // Author review: PENDING - reviewer to complete
 
 package credit
@@ -51,6 +51,13 @@ func WithReservationRepository(repo ReservationRepository) func(*Service) {
 func WithSettlementRepository(repo SettlementRepository) func(*Service) {
 	return func(s *Service) {
 		s.settlementRepo = repo
+	}
+}
+
+// WithReadRepository injects a specific ReadRepository.
+func WithReadRepository(repo ReadRepository) func(*Service) {
+	return func(s *Service) {
+		s.readRepo = repo
 	}
 }
 
@@ -153,4 +160,26 @@ func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, ev
 	}
 
 	return s.settlementRepo.PayoutReservation(ctx, errandID, courierID, eventID, occurredAt)
+}
+
+// GetAccount retrieves the account projection for a user.
+func (s *Service) GetAccount(ctx context.Context, userID uuid.UUID) (*Account, error) {
+	if userID == uuid.Nil {
+		return nil, ErrInvalidUserID
+	}
+	if s.readRepo == nil {
+		return nil, errors.New("read repository is required")
+	}
+	return s.readRepo.GetAccount(ctx, userID)
+}
+
+// ListTransactions retrieves cursor-paginated grouped operations for a user.
+func (s *Service) ListTransactions(ctx context.Context, userID uuid.UUID, limit int, cursor *string) (*PaginatedTransactions, error) {
+	if userID == uuid.Nil {
+		return nil, ErrInvalidUserID
+	}
+	if s.readRepo == nil {
+		return nil, errors.New("read repository is required")
+	}
+	return s.readRepo.ListTransactions(ctx, userID, limit, cursor)
 }
