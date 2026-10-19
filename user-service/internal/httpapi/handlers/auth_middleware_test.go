@@ -23,6 +23,17 @@ type fakeTokenVerifier struct {
 	token     string
 }
 
+type fakeRevocationChecker struct {
+	revoked bool
+	err     error
+	calls   int
+}
+
+func (f *fakeRevocationChecker) Check(context.Context, handlers.Principal) (bool, error) {
+	f.calls++
+	return f.revoked, f.err
+}
+
 func (f *fakeTokenVerifier) Verify(_ context.Context, rawToken string) (handlers.Principal, error) {
 	f.token = rawToken
 	return f.principal, f.err
@@ -37,6 +48,7 @@ func TestRequireJWT(t *testing.T) {
 		wantHandler  bool
 		wantVerifier bool
 		wantToken    string
+		checker      handlers.RevocationChecker
 	}{
 		"rejects missing authorization": {
 			verifier:   &fakeTokenVerifier{},
@@ -64,6 +76,30 @@ func TestRequireJWT(t *testing.T) {
 			wantHandler:  true,
 			wantVerifier: true,
 			wantToken:    "signed.jwt",
+			checker:      &fakeRevocationChecker{},
+		},
+		"rejects revoked principal": {
+			verifier:     &fakeTokenVerifier{principal: handlers.Principal{UserID: accountID}},
+			authorize:    "Bearer revoked",
+			checker:      &fakeRevocationChecker{revoked: true},
+			wantStatus:   http.StatusUnauthorized,
+			wantVerifier: true,
+			wantToken:    "revoked",
+		},
+		"reports revocation failure": {
+			verifier:     &fakeTokenVerifier{principal: handlers.Principal{UserID: accountID}},
+			authorize:    "Bearer unavailable",
+			checker:      &fakeRevocationChecker{err: errors.New("redis unavailable")},
+			wantStatus:   http.StatusInternalServerError,
+			wantVerifier: true,
+			wantToken:    "unavailable",
+		},
+		"reports missing revocation checker": {
+			verifier:     &fakeTokenVerifier{principal: handlers.Principal{UserID: accountID}},
+			authorize:    "Bearer no-checker",
+			wantStatus:   http.StatusInternalServerError,
+			wantVerifier: true,
+			wantToken:    "no-checker",
 		},
 		"reports missing verifier configuration": {
 			wantStatus: http.StatusInternalServerError,
@@ -89,7 +125,7 @@ func TestRequireJWT(t *testing.T) {
 			request.Header.Set("Authorization", tt.authorize)
 			response := httptest.NewRecorder()
 
-			handlers.RequireJWT(tt.verifier, nil)(next).ServeHTTP(response, request)
+			handlers.RequireJWT(tt.verifier, tt.checker, nil)(next).ServeHTTP(response, request)
 
 			if response.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d", response.Code, tt.wantStatus)

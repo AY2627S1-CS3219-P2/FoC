@@ -530,13 +530,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Authentication required
+          description: Authentication required, including a revoked access token.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal Server Error
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:
@@ -578,7 +578,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: The current password is incorrect.
+          description: The current password is incorrect or the access token has been revoked.
           content:
             application/json:
               schema:
@@ -602,7 +602,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal Server Error
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:
@@ -642,7 +642,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Authentication required
+          description: Authentication required, including a revoked access token.
           content:
             application/json:
               schema:
@@ -666,7 +666,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal Server Error
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:

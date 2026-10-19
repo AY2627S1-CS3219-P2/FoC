@@ -71,9 +71,10 @@ func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, re
 	}
 	ttl := access.ExpiresAt.Sub(s.now())
 	// AI-generated (edited by ZI YANG): retain blocklisting through the recorded JWT clock-skew window.
-	if ttl <= 0 {
-		ttl = minimumLogoutTTL
+	if ttl < 0 {
+		ttl = 0
 	}
+	ttl += minimumLogoutTTL
 	// AI-generated (edited by ZI YANG): verify session ownership before Redis invalidation or revocation.
 	refreshSession, err := s.sessions.GetSessionByHash(ctx, HashRefreshToken(refreshToken))
 	if errors.Is(err, user.ErrSessionNotFound) {

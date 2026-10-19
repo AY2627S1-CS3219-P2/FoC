@@ -63,6 +63,12 @@ export USER_DB_URL='postgres://postgres:postgres@localhost:5432/user?sslmode=dis
 export OTP_DELIVERY='log'
 ```
 
+Access-token revocation keys are checked on user-service's protected profile
+and status routes after JWT verification. Logout keeps each `jti:<jti>` key for
+the token's remaining lifetime plus the 5-second JWT clock-skew allowance;
+suspension keeps each `suspended:uid:<uuid>` key for `JWT_ACCESS_TOKEN_TTL` plus
+that allowance. Redis read failures fail closed with HTTP 500.
+
 3. Configure the initial admin account
 
 For the first startup, export `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_USERNAME`,

@@ -671,7 +671,7 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
-	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute, func() time.Time { return timestamp })
+	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute+5*time.Second, func() time.Time { return timestamp })
 
 	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
 		t.Fatal(err)
@@ -679,7 +679,7 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 	if got, want := order, []string{"redis", "sessions", "postgres"}; !equalStrings(got, want) {
 		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
-	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute {
+	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute+5*time.Second {
 		t.Fatalf("suspension write = %#v, want account, timestamp, and TTL", writer)
 	}
 	if sessions.uid != uid || repository.status != AccountStatusSuspended {
@@ -746,7 +746,7 @@ func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testi
 	}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
-	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute, func() time.Time { return timestamp })
+	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute+5*time.Second, func() time.Time { return timestamp })
 
 	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err == nil {
 		t.Fatal("PostgreSQL failure was ignored")
@@ -758,7 +758,7 @@ func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testi
 	if got, want := order, []string{"redis", "sessions", "postgres", "redis", "sessions", "postgres"}; !equalStrings(got, want) {
 		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
-	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute {
+	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute+5*time.Second {
 		t.Fatalf("retried suspension write = %#v, want identical account, timestamp, and TTL", writer)
 	}
 }

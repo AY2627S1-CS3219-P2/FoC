@@ -344,7 +344,7 @@ When an `ADMIN` suspends an account, the user service shall push a Redis key (e.
 
 The API Gateway is a reader of the Redis blocklist, and the user service shall be the sole writer to the Redis blocklist.
 (The API Gateway code should fit to this behaviour)
-The TTL for a specific `jti` in Redis must exactly match the remaining time until that access token's exp timestamp. The TTL for a suspended:uid:<uuid> key must match the JWT_ACCESS_TOKEN_TTL duration.
+User-service also verifies its own protected profile and status routes after JWT signature and claim validation. It reads `jti:<jti>` and `suspended:uid:<uuid>` with one Redis MGET, bounded by 500 ms, and fails closed when Redis cannot answer. A revoked token receives 401; a Redis read failure receives 500. Logout remains unauthenticated by this reader so a retry can complete the refresh-session invalidation. The TTL for a specific `jti` in Redis includes the 5-second JWT clock-skew allowance, and the TTL for a suspended:uid:<uuid> key is JWT_ACCESS_TOKEN_TTL plus the same allowance.
 
 ### Username/Password Policy
 The username policy as stated in the product backlog is:

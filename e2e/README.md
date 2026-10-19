@@ -84,6 +84,9 @@ instead of every test timing out on its own.
 | `TestRewardChangeMovesTheHold` | raising and then lowering a reward moves the hold each time, and cancelling returns all of it |
 | `TestLogoutRevokesTheAccessToken` | a student's token works on `GET /api/orders/open`, and after `POST /auth/logout` the same token gets 401 |
 | `TestSuspensionRevokesTheAccessToken` | after an ADMIN suspends a student with `PATCH /api/users/{uid}/status`, the token the student already holds gets 401 on `GET /api/orders/open` |
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
+| `TestSuspendedStudentIsRefusedAtOnce` | a suspended student's existing token gets 401 on `GET /api/users/{uid}`, and a newly issued token works after reactivation |
+| `TestLoggedOutTokenIsRefused` | after logout, the same token gets 401 on `GET /api/users/{uid}` |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 | `TestSuspendedAccountGetsNoNewCode` | after an ADMIN suspends a student, `POST /auth/resend-otp` answers 409 and user-service logs no additional OTP for that email |
 
