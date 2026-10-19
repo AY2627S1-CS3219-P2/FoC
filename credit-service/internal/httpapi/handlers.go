@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
-// Scope: Implemented OpenAPI ServerInterface handlers for accounts, transactions, reservations, adjustments, and health per sourceOfTruth.md Phase 9.
+// Scope: Implemented OpenAPI ServerInterface handlers for accounts, transactions, reservations, adjustments, and health per sourceOfTruth.md Phase 9 & 12.
 // Author review: PENDING - reviewer to complete
 
 package httpapi
@@ -42,11 +42,11 @@ func (h *Handler) GetLiveness(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetReadiness checks service readiness and database connectivity.
+// GetReadiness checks service readiness and dependency connectivity.
 func (h *Handler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	if h.healthCheck != nil {
 		if err := h.healthCheck(r.Context()); err != nil {
-			writeError(w, http.StatusServiceUnavailable, gen.ErrorCodeSERVICEUNAVAILABLE, "service unavailable")
+			writeError(w, http.StatusServiceUnavailable, gen.ErrorCodeSERVICEUNAVAILABLE, err.Error())
 			return
 		}
 	}
