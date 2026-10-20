@@ -1,3 +1,9 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: Builds the token verifier and the Redis revocation client from
+//   JWKS_URL and REDIS_URL and hands them to the router (D-041, D-054).
+// Author review: PENDING — <reviewer to complete>
+
 package main
 
 import (
@@ -7,13 +13,16 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	pgxmigrate "github.com/golang-migrate/migrate/v4/database/pgx/v5"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/redis/go-redis/v9"
 
+	"foc/supplier-service/internal/auth"
 	"foc/supplier-service/internal/config"
 	"foc/supplier-service/internal/httpapi"
 	// AI-generated (edited by James Teo).
@@ -24,7 +33,10 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatalf("load config: %v", err)
+	}
 	ctx := context.Background()
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
@@ -47,7 +59,18 @@ func main() {
 		log.Fatalf("seed suppliers: %v", err)
 	}
 
-	router := httpapi.NewRouter(svc)
+	// Neither user-service nor Redis is waited for here: the keys are fetched
+	// on the first admin write and go-redis connects lazily.
+	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
+	redisOpts, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		// The error would quote REDIS_URL, which can carry a password.
+		log.Fatal("REDIS_URL is not a valid Redis URL")
+	}
+	rdb := redis.NewClient(redisOpts)
+	defer rdb.Close()
+
+	router := httpapi.NewRouter(svc, verifier, auth.NewRevocations(rdb))
 
 	log.Printf("supplier-service listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {

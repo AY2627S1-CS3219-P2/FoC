@@ -23,7 +23,11 @@ Requires a Postgres instance reachable at `SUPPLIER_DB_URL` (see
 `.env.example`). Migrations run automatically on startup, followed by a
 one-time seed from the CSV if the table is empty. Deleting a supplier also
 needs order-service at `ORDER_BASE_URL` (default `http://localhost:8083`);
-without it every delete is refused.
+without it every delete is refused. Create, update and delete need an ADMIN's
+access token, so a host run also needs user-service's keys at `JWKS_URL`
+(default `http://localhost:8081/.well-known/jwks.json`) and Redis at `REDIS_URL`
+(default `redis://localhost:6379`); Compose publishes neither, so run them
+yourself or publish them. Reads need neither.
 
 Via Docker Compose (from the repo root):
 
@@ -38,17 +42,29 @@ docker compose up supplier-service supplier-db
 | GET | `/health` | none | container readiness |
 | GET | `/suppliers?category=&q=` | none | list/filter/search |
 | GET | `/suppliers/{id}` | none | full detail |
-| POST | `/suppliers` | ADMIN | create |
-| PUT | `/suppliers/{id}` | ADMIN | update |
-| DELETE | `/suppliers/{id}` | ADMIN | soft-delete; 409 while an unfinished errand references it (see below) |
+| POST | `/suppliers` | ADMIN access token | create |
+| PUT | `/suppliers/{id}` | ADMIN access token | update |
+| DELETE | `/suppliers/{id}` | ADMIN access token | soft-delete; 409 while an unfinished errand references it (see below) |
 
-### Auth (interim)
+### Auth
 
-The team hasn't finalized how identity/role is passed between services
-yet. Admin endpoints currently check a plain `X-User-Role: ADMIN` header
-(`internal/middleware/auth.go`) purely so there's something to develop
-and test against. Swap `HeaderRoleExtractor` for a real JWT/gateway-based
-extractor once that's decided — no other code needs to change.
+The service verifies the caller itself (D-041, D-054). `POST`, `PUT` and
+`DELETE /suppliers` need `Authorization: Bearer <access token>` from a login
+through user-service. The token's RS256 signature is checked against
+user-service's published keys (`JWKS_URL`), along with `iss`, `aud`, `exp` and
+`typ`; then the revocation keys user-service writes to Redis (`REDIS_URL`), so
+a logged-out or suspended admin's token stops working at once. The caller is
+the token's `sub` and `role`. `X-User-Id` and `X-User-Role` are ignored.
+
+| Answer | When |
+|---|---|
+| 401 `missing, invalid or expired access token` | no, malformed, expired, revoked or wrongly typed token; a role that is neither STUDENT nor ADMIN |
+| 403 `admin role required` | a valid STUDENT token |
+| 503 `sign-in cannot be checked right now; please try again` | user-service's keys cannot be loaded, or Redis cannot be reached or answers with an error |
+| otherwise | the answers below |
+
+Reads (`GET /suppliers`, `GET /suppliers/{id}`) and `GET /health` need no token
+and ignore `Authorization`.
 
 ### Delete checks for unfinished errands, then soft-deletes
 
@@ -71,17 +87,22 @@ without asking.
   to can vanish underneath it.
 
 order-service answers only an ADMIN's access token, so the delete handler
-forwards the incoming request's own `Authorization` header. If the API
-Gateway does not pass that header through on `/api/suppliers`,
-order-service answers 401 and every delete is refused with `500`.
+forwards the token it verified, as `Authorization: Bearer <token>`. The API
+Gateway keeps `Authorization` on `/api/suppliers` (PR #22); without it every
+admin write is a 401.
 
 ## Tests
 
 ```bash
 go test ./...
+go test -tags=integration ./...   # needs Docker
 ```
 
 Unit tests cover the service layer (validation, duplicate rejection, the
 unfinished-errand check before a soft delete) against in-memory fakes, the
+token check (every refusal, forged identity headers, key fetching and
+revocation) against real RS256 tokens served from an `httptest` key set, the
 order-service client against an `httptest` server, and the CSV seed
-parser against the actual template seed file.
+parser against the actual template seed file. The integration tests run admin
+create, update and delete over a real PostgreSQL and Redis, with revocation
+keys written the way user-service writes them and with Redis stopped.
