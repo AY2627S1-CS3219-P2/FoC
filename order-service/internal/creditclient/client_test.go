@@ -106,15 +106,21 @@ func TestReserveOutcomes(t *testing.T) {
 		wantAttempts int32
 	}{
 		{name: "201 reserves", steps: answers(http.StatusCreated), want: applied, wantAttempts: 1},
+		// 200 is credit-service's answer to a request identical to a hold it
+		// already made (D-073).
+		{name: "200 reserves: the hold already matches this request", steps: answers(http.StatusOK), want: applied, wantAttempts: 1},
 		{name: "422 is insufficient credits", steps: answers(http.StatusUnprocessableEntity), want: insufficient, wantAttempts: 1},
 		{name: "400 is a refusal", steps: answers(http.StatusBadRequest), want: rejected, wantAttempts: 1},
 		{name: "401 is a refusal", steps: answers(http.StatusUnauthorized), want: rejected, wantAttempts: 1},
 		{name: "403 is a refusal", steps: answers(http.StatusForbidden), want: rejected, wantAttempts: 1},
 		{name: "404 is a refusal", steps: answers(http.StatusNotFound), want: rejected, wantAttempts: 1},
+		// A 409 is a hold that doesn't match this request, so it proves nothing
+		// on either attempt (D-073).
 		{name: "409 on the first attempt: whose hold it is, is unknown", steps: answers(http.StatusConflict), want: unknown, wantAttempts: 1},
 		{name: "429 is not retried", steps: answers(http.StatusTooManyRequests), want: unknown, wantAttempts: 1},
 		{name: "500, then 201", steps: answers(http.StatusInternalServerError, http.StatusCreated), want: applied, wantAttempts: 2},
-		{name: "502, then 409: the first attempt had reserved", steps: answers(http.StatusBadGateway, http.StatusConflict), want: applied, wantAttempts: 2},
+		{name: "502, then 200: the first attempt had reserved", steps: answers(http.StatusBadGateway, http.StatusOK), want: applied, wantAttempts: 2},
+		{name: "502, then 409: a hold that doesn't match is unknown", steps: answers(http.StatusBadGateway, http.StatusConflict), want: unknown, wantAttempts: 2},
 		// AI-generated (edited by James Teo): the first attempt's own hold may be
 		// what leaves too little for the retry, so its 422 proves nothing.
 		{name: "503, then 422: the first attempt may have reserved", steps: answers(http.StatusServiceUnavailable, http.StatusUnprocessableEntity), want: unknown, wantAttempts: 2},
@@ -128,11 +134,17 @@ func TestReserveOutcomes(t *testing.T) {
 			wantAttempts: 2,
 		},
 		{
-			name: "a dropped connection, then 409: the first attempt had reserved",
-			steps: func(t *testing.T) []step {
-				return []step{drop(t), respond(http.StatusConflict, `{"error":"duplicate reservation"}`)}
-			},
+			name:         "a dropped connection, then 200: the first attempt had reserved",
+			steps:        func(t *testing.T) []step { return []step{drop(t), respond(http.StatusOK, `{}`)} },
 			want:         applied,
+			wantAttempts: 2,
+		},
+		{
+			name: "a dropped connection, then 409: a hold that doesn't match is unknown",
+			steps: func(t *testing.T) []step {
+				return []step{drop(t), respond(http.StatusConflict, `{"error":"reservation does not match"}`)}
+			},
+			want:         unknown,
 			wantAttempts: 2,
 		},
 		// AI-generated (edited by James Teo).
@@ -170,11 +182,13 @@ func TestReserveRetriesTheSameReservation(t *testing.T) {
 		steps func(t *testing.T) []step
 	}{
 		{name: "after a 500", steps: answers(http.StatusInternalServerError, http.StatusCreated)},
+		// The retry finds the lost first attempt's hold, which credit-service
+		// answers with 200 (D-073).
 		{name: "after a dropped connection", steps: func(t *testing.T) []step {
-			return []step{drop(t), respond(http.StatusConflict, `{}`)}
+			return []step{drop(t), respond(http.StatusOK, `{}`)}
 		}},
 		{name: "after a timeout", steps: func(*testing.T) []step {
-			return []step{hang(), respond(http.StatusConflict, `{}`)}
+			return []step{hang(), respond(http.StatusOK, `{}`)}
 		}},
 	}
 	for _, tc := range tests {
@@ -208,7 +222,7 @@ func TestReserveBoundsEachAttempt(t *testing.T) {
 		want  outcome
 	}{
 		{name: "a timeout, then 201", steps: []step{hang(), respond(http.StatusCreated, `{}`)}, want: applied},
-		{name: "a timeout, then 409: the lost first attempt had reserved", steps: []step{hang(), respond(http.StatusConflict, `{}`)}, want: applied},
+		{name: "a timeout, then 200: the lost first attempt had reserved", steps: []step{hang(), respond(http.StatusOK, `{}`)}, want: applied},
 		{name: "two timeouts", steps: []step{hang(), hang()}, want: unknown},
 	}
 	for _, tc := range tests {
