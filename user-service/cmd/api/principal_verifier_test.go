@@ -37,7 +37,7 @@ func TestJWTPrincipalVerifierAcceptsOnlyAccessTokens(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if principal.UserID != uid || principal.Role != user.AccountRoleAdmin {
+	if principal.UserID != uid || principal.Role != user.AccountRoleAdmin || principal.JTI == uuid.Nil || principal.IssuedAt.IsZero() {
 		t.Fatalf("principal = %#v", principal)
 	}
 	refreshToken, err := service.IssueRefreshToken(uid, time.Minute)

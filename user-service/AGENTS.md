@@ -31,10 +31,9 @@ below is theirs, not an agent's.
   verify a token, the duplication is correct (root §4.2). Do not create a
   shared module or import across service modules.
 - **JWT is the recorded identity mechanism.** This service issues and validates
-  JWTs for authentication and session handling. Other services will not verify the JWT
-  at their own boundaries; they must not connect to this service's database or
-  import an auth package. All other services will trust the `X-User-ID` and
-  `X-User-Role` headers from the API Gateway
+  JWTs for authentication and session handling. Services verify tokens at their
+  own boundaries using the public keys and read the shared revocation keys;
+  they must not connect to this service's database or import an auth package.
 
 ## Layout
 
@@ -183,9 +182,10 @@ Example repository method signatures:
 ### Redis Configuration
 - Environment Variable: REDIS_URL (e.g., redis://localhost:6379/0).
 - Use the industry standard [github.com/redis/go-redis/v9](https://github.com/redis/go-redis/v9).
-- Key Formats: 
-  - JTI Blocklist: `jti:<jti-uuid>`
-  - Suspension: `suspended:uid:<user-uuid>`
+- Key Formats:
+  - JTI Blocklist: `jti:<jti-uuid>`; value `1`; TTL is the token's remaining lifetime plus 5 seconds (the clock skew readers allow past `exp`), or 5 seconds when logout comes after `exp`. Readers reject the token when the key exists.
+  - Suspension: `suspended:uid:<user-uuid>`; value is the UTC suspension time in whole seconds formatted with `time.RFC3339Nano`; TTL is `JWT_ACCESS_TOKEN_TTL` plus 5 seconds (15 minutes 5 seconds by default). Readers reject a verified token when its `iat` is at or before the stored time, and reject it when the value does not parse.
+- **Reader rule:** Every service that verifies tokens must verify the signature and `iss`, `aud`, `exp`, and `typ` claims before reading these keys. It must take `uid` and `jti` only from the verified token. User-service is the only writer (D-054).
 - Unavailable Behavior: Fail-closed. If a `Set` operation to Redis fails during logout, the application must immediately return a 500 Internal Server Error and abort the subsequent PostgreSQL transaction, forcing the frontend client to retry.
 - The user-service should adopt the Gateway's Redis configuration: redis:7-alpine (or 8-alpine depending on Gateway) with `--appendonly yes` and a persistent volume. This guarantees state recovery across container restarts.
 
@@ -213,7 +213,7 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - **Execution Sequence & Ownership Verification:**
      1. Hash the incoming refresh token and query PostgreSQL to read the session. If the session is missing or already has a populated `revoked_at` field, immediately return `204 No Content` (idempotent success).
      2. Verify that the session's `uid` matches the verified access token's `sub` claim. If they do not match, reject the request with a `400 Bad Request` (e.g., `{"error": "mismatched session"}`).
-     3. Push the access token's `jti` to the Redis blocklist. If the access token is in the 5-second clock-skew window (meaning its theoretical remaining lifetime is ≤ 0), set the Redis TTL to exactly 5 seconds. If the Redis `SET` operation fails, abort the transaction and return a `500 Internal Server Error`.
+     3. Push the access token's `jti` to the Redis blocklist with a TTL of its remaining lifetime plus 5 seconds. If the access token is in the 5-second clock-skew window (meaning its theoretical remaining lifetime is ≤ 0), the TTL is exactly 5 seconds. If the Redis `SET` operation fails, abort the transaction and return a `500 Internal Server Error`.
      4. Revoke the refresh session in PostgreSQL by setting the `revoked_at` field to the current timestamp. Do not use `DELETE`.
    - Request: Standard Authorization: Bearer <access_token> header, plus a JSON body {"refreshToken": "string"}.
    - Response: 204 No Content (empty body) on success, and response should be idempotent should with 204 in case session is already revoked, or when the supplied refresh token does not exist
@@ -222,7 +222,7 @@ Use Go Chi router for handling API calls. The API should handle these calls:
 9. GET /.well-known/jwks.json : the token header and the JWKS payload must include a kid (Key ID) field. The User Service must support loading multiple keys simultaneously: one designated "active" key for signing new tokens, and multiple "retired" keys kept in the JWKS to verify existing tokens until their respective TTLs expire
    - Request: Unauthenticated GET request.
    - Response: 200 OK with the standard JWKS JSON payload containing active and retired public keys.
-   - This API endpoint should not be reachable beyond the API gateway. Only the API gateway should be able to reach this endpoint and verify the signatures of incoming JWTs.
+   - This API endpoint is unauthenticated but remains private to the Docker network. The gateway and every service that verifies tokens may read it; it is not published to the host.
 
 Request bodies should enforce a strict 10KB (10 * 1024 bytes) limit using Go's `http.MaxBytesReader(w, r.Body, 10240)`, and return `413 Payload Too Large` and drop the connection if a client exceeds the limit.
 
@@ -259,7 +259,7 @@ The API contract is defined in `api/openapi.yaml` and must strictly align with t
 *   **PUT /api/v1/users/{uid}**
     *   **Statuses:** `200 OK`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict`, `500 Internal Server Error`.
     *   **Schema Constraints:** The `UpdateProfileRequest.password` field must declare the 8-128 character policy.
-    *   **Authorization Fix:** The code must be updated to align with the spec description. It must read the `X-User-ID` header injected by the API Gateway to verify the caller's identity, instead of attempting to read a Bearer token directly.
+    *   **Authorization:** `RequireJWT` verifies the bearer access token and checks the revocation keys; the handler takes the caller from the verified principal and ignores `X-User-ID` and `X-User-Role`.
 *   **PATCH /api/v1/users/{uid}/status**
     *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict` (last admin or unverified account), `500 Internal Server Error`.
 *   **POST /api/v1/users/refresh**
@@ -275,7 +275,7 @@ The API contract is defined in `api/openapi.yaml` and must strictly align with t
 uses the public key to verify them.
 - Key Distribution & Rotation: via a standard /.well-known/jwks.json endpoint exposed by the User Service
 - Clock skew: 5 seconds to prevent false rejections due to server clock drift
-- Trust boundary: internal services (Supplier, Order, Credit) do not accept or parse JWTs. They strictly trust and accept the X-User-ID and X-User-Role HTTP headers injected by the API Gateway after it verifies the token
+- Trust boundary: each service verifies the JWT at its own boundary, reads the shared revocation keys, and then passes the verified identity to its handlers. The `X-User-ID` and `X-User-Role` headers are not a substitute for service-local verification.
 - TTL: The default configurations are: JWT_ACCESS_TOKEN_TTL should be 15 minutes and JWT_REFRESH_TOKEN_TTL should be 7 days
 
 ### JWT Production Key Loading
@@ -334,18 +334,17 @@ will be sent from the user for verification against the database to obtain anoth
 
 ### Flow of authentication
 First and foremost, the API Gateway will be implemented in another folder separate from the user service.
-The API Gateway will sit between the user's browser and all microservices. The API Gateway will verify the signature of the JWT (using public keys provided by user service via `/.well-known/jwks.json` endpoint) without querying the user microservice, unless the user's browser submits credentials for login, registration, token refresh, or logout.
-It will read from a Redis Blocklist to verify the access token (specifically the `jti` claim) is valid (i.e. user has not logged out) and check Redis for user suspension key (formatted as `suspended:uid:<user-uuid>`) using the `sub` claim to verify user has not been suspended by an admin. It will then inject the claims in headers before forwarding requests to internal APIs via REST calls.
+The API Gateway will sit between the user's browser and all microservices. The API Gateway and every service that accepts protected traffic verify JWT signatures using public keys provided by user service via `/.well-known/jwks.json`, without querying the user-service database.
+Each token verifier reads the Redis blocklist to verify the access token (specifically the `jti` claim) is valid (i.e. the user has not logged out) and checks the suspension key (formatted as `suspended:uid:<user-uuid>`) using the verified `sub` claim. The gateway then injects the verified claims in headers before forwarding requests to internal APIs via REST calls.
 The API Gateway should strip any incoming `X-User-ID` and `X-User-Role` headers before injecting its own validated claims (`sub` and `role`) and ensure that all microservices are in a private VPC inaccessible from the Internet.
 Note: If the Gateway cannot reach Redis to check the blocklist and suspensions, the request must be rejected.
 Note: If PostgreSQL fails after redis suspension invalidation and refresh-session revocation, the user service should return a `500 Internal Server Error` forthe frontend client to retry the logout request. Upon receiving the retry, the user service should overwrite the exact same Redis key with the identical TTL to ensure system recovers when PostgreSQL successfully commits the transaction.
 
 When the user logs out, the frontend will send a request (containing access and refresh tokens) to the API gateway, which will be passed to the user service to invalidate the session by pushing the access token's `jti` to the redis blocklist and then revoking the refresh token from its own `sessions` database. 
-When an `ADMIN` suspends an account, the user service shall push a Redis key (e.g., `suspended:uid:<user-uuid>`) containing the current time, and then update a `tokens_valid_after` field containing the same timestamp. The API Gateway will check if a suspended key exists for the incoming `sub`. If it does, and the token's `iat` (Issued At) claim is older (earlier) than the `tokens_valid_after` timestamp, the token is rejected.
+When an `ADMIN` suspends an account, the user service shall push a Redis key (e.g., `suspended:uid:<user-uuid>`) containing the current time, and then update a `tokens_valid_after` field containing the same timestamp. A reader with no session of its own rejects a verified token when its `iat` (Issued At) is at or before the stored suspension time; an unparseable value is also treated as revoked. Refresh keeps its separate before rule because it also checks the revoked session boundary.
 
-The API Gateway is a reader of the Redis blocklist, and the user service shall be the sole writer to the Redis blocklist.
-(The API Gateway code should fit to this behaviour)
-The TTL for a specific `jti` in Redis must exactly match the remaining time until that access token's exp timestamp. The TTL for a suspended:uid:<uuid> key must match the JWT_ACCESS_TOKEN_TTL duration.
+The API Gateway and every service that verifies tokens are readers of the Redis blocklist, and the user service shall be the sole writer to the Redis blocklist.
+User-service also verifies its own protected profile and status routes after JWT signature and claim validation. It reads `jti:<jti>` and `suspended:uid:<uuid>` with one Redis MGET, bounded by 500 ms, and fails closed when Redis cannot answer. A revoked token receives 401; a Redis read failure receives 500. Logout remains unauthenticated by this reader so a retry can complete the refresh-session invalidation. The TTL for a specific `jti` in Redis includes the 5-second JWT clock-skew allowance, and the TTL for a suspended:uid:<uuid> key is JWT_ACCESS_TOKEN_TTL plus the same allowance.
 
 ### Username/Password Policy
 The username policy as stated in the product backlog is:
@@ -388,7 +387,7 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   **New `POST /api/v1/users/resend-otp`:**
     *   Accepts `{"email": "string"}`.
     *   Checks the `otp:count:<email>` rate limit. If under the limit, generates a new OTP, overwrites the hash in Redis with a 5-minute TTL, and dispatches the email.
-    *   A new OTP should not be generated and resent to the client if an email is unknown or is already active
+    *   A new OTP should not be generated and resent to the client if an email is unknown or has any status other than UNVERIFIED
 *   **New `POST /api/v1/users/verify-otp`:**
     *   Accepts `{"email": "string", "otp": "string"}`.
     *   Hashes the provided OTP and compares it against the Redis `otp:hash:<email>` value.
@@ -430,7 +429,8 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 
 **9. Resend Edge Cases**
 *   If an email is submitted to `/resend-otp` that does not exist in the `users` table, the service must return `404 Not Found`.
-*   If an email is submitted to `/resend-otp` but the user's `account_status` is already `ACTIVE`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
+*   If an email is submitted to `/resend-otp` but the user's `account_status` is `ACTIVE` or `SUSPENDED`, the service must not generate an OTP and must return `409 Conflict` (e.g., `{"error": "Account is already verified"}`).
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — records issue #31's suspended-account rule. -->
 
 ### Observability & Error Handling
 To ensure secure and traceable operational logging, the service must not rely on global loggers or silently discard underlying errors.

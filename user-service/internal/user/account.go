@@ -111,7 +111,7 @@ func (s *AccountService) Register(ctx context.Context, email, username, password
 }
 
 // ResendOTP replaces an unverified account's OTP only after confirming the
-// account exists and has not already been activated.
+// account exists and is still awaiting verification.
 func (s *AccountService) ResendOTP(ctx context.Context, email string) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")
@@ -130,7 +130,9 @@ func (s *AccountService) ResendOTP(ctx context.Context, email string) error {
 	if account == nil {
 		return ErrNotFound
 	}
-	if account.AccountStatus == AccountStatusActive {
+	// AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — issue #31
+	// rejects OTP resends for every account not awaiting verification.
+	if account.AccountStatus != AccountStatusUnverified {
 		return ErrAccountAlreadyVerified
 	}
 	count, err := s.otpStore.IncrementRequestCount(ctx, email)
@@ -457,12 +459,10 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 
 // AI-generated (edited by nigeltzy).
 // tokenCutoff returns the tokens_valid_after value for an invalidation made
-// now, truncated to whole seconds. A JWT's iat is whole seconds, and refresh
-// rejects a token whose iat is before the cutoff, so a sub-second cutoff
-// rejected tokens issued later in the same second — a login right after a
-// password change got a session that failed its first refresh. Tokens issued
-// earlier in that second now pass the iat check; their refresh sessions are
-// revoked by the same invalidation, which refresh checks first.
+// now, truncated to whole seconds. A JWT's iat is whole seconds. Readers with
+// no session reject a token whose iat is at or before this cutoff; refresh
+// keeps its separate before rule because it also checks the refresh session,
+// which is revoked by the same invalidation.
 func (s *AccountService) tokenCutoff() time.Time {
 	return s.now().UTC().Truncate(time.Second)
 }

@@ -57,7 +57,7 @@ flowchart TB
 
     US --> UDB
     SUP --> SDB
-    US -->|"sole writer"| RDS
+    US -->|"sole writer; reads on its own routes"| RDS
 
     classDef built fill:#1b5e20,stroke:#4caf50,color:#fff
     classDef partial fill:#4a3800,stroke:#ffb300,color:#fff
@@ -239,8 +239,8 @@ sequenceDiagram
 > so the token stops working at once, as the PNG said.
 
 > **Updated 2026-10-20.** The 2026-09-22 note here said both keys had no reader
-> anywhere. They now have three: the gateway on every authenticated request,
-> and order-service and supplier-service on their own routes (§6). Revocation
+> anywhere. They now have four: the gateway on every authenticated request,
+> and order-service, supplier-service and user-service on their own routes (§6). Revocation
 > is still enforced at **refresh** as well, from PostgreSQL, as §4 shows.
 
 > **Corrected 2026-09-22.** The last arrow previously went to `user-service`.
@@ -257,7 +257,7 @@ itself about. Two different jobs get called "validating a token":
 | | Question | Needs | Who does it today |
 | --- | --- | --- | --- |
 | **Job 1** | Is this token genuine and unexpired? | The issuer's **public** key, and nothing else | **The API Gateway**, locally, on every request; order-service and supplier-service's admin writes check it again (D-041) |
-| **Job 2** | Has it been killed early — logout, suspension? | **Shared state** (the Redis keys) | **The API Gateway**, on every authenticated request (D-077); order-service and supplier-service also check on their own routes |
+| **Job 2** | Has it been killed early — logout, suspension? | **Shared state** (the Redis keys) | **The API Gateway**, on every authenticated request (D-077); order-service, supplier-service and user-service also check on their own routes |
 
 Job 1 needs no network call. Access tokens are RS256 (D-023): `user-service`
 holds the private key and is the only process that can mint one (D-012); the
@@ -290,16 +290,16 @@ flowchart LR
 ("*If the Gateway cannot reach Redis … the request must be rejected*")
 describe, and what the gateway does since D-077: a revoked token gets 401, and
 when Redis does not answer it fails closed with 503. **B** was the state under
-D-024 until D-054 superseded it. **C** is D-054's other half: order-service and
-supplier-service check the keys themselves, and user-service's own routes and
-credit-service are still to. With A in place, C is defence in depth.
+D-024 until D-054 superseded it. **C** is D-054's other half: order-service,
+supplier-service and user-service's own routes check the keys themselves, and
+credit-service is still to. With A in place, C is defence in depth.
 
 ### Who reads the Redis keys
 
 | Key | Written by | Read by |
 | --- | --- | --- |
-| `jti:<jti>` | `user-service` on logout (`BlockAccessToken`) | the API Gateway, `order-service`, `supplier-service` |
-| `suspended:uid:<uuid>` | `user-service` on suspension (`WriteSuspension`) | the API Gateway, `order-service`, `supplier-service` |
+| `jti:<jti>` | `user-service` on logout (`BlockAccessToken`) | the API Gateway, `order-service`, `supplier-service`, `user-service`'s own routes |
+| `suspended:uid:<uuid>` | `user-service` on suspension (`WriteSuspension`) | the API Gateway, `order-service`, `supplier-service`, `user-service`'s own routes |
 
 `user-service` is still their only writer (D-054). The gateway reads them with
 one `MGET` per authenticated request, bounded at 500 ms
@@ -339,7 +339,7 @@ Refreshed 2026-10-20.
 | `order-service` | **Working.** The errand lifecycle; verifies tokens and the revocation keys itself | `main` |
 | `credit-service` | Scaffold on `main`; the service is in PR #44 | `feat/initial-credit` |
 | `notification-service` | No folder, no owner, no decision row | — |
-| Redis | In `compose.yaml`; written by `user-service`, read by the gateway, `order-service` and `supplier-service` (§6) | `main` |
+| Redis | In `compose.yaml`; written by `user-service`, read by the gateway, `order-service`, `supplier-service` and `user-service`'s own routes (§6) | `main` |
 
 ## 8. What this picture assumes, and does not yet have
 

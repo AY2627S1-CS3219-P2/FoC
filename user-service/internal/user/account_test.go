@@ -143,6 +143,9 @@ func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGenerating
 	}{
 		"unknown": {account: nil, wantErr: ErrNotFound},
 		"active":  {account: &User{AccountStatus: AccountStatusActive}, wantErr: ErrAccountAlreadyVerified},
+		// AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — covers
+		// issue #31's suspended-account refusal case.
+		"suspended": {account: &User{AccountStatus: AccountStatusSuspended}, wantErr: ErrAccountAlreadyVerified},
 	} {
 		t.Run(name, func(t *testing.T) {
 			store := &fakeOTPStore{count: 1}
@@ -153,8 +156,8 @@ func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGenerating
 			if !errors.Is(err, testCase.wantErr) {
 				t.Fatalf("error = %v, want %v", err, testCase.wantErr)
 			}
-			if store.storedHash != "" || deliverer.otp != "" {
-				t.Fatal("unknown or active account must not generate or deliver an OTP")
+			if store.storedHash != "" || deliverer.otp != "" || store.incrementRequestCountCalls != 0 {
+				t.Fatal("unknown, active, or suspended account must not count, generate, or deliver an OTP")
 			}
 		})
 	}
@@ -692,7 +695,7 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 	repository := &fakeAccountRepository{user: &User{}, callOrder: &order}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
-	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute, func() time.Time { return timestamp })
+	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute+5*time.Second, func() time.Time { return timestamp })
 
 	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err != nil {
 		t.Fatal(err)
@@ -700,7 +703,7 @@ func TestAccountServiceSuspensionInvalidatesBeforeUpdatingStatus(t *testing.T) {
 	if got, want := order, []string{"redis", "sessions", "postgres"}; !equalStrings(got, want) {
 		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
-	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute {
+	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute+5*time.Second {
 		t.Fatalf("suspension write = %#v, want account, timestamp, and TTL", writer)
 	}
 	if sessions.uid != uid || repository.status != AccountStatusSuspended {
@@ -767,7 +770,7 @@ func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testi
 	}
 	writer := &fakeSuspensionWriter{callOrder: &order}
 	sessions := &fakeAccountSessionRepository{callOrder: &order}
-	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute, func() time.Time { return timestamp })
+	service := NewAccountServiceWithClock(repository, writer, sessions, 15*time.Minute+5*time.Second, func() time.Time { return timestamp })
 
 	if err := service.UpdateAccountStatus(context.Background(), uid, AccountStatusSuspended); err == nil {
 		t.Fatal("PostgreSQL failure was ignored")
@@ -779,7 +782,7 @@ func TestAccountServiceSuspensionRetryRepeatsInvalidationBeforePostgres(t *testi
 	if got, want := order, []string{"redis", "sessions", "postgres", "redis", "sessions", "postgres"}; !equalStrings(got, want) {
 		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
-	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute {
+	if writer.uid != uid || !writer.at.Equal(timestamp) || writer.ttl != 15*time.Minute+5*time.Second {
 		t.Fatalf("retried suspension write = %#v, want identical account, timestamp, and TTL", writer)
 	}
 }

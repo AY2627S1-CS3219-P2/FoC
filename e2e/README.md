@@ -86,6 +86,11 @@ instead of every test timing out on its own.
 | `TestSuspensionRevokesTheAccessToken` | after an ADMIN suspends a student with `PATCH /api/users/{uid}/status`, the token the student already holds gets 401 on `GET /api/orders/open` |
 | `TestGatewayRefusesALoggedOutToken` | after `POST /auth/logout`, the same token gets 401 on `GET /api/suppliers` and `GET /api/credits/accounts/me`, routes whose service does not check the revocation keys itself |
 | `TestGatewayRefusesASuspendedTokenUntilReactivated` | after an ADMIN suspends a student, their token gets 401 on `GET /api/suppliers`, `GET /api/credits/accounts/me` and `GET /api/users/{uid}`; after reactivation a fresh login gets 200 while the old token stays refused |
+| `TestSuspendedStudentIsRefusedAtOnce` | a suspended student's existing token gets 401 on `GET /api/users/{uid}`, and a newly issued token works after reactivation |
+| `TestLoggedOutTokenIsRefused` | after logout, the same token gets 401 on `GET /api/users/{uid}` |
+| `TestSuspendedAccountGetsNoNewCode` | after an ADMIN suspends a student, `POST /auth/resend-otp` answers 409 and user-service logs no additional OTP for that email |
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 
 ## Notes
 

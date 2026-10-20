@@ -278,7 +278,12 @@ paths:
               $ref: '#/components/schemas/NewOtpRequest'
       responses:
         '200':
-          description: New OTP sent successfully with an empty response body.
+          description: New OTP sent successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
         '400':
           description: Invalid email violation.
           content:
@@ -292,13 +297,20 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Account already active.
+          # AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #31's ACTIVE/SUSPENDED conflict.
+          description: The account is not awaiting verification (ACTIVE or SUSPENDED).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '429':
           description: Too many requests to resend OTP.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
           content:
             application/json:
               schema:
@@ -323,6 +335,11 @@ paths:
       responses:
         '200':
           description: Email verification successful.
+          content:
+            application/json:
+              schema:
+                type: object
+              example: {}
         '400':
           description: Invalid email/OTP violation.
           content:
@@ -346,6 +363,12 @@ paths:
             Too many OTP requests for this email, or the current code already
             had 5 wrong guesses. The attempt after the fifth wrong guess
             discards the code, so the user must request a new one.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
           content:
             application/json:
               schema:
@@ -529,13 +552,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Authentication required
+          description: Authentication required, including a revoked access token.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal Server Error
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:
@@ -577,7 +600,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: The current password is incorrect.
+          description: The current password is incorrect or the access token has been revoked.
           content:
             application/json:
               schema:
@@ -601,7 +624,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal Server Error
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:
@@ -641,7 +664,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '401':
-          description: Authentication required
+          description: Authentication required, including a revoked access token.
           content:
             application/json:
               schema:
@@ -666,7 +689,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
-          description: Internal Server Error
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:
