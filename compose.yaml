@@ -43,8 +43,8 @@ services:
   # ---- Redis ------------------------------------------------------------
   # AI-generated (edited by nigeltzy) — rewritten for D-024.
   # user-service's store, including the access-token revocation keys that
-  # order-service reads. No `ports:` key, so it is reachable only inside this
-  # network.
+  # the gateway, order-service and supplier-service read. No `ports:` key, so
+  # it is reachable only inside this network.
   redis:
     image: redis:7-alpine
     # Append-only persistence, so the jti blocklist survives a restart.
@@ -95,13 +95,17 @@ services:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
-    # No depends_on: the gateway fetches JWKS on first use, so it can start
-    # before user-service.
+    # No depends_on: the gateway fetches JWKS and connects to Redis on first
+    # use, so it can start before user-service and Redis. Authenticated routes
+    # answer 503 until both answer.
     environment:
       PORT: 8080
       # user-service's JWKS endpoint. Until user-service is running, authenticated
       # routes return 503.
       JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      # The Redis user-service writes the revocation keys to. Every verified
+      # token is checked against them.
+      REDIS_URL: redis://redis:6379
       # All four base URLs are required, including services not in this file yet.
       USER_BASE_URL: http://user-service:8081
       SUPPLIER_BASE_URL: http://supplier-service:8082

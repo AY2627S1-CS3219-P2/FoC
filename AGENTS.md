@@ -122,7 +122,7 @@ state its own port but must not restate this table.
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
 | `frontend` | 3001: where `npm run dev` serves the app; in production a static host serves it (D-033) | — |
-| `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of its own; it is to read the shared Redis revocation keys, §4.1, a check not built yet) |
+| `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of its own; it reads the shared Redis revocation keys, §4.1) |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
@@ -201,8 +201,7 @@ Rules: no test depends on another test's leftover state or on execution order
 with a deadline. New behaviour ships with its test in the same PR.
 
 Today `api-gateway`, `user-service`, `supplier-service` and `order-service` have
-unit tests; `user-service` and `order-service` also have integration tests
-(`testcontainers-go`); and `e2e/` holds the whole-stack suite, whose preflight
+unit tests, and all four also have integration tests (`testcontainers-go`); and `e2e/` holds the whole-stack suite, whose preflight
 names what the stack still lacks before it can pass. Build the tier your task
 needs; never report a tier as running unless you ran it.
 

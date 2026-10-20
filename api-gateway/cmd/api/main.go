@@ -8,8 +8,9 @@
 // real router (D-027). Re-read before relying on the sign-off above.
 
 // Command api runs the FoC API Gateway. It verifies each access token against
-// user-service's JWKS, strips client-supplied claim headers, injects its own,
-// and forwards the request to the downstream service over HTTP.
+// user-service's JWKS and the revocation keys in Redis, strips client-supplied
+// claim headers, injects its own, and forwards the request to the downstream
+// service over HTTP.
 package main
 
 import (
@@ -25,6 +26,7 @@ import (
 	"foc/api-gateway/internal/auth"
 	"foc/api-gateway/internal/config"
 	"foc/api-gateway/internal/httpapi"
+	"foc/api-gateway/internal/revocation"
 )
 
 func main() {
@@ -35,7 +37,15 @@ func main() {
 
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 
-	router, err := httpapi.NewRouter(cfg.Downstream, verifier, cfg.RefreshTokenTTL)
+	// The client connects on first use, so the gateway starts without Redis
+	// and answers 503 on authenticated routes until Redis answers (root §5).
+	// Its error is fixed text: REDIS_URL can carry a password.
+	rdb, err := revocation.NewRedisClient(cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("api-gateway: %v", err)
+	}
+
+	router, err := httpapi.NewRouter(cfg.Downstream, verifier, revocation.New(rdb), cfg.RefreshTokenTTL)
 	if err != nil {
 		log.Fatalf("api-gateway: building router: %v", err)
 	}
@@ -71,5 +81,8 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("api-gateway: shutdown: %v", err)
+	}
+	if err := rdb.Close(); err != nil {
+		log.Printf("api-gateway: closing Redis client: %v", err)
 	}
 }

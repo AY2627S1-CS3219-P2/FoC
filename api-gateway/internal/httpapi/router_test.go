@@ -12,10 +12,12 @@
 package httpapi_test
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -73,7 +75,14 @@ type tokenOpts struct {
 	typ     string
 	expires time.Time
 	kid     string
+	// issuedAt defaults to a minute ago; noIAT and noJTI leave the claim out.
+	issuedAt time.Time
+	noIAT    bool
+	noJTI    bool
 }
+
+// testJTI is the jti every minted token carries unless noJTI is set.
+const testJTI = "test-jti"
 
 func (i *issuer) mint(t *testing.T, o tokenOpts) string {
 	t.Helper()
@@ -86,16 +95,26 @@ func (i *issuer) mint(t *testing.T, o tokenOpts) string {
 	if o.kid == "" {
 		o.kid = testKeyID
 	}
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+	if o.issuedAt.IsZero() {
+		o.issuedAt = time.Now().Add(-time.Minute)
+	}
+	claims := jwt.MapClaims{
 		"iss":  "campusrun-user-service",
 		"sub":  o.subject,
 		"aud":  "campusrun-api",
 		"exp":  o.expires.Unix(),
-		"iat":  time.Now().Add(-time.Minute).Unix(),
-		"jti":  "test-jti",
+		"iat":  o.issuedAt.Unix(),
+		"jti":  testJTI,
 		"typ":  o.typ,
 		"role": o.role,
-	})
+	}
+	if o.noIAT {
+		delete(claims, "iat")
+	}
+	if o.noJTI {
+		delete(claims, "jti")
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
 	token.Header["kid"] = o.kid
 	signed, err := token.SignedString(i.key)
 	if err != nil {
@@ -111,6 +130,7 @@ const testRefreshTTL = 168 * time.Hour
 // recorder captures what a downstream service actually received.
 type recorder struct {
 	path   string
+	query  string
 	header http.Header
 	body   string
 }
@@ -118,6 +138,7 @@ type recorder struct {
 func stubService(rec *recorder) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec.path = r.URL.Path
+		rec.query = r.URL.RawQuery
 		rec.header = r.Header.Clone()
 		// Sets a CORS header, as a real callee may, so tests can check the proxy
 		// strips it.
@@ -127,16 +148,35 @@ func stubService(rec *recorder) *httptest.Server {
 	}))
 }
 
+// fakeRevocations stands in for internal/revocation's Checker. It answers
+// revoked and err as set, and records each lookup.
+type fakeRevocations struct {
+	revoked bool
+	err     error
+
+	calls       int
+	tokenID     string
+	subject     string
+	tokenIssued time.Time
+}
+
+func (f *fakeRevocations) Revoked(_ context.Context, tokenID, subject string, issuedAt time.Time) (bool, error) {
+	f.calls++
+	f.tokenID, f.subject, f.tokenIssued = tokenID, subject, issuedAt
+	return f.revoked, f.err
+}
+
 // AI-generated (edited by nigeltzy).
 // AI-generated (edited by James Teo): order-service and credit-service get
 // their own recorders.
 type harness struct {
-	router    http.Handler
-	issuer    *issuer
-	userRec   *recorder
-	suppRec   *recorder
-	orderRec  *recorder
-	creditRec *recorder
+	router      http.Handler
+	issuer      *issuer
+	revocations *fakeRevocations
+	userRec     *recorder
+	suppRec     *recorder
+	orderRec    *recorder
+	creditRec   *recorder
 }
 
 // AI-generated (edited by nigeltzy).
@@ -159,23 +199,25 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(creditSvc.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
+	revocations := &fakeRevocations{}
 	router, err := httpapi.NewRouter(config.Downstream{
 		User:     userSvc.URL,
 		Supplier: suppSvc.URL,
 		Order:    orderSvc.URL,
 		Credit:   creditSvc.URL,
-	}, verifier, testRefreshTTL)
+	}, verifier, revocations, testRefreshTTL)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
 
 	return &harness{
-		router:    router,
-		issuer:    iss,
-		userRec:   userRec,
-		suppRec:   suppRec,
-		orderRec:  orderRec,
-		creditRec: creditRec,
+		router:      router,
+		issuer:      iss,
+		revocations: revocations,
+		userRec:     userRec,
+		suppRec:     suppRec,
+		orderRec:    orderRec,
+		creditRec:   creditRec,
 	}
 }
 
@@ -580,7 +622,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
-	}, auth.NewVerifier(jwks.URL, nil), testRefreshTTL)
+	}, auth.NewVerifier(jwks.URL, nil), &fakeRevocations{}, testRefreshTTL)
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -768,5 +810,196 @@ func TestOtherUnmatchedPathsGetA404(t *testing.T) {
 	// The gateway serves no pages: a path outside its routes is a plain 404.
 	if got := h.do(httptest.NewRequest(http.MethodGet, "/suppliers", nil)); got.Code != http.StatusNotFound {
 		t.Errorf("GET /suppliers = %d, want 404", got.Code)
+	}
+}
+
+// A revoked token stops at the gateway on every service route, with the same
+// message as a bad signature.
+func TestRevokedTokenNeverReachesAService(t *testing.T) {
+	for _, path := range []string{"/api/users/me", "/api/suppliers/42", "/api/orders/open", "/api/credits/accounts/me"} {
+		t.Run(path, func(t *testing.T) {
+			h := newHarness(t)
+			h.revocations.revoked = true
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			got := h.do(req)
+
+			if got.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401 (body %s)", got.Code, got.Body.String())
+			}
+			if body := strings.TrimSpace(got.Body.String()); body != `{"error":"invalid token"}` {
+				t.Errorf("body = %s, want the bad-signature message", body)
+			}
+			if calls := h.downstreamCalls(); len(calls) != 0 {
+				t.Errorf("a revoked token reached %v", calls)
+			}
+		})
+	}
+}
+
+// The check is asked about the token's own jti, sub and iat.
+func TestRevocationCheckGetsTheTokensIDSubjectAndIssueTime(t *testing.T) {
+	h := newHarness(t)
+	issued := time.Now().Add(-2 * time.Minute).Truncate(time.Second)
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "ADMIN", issuedAt: issued})
+	req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	if got := h.do(req); got.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+	}
+	f := h.revocations
+	if f.calls != 1 || f.tokenID != testJTI || f.subject != "uid-123" || !f.tokenIssued.Equal(issued) {
+		t.Errorf("lookup = %d call(s) for jti %q, sub %q, iat %v; want 1 for %q, uid-123, %v",
+			f.calls, f.tokenID, f.subject, f.tokenIssued, testJTI, issued)
+	}
+}
+
+// When the check cannot be made, the gateway fails closed with 503, not 401:
+// the frontend answers a 401 by refreshing, which would sign users out.
+func TestRevocationCheckUnavailableAnswers503(t *testing.T) {
+	h := newHarness(t)
+	h.revocations.err = errors.New("read revocation keys: dial tcp: connection refused")
+	token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/orders/open", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	got := h.do(req)
+
+	if got.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503 (body %s)", got.Code, got.Body.String())
+	}
+	if body := strings.TrimSpace(got.Body.String()); body != `{"error":"cannot check tokens right now"}` {
+		t.Errorf("body = %s", body)
+	}
+	if calls := h.downstreamCalls(); len(calls) != 0 {
+		t.Errorf("an unchecked token reached %v", calls)
+	}
+}
+
+// Only a token that has passed verification reaches Redis.
+func TestUnverifiedTokenSkipsRevocationLookup(t *testing.T) {
+	tests := []struct {
+		name  string
+		token func(t *testing.T, iss *issuer) string
+	}{
+		{"missing token", func(*testing.T, *issuer) string { return "" }},
+		{"expired token", func(t *testing.T, iss *issuer) string {
+			return iss.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT", expires: time.Now().Add(-time.Hour)})
+		}},
+		{"token signed by another key", func(t *testing.T, _ *issuer) string {
+			return newIssuer(t).mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+		}},
+		{"refresh token presented as bearer", func(t *testing.T, iss *issuer) string {
+			return iss.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT", typ: "refresh"})
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := newHarness(t)
+			req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+			if token := tt.token(t, h.issuer); token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+			}
+
+			if got := h.do(req); got.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", got.Code)
+			}
+			if h.revocations.calls != 0 {
+				t.Errorf("revocation lookups = %d, want 0 for a token that failed verification", h.revocations.calls)
+			}
+		})
+	}
+}
+
+// A token without a jti or an iat can't be checked, so it is refused before
+// any lookup.
+func TestTokenWithoutJTIOrIATIsRefused(t *testing.T) {
+	for name, opts := range map[string]tokenOpts{
+		"no jti": {subject: "uid-123", role: "STUDENT", noJTI: true},
+		"no iat": {subject: "uid-123", role: "STUDENT", noIAT: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			req := httptest.NewRequest(http.MethodGet, "/api/suppliers/42", nil)
+			req.Header.Set("Authorization", "Bearer "+h.issuer.mint(t, opts))
+
+			if got := h.do(req); got.Code != http.StatusUnauthorized {
+				t.Errorf("status = %d, want 401", got.Code)
+			}
+			if h.revocations.calls != 0 {
+				t.Errorf("revocation lookups = %d, want 0", h.revocations.calls)
+			}
+			if calls := h.downstreamCalls(); len(calls) != 0 {
+				t.Errorf("the token reached %v", calls)
+			}
+		})
+	}
+}
+
+// /api/orders/* forwards the rest of the path to order-service's root, keeps
+// the query, and passes X-Request-Id through unchanged: it is the
+// duplicate-post key (D-047), so the gateway must never replace it.
+func TestOrderRouteReachesOrderServiceRoot(t *testing.T) {
+	cases := []struct {
+		method, path, wantPath, wantQuery string
+	}{
+		{http.MethodPost, "/api/orders", "/", ""},
+		{http.MethodGet, "/api/orders/requested?scope=active", "/requested", "scope=active"},
+		{http.MethodPost, "/api/orders/6f1c2b9e-0d4a-4c3b-9a8e-1f2d3c4b5a69/accept", "/6f1c2b9e-0d4a-4c3b-9a8e-1f2d3c4b5a69/accept", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.path, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"})
+			req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(`{}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("X-Request-Id", "create-form-key-1")
+
+			if got := h.do(req); got.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+			}
+			if h.orderRec.path != tc.wantPath || h.orderRec.query != tc.wantQuery {
+				t.Errorf("order-service received %q?%q, want %q?%q", h.orderRec.path, h.orderRec.query, tc.wantPath, tc.wantQuery)
+			}
+			if id := h.orderRec.header.Get("X-Request-Id"); id != "create-form-key-1" {
+				t.Errorf("order-service received X-Request-Id = %q, want it unchanged", id)
+			}
+		})
+	}
+}
+
+// The public /auth routes carry no access token to check, so a revoked or
+// unanswerable check must never stop them: logout in particular has to reach
+// user-service with a revoked token.
+func TestAuthRoutesSkipTheRevocationCheck(t *testing.T) {
+	for _, route := range []string{"/auth/register", "/auth/login", "/auth/logout"} {
+		t.Run(route, func(t *testing.T) {
+			h := newHarness(t)
+			h.revocations.revoked = true
+			h.revocations.err = errors.New("read revocation keys: dial tcp: connection refused")
+			req := httptest.NewRequest(http.MethodPost, route, strings.NewReader(`{}`))
+			req.Header.Set("Authorization", "Bearer "+h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "STUDENT"}))
+
+			h.do(req)
+
+			if h.userRec.path == "" {
+				t.Errorf("%s did not reach user-service", route)
+			}
+			if h.revocations.calls != 0 {
+				t.Errorf("revocation lookups = %d, want 0 on a public auth route", h.revocations.calls)
+			}
+		})
+	}
+}
+
+func TestNewRouterNeedsARevocationChecker(t *testing.T) {
+	_, err := httpapi.NewRouter(config.Downstream{
+		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit",
+	}, auth.NewVerifier("http://jwks", nil), nil, testRefreshTTL)
+	if err == nil {
+		t.Fatal("NewRouter with a nil checker: expected an error, got nil")
 	}
 }
