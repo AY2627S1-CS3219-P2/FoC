@@ -1,3 +1,8 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: Create and Update read the body through a 64 KiB cap (413 over it).
+// Author review: PENDING — <reviewer to complete>
+
 package httpapi
 
 import (
@@ -13,6 +18,10 @@ import (
 	"foc/supplier-service/internal/orderclient"
 	"foc/supplier-service/internal/supplier"
 )
+
+// maxBodyBytes caps a create or update body. A valid supplier is well under
+// 2 KiB, so 64 KiB bounds the memory one write can take without refusing any.
+const maxBodyBytes = 64 << 10
 
 type Handler struct {
 	svc *supplier.Service
@@ -59,8 +68,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 // Create handles POST /suppliers (FR F2.2, admin-only).
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req supplierRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 
@@ -76,8 +84,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var req supplierRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 
@@ -102,6 +109,23 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// decodeBody reads the request body into dst through a 64 KiB cap. A body over
+// the cap is 413 and one that is not valid JSON is 400; either way it writes the
+// answer and reports false.
+func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	return true
 }
 
 // Health handles GET /health for container readiness checks.
