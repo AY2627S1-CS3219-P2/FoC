@@ -397,7 +397,8 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 
 // UpdateAccountStatus sets an account ACTIVE or SUSPENDED. Suspending first
 // writes the suspension key and revokes every refresh session, then saves the
-// status; if either earlier step fails, the status is left unchanged.
+// status; if either earlier step fails, the status is left unchanged. An
+// UNVERIFIED account is refused with ErrAccountUnverified before any of that.
 func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")
@@ -412,6 +413,11 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 	}
 	if account == nil {
 		return ErrNotFound
+	}
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — enforces D-078
+	// before any admin or suspension side effect can run.
+	if account.AccountStatus == AccountStatusUnverified {
+		return ErrAccountUnverified
 	}
 	var tokensValidAfter time.Time
 	if status == AccountStatusSuspended {

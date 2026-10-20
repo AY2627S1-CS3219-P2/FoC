@@ -13,19 +13,20 @@ import (
 )
 
 type fakeAccountRepository struct {
-	user                 *User
-	hasAdmin             bool
-	activeAdmins         int
-	countActiveAdminsErr error
-	lookupErr            error
-	updated              *User
-	status               AccountStatus
-	callOrder            *[]string
-	statusErr            error
-	statusErrs           []error   // AI-generated (edited by ZI YANG).
-	tokensValidAfter     time.Time // AI-generated (edited by nigeltzy).
-	createWithTaskCalled bool
-	activateErr          error // AI-generated (edited by James Teo).
+	user                   *User
+	hasAdmin               bool
+	activeAdmins           int
+	countActiveAdminsCalls int
+	countActiveAdminsErr   error
+	lookupErr              error
+	updated                *User
+	status                 AccountStatus
+	callOrder              *[]string
+	statusErr              error
+	statusErrs             []error   // AI-generated (edited by ZI YANG).
+	tokensValidAfter       time.Time // AI-generated (edited by nigeltzy).
+	createWithTaskCalled   bool
+	activateErr            error // AI-generated (edited by James Teo).
 }
 
 func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
@@ -33,6 +34,7 @@ func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
 }
 
 func (f *fakeAccountRepository) CountActiveAdmins(context.Context) (int, error) {
+	f.countActiveAdminsCalls++
 	return f.activeAdmins, f.countActiveAdminsErr
 }
 
