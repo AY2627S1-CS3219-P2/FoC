@@ -338,8 +338,7 @@ implementation must not infer semantics from mocked headers alone.
 A message marked redelivered without a usable delivery-count header is an
 infrastructure ambiguity. Credit Service makes no further financial attempt,
 emits a structured alert, and rejects it without requeue rather than risk an
-unbounded loop. If acknowledgement, rejection, channel use, or reply publication
-or confirmation fails, the worker marks that channel unhealthy and closes it;
+unbounded loop. If acknowledgement, rejection, or channel use fails, the worker marks that channel unhealthy and closes it;
 RabbitMQ retains and later redelivers any message that was not successfully
 acknowledged. The worker recreates its channel and consumer after connection
 recovery.
@@ -442,12 +441,10 @@ acknowledged only after the source exchange confirms republication. Messages
 that remain malformed or contradictory stay quarantined; operators do not edit
 financial payloads in place.
 
-Registration allocation messages are excluded from that procedure. Their
-Direct Reply-to destination and correlation metadata belong to a live User
-Service attempt and may be stale by the time the message reaches the
-registration DLQ. Credit Service provides no registration-DLQ replay command or
-tool. The DLQ copy remains investigation evidence; recovery is a new
-asynchronous allocation attempt initiated by User Service.
+Registration allocation messages are excluded from that procedure. Credit
+Service provides no registration-DLQ replay command or tool. The DLQ copy
+remains investigation evidence; recovery is an outbox event replay or
+backfill migration initiated from User Service.
 
 Queue type is immutable after declaration. `rabbitmq/definitions.json` owns the
 complete topology. At runtime Credit Service uses passive declarations to
@@ -792,9 +789,9 @@ is generated and tested against the decisions actually made.
    `user.registered`, `errand.completed`, `errand.cancelled`, `errand.expired`,
    and `errand.failed`; names such as `errand.lifecycle.completed` are not part
    of the contract.
-7. Record Direct Reply-to correlation behavior for initial allocation. The reply
-   payload contains `schemaVersion: 1` and an `ALLOCATED` outcome only after
-   commit, while the matching correlation ID remains an AMQP property.
+7. Document unidirectional event consumption for initial allocation. The event
+   is consumed from `credit.registration`, allocating 100 credits idempotently by
+   `userId` and committing wallet and ledger atomically before acknowledging.
 8. Record the new pending-refund, pending-payout, retry, dead-letter, and reconciliation
    decisions in the requirements so `sourceOfTruth.md` is not the only record.
 9. Define credit values and versions as 64-bit integers in the OpenAPI contract,
@@ -1251,8 +1248,10 @@ winner rolls back, a waiter may claim the key. This ordering satisfies the
 requester foreign key and prevents both double debit and leaked unique errors.
 
 The handler maps a new reservation to `201` and an identical retry to `200`.
-It maps every error using the authoritative table above rather than choosing
-statuses independently.
+A creation call for an existing reservation with conflicting parameters (mismatched
+`requesterId` or `amount`), or a reservation already in a terminal state (`PAID_OUT`
+or `REFUNDED`), maps to `409 Conflict`. It maps every error using the authoritative
+table above rather than choosing statuses independently.
 
 ### Phase 5: implement reward adjustment
 
@@ -1656,19 +1655,13 @@ preserved in the lifecycle DLQ. Tests and broker bindings must use the exact
 strings above. Conflicting names in older documents are obsolete and must not
 be implemented as aliases, because aliases would hide producer contract drift.
 
-Every RabbitMQ payload, including the Direct Reply-to allocation response,
-contains integer `schemaVersion: 1`. Version-one decoding is strict: missing,
-zero, unsupported, or wrongly typed versions and unknown JSON fields are
-non-retryable contract violations. Requests and lifecycle events are rejected
-without requeue to their appropriate DLQ; an invalid reply is rejected by User
-Service under its own consumer contract.
-
-Adding a field to version 1 is a breaking producer change, even when the
-producer considers it optional. A deliberate future shape requires a documented
-new schema version and Credit Service support before a producer begins sending
-it. Consumers may support old and new versions together during a coordinated
-migration. Redelivery and republication of the same logical event preserve both
-its original `schemaVersion` and `eventId`.
+RabbitMQ payloads may supply integer `schemaVersion: 1` or omit it (defaulting
+to version 1 as published by upstream outbox relays). Unsupported future versions
+(`>= 2`) are rejected. Decoding follows Postel's law: unknown or additional JSON
+envelope fields (such as `eventType`, `correlationId`, `requesterId`, or `amount`)
+are ignored rather than rejected, allowing consumers to interoperate safely with
+different service outbox formats. Redelivery and republication of the same logical
+event preserve both its original `schemaVersion` and `eventId`.
 
 RabbitMQ transport validation happens before JSON decoding. A message body may
 not exceed 16 KiB, must be valid UTF-8 JSON, and must declare AMQP
@@ -1679,37 +1672,26 @@ queue's DLQ without logging the complete body.
 
 The payload `eventId` is the sole authoritative event identity and the only
 event identity used for idempotency or ledger operation IDs. AMQP `message_id`
-is neither required nor consulted. Registration allocation requests alone must
-carry non-empty AMQP `correlation_id` and Direct Reply-to metadata; Credit
-Service copies that correlation ID to the reply. Lifecycle events do not expect
-a reply, so any `correlation_id` is ignored. An AMQP timestamp is optional and
-audit-only; it never replaces, validates, or orders by payload `occurredAt`.
+is neither required nor consulted. Lifecycle and registration events do not
+expect a reply, so any `correlation_id` or `reply_to` property is ignored.
+An AMQP timestamp is optional and audit-only; it never replaces, validates, or
+orders by payload `occurredAt`.
 
-Update the existing registration consumer to support asynchronous request and
-reply:
+The registration consumer consumes `user.registered` events from the durable
+`credit.registration` queue as a standard unidirectional event stream:
 
-1. Require `correlation_id` and reply metadata on allocation requests.
-2. Allocate idempotently by `userId`, using the allocation request's `eventId`
-   as the ledger `operationId` when the wallet is first created.
-3. Publish `ALLOCATED` through RabbitMQ Direct Reply-to only after commit.
-4. Use publisher confirmation before acknowledging the original request.
-5. If the reply is lost, rely on User Service's durable `PENDING` state and
-   retry; duplicate allocation remains harmless.
+1. Allocate idempotently by `userId`, using the event's `eventId` as the ledger
+   `operationId` when the wallet is first created.
+2. Atomically insert the wallet and initial 100-credit ledger entry.
+3. Acknowledge the message (`d.Ack(false)`) only after successful database commit.
+4. On transient errors (such as database connectivity issues), negatively acknowledge
+   with requeue (`d.Nack(false, true)`).
+5. If delivery attempts reach 5, dead-letter the message to `credit.registration.dlq`
+   (`d.Nack(false, false)`).
 
-Direct Reply-to responses are transient and have at-most-once delivery. They are
-not stored in a reply queue and may be lost if User Service disconnects. A
-publisher confirmation proves only that RabbitMQ handled Credit Service's reply
-publication; it does not prove that User Service consumed the reply. The reply
-contract therefore deliberately permits loss. The primary recovery guarantee
-is User Service's durable unresolved state plus idempotent retry, not the
-publisher confirmation.
-
-User Service times out and republishes an unresolved request while preserving
-the same logical request identity. Credit Service processes that retry
-idempotently and replies again. `ALLOCATED` means the user's wallet is allocated
-and ready, whether this delivery caused the initial allocation or found that it
-had already succeeded. Credit Service never grants another 100 credits merely
-because the earlier reply was lost.
+Direct Reply-to is not used; `user.registered` is consumed as an asynchronous event
+matching the platform's transactional outbox architecture. Duplicate redeliveries
+remain harmless and are handled idempotently via the unique constraint on `user_id`.
 
 Add one lifecycle consumer for `credit.errand.lifecycle`. It dispatches by the
 received routing key, rejects unknown keys, and uses the common retry policy.
@@ -1854,7 +1836,7 @@ connection strings.
 Domain unit tests will use in-memory fakes and cover validation and error
 mapping. PostgreSQL integration tests will prove transactionality and
 concurrency. RabbitMQ integration tests will prove acknowledgement,
-redelivery, Direct Reply-to, DLQ behavior, and durable pending payouts.
+redelivery, DLQ behavior, and durable pending payouts.
 
 The required whole-stack E2E tier lives under the shared root `e2e/` directory
 and runs against Compose. It is implemented only after User Service and Order
@@ -1879,9 +1861,6 @@ to the deliberate duplicate-delivery assertion.
 The required high-risk scenarios are:
 
 - Duplicate initial allocation grants exactly 100 credits once.
-- Loss of a Direct Reply-to response leaves User Service unresolved; retrying
-  the same allocation request returns `ALLOCATED` without granting credits
-  again. Publisher confirmation is not treated as requester consumption.
 - Simultaneous reservations cannot overspend one account.
 - Simultaneous matching reservation requests for one `errandId` produce one
   reservation and one balance deduction.
@@ -1919,7 +1898,7 @@ The required high-risk scenarios are:
 - Retry tests cover five total attempts, the 1/2/4/8-second jitter bounds,
   numeric delivery-count header forms, missing headers on first delivery,
   ambiguous redelivery headers, and final rejection to the correct DLQ.
-- Ack, reject, reply-publication, and publisher-confirm failures close the
+- Ack, reject, and channel failures close the
   affected channel and leave unacknowledged work available for redelivery.
 - RabbitMQ connection loss makes readiness false, returns unacknowledged work,
   follows the 1/2/4/8/16/30-second jittered reconnect sequence, rebuilds channel
@@ -2044,14 +2023,13 @@ before changing it.
 - `credit-service/internal/httpapi/router.go` — mount dependency-free liveness,
   full-service readiness, public authenticated reads, and private command
   routes.
-- `credit-service/internal/messaging/registration.go` — add correlation,
-  Direct Reply-to, publisher confirmation, and common retry behavior.
-- `credit-service/internal/messaging/registration_test.go` — test request/reply,
+- `credit-service/internal/messaging/registration.go` — add idempotent allocation,
+  tolerant event decoding, and common retry/DLQ behavior.
+- `credit-service/internal/messaging/registration_test.go` — test event consumption,
   duplicate allocation, exact version-one fields, missing or unsupported
-  versions, unknown fields, 16 KiB and encoding/content-type limits, required
-  correlation and reply metadata, ignored message ID, and publish failures.
+  versions, unknown fields, 16 KiB and encoding/content-type limits, and retry/DLQ behavior.
 - `credit-service/internal/messaging/registration_integration_test.go` — verify
-  end-to-end allocation request/reply and redelivery with containers.
+  end-to-end allocation event consumption and redelivery with containers.
 
 #### Credit Service files to create
 
@@ -2144,10 +2122,9 @@ before changing it.
 
 #### Credit Service files reviewed but not expected to change
 
-`credit-service/Dockerfile` and the existing Credit Service authentication
-middleware are reviewed but not changed. The image layout already supports this
-plan, and the middleware already supplies the identity required by public read
-handlers.
+`credit-service/Dockerfile` is a multi-stage build that executes as an unprivileged
+user (`appuser`). The existing Credit Service authentication middleware supplies
+the identity required by public read handlers.
 
 ## Authorized Supporting Files Outside Credit Service
 
@@ -2273,27 +2250,17 @@ Files to create in that frontend task:
 
 ### User Service owner
 
-User Service must durably track `PENDING` versus `PROCESSED` allocation,
-dispatch RabbitMQ allocation requests with correlation metadata, consume Direct
-Reply-to results, apply a response timeout, and retry unresolved users because
-replies are transient and may be lost. It must generate a globally unique
-`eventId` for each new allocation request and preserve it when retrying or
-republishing the same logical request. It marks allocation `PROCESSED` only
-after receiving `ALLOCATED`; a Credit Service publisher confirmation is not
-evidence that User Service received the response. This requires a separate User
-Service plan and implementation task. User Service must also treat user UUIDs
-as permanent identities and never reassign a deleted user's UUID to another
-person. Allocation requests and replies use exact version-one payloads and
-preserve `schemaVersion: 1` on retry. Requests declare JSON/UTF-8 metadata, stay
-within 16 KiB, and include the Direct Reply-to and correlation properties; no
-AMQP message ID is required.
+User Service publishes `user.registered` domain events when accounts are
+activated, utilizing a transactional outbox (`outbox_events` table) and a background
+relay with publisher confirms. It must generate a unique `eventId` for each
+registration event. User Service treats user UUIDs as permanent identities and
+never reassigns a deleted user's UUID to another person. Events declare JSON/UTF-8
+metadata and stay within 16 KiB.
 
 A registration allocation message in `credit.registration.dlq` must not be
-republished through the lifecycle replay procedure. If allocation remains
-`PENDING`, User Service owns recovery by issuing a new asynchronous attempt with
-the same logical `eventId` and fresh live correlation and Direct Reply-to
-metadata. Implementing that retry or its operator trigger is outside the Credit
-Service task.
+republished through the lifecycle replay procedure. Recovery for quarantined or lost
+events is owned by User Service via outbox event replay or database backfill
+migrations (such as `000006_backfill_user_registered_events.up.sql`).
 
 ### Order Service owner
 
