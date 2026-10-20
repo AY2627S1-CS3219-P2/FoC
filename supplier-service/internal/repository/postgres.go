@@ -1,3 +1,9 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: Create and Update answer ErrDuplicate for a unique violation, and Update
+//   answers ErrNotFound when it matched no row.
+// Author review: PENDING — <reviewer to complete>
+
 package repository
 
 import (
@@ -7,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"foc/supplier-service/internal/supplier"
@@ -37,6 +44,20 @@ func scanSupplier(row pgx.Row) (*supplier.Supplier, error) {
 	return &s, nil
 }
 
+// uniqueViolation is PostgreSQL's SQLSTATE for a unique index refusing a row.
+const uniqueViolation = "23505"
+
+// mapWriteError turns a unique violation (two writers passing the duplicate
+// check together, then the index refusing the second) into ErrDuplicate, so it
+// is a 409 and not a 500.
+func mapWriteError(err error) error {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == uniqueViolation {
+		return supplier.ErrDuplicate
+	}
+	return err
+}
+
 func (r *PostgresRepository) Create(ctx context.Context, s *supplier.Supplier) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO suppliers (id, name, type, building, floor, location_description,
@@ -47,7 +68,7 @@ func (r *PostgresRepository) Create(ctx context.Context, s *supplier.Supplier) e
 		s.Latitude, s.Longitude, s.OpeningTime, s.ClosingTime, s.ImageURL, s.Description,
 		s.IsAvailable, s.CreatedAt, s.UpdatedAt,
 	)
-	return err
+	return mapWriteError(err)
 }
 
 func (r *PostgresRepository) GetByID(ctx context.Context, id string) (*supplier.Supplier, error) {
@@ -93,8 +114,10 @@ func (r *PostgresRepository) List(ctx context.Context, filter supplier.ListFilte
 	return out, rows.Err()
 }
 
+// Update returns ErrNotFound when no live row matched: the supplier was
+// soft-deleted after the service read it, so the change was not saved.
 func (r *PostgresRepository) Update(ctx context.Context, s *supplier.Supplier) error {
-	_, err := r.pool.Exec(ctx, `
+	tag, err := r.pool.Exec(ctx, `
 		UPDATE suppliers SET
 			name = $1, type = $2, building = $3, floor = $4, location_description = $5,
 			latitude = $6, longitude = $7, opening_time = $8, closing_time = $9,
@@ -104,7 +127,13 @@ func (r *PostgresRepository) Update(ctx context.Context, s *supplier.Supplier) e
 		s.Latitude, s.Longitude, s.OpeningTime, s.ClosingTime,
 		s.ImageURL, s.Description, s.IsAvailable, s.UpdatedAt, s.ID,
 	)
-	return err
+	if err != nil {
+		return mapWriteError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return supplier.ErrNotFound
+	}
+	return nil
 }
 
 func (r *PostgresRepository) SoftDelete(ctx context.Context, id string) error {

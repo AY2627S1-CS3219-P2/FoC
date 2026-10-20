@@ -46,6 +46,22 @@ docker compose up supplier-service supplier-db
 | PUT | `/suppliers/{id}` | ADMIN access token | update |
 | DELETE | `/suppliers/{id}` | ADMIN access token | soft-delete; 409 while an unfinished errand references it (see below) |
 
+### Status codes for bad input and races
+
+| Case | Answer |
+|---|---|
+| An id that is not a UUID (`GET`, `PUT` or `DELETE /suppliers/not-a-uuid`) | 404 `supplier not found`, the same as an unknown id; order-service is not asked |
+| An upper-case id | the same supplier as the lower-case one |
+| `POST` or `PUT` body over 64 KiB, padding after the JSON included | 413 `request body too large`; nothing is saved |
+| `POST` or `PUT` body that is not exactly one JSON value (trailing data after it) | 400 `invalid JSON body` |
+| Two creates, or a create and an update, landing on the same name, building and location at once | one succeeds and the other gets 409 |
+| `PUT` of a supplier that was deleted a moment earlier | 404; nothing is saved |
+
+`is_available` is `false` when the body leaves it out, on `POST` and on `PUT`, and
+an explicit `false` on `POST` is kept, so an admin can add a supplier that starts
+unavailable. A caller that wants an available supplier must send `true`; the
+frontend's form always does.
+
 ### Auth
 
 The service verifies the caller itself (D-041, D-054). `POST`, `PUT` and

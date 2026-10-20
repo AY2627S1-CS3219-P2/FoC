@@ -7,6 +7,13 @@
 //   order-service answering 0, revocation keys written the way user-service
 //   writes them, and a Redis that is stopped (D-041, D-054).
 // Author review: PENDING — <reviewer to complete>
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: TestBadIDsAndCaseOverPostgres: through the router over a real
+//   PostgreSQL, a PUT on an upper-case id keeping its name is 200 and a
+//   non-UUID GET is 404 (#35).
+// Author review: PENDING — <reviewer to complete>
 
 package httpapi_test
 
@@ -119,6 +126,36 @@ func TestAdminWritesOverPostgresAndRedis(t *testing.T) {
 		rec = httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	})
+}
+
+func TestBadIDsAndCaseOverPostgres(t *testing.T) {
+	t.Parallel()
+	repo := repository.NewPostgresRepository(openDatabase(t))
+	router := httpapi.NewRouter(supplier.NewService(repo, &zeroErrands{}), startKeySet(t, http.StatusOK), &fakeRevocations{})
+	admin := "Bearer " + mintToken(t, tokenSpec{})
+	serve := func(method, path, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		req.Header.Set("Authorization", admin)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	const body = `{"name":"Upper Stall","type":"cafe","building":"COM1","location_description":"Level 2","latitude":1.29,"longitude":103.77,"is_available":true}`
+	created := serve(http.MethodPost, "/suppliers", body)
+	require.Equal(t, http.StatusCreated, created.Code, created.Body.String())
+	id := jsonField(t, created, "id")
+
+	t.Run("a PUT on an upper-case id keeping its name and location is 200", func(t *testing.T) {
+		rec := serve(http.MethodPut, "/suppliers/"+strings.ToUpper(id), body)
+		assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	})
+
+	t.Run("a GET on a non-UUID is 404, not a database error", func(t *testing.T) {
+		rec := serve(http.MethodGet, "/suppliers/not-a-uuid", "")
+		assert.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
+		assert.JSONEq(t, `{"error":"supplier not found"}`, rec.Body.String())
 	})
 }
 
