@@ -35,8 +35,10 @@ decide, and must be recorded before an agent builds to them (root §1).
   (`internal/orderclient`, `ORDER_BASE_URL`), forwarding the admin's token
   (F2.2.3).
 - **`user-service`.** Admin-only endpoints need a role, not a user. Do not query
-  the users table and do not fetch a user record to inspect it — the role
-  arrives with the request (see Gotchas).
+  the users table and do not fetch a user record to inspect it — the role is the
+  `role` claim of the access token the service verifies itself (D-041), against
+  user-service's published keys and the revocation keys it writes to Redis
+  (D-054; see Gotchas).
 - **`credit-service`.** Prices, wallets and payouts are not supplier fields. A
   supplier is a place, not a price list.
 - **`frontend`.** It will eventually want a supplier merged with data this
@@ -57,8 +59,8 @@ Module path `foc/supplier-service`. The per-file detail the other services
 mirror:
 
 ```
-cmd/api/             wiring only — config, pool, migrate, order client, seed,
-                     router, listen
+cmd/api/             wiring only — config, pool, migrate, order client, token
+                     verifier, Redis client, seed, router, listen
 internal/supplier/   the domain: model.go, service.go (business rules),
                      repository.go (the Repository *interface*), errors.go
                      (sentinel errors the transport layer maps to status codes),
@@ -66,8 +68,12 @@ internal/supplier/   the domain: model.go, service.go (business rules),
 internal/repository/ Postgres adapter implementing supplier.Repository, via pgx
 internal/orderclient/ order-service client for the delete check, implementing
                       supplier.ErrandCounter
-internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go
-internal/middleware/ request guards (currently the admin-role check)
+internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go;
+                     auth.go — the token check and the admin-role guard on the
+                     write routes
+internal/auth/       verifies access tokens against user-service's keys and
+                     checks D-054's revocation keys; a copy of order-service's
+                     package, not an import (root §4.2)
 internal/config/     Load() reads env once into a Config struct, then passed down
 seed/                first-boot CSV load; depends on the domain, not vice versa
 migrations/          golang-migrate .up/.down pairs, applied at startup from
@@ -77,12 +83,18 @@ migrations/          golang-migrate .up/.down pairs, applied at startup from
 ## Local development
 
 Port **8082** (root §3). Env vars `PORT`, `SUPPLIER_DB_URL`, `SEED_CSV_PATH`,
-`ORDER_BASE_URL`, with placeholders in the root `.env.example` and this
-folder's own.
+`ORDER_BASE_URL`, `JWKS_URL` and `REDIS_URL`. This folder's `.env.example` has
+all of them with the in-network values Compose uses. The root `.env.example` has
+`SUPPLIER_DB_URL` and `SEED_CSV_PATH` in its Supplier service block, `JWKS_URL`
+and `REDIS_URL` in its API Gateway and Redis sections, and `ORDER_BASE_URL` in
+its API Gateway section; `PORT` is the default 8082 and has no placeholder.
+Admin writes need user-service's keys at `JWKS_URL` and Redis at `REDIS_URL`
+reachable; reads need neither.
 
 ```bash
 go run ./cmd/api     # from supplier-service/; migrates then seeds on startup
-go test ./...        # unit tests: service layer, order-service client (httptest), CSV parser, no Docker needed
+go test ./...        # unit tests: service layer, token check, order-service client (httptest), CSV parser, no Docker needed
+go test -tags=integration ./...   # admin writes over real PostgreSQL and Redis (testcontainers); needs Docker
 docker compose up supplier-service supplier-db    # from the repo root
 ```
 
@@ -102,9 +114,15 @@ docker compose up supplier-service supplier-db    # from the repo root
   any, and it returns `ErrInUse` (409); no answer, and it refuses rather than
   deletes. Otherwise it calls `repo.SoftDelete`, which sets `deleted_at` and
   flips `is_available` to false rather than removing the row.
-- **Admin auth trusts an `X-User-Role: ADMIN` header** — interim, and not
-  secure. Swapping `HeaderRoleExtractor` for the real mechanism is the only
-  change needed here once the team decides it.
+- **Admin writes are authorized from the verified token, never from a header.**
+  `POST`, `PUT` and `DELETE /suppliers` pass `authenticate` (`internal/httpapi/
+  auth.go`): exactly one `Authorization: Bearer` header, RS256 signature, `iss`,
+  `aud`, `exp`, `typ` `access`, then D-054's revocation keys in Redis. The caller
+  is the token's `sub` and `role`; `X-User-Id` and `X-User-Role` are ignored
+  (D-041). 401 is a token problem only (a wrong role is 403, because the
+  frontend answers a 401 by refreshing and retrying); 503 when the keys or Redis
+  cannot be read — an admin write fails closed. Reads and `/health` need no
+  token: order-service's supplier lookup sends none.
 - **There is no `api/openapi.yaml`, and there will not be one.** The owner has
   decided the contract is gRPC instead (D-035, D-039): a `.proto`, generated
   with `buf`, on `feat/supplier-service-grpc` (PR #8), not yet merged. Until
