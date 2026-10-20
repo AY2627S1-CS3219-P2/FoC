@@ -33,6 +33,15 @@
       "auto_delete": false,
       "internal": false,
       "arguments": {}
+    },
+    {
+      "name": "foc.dlx",
+      "vhost": "foc",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
     }
   ],
   "queues": [
@@ -41,14 +50,56 @@
       "vhost": "foc",
       "durable": true,
       "auto_delete": false,
-      "arguments": {}
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "foc.dlx",
+        "x-dead-letter-routing-key": "credit.registration.failed",
+        "x-dead-letter-strategy": "at-least-once",
+        "x-overflow": "reject-publish",
+        "x-max-length": 100000,
+        "x-max-length-bytes": 268435456
+      }
     },
     {
       "name": "credit.errand.lifecycle",
       "vhost": "foc",
       "durable": true,
       "auto_delete": false,
-      "arguments": {}
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "foc.dlx",
+        "x-dead-letter-routing-key": "credit.errand.lifecycle.failed",
+        "x-dead-letter-strategy": "at-least-once",
+        "x-overflow": "reject-publish",
+        "x-max-length": 100000,
+        "x-max-length-bytes": 268435456
+      }
+    },
+    {
+      "name": "credit.registration.dlq",
+      "vhost": "foc",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-overflow": "reject-publish",
+        "x-max-length": 100000,
+        "x-max-length-bytes": 268435456
+      }
+    },
+    {
+      "name": "credit.errand.lifecycle.dlq",
+      "vhost": "foc",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-overflow": "reject-publish",
+        "x-max-length": 100000,
+        "x-max-length-bytes": 268435456
+      }
     }
   ],
   "bindings": [
@@ -90,6 +141,22 @@
       "destination": "credit.errand.lifecycle",
       "destination_type": "queue",
       "routing_key": "errand.failed",
+      "arguments": {}
+    },
+    {
+      "source": "foc.dlx",
+      "vhost": "foc",
+      "destination": "credit.registration.dlq",
+      "destination_type": "queue",
+      "routing_key": "credit.registration.failed",
+      "arguments": {}
+    },
+    {
+      "source": "foc.dlx",
+      "vhost": "foc",
+      "destination": "credit.errand.lifecycle.dlq",
+      "destination_type": "queue",
+      "routing_key": "credit.errand.lifecycle.failed",
       "arguments": {}
     }
   ]
