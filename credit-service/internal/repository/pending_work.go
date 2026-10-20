@@ -285,7 +285,7 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'RESERVED', -$4, 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
 				($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
 			res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
 		)
@@ -511,7 +511,7 @@ func (r *PostgresRepository) ProcessPendingRefund(ctx context.Context, id uuid.U
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'RESERVED', -$4, $5, $6, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), $5, $6, NOW()),
 				($1, $2, $3, 'AVAILABLE', $4, $5, $6, NOW())`,
 			res.RequesterID, errandID, eventID, res.Amount, reason, occurredAt.UTC(),
 		)

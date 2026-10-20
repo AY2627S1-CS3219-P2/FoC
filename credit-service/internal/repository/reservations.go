@@ -126,9 +126,9 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID uui
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'AVAILABLE', $4, 'ERRAND_RESERVATION', NULL, NOW()),
-				($1, $2, $3, 'RESERVED', $5, 'ERRAND_RESERVATION', NULL, NOW())`,
-			requesterID, errandID, opID, -amount, amount,
+				($1, $2, $3, 'AVAILABLE', -($4::bigint), 'ERRAND_RESERVATION', NULL, NOW()),
+				($1, $2, $3, 'RESERVED', $4, 'ERRAND_RESERVATION', NULL, NOW())`,
+			requesterID, errandID, opID, amount,
 		)
 		if err != nil {
 			return fmt.Errorf("insert reservation transactions: %w", err)

@@ -185,9 +185,9 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'RESERVED', $7, $5, $6, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), $5, $6, NOW()),
 				($1, $2, $3, 'AVAILABLE', $4, $5, $6, NOW())`,
-			res.RequesterID, errandID, eventID, res.Amount, reason, occurredAt.UTC(), -res.Amount,
+			res.RequesterID, errandID, eventID, res.Amount, reason, occurredAt.UTC(),
 		)
 		if err != nil {
 			return fmt.Errorf("insert refund ledger entries: %w", err)
@@ -443,9 +443,9 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'RESERVED', $7, 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
 				($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
-			res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID, -res.Amount,
+			res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
 		)
 		if err != nil {
 			return fmt.Errorf("insert payout ledger entries: %w", err)

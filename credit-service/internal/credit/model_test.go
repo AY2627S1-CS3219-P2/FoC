@@ -96,4 +96,3 @@ func TestValidateBucketBalance(t *testing.T) {
 		t.Fatalf("ValidateBucketBalance(max) unexpected error: %v", err)
 	}
 }
-

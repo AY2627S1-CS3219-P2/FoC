@@ -178,6 +178,11 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 
 	attempt := getDeliveryAttempt(d)
 	if errors.Is(err, credit.ErrReservationNotFound) {
+		if d.RoutingKey == RoutingFailed {
+			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", "routingKey", d.RoutingKey)
+			_ = d.Ack(false)
+			return
+		}
 		if attempt >= 5 {
 			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
 			_ = d.Nack(false, false)

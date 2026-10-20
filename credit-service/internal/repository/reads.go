@@ -93,8 +93,8 @@ func (r *PostgresRepository) ListTransactions(ctx context.Context, userID uuid.U
 	rows, err := r.pool.Query(ctx, `
 		SELECT
 			operation_id,
-			MAX(errand_id) AS errand_id,
-			MAX(reason) AS reason,
+			MAX(errand_id::text)::uuid AS errand_id,
+			MAX(reason::text)::transaction_reason AS reason,
 			COALESCE(SUM(CASE WHEN balance_bucket = 'AVAILABLE' THEN amount ELSE 0 END), 0)::BIGINT AS available_delta,
 			COALESCE(SUM(CASE WHEN balance_bucket = 'RESERVED' THEN amount ELSE 0 END), 0)::BIGINT AS reserved_delta,
 			MAX(occurred_at) AS occurred_at,
