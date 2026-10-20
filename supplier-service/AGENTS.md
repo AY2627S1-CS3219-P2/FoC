@@ -1,25 +1,29 @@
 # Supplier Service
 
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+Scope: Status, the "Others reading suppliers" boundary and the openapi gotcha
+  now say the interface is REST (D-055, D-074) and the gRPC direction was
+  withdrawn; the opening no longer calls this the only implemented service.
+Author review: PENDING — <reviewer to complete>
+-->
+
 Authority on campus suppliers — the stores, facilities and pickup locations an
 errand can point at (mandatory requirement M3). It owns the supplier record, the
 rules for changing one, and its own Postgres database. It deliberately knows
 nothing about errands, orders, matching, users or credits: a supplier has no
 idea it has ever been ordered from, and nothing in this folder should teach it.
 
-This is the only implemented service in the repo, so its layering is the
-reference the other four copy (root §6 points here by name). Changing the
-*shape* of that layering is a repo-wide decision, not a local one.
+Its layering is the reference the other services copy (root §6 points here by
+name). Changing the *shape* of that layering is a repo-wide decision, not a
+local one.
 
-**Status: implemented and merged (PR #1).** The code on `main` today is a REST
-API (`internal/httpapi`), which is what the "Boundaries" and "Gotchas" sections
-below still describe. **A gRPC replacement is decided (D-035, D-037 to D-040)
-but not yet merged** — it is on `feat/supplier-service-grpc` (PR #8), which
-also rewrites this file. Until #8 merges, treat the REST description below as
-current and the gRPC decisions as the direction, not yet the code:
-
-```bash
-git ls-tree -r --name-only feat/supplier-service-grpc:supplier-service
-```
+**Status: implemented and merged (PR #1).** The interface is the REST API in
+`internal/httpapi` (D-055, D-074), with the JSON shape of D-036 and the URLs of
+D-037. The gateway proxies it at `/api/suppliers`, and order-service reads and
+checks it over HTTP. A gRPC replacement was decided and then withdrawn (D-074);
+PR #8 is closed.
 
 ## Owner
 
@@ -44,9 +48,10 @@ decide, and must be recorded before an agent builds to them (root §1).
 - **`frontend`.** It will eventually want a supplier merged with data this
   service does not hold. Compose that at the caller; do not grow a field here
   that only another service can fill.
-- **Others reading suppliers.** Point them at this service's HTTP API — the
-  gRPC contract decided in D-035 is not merged yet (see Status above). Never
-  share `SUPPLIER_DB_URL`, and never factor the `Supplier` struct into a package
+- **Others reading suppliers.** Point them at this service's HTTP API.
+  order-service's `GET /suppliers/{id}` lookup (`order-service/internal/
+  supplierclient`) is the reader inside the network today, and it sends no
+  token. Never share `SUPPLIER_DB_URL`, and never factor the `Supplier` struct into a package
   they import — a duplicated struct on their side is the correct outcome
   (root §4.2).
 - **`../data/csv/` and `../data/images/`** are repo-level shared assets, not
@@ -123,11 +128,10 @@ docker compose up supplier-service supplier-db    # from the repo root
   frontend answers a 401 by refreshing and retrying); 503 when the keys or Redis
   cannot be read — an admin write fails closed. Reads and `/health` need no
   token: order-service's supplier lookup sends none.
-- **There is no `api/openapi.yaml`, and there will not be one.** The owner has
-  decided the contract is gRPC instead (D-035, D-039): a `.proto`, generated
-  with `buf`, on `feat/supplier-service-grpc` (PR #8), not yet merged. Until
-  then the DTOs in `internal/httpapi` are still the hand-written REST contract
-  in code today.
+- **There is no `api/openapi.yaml` yet.** The contract is the hand-written REST
+  surface: the routes in `internal/httpapi/router.go` and the JSON in
+  `internal/httpapi/dto.go`, shaped per D-036 and addressed per D-037. Writing
+  the spec (D-005, root §8) is still owed.
 - <!-- AI-generated (edited by PENDING). --> **A corrected seed CSV does not reach an existing database.**
   `seed.EnsureSeeded` only seeds when the `suppliers` table is empty, and
   `compose.yaml` persists it in the named volume `supplier-db-data` — so
