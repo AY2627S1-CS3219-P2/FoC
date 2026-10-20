@@ -98,9 +98,12 @@ func (s *Service) CreateReservation(ctx context.Context, errandID, requesterID u
 }
 
 // AdjustReservationReward validates parameters and requests reward adjustment from the repository.
-func (s *Service) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
+func (s *Service) AdjustReservationReward(ctx context.Context, errandID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
 	if errandID == uuid.Nil {
 		return nil, nil, ErrInvalidErrandID
+	}
+	if requesterID == uuid.Nil {
+		return nil, nil, ErrInvalidUserID
 	}
 	if operationID == uuid.Nil {
 		return nil, nil, ErrInvalidOperationID
@@ -112,7 +115,7 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID uuid.UUI
 		return nil, nil, errors.New("reservation repository is required")
 	}
 
-	return s.reservationRepo.AdjustReservationReward(ctx, errandID, newReward, operationID)
+	return s.reservationRepo.AdjustReservationReward(ctx, errandID, requesterID, newReward, operationID)
 }
 
 // RefundReservation validates refund parameters and requests refund settlement from the repository.

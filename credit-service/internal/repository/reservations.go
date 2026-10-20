@@ -195,7 +195,7 @@ func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUI
 }
 
 // AdjustReservationReward executes the reward adjustment transaction described in Phase 5.
-func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	var resOp *credit.OperationResult
 	var resRev *credit.Reservation
 
@@ -222,12 +222,15 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			if op.ErrandID != errandID || op.NewAmount != newReward {
 				return credit.ErrIdempotencyConflict
 			}
+			existing, err := findReservationByErrandID(txCtx, tx, errandID)
+			if err != nil {
+				return err
+			}
+			if existing == nil || existing.RequesterID != requesterID {
+				return credit.ErrReservationNotFound
+			}
 			resOp = &op
 			if op.OutcomeCode == credit.OutcomeSuccess {
-				existing, err := findReservationByErrandID(txCtx, tx, errandID)
-				if err != nil {
-					return err
-				}
 				resRev = existing
 				return nil
 			}
@@ -255,6 +258,9 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 				return credit.ErrReservationNotFound
 			}
 			return fmt.Errorf("lock reservation for adjust: %w", err)
+		}
+		if reservation.RequesterID != requesterID {
+			return credit.ErrReservationNotFound
 		}
 		currentAmount := reservation.Amount
 

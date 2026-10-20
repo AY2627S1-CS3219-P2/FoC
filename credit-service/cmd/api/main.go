@@ -26,6 +26,7 @@ import (
 	"foc/credit-service/internal/worker"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -91,8 +92,22 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	creditRepo := repository.NewPostgresRepository(pool)
 	creditService := credit.NewService(creditRepo)
 
-	// Auth Verifier
-	verifier := auth.NewVerifier(cfg.JWKSURL, nil)
+	// Redis Client & Revocation Checker (D-014, D-054, D-056)
+	redisOpts, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		return fmt.Errorf("parse REDIS_URL: %w", err)
+	}
+	rdb := redis.NewClient(redisOpts)
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			logger.Warn("close Redis client", "err", err)
+		}
+	}()
+	pingRedis(ctx, rdb, logger)
+	revocations := auth.NewRevocations(rdb)
+
+	// Auth Verifier (D-023, D-056)
+	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 
 	// Messaging Handlers and Supervisor
 	regHandler := messaging.NewRegistrationHandler(creditService, messaging.WithLogger(logger.With("component", "registration_handler")))
@@ -142,7 +157,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	// HTTP Server with Chi Router
-	router := httpapi.NewRouter(healthCheck, verifier, creditService)
+	router := httpapi.NewRouter(healthCheck, verifier, revocations, creditService, logger)
 	server := newHTTPServer(cfg.Addr(), router)
 
 	// First-error Coordination and Intake Context
@@ -241,5 +256,14 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
+	}
+}
+
+func pingRedis(ctx context.Context, rdb *redis.Client, log *slog.Logger) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := rdb.Ping(ctx).Err(); err != nil {
+		log.Error("Redis ping at startup failed; while unreachable, revocation checks are skipped, "+
+			"and while answering with errors, token requests are refused with 503", "err", err)
 	}
 }

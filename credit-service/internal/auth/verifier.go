@@ -1,9 +1,9 @@
 // AI Assistance Disclosure:
-// Tool: Codex (model: GPT-5), date: 2026-10-14
-// Scope: Implemented local RS256 JWT verification for credit-service per D-041.
+// Tool: Antigravity, date: 2026-10-20
+// Scope: RS256 access-token verification against user-service's published JWKS keys (D-023, D-056).
+//   Adapted from order-service/internal/auth per D-041/D-056.
 // Author review: PENDING - reviewer to complete
 
-// Package auth verifies access tokens against user-service's JWKS endpoint.
 package auth
 
 import (
@@ -20,34 +20,40 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 var (
-	// ErrMalformed covers an absent, non-JWT, or unparseable token.
+	// ErrMalformed covers a token that is absent, not a JWT, unparseable, or missing a required claim.
 	ErrMalformed = errors.New("auth: malformed token")
-	// ErrInvalidSignature covers a token whose signature cannot be verified.
+	// ErrInvalidSignature covers a token whose signature does not verify, which names an unknown key, or whose iss/aud is invalid.
 	ErrInvalidSignature = errors.New("auth: invalid signature")
-	// ErrExpired covers an expired token or one that is not valid yet.
+	// ErrExpired covers a token past its exp or before its nbf, after clockSkew leeway.
 	ErrExpired = errors.New("auth: token expired")
-	// ErrWrongType covers a refresh token used where an access token is required.
+	// ErrWrongType covers a non-access token (e.g. refresh token) presented where an access token belongs.
 	ErrWrongType = errors.New("auth: not an access token")
-	// ErrKeysUnavailable covers inability to fetch usable JWKS signing keys.
+	// ErrKeysUnavailable covers being unable to load user-service's keys.
 	ErrKeysUnavailable = errors.New("auth: signing keys unavailable")
 )
 
+const clockSkew = 5 * time.Second
+
 const (
-	clockSkew          = 5 * time.Second
-	minRefreshInterval = 30 * time.Second
+	issuer   = "campusrun-user-service"
+	audience = "campusrun-api"
 )
 
-// Claims is the subset of verified access-token claims used by credit-service.
+const minRefreshInterval = 30 * time.Second
+
+// Claims represents what credit-service reads from a verified access token.
 type Claims struct {
-	Subject string
-	Role    string
-	ID      string
+	UserID   uuid.UUID
+	Role     string
+	TokenID  string
+	IssuedAt time.Time
 }
 
-// Verifier verifies RS256 access tokens against cached JWKS public keys.
+// Verifier verifies access tokens against user-service's published RSA keys.
 type Verifier struct {
 	jwksURL string
 	client  *http.Client
@@ -60,41 +66,32 @@ type Verifier struct {
 	lastErr     error
 }
 
-// NewVerifier returns a verifier that fetches signing keys from jwksURL.
+// NewVerifier returns a Verifier that fetches keys from jwksURL with client.
 func NewVerifier(jwksURL string, client *http.Client) *Verifier {
 	if client == nil {
 		client = &http.Client{Timeout: 5 * time.Second}
 	}
-	return &Verifier{
-		jwksURL: jwksURL,
-		client:  client,
-		keys:    make(map[string]*rsa.PublicKey),
-	}
+	return &Verifier{jwksURL: jwksURL, client: client, keys: make(map[string]*rsa.PublicKey)}
 }
 
-// Verify validates tokenString and returns verified access-token claims.
-func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, error) {
-	if tokenString == "" {
+// Verify parses and validates an access token.
+func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
+	if token == "" {
 		return Claims{}, ErrMalformed
 	}
-
 	var registered jwt.RegisteredClaims
-	var custom struct {
-		Typ  string `json:"typ"`
-		Role string `json:"role"`
-	}
-
-	parsed, err := jwt.ParseWithClaims(
-		tokenString,
-		&registered,
-		func(token *jwt.Token) (any, error) { return v.keyFor(ctx, token) },
+	parsed, err := jwt.ParseWithClaims(token, &registered,
+		func(t *jwt.Token) (any, error) { return v.keyFor(ctx, t) },
 		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
 		jwt.WithLeeway(clockSkew),
 		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
 	)
 	if err != nil {
 		switch {
-		case errors.Is(err, jwt.ErrTokenExpired), errors.Is(err, jwt.ErrTokenNotValidYet):
+		case errors.Is(err, jwt.ErrTokenExpired), errors.Is(err, jwt.ErrTokenNotValidYet), errors.Is(err, jwt.ErrTokenUsedBeforeIssued):
 			return Claims{}, ErrExpired
 		case errors.Is(err, ErrKeysUnavailable):
 			return Claims{}, err
@@ -108,18 +105,21 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 		return Claims{}, ErrInvalidSignature
 	}
 
-	if err := decodeCustom(tokenString, &custom); err != nil {
+	var custom struct {
+		Typ  string `json:"typ"`
+		Role string `json:"role"`
+	}
+	if err := decodePayload(token, &custom); err != nil {
 		return Claims{}, ErrMalformed
 	}
 	if custom.Typ != "access" {
 		return Claims{}, ErrWrongType
 	}
-
-	return Claims{
-		Subject: registered.Subject,
-		Role:    custom.Role,
-		ID:      registered.ID,
-	}, nil
+	id, err := uuid.Parse(registered.Subject)
+	if err != nil || id == uuid.Nil || registered.ID == "" || registered.IssuedAt == nil {
+		return Claims{}, ErrMalformed
+	}
+	return Claims{UserID: id, Role: custom.Role, TokenID: registered.ID, IssuedAt: registered.IssuedAt.Time}, nil
 }
 
 func (v *Verifier) keyFor(ctx context.Context, token *jwt.Token) (*rsa.PublicKey, error) {
@@ -127,18 +127,15 @@ func (v *Verifier) keyFor(ctx context.Context, token *jwt.Token) (*rsa.PublicKey
 	if kid == "" {
 		return nil, ErrMalformed
 	}
-
 	if key, ok := v.cachedKey(kid); ok {
 		return key, nil
 	}
 
 	v.fetchMu.Lock()
 	defer v.fetchMu.Unlock()
-
 	if key, ok := v.cachedKey(kid); ok {
 		return key, nil
 	}
-
 	v.mu.RLock()
 	attempted, lastErr := v.lastAttempt, v.lastErr
 	v.mu.RUnlock()
@@ -148,11 +145,9 @@ func (v *Verifier) keyFor(ctx context.Context, token *jwt.Token) (*rsa.PublicKey
 		}
 		return nil, ErrInvalidSignature
 	}
-
 	if err := v.refresh(context.WithoutCancel(ctx)); err != nil {
 		return nil, err
 	}
-
 	if key, ok := v.cachedKey(kid); ok {
 		return key, nil
 	}
@@ -168,7 +163,6 @@ func (v *Verifier) cachedKey(kid string) (*rsa.PublicKey, bool) {
 
 func (v *Verifier) refresh(ctx context.Context) error {
 	keys, err := v.fetch(ctx)
-
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	v.lastAttempt = time.Now()
@@ -182,19 +176,16 @@ func (v *Verifier) refresh(ctx context.Context) error {
 func (v *Verifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.jwksURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("%w: building request: %v", ErrKeysUnavailable, err)
+		return nil, fmt.Errorf("%w: build request: %v", ErrKeysUnavailable, err)
 	}
-
 	resp, err := v.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrKeysUnavailable, err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: %s returned %d", ErrKeysUnavailable, v.jwksURL, resp.StatusCode)
+		return nil, fmt.Errorf("%w: %s answered %d", ErrKeysUnavailable, v.jwksURL, resp.StatusCode)
 	}
-
 	var set struct {
 		Keys []struct {
 			Kty string `json:"kty"`
@@ -204,47 +195,42 @@ func (v *Verifier) fetch(ctx context.Context) (map[string]*rsa.PublicKey, error)
 		} `json:"keys"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&set); err != nil {
-		return nil, fmt.Errorf("%w: decoding key set: %v", ErrKeysUnavailable, err)
+		return nil, fmt.Errorf("%w: decode key set: %v", ErrKeysUnavailable, err)
 	}
-
 	keys := make(map[string]*rsa.PublicKey, len(set.Keys))
-	for _, candidate := range set.Keys {
-		if candidate.Kty != "RSA" || candidate.Kid == "" {
+	for _, k := range set.Keys {
+		if k.Kty != "RSA" || k.Kid == "" {
 			continue
 		}
-		key, err := rsaKeyFrom(candidate.N, candidate.E)
+		key, err := rsaKey(k.N, k.E)
 		if err != nil {
 			continue
 		}
-		keys[candidate.Kid] = key
+		keys[k.Kid] = key
 	}
 	if len(keys) == 0 {
-		return nil, fmt.Errorf("%w: %s published no usable RSA keys", ErrKeysUnavailable, v.jwksURL)
+		return nil, fmt.Errorf("%w: %s published no usable RSA key", ErrKeysUnavailable, v.jwksURL)
 	}
-
 	return keys, nil
 }
 
-func rsaKeyFrom(nRaw string, eRaw string) (*rsa.PublicKey, error) {
-	nBytes, err := base64.RawURLEncoding.DecodeString(nRaw)
+func rsaKey(nRaw, eRaw string) (*rsa.PublicKey, error) {
+	n, err := base64.RawURLEncoding.DecodeString(nRaw)
 	if err != nil {
 		return nil, fmt.Errorf("modulus: %w", err)
 	}
-	eBytes, err := base64.RawURLEncoding.DecodeString(eRaw)
+	e, err := base64.RawURLEncoding.DecodeString(eRaw)
 	if err != nil {
 		return nil, fmt.Errorf("exponent: %w", err)
 	}
-	if len(nBytes) == 0 || len(eBytes) == 0 {
+	if len(n) == 0 || len(e) == 0 {
 		return nil, errors.New("empty modulus or exponent")
 	}
-	return &rsa.PublicKey{
-		N: new(big.Int).SetBytes(nBytes),
-		E: int(new(big.Int).SetBytes(eBytes).Int64()),
-	}, nil
+	return &rsa.PublicKey{N: new(big.Int).SetBytes(n), E: int(new(big.Int).SetBytes(e).Int64())}, nil
 }
 
-func decodeCustom(tokenString string, out any) error {
-	parts := strings.Split(tokenString, ".")
+func decodePayload(token string, out any) error {
+	parts := strings.Split(token, ".")
 	if len(parts) != 3 {
 		return ErrMalformed
 	}

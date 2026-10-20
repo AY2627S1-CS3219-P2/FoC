@@ -168,9 +168,8 @@ type AdjustRewardRequest struct {
 
 // CreateReservationRequest defines model for CreateReservationRequest.
 type CreateReservationRequest struct {
-	Amount      int64               `json:"amount"`
-	ErrandId    openapi_types.UUID  `json:"errandId"`
-	RequesterId *openapi_types.UUID `json:"requesterId,omitempty"`
+	Amount   int64              `json:"amount"`
+	ErrandId openapi_types.UUID `json:"errandId"`
 }
 
 // CreditStatus defines model for CreditStatus.

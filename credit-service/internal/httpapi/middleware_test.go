@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 
 	"foc/credit-service/internal/auth"
 	"foc/credit-service/internal/httpapi"
@@ -93,7 +94,7 @@ func (i *issuer) mint(t *testing.T, opts tokenOpts) string {
 
 func TestRequireTokenRejectsMissingBearer(t *testing.T) {
 	verifier := auth.NewVerifier("http://127.0.0.1/unused", nil)
-	handler := httpapi.RequireToken(verifier)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpapi.RequireToken(verifier, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -111,7 +112,7 @@ func TestRequireTokenRejectsExpiredToken(t *testing.T) {
 	t.Cleanup(jwks.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
-	handler := httpapi.RequireToken(verifier)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpapi.RequireToken(verifier, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -135,7 +136,7 @@ func TestRequireTokenRejectsRefreshToken(t *testing.T) {
 	t.Cleanup(jwks.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
-	handler := httpapi.RequireToken(verifier)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := httpapi.RequireToken(verifier, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	}))
 
@@ -158,14 +159,15 @@ func TestRequireTokenStoresVerifiedIdentity(t *testing.T) {
 	jwks := httptest.NewServer(iss.jwksHandler())
 	t.Cleanup(jwks.Close)
 
+	testUID := uuid.New()
 	verifier := auth.NewVerifier(jwks.URL, nil)
-	handler := httpapi.RequireToken(verifier)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := httpapi.RequireToken(verifier, nil, nil)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		identity, ok := httpapi.IdentityFromContext(r.Context())
 		if !ok {
 			t.Fatal("identity missing from request context")
 		}
-		if identity.UserID != "uid-123" {
-			t.Errorf("UserID = %q, want uid-123", identity.UserID)
+		if identity.UserID != testUID {
+			t.Errorf("UserID = %v, want %v", identity.UserID, testUID)
 		}
 		if identity.Role != "STUDENT" {
 			t.Errorf("Role = %q, want STUDENT", identity.Role)
@@ -175,7 +177,7 @@ func TestRequireTokenStoresVerifiedIdentity(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/credits/me/balance", nil)
 	req.Header.Set("Authorization", "Bearer "+iss.mint(t, tokenOpts{
-		subject: "uid-123",
+		subject: testUID.String(),
 		role:    "STUDENT",
 	}))
 	got := httptest.NewRecorder()

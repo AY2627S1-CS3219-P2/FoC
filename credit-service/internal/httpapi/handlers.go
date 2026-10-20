@@ -63,8 +63,8 @@ func (h *Handler) GetMyCreditAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, err := uuid.Parse(identity.UserID)
-	if err != nil || userID == uuid.Nil {
+	userID := identity.UserID
+	if userID == uuid.Nil {
 		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "invalid caller identity")
 		return
 	}
@@ -104,8 +104,8 @@ func (h *Handler) ListMyCreditTransactions(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	userID, err := uuid.Parse(identity.UserID)
-	if err != nil || userID == uuid.Nil {
+	userID := identity.UserID
+	if userID == uuid.Nil {
 		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "invalid caller identity")
 		return
 	}
@@ -151,26 +151,25 @@ func (h *Handler) ListMyCreditTransactions(w http.ResponseWriter, r *http.Reques
 	})
 }
 
-// CreateReservation handles private-network reservation creation requests from Order Service.
+// CreateReservation handles reservation creation requests from Order Service.
 func (h *Handler) CreateReservation(w http.ResponseWriter, r *http.Request) {
+	identity, ok := IdentityFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "unauthorized")
+		return
+	}
+	if identity.Role == "ADMIN" {
+		writeError(w, http.StatusForbidden, gen.INVALIDREQUEST, "admin accounts cannot reserve credits")
+		return
+	}
+
 	req, err := decodeStrictJSON[gen.CreateReservationRequest](w, r)
 	if err != nil {
 		h.mapDomainError(w, err)
 		return
 	}
 
-	var requesterID uuid.UUID
-	if req.RequesterId != nil {
-		requesterID = *req.RequesterId
-	}
-	if requesterID == uuid.Nil {
-		if identity, ok := IdentityFromContext(r.Context()); ok {
-			if parsed, err := uuid.Parse(identity.UserID); err == nil {
-				requesterID = parsed
-			}
-		}
-	}
-
+	requesterID := identity.UserID
 	if req.ErrandId == uuid.Nil || requesterID == uuid.Nil {
 		h.mapDomainError(w, fmt.Errorf("%w: nil UUID is not allowed", credit.ErrInvalidRequest))
 		return
@@ -199,8 +198,18 @@ func (h *Handler) CreateReservation(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, resp)
 }
 
-// AdjustReservationReward handles private-network reward adjustments from Order Service.
+// AdjustReservationReward handles reward adjustments from Order Service.
 func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID) {
+	identity, ok := IdentityFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "unauthorized")
+		return
+	}
+	if identity.Role == "ADMIN" {
+		writeError(w, http.StatusForbidden, gen.INVALIDREQUEST, "admin accounts cannot modify credit reservations")
+		return
+	}
+
 	if errandId == uuid.Nil {
 		h.mapDomainError(w, fmt.Errorf("%w: nil errand ID", credit.ErrInvalidErrandID))
 		return
@@ -212,17 +221,10 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	operationID := uuid.Nil
-	if reqID := r.Header.Get("X-Request-Id"); reqID != "" {
-		if parsed, err := uuid.Parse(reqID); err == nil {
-			operationID = parsed
-		}
-	}
-	if operationID == uuid.Nil {
-		operationID = uuid.New()
-	}
+	// Deterministic operation ID keyed on (errandId, newReward) to prevent stale X-Request-Id reuse
+	operationID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("%s:%d", errandId, req.NewReward)))
 
-	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, req.NewReward, operationID)
+	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, identity.UserID, req.NewReward, operationID)
 	if err != nil {
 		h.mapDomainError(w, err)
 		return

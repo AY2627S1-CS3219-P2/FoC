@@ -74,9 +74,6 @@ components:
         errandId:
           type: string
           format: uuid
-        requesterId:
-          type: string
-          format: uuid
         amount:
           type: integer
           format: int64
@@ -236,7 +233,6 @@ paths:
     post:
       summary: Reserve requester credits for an errand.
       operationId: createReservation
-      security: []
       requestBody:
         required: true
         content:
@@ -270,7 +266,6 @@ paths:
     patch:
       summary: Adjust the reward secured by a reservation.
       operationId: adjustReservationReward
-      security: []
       parameters:
         - in: path
           name: errandId
