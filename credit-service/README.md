@@ -31,12 +31,11 @@ Credit Service manages the financial credit ledger for Friend on Campus (FoC). I
 - `GET /api/v1/credits/accounts/me/transactions`: Retrieve cursor-paginated transaction history grouped by operation ID.
 
 ### Private Inter-Service Routes (Private Network Only)
-- `POST /internal/v1/credit-reservations`: Atomically reserve requester credits for an errand.
-- `PATCH /internal/v1/credit-reservations/{errandId}`: Atomically adjust an errand's reserved reward with typed idempotency tracking.
+- `POST /api/v1/credits/reservations`: Atomically reserve requester credits for an errand. Accepts `requesterId` in body or extracts it from caller's JWT Bearer token context if omitted. (Alias: `/internal/v1/credit-reservations`).
+- `PATCH /api/v1/credits/reservations/{errandId}`: Atomically adjust an errand's reserved reward to target `newReward`. Reads operation ID from `X-Request-Id` header (no caller CAS needed). (Alias: `/internal/v1/credit-reservations/{errandId}`).
 
 ### Health Endpoints
-- `GET /health/live`: Fast process liveness check (performs no external network calls).
-- `GET /health/ready`: Dependency readiness check verifying PostgreSQL ping, schema migration version, and RabbitMQ supervisor status.
+- `GET /api/v1/health`: Dependency health check verifying PostgreSQL ping, schema migration version, and RabbitMQ supervisor status.
 
 ---
 
@@ -47,7 +46,6 @@ The service consumes events on durable queues bound to the `foc.events` topic ex
 1. **User Registration (`credit.registration` queue)**:
    - Listens for `user.registered` events.
    - Idempotently creates the user account and allocates 100 credits.
-   - Emits Direct Reply-to response to the RPC caller (`outcome: ALLOCATED`).
 
 2. **Errand Lifecycle (`credit.errand.lifecycle` queue)**:
    - `errand.completed`: Settles completion payout from requester hold to courier available balance (`PAID_OUT`).
