@@ -211,7 +211,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Conflict:
-      description: Command conflicts with current state or a previous command.
+      description: Existing reservation has conflicting parameters (mismatched requester or amount), or is in a non-reservable terminal state (PAID_OUT or REFUNDED), or command conflicts with current state.
       content:
         application/json:
           schema:
@@ -277,7 +277,7 @@ paths:
               $ref: "#/components/schemas/CreateReservationRequest"
       responses:
         "200":
-          description: Existing identical reservation.
+          description: Existing identical reservation (idempotent retry).
           content:
             application/json:
               schema:
