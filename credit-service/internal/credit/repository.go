@@ -24,7 +24,7 @@ type ReservationRepository interface {
 	CreateReservation(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, amount int64) (*Reservation, bool, error)
 
 	// AdjustReservationReward modifies an existing reservation's reward amount idempotently.
-	AdjustReservationReward(ctx context.Context, errandID uuid.UUID, currentAmount int64, newAmount int64, operationID uuid.UUID) (*OperationResult, *Reservation, error)
+	AdjustReservationReward(ctx context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error)
 }
 
 // SettlementRepository manages refunds and payouts from asynchronous errand lifecycle events.

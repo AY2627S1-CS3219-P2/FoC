@@ -44,7 +44,7 @@ func (m *mockReadRepo) ListTransactions(ctx context.Context, userID uuid.UUID, l
 
 type mockReservationRepo struct {
 	createReservationFn func(ctx context.Context, errandID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error)
-	adjustRewardFn      func(ctx context.Context, errandID uuid.UUID, currentAmount, newAmount int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error)
+	adjustRewardFn      func(ctx context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error)
 }
 
 func (m *mockReservationRepo) CreateReservation(ctx context.Context, errandID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error) {
@@ -54,9 +54,9 @@ func (m *mockReservationRepo) CreateReservation(ctx context.Context, errandID, r
 	return nil, false, errors.New("not implemented")
 }
 
-func (m *mockReservationRepo) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, currentAmount, newAmount int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (m *mockReservationRepo) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	if m.adjustRewardFn != nil {
-		return m.adjustRewardFn(ctx, errandID, currentAmount, newAmount, operationID)
+		return m.adjustRewardFn(ctx, errandID, newReward, operationID)
 	}
 	return nil, nil, errors.New("not implemented")
 }
@@ -129,7 +129,7 @@ func TestHealthEndpoints(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
-		if errResp.Code != gen.ErrorCodeSERVICEUNAVAILABLE {
+		if errResp.Code != gen.SERVICEUNAVAILABLE {
 			t.Fatalf("code = %v, want SERVICE_UNAVAILABLE", errResp.Code)
 		}
 	})
@@ -249,7 +249,7 @@ func TestGetMyCreditAccount(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
-		if errResp.Code != gen.ErrorCodeWALLETNOTREADY {
+		if errResp.Code != gen.WALLETNOTREADY {
 			t.Fatalf("code = %v, want WALLET_NOT_READY", errResp.Code)
 		}
 	})
@@ -345,7 +345,7 @@ func TestListMyCreditTransactions(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 			t.Fatalf("decode response: %v", err)
 		}
-		if errResp.Code != gen.ErrorCodeINVALIDREQUEST {
+		if errResp.Code != gen.INVALIDREQUEST {
 			t.Fatalf("code = %v, want INVALID_REQUEST", errResp.Code)
 		}
 	})
@@ -479,7 +479,7 @@ func TestCreateReservation(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if errResp.Code != gen.ErrorCodeINSUFFICIENTCREDITS {
+		if errResp.Code != gen.INSUFFICIENTCREDITS {
 			t.Fatalf("code = %v, want INSUFFICIENT_CREDITS", errResp.Code)
 		}
 	})
@@ -490,9 +490,9 @@ func TestAdjustReservationReward(t *testing.T) {
 	operationID := uuid.New()
 	resID := uuid.New()
 
-	t.Run("returns 200 OK on successful reward adjustment", func(t *testing.T) {
+	t.Run("returns 200 OK on successful reward adjustment via /api/v1/credits/reservations/{errandId}", func(t *testing.T) {
 		repo := &mockReservationRepo{
-			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, curr, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 				return &credit.OperationResult{
 					OperationID: opID,
 					ErrandID:    eID,
@@ -510,13 +510,12 @@ func TestAdjustReservationReward(t *testing.T) {
 
 		router, _, _ := setupTestRouter(t, nil, repo, nil)
 		payload := map[string]any{
-			"currentAmount": 25,
-			"newAmount":     35,
-			"operationId":   operationID.String(),
+			"newReward": 35,
 		}
 		data, _ := json.Marshal(payload)
-		req := httptest.NewRequest(http.MethodPatch, "/internal/v1/credit-reservations/"+errandID.String(), bytes.NewReader(data))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Request-Id", operationID.String())
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
@@ -532,55 +531,53 @@ func TestAdjustReservationReward(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 409 RESERVATION_AMOUNT_MISMATCH with typed currentAmount", func(t *testing.T) {
+	t.Run("returns 200 OK on internal alias /internal/v1/credit-reservations/{errandId}", func(t *testing.T) {
 		repo := &mockReservationRepo{
-			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, curr, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
-				return nil, nil, &credit.AmountMismatchError{CurrentAmount: 40}
+			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+				return &credit.OperationResult{
+					OperationID: opID,
+					ErrandID:    eID,
+					OutcomeCode: credit.OutcomeSuccess,
+				}, &credit.Reservation{
+					ID:        resID,
+					ErrandID:  eID,
+					Amount:    next,
+					Status:    credit.ReservationStatusReserved,
+					CreatedAt: time.Now().UTC(),
+					UpdatedAt: time.Now().UTC(),
+				}, nil
 			},
 		}
 
 		router, _, _ := setupTestRouter(t, nil, repo, nil)
 		payload := map[string]any{
-			"currentAmount": 25,
-			"newAmount":     35,
-			"operationId":   operationID.String(),
+			"newReward": 35,
 		}
 		data, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPatch, "/internal/v1/credit-reservations/"+errandID.String(), bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-Request-Id", operationID.String())
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusConflict {
-			t.Fatalf("status = %d, want 409", rec.Code)
-		}
-		var resp gen.AmountMismatchErrorResponse
-		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		if resp.Code != gen.AmountMismatchErrorResponseCodeRESERVATIONAMOUNTMISMATCH {
-			t.Errorf("code = %v, want RESERVATION_AMOUNT_MISMATCH", resp.Code)
-		}
-		if resp.Details.CurrentAmount != 40 {
-			t.Errorf("currentAmount = %d, want 40", resp.Details.CurrentAmount)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
 		}
 	})
 
 	t.Run("returns 404 RESERVATION_NOT_FOUND when reservation does not exist", func(t *testing.T) {
 		repo := &mockReservationRepo{
-			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, curr, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+			adjustRewardFn: func(ctx context.Context, eID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 				return nil, nil, credit.ErrReservationNotFound
 			},
 		}
 
 		router, _, _ := setupTestRouter(t, nil, repo, nil)
 		payload := map[string]any{
-			"currentAmount": 25,
-			"newAmount":     35,
-			"operationId":   operationID.String(),
+			"newReward": 35,
 		}
 		data, _ := json.Marshal(payload)
-		req := httptest.NewRequest(http.MethodPatch, "/internal/v1/credit-reservations/"+errandID.String(), bytes.NewReader(data))
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
@@ -592,7 +589,7 @@ func TestAdjustReservationReward(t *testing.T) {
 		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
 			t.Fatalf("decode: %v", err)
 		}
-		if errResp.Code != gen.ErrorCodeRESERVATIONNOTFOUND {
+		if errResp.Code != gen.RESERVATIONNOTFOUND {
 			t.Fatalf("code = %v, want RESERVATION_NOT_FOUND", errResp.Code)
 		}
 	})

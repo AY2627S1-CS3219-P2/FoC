@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 )
 
 // HealthCheck reports whether a required runtime dependency is reachable.
@@ -34,20 +35,33 @@ func NewRouter(healthCheck HealthCheck, verifier *auth.Verifier, creditService *
 		gen.HandlerWithOptions(h, gen.ChiServerOptions{
 			BaseRouter: router,
 			Middlewares: []gen.MiddlewareFunc{
-				AuthenticateReadRoutes(verifier),
+				AuthenticateRoutes(verifier),
 			},
 			ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
-				writeError(w, http.StatusBadRequest, gen.ErrorCodeINVALIDREQUEST, err.Error())
+				writeError(w, http.StatusBadRequest, gen.INVALIDREQUEST, err.Error())
 			},
+		})
+
+		// Mount internal alias routes for backward compatibility
+		router.Post("/internal/v1/credit-reservations", h.CreateReservation)
+		router.Patch("/internal/v1/credit-reservations/{errandId}", func(w http.ResponseWriter, r *http.Request) {
+			errandIDStr := chi.URLParam(r, "errandId")
+			errID, err := uuid.Parse(errandIDStr)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, gen.INVALIDREQUEST, "invalid errand ID")
+				return
+			}
+			h.AdjustReservationReward(w, r, errID)
 		})
 	}
 
 	return router
 }
 
-// AuthenticateReadRoutes returns a middleware that applies Bearer token verification
-// exclusively to authenticated end-user read routes (/api/v1/credits/accounts/me*).
-func AuthenticateReadRoutes(verifier *auth.Verifier) gen.MiddlewareFunc {
+// AuthenticateRoutes returns a middleware that enforces Bearer token verification
+// on /api/v1/credits/accounts/me*, and optionally extracts caller identity if a Bearer
+// token is provided on other routes (e.g. reservation creation from order-service).
+func AuthenticateRoutes(verifier *auth.Verifier) gen.MiddlewareFunc {
 	var tokenAuth func(http.Handler) http.Handler
 	if verifier != nil {
 		tokenAuth = RequireToken(verifier)
@@ -60,9 +74,16 @@ func AuthenticateReadRoutes(verifier *auth.Verifier) gen.MiddlewareFunc {
 					tokenAuth(next).ServeHTTP(w, r)
 					return
 				}
-				writeError(w, http.StatusUnauthorized, gen.ErrorCodeINVALIDREQUEST, "unauthorized")
+				writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "unauthorized")
 				return
 			}
+
+			// For reservation or other routes, if Authorization Bearer token is present, decode it into context
+			if r.Header.Get("Authorization") != "" && tokenAuth != nil {
+				tokenAuth(next).ServeHTTP(w, r)
+				return
+			}
+
 			next.ServeHTTP(w, r)
 		})
 	}

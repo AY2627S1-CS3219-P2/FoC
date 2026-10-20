@@ -1,6 +1,6 @@
 # AI Assistance Disclosure:
-# Tool: Codex (model: GPT-5), date: 2026-10-19
-# Scope: Reconciled the Credit Service OpenAPI contract with docs/sourceOfTruth.md Phase 1.
+# Tool: Antigravity, date: 2026-10-20
+# Scope: Mounted /api/v1/credits/reservations routes, updated AdjustRewardRequest to target-state newReward, and removed obsolete CAS error schemas per requirements.md and sourceOfTruth.md.
 # Author review: PENDING - reviewer to complete
 
 openapi: 3.1.0
@@ -22,7 +22,7 @@ components:
   schemas:
     ErrorCode:
       type: string
-      enum: [INVALID_REQUEST, WALLET_NOT_READY, INSUFFICIENT_CREDITS, RESERVATION_NOT_FOUND, RESERVATION_STATE_CONFLICT, RESERVATION_AMOUNT_MISMATCH, IDEMPOTENCY_CONFLICT, ACCOUNT_INTEGRITY_FAILURE, CREDIT_LIMIT_EXCEEDED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
+      enum: [INVALID_REQUEST, WALLET_NOT_READY, INSUFFICIENT_CREDITS, RESERVATION_NOT_FOUND, RESERVATION_STATE_CONFLICT, IDEMPOTENCY_CONFLICT, ACCOUNT_INTEGRITY_FAILURE, CREDIT_LIMIT_EXCEEDED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -32,28 +32,6 @@ components:
           $ref: "#/components/schemas/ErrorCode"
         message:
           type: string
-    AmountMismatchDetails:
-      type: object
-      additionalProperties: false
-      required: [currentAmount]
-      properties:
-        currentAmount:
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 1000000
-    AmountMismatchErrorResponse:
-      type: object
-      additionalProperties: false
-      required: [code, message, details]
-      properties:
-        code:
-          type: string
-          const: RESERVATION_AMOUNT_MISMATCH
-        message:
-          type: string
-        details:
-          $ref: "#/components/schemas/AmountMismatchDetails"
     HealthResponse:
       type: object
       additionalProperties: false
@@ -91,7 +69,7 @@ components:
     CreateReservationRequest:
       type: object
       additionalProperties: false
-      required: [errandId, requesterId, amount]
+      required: [errandId, amount]
       properties:
         errandId:
           type: string
@@ -107,21 +85,13 @@ components:
     AdjustRewardRequest:
       type: object
       additionalProperties: false
-      required: [currentAmount, newAmount, operationId]
+      required: [newReward]
       properties:
-        currentAmount:
+        newReward:
           type: integer
           format: int64
           minimum: 1
           maximum: 1000000
-        newAmount:
-          type: integer
-          format: int64
-          minimum: 1
-          maximum: 1000000
-        operationId:
-          type: string
-          format: uuid
     ReservationStatus:
       type: string
       enum: [RESERVED, PAID_OUT, REFUNDED]
@@ -215,9 +185,7 @@ components:
       content:
         application/json:
           schema:
-            oneOf:
-              - $ref: "#/components/schemas/ErrorResponse"
-              - $ref: "#/components/schemas/AmountMismatchErrorResponse"
+            $ref: "#/components/schemas/ErrorResponse"
     UnprocessableContent:
       description: Credits are insufficient or a credit limit would be exceeded.
       content:
@@ -264,7 +232,7 @@ paths:
                 $ref: "#/components/schemas/HealthResponse"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
-  /internal/v1/credit-reservations:
+  /api/v1/credits/reservations:
     post:
       summary: Reserve requester credits for an errand.
       operationId: createReservation
@@ -298,7 +266,7 @@ paths:
           $ref: "#/components/responses/ServiceUnavailable"
         "500":
           $ref: "#/components/responses/InternalError"
-  /internal/v1/credit-reservations/{errandId}:
+  /api/v1/credits/reservations/{errandId}:
     patch:
       summary: Adjust the reward secured by a reservation.
       operationId: adjustReservationReward

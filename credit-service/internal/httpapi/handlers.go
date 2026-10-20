@@ -46,7 +46,7 @@ func (h *Handler) GetLiveness(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	if h.healthCheck != nil {
 		if err := h.healthCheck(r.Context()); err != nil {
-			writeError(w, http.StatusServiceUnavailable, gen.ErrorCodeSERVICEUNAVAILABLE, err.Error())
+			writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, err.Error())
 			return
 		}
 	}
@@ -59,13 +59,13 @@ func (h *Handler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetMyCreditAccount(w http.ResponseWriter, r *http.Request) {
 	identity, ok := IdentityFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, gen.ErrorCodeINVALIDREQUEST, "missing caller identity")
+		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "missing caller identity")
 		return
 	}
 
 	userID, err := uuid.Parse(identity.UserID)
 	if err != nil || userID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, gen.ErrorCodeINVALIDREQUEST, "invalid caller identity")
+		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "invalid caller identity")
 		return
 	}
 
@@ -73,9 +73,9 @@ func (h *Handler) GetMyCreditAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, credit.ErrWalletNotReady):
-			writeError(w, http.StatusConflict, gen.ErrorCodeWALLETNOTREADY, "wallet is not ready")
+			writeError(w, http.StatusConflict, gen.WALLETNOTREADY, "wallet is not ready")
 		default:
-			writeError(w, http.StatusServiceUnavailable, gen.ErrorCodeSERVICEUNAVAILABLE, "service unavailable")
+			writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "service unavailable")
 		}
 		return
 	}
@@ -100,20 +100,20 @@ func (h *Handler) GetMyCreditAccount(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) ListMyCreditTransactions(w http.ResponseWriter, r *http.Request, params gen.ListMyCreditTransactionsParams) {
 	identity, ok := IdentityFromContext(r.Context())
 	if !ok {
-		writeError(w, http.StatusUnauthorized, gen.ErrorCodeINVALIDREQUEST, "missing caller identity")
+		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "missing caller identity")
 		return
 	}
 
 	userID, err := uuid.Parse(identity.UserID)
 	if err != nil || userID == uuid.Nil {
-		writeError(w, http.StatusUnauthorized, gen.ErrorCodeINVALIDREQUEST, "invalid caller identity")
+		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "invalid caller identity")
 		return
 	}
 
 	limit := 20
 	if params.Limit != nil {
 		if *params.Limit < 1 || *params.Limit > 100 {
-			writeError(w, http.StatusBadRequest, gen.ErrorCodeINVALIDREQUEST, "limit must be between 1 and 100")
+			writeError(w, http.StatusBadRequest, gen.INVALIDREQUEST, "limit must be between 1 and 100")
 			return
 		}
 		limit = *params.Limit
@@ -123,11 +123,11 @@ func (h *Handler) ListMyCreditTransactions(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		switch {
 		case errors.Is(err, credit.ErrInvalidRequest):
-			writeError(w, http.StatusBadRequest, gen.ErrorCodeINVALIDREQUEST, err.Error())
+			writeError(w, http.StatusBadRequest, gen.INVALIDREQUEST, err.Error())
 		case errors.Is(err, credit.ErrAccountIntegrityFlagged):
-			writeError(w, http.StatusConflict, gen.ErrorCodeACCOUNTINTEGRITYFAILURE, "account integrity failure")
+			writeError(w, http.StatusConflict, gen.ACCOUNTINTEGRITYFAILURE, "account integrity failure")
 		default:
-			writeError(w, http.StatusInternalServerError, gen.ErrorCodeINTERNALERROR, "failed to list transactions")
+			writeError(w, http.StatusInternalServerError, gen.INTERNALERROR, "failed to list transactions")
 		}
 		return
 	}
@@ -159,12 +159,24 @@ func (h *Handler) CreateReservation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.ErrandId == uuid.Nil || req.RequesterId == uuid.Nil {
+	var requesterID uuid.UUID
+	if req.RequesterId != nil {
+		requesterID = *req.RequesterId
+	}
+	if requesterID == uuid.Nil {
+		if identity, ok := IdentityFromContext(r.Context()); ok {
+			if parsed, err := uuid.Parse(identity.UserID); err == nil {
+				requesterID = parsed
+			}
+		}
+	}
+
+	if req.ErrandId == uuid.Nil || requesterID == uuid.Nil {
 		h.mapDomainError(w, fmt.Errorf("%w: nil UUID is not allowed", credit.ErrInvalidRequest))
 		return
 	}
 
-	res, isNew, err := h.creditService.CreateReservation(r.Context(), req.ErrandId, req.RequesterId, req.Amount)
+	res, isNew, err := h.creditService.CreateReservation(r.Context(), req.ErrandId, requesterID, req.Amount)
 	if err != nil {
 		h.mapDomainError(w, err)
 		return
@@ -200,12 +212,17 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if req.OperationId == uuid.Nil {
-		h.mapDomainError(w, fmt.Errorf("%w: nil operation ID", credit.ErrInvalidOperationID))
-		return
+	operationID := uuid.Nil
+	if reqID := r.Header.Get("X-Request-Id"); reqID != "" {
+		if parsed, err := uuid.Parse(reqID); err == nil {
+			operationID = parsed
+		}
+	}
+	if operationID == uuid.Nil {
+		operationID = uuid.New()
 	}
 
-	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, req.CurrentAmount, req.NewAmount, req.OperationId)
+	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, req.NewReward, operationID)
 	if err != nil {
 		h.mapDomainError(w, err)
 		return
@@ -224,38 +241,32 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 }
 
 func (h *Handler) mapDomainError(w http.ResponseWriter, err error) {
-	var amountErr *credit.AmountMismatchError
-	if errors.As(err, &amountErr) {
-		writeAmountMismatch(w, amountErr.CurrentAmount)
-		return
-	}
-
 	switch {
 	case errors.Is(err, credit.ErrInvalidRequest),
 		errors.Is(err, credit.ErrInvalidRewardAmount),
 		errors.Is(err, credit.ErrInvalidErrandID),
 		errors.Is(err, credit.ErrInvalidUserID),
 		errors.Is(err, credit.ErrInvalidOperationID):
-		writeError(w, http.StatusBadRequest, gen.ErrorCodeINVALIDREQUEST, err.Error())
+		writeError(w, http.StatusBadRequest, gen.INVALIDREQUEST, err.Error())
 	case errors.Is(err, credit.ErrReservationNotFound):
-		writeError(w, http.StatusNotFound, gen.ErrorCodeRESERVATIONNOTFOUND, "reservation not found")
+		writeError(w, http.StatusNotFound, gen.RESERVATIONNOTFOUND, "reservation not found")
 	case errors.Is(err, credit.ErrReservationConflict),
 		errors.Is(err, credit.ErrIdempotencyConflict):
-		writeError(w, http.StatusConflict, gen.ErrorCodeIDEMPOTENCYCONFLICT, "idempotency conflict")
+		writeError(w, http.StatusConflict, gen.IDEMPOTENCYCONFLICT, "idempotency conflict")
 	case errors.Is(err, credit.ErrReservationStateConflict):
-		writeError(w, http.StatusConflict, gen.ErrorCodeRESERVATIONSTATECONFLICT, "reservation in terminal state")
+		writeError(w, http.StatusConflict, gen.RESERVATIONSTATECONFLICT, "reservation in terminal state")
 	case errors.Is(err, credit.ErrWalletNotReady):
-		writeError(w, http.StatusConflict, gen.ErrorCodeWALLETNOTREADY, "wallet is not ready")
+		writeError(w, http.StatusConflict, gen.WALLETNOTREADY, "wallet is not ready")
 	case errors.Is(err, credit.ErrAccountIntegrityFlagged):
-		writeError(w, http.StatusConflict, gen.ErrorCodeACCOUNTINTEGRITYFAILURE, "account integrity failure")
+		writeError(w, http.StatusConflict, gen.ACCOUNTINTEGRITYFAILURE, "account integrity failure")
 	case errors.Is(err, credit.ErrInsufficientCredits):
-		writeError(w, http.StatusUnprocessableEntity, gen.ErrorCodeINSUFFICIENTCREDITS, "insufficient credits")
+		writeError(w, http.StatusUnprocessableEntity, gen.INSUFFICIENTCREDITS, "insufficient credits")
 	case errors.Is(err, credit.ErrCreditLimitExceeded):
-		writeError(w, http.StatusUnprocessableEntity, gen.ErrorCodeCREDITLIMITEXCEEDED, "credit limit exceeded")
+		writeError(w, http.StatusUnprocessableEntity, gen.CREDITLIMITEXCEEDED, "credit limit exceeded")
 	case errors.Is(err, credit.ErrServiceUnavailable):
-		writeError(w, http.StatusServiceUnavailable, gen.ErrorCodeSERVICEUNAVAILABLE, "service unavailable")
+		writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "service unavailable")
 	default:
-		writeError(w, http.StatusInternalServerError, gen.ErrorCodeINTERNALERROR, "internal error")
+		writeError(w, http.StatusInternalServerError, gen.INTERNALERROR, "internal error")
 	}
 }
 
@@ -354,12 +365,3 @@ func writeError(w http.ResponseWriter, status int, code gen.ErrorCode, message s
 	})
 }
 
-func writeAmountMismatch(w http.ResponseWriter, currentAmount int64) {
-	writeJSON(w, http.StatusConflict, gen.AmountMismatchErrorResponse{
-		Code:    gen.AmountMismatchErrorResponseCodeRESERVATIONAMOUNTMISMATCH,
-		Message: "reservation amount mismatch",
-		Details: gen.AmountMismatchDetails{
-			CurrentAmount: currentAmount,
-		},
-	})
-}

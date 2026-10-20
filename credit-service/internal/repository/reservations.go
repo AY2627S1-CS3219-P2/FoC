@@ -264,18 +264,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			return credit.ErrReservationStateConflict
 		}
 
-		// 5. Compare the stored amount with currentAmount; on mismatch persist failure with authoritative amount.
-		if reservation.Amount != currentAmount {
-			authoritative := reservation.Amount
-			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeReservationAmountMismatch, nil, &authoritative)
-			if err != nil {
-				return err
-			}
-			resOp = opRecord
-			return &credit.AmountMismatchError{CurrentAmount: authoritative}
-		}
-
-		// 6. If currentAmount == newAmount, persist successful result and return unchanged reservation (validated idempotent no-op).
+		// 5. If currentAmount == newAmount, persist successful result and return unchanged reservation (validated idempotent no-op).
 		if currentAmount == newAmount {
 			resulting := currentAmount
 			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeSuccess, &resulting, nil)
@@ -472,11 +461,6 @@ func mapOutcomeToError(outcome credit.CreditOperationOutcome, authoritativeAmoun
 		return credit.ErrInsufficientCredits
 	case credit.OutcomeReservationStateConflict:
 		return credit.ErrReservationStateConflict
-	case credit.OutcomeReservationAmountMismatch:
-		if authoritativeAmount != nil {
-			return &credit.AmountMismatchError{CurrentAmount: *authoritativeAmount}
-		}
-		return credit.ErrReservationAmountMismatch
 	case credit.OutcomeAccountIntegrityFailure:
 		return credit.ErrAccountIntegrityFlagged
 	case credit.OutcomeCreditLimitExceeded:

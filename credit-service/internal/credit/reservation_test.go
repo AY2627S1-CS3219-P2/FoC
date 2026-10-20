@@ -32,7 +32,7 @@ func (s *reservationRepositoryStub) CreateReservation(_ context.Context, errandI
 	return s.reservation, s.created, s.err
 }
 
-func (s *reservationRepositoryStub) AdjustReservationReward(_ context.Context, _ uuid.UUID, _ int64, _ int64, _ uuid.UUID) (*OperationResult, *Reservation, error) {
+func (s *reservationRepositoryStub) AdjustReservationReward(_ context.Context, _ uuid.UUID, _ int64, _ uuid.UUID) (*OperationResult, *Reservation, error) {
 	return nil, nil, nil
 }
 

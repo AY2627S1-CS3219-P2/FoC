@@ -164,20 +164,13 @@ func (m *inMemoryStateMachineRepo) CreateReservation(_ context.Context, errandID
 	return res, true, nil
 }
 
-func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, errandID uuid.UUID, currentAmount, newAmount int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	now := time.Now().UTC()
 	if prev, exists := m.operationResults[operationID]; exists {
 		res := m.reservations[errandID]
-		if prev.OutcomeCode == credit.OutcomeReservationAmountMismatch {
-			var curr int64
-			if res != nil {
-				curr = res.Amount
-			}
-			return prev, res, &credit.AmountMismatchError{CurrentAmount: curr}
-		}
 		if prev.OutcomeCode == credit.OutcomeInsufficientCredits {
 			return prev, res, credit.ErrInsufficientCredits
 		}
@@ -191,16 +184,9 @@ func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, er
 	if res.Status != credit.ReservationStatusReserved {
 		return nil, nil, credit.ErrReservationStateConflict
 	}
-	if res.Amount != currentAmount {
-		opRes := &credit.OperationResult{
-			OperationID: operationID,
-			ErrandID:    errandID,
-			OutcomeCode: credit.OutcomeReservationAmountMismatch,
-			CreatedAt:   now,
-		}
-		m.operationResults[operationID] = opRes
-		return opRes, res, &credit.AmountMismatchError{CurrentAmount: res.Amount}
-	}
+
+	currentAmount := res.Amount
+	newAmount := newReward
 
 	if currentAmount == newAmount {
 		opRes := &credit.OperationResult{
@@ -518,10 +504,9 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 			case 2: // Adjust reward
 				e := errands[r.Intn(len(errands))]
 				opID := opIDs[r.Intn(len(opIDs))]
-				currAmt := int64(r.Intn(60) + 1)
 				newAmt := int64(r.Intn(60) + 1)
-				_, _, err := svc.AdjustReservationReward(ctx, e, currAmt, newAmt, opID)
-				historyLog = append(historyLog, fmt.Sprintf("step %d: AdjustReservationReward(errand=%s, curr=%d, next=%d, op=%s) -> err=%v", step, e, currAmt, newAmt, opID, err))
+				_, _, err := svc.AdjustReservationReward(ctx, e, newAmt, opID)
+				historyLog = append(historyLog, fmt.Sprintf("step %d: AdjustReservationReward(errand=%s, next=%d, op=%s) -> err=%v", step, e, newAmt, opID, err))
 
 			case 3: // Refund reservation
 				e := errands[r.Intn(len(errands))]
@@ -595,7 +580,7 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 		_ = svc.RefundReservation(context.Background(), errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
 
 		// Cannot adjust after terminal refund
-		_, _, err := svc.AdjustReservationReward(context.Background(), errandID, 30, 40, uuid.New())
+		_, _, err := svc.AdjustReservationReward(context.Background(), errandID, 40, uuid.New())
 		if !errors.Is(err, credit.ErrReservationStateConflict) {
 			t.Fatalf("expected ErrReservationStateConflict, got %v", err)
 		}

@@ -97,12 +97,3 @@ func TestValidateBucketBalance(t *testing.T) {
 	}
 }
 
-func TestAmountMismatchError(t *testing.T) {
-	err := &AmountMismatchError{CurrentAmount: 42}
-	if !errors.Is(err, ErrReservationAmountMismatch) {
-		t.Fatalf("AmountMismatchError should match ErrReservationAmountMismatch")
-	}
-	if err.Error() != "reservation amount mismatch: current amount is 42" {
-		t.Fatalf("unexpected error string: %s", err.Error())
-	}
-}

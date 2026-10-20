@@ -4,7 +4,6 @@
 package gen
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -14,21 +13,6 @@ import (
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
-
-// Defines values for AmountMismatchErrorResponseCode.
-const (
-	AmountMismatchErrorResponseCodeRESERVATIONAMOUNTMISMATCH AmountMismatchErrorResponseCode = "RESERVATION_AMOUNT_MISMATCH"
-)
-
-// Valid indicates whether the value is a known member of the AmountMismatchErrorResponseCode enum.
-func (e AmountMismatchErrorResponseCode) Valid() bool {
-	switch e {
-	case AmountMismatchErrorResponseCodeRESERVATIONAMOUNTMISMATCH:
-		return true
-	default:
-		return false
-	}
-}
 
 // Defines values for CreditStatus.
 const (
@@ -50,43 +34,40 @@ func (e CreditStatus) Valid() bool {
 
 // Defines values for ErrorCode.
 const (
-	ErrorCodeACCOUNTINTEGRITYFAILURE   ErrorCode = "ACCOUNT_INTEGRITY_FAILURE"
-	ErrorCodeCREDITLIMITEXCEEDED       ErrorCode = "CREDIT_LIMIT_EXCEEDED"
-	ErrorCodeIDEMPOTENCYCONFLICT       ErrorCode = "IDEMPOTENCY_CONFLICT"
-	ErrorCodeINSUFFICIENTCREDITS       ErrorCode = "INSUFFICIENT_CREDITS"
-	ErrorCodeINTERNALERROR             ErrorCode = "INTERNAL_ERROR"
-	ErrorCodeINVALIDREQUEST            ErrorCode = "INVALID_REQUEST"
-	ErrorCodeRESERVATIONAMOUNTMISMATCH ErrorCode = "RESERVATION_AMOUNT_MISMATCH"
-	ErrorCodeRESERVATIONNOTFOUND       ErrorCode = "RESERVATION_NOT_FOUND"
-	ErrorCodeRESERVATIONSTATECONFLICT  ErrorCode = "RESERVATION_STATE_CONFLICT"
-	ErrorCodeSERVICEUNAVAILABLE        ErrorCode = "SERVICE_UNAVAILABLE"
-	ErrorCodeWALLETNOTREADY            ErrorCode = "WALLET_NOT_READY"
+	ACCOUNTINTEGRITYFAILURE  ErrorCode = "ACCOUNT_INTEGRITY_FAILURE"
+	CREDITLIMITEXCEEDED      ErrorCode = "CREDIT_LIMIT_EXCEEDED"
+	IDEMPOTENCYCONFLICT      ErrorCode = "IDEMPOTENCY_CONFLICT"
+	INSUFFICIENTCREDITS      ErrorCode = "INSUFFICIENT_CREDITS"
+	INTERNALERROR            ErrorCode = "INTERNAL_ERROR"
+	INVALIDREQUEST           ErrorCode = "INVALID_REQUEST"
+	RESERVATIONNOTFOUND      ErrorCode = "RESERVATION_NOT_FOUND"
+	RESERVATIONSTATECONFLICT ErrorCode = "RESERVATION_STATE_CONFLICT"
+	SERVICEUNAVAILABLE       ErrorCode = "SERVICE_UNAVAILABLE"
+	WALLETNOTREADY           ErrorCode = "WALLET_NOT_READY"
 )
 
 // Valid indicates whether the value is a known member of the ErrorCode enum.
 func (e ErrorCode) Valid() bool {
 	switch e {
-	case ErrorCodeACCOUNTINTEGRITYFAILURE:
+	case ACCOUNTINTEGRITYFAILURE:
 		return true
-	case ErrorCodeCREDITLIMITEXCEEDED:
+	case CREDITLIMITEXCEEDED:
 		return true
-	case ErrorCodeIDEMPOTENCYCONFLICT:
+	case IDEMPOTENCYCONFLICT:
 		return true
-	case ErrorCodeINSUFFICIENTCREDITS:
+	case INSUFFICIENTCREDITS:
 		return true
-	case ErrorCodeINTERNALERROR:
+	case INTERNALERROR:
 		return true
-	case ErrorCodeINVALIDREQUEST:
+	case INVALIDREQUEST:
 		return true
-	case ErrorCodeRESERVATIONAMOUNTMISMATCH:
+	case RESERVATIONNOTFOUND:
 		return true
-	case ErrorCodeRESERVATIONNOTFOUND:
+	case RESERVATIONSTATECONFLICT:
 		return true
-	case ErrorCodeRESERVATIONSTATECONFLICT:
+	case SERVICEUNAVAILABLE:
 		return true
-	case ErrorCodeSERVICEUNAVAILABLE:
-		return true
-	case ErrorCodeWALLETNOTREADY:
+	case WALLETNOTREADY:
 		return true
 	default:
 		return false
@@ -182,31 +163,14 @@ type AccountResponse struct {
 
 // AdjustRewardRequest defines model for AdjustRewardRequest.
 type AdjustRewardRequest struct {
-	CurrentAmount int64              `json:"currentAmount"`
-	NewAmount     int64              `json:"newAmount"`
-	OperationId   openapi_types.UUID `json:"operationId"`
+	NewReward int64 `json:"newReward"`
 }
-
-// AmountMismatchDetails defines model for AmountMismatchDetails.
-type AmountMismatchDetails struct {
-	CurrentAmount int64 `json:"currentAmount"`
-}
-
-// AmountMismatchErrorResponse defines model for AmountMismatchErrorResponse.
-type AmountMismatchErrorResponse struct {
-	Code    AmountMismatchErrorResponseCode `json:"code"`
-	Details AmountMismatchDetails           `json:"details"`
-	Message string                          `json:"message"`
-}
-
-// AmountMismatchErrorResponseCode defines model for AmountMismatchErrorResponse.Code.
-type AmountMismatchErrorResponseCode string
 
 // CreateReservationRequest defines model for CreateReservationRequest.
 type CreateReservationRequest struct {
-	Amount      int64              `json:"amount"`
-	ErrandId    openapi_types.UUID `json:"errandId"`
-	RequesterId openapi_types.UUID `json:"requesterId"`
+	Amount      int64               `json:"amount"`
+	ErrandId    openapi_types.UUID  `json:"errandId"`
+	RequesterId *openapi_types.UUID `json:"requesterId,omitempty"`
 }
 
 // CreditStatus defines model for CreditStatus.
@@ -267,9 +231,7 @@ type TransactionReason string
 type BadRequest = ErrorResponse
 
 // Conflict defines model for Conflict.
-type Conflict struct {
-	union json.RawMessage
-}
+type Conflict = ErrorResponse
 
 // InternalError defines model for InternalError.
 type InternalError = ErrorResponse
@@ -298,68 +260,6 @@ type CreateReservationJSONRequestBody = CreateReservationRequest
 // AdjustReservationRewardJSONRequestBody defines body for AdjustReservationReward for application/json ContentType.
 type AdjustReservationRewardJSONRequestBody = AdjustRewardRequest
 
-// AsErrorResponse returns the union data inside the Conflict as a ErrorResponse
-func (t Conflict) AsErrorResponse() (ErrorResponse, error) {
-	var body ErrorResponse
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromErrorResponse overwrites any union data inside the Conflict as the provided ErrorResponse
-func (t *Conflict) FromErrorResponse(v ErrorResponse) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeErrorResponse performs a merge with any union data inside the Conflict, using the provided ErrorResponse
-func (t *Conflict) MergeErrorResponse(v ErrorResponse) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-// AsAmountMismatchErrorResponse returns the union data inside the Conflict as a AmountMismatchErrorResponse
-func (t Conflict) AsAmountMismatchErrorResponse() (AmountMismatchErrorResponse, error) {
-	var body AmountMismatchErrorResponse
-	err := json.Unmarshal(t.union, &body)
-	return body, err
-}
-
-// FromAmountMismatchErrorResponse overwrites any union data inside the Conflict as the provided AmountMismatchErrorResponse
-func (t *Conflict) FromAmountMismatchErrorResponse(v AmountMismatchErrorResponse) error {
-	b, err := json.Marshal(v)
-	t.union = b
-	return err
-}
-
-// MergeAmountMismatchErrorResponse performs a merge with any union data inside the Conflict, using the provided AmountMismatchErrorResponse
-func (t *Conflict) MergeAmountMismatchErrorResponse(v AmountMismatchErrorResponse) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-
-	merged, err := runtime.JSONMerge(t.union, b)
-	t.union = merged
-	return err
-}
-
-func (t Conflict) MarshalJSON() ([]byte, error) {
-	b, err := t.union.MarshalJSON()
-	return b, err
-}
-
-func (t *Conflict) UnmarshalJSON(b []byte) error {
-	err := t.union.UnmarshalJSON(b)
-	return err
-}
-
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// GetMyCreditAccount Get the authenticated user's credit account.
@@ -368,18 +268,18 @@ type ServerInterface interface {
 	// ListMyCreditTransactions List the authenticated user's grouped financial operations.
 	// (GET /api/v1/credits/accounts/me/transactions)
 	ListMyCreditTransactions(w http.ResponseWriter, r *http.Request, params ListMyCreditTransactionsParams)
+	// CreateReservation Reserve requester credits for an errand.
+	// (POST /api/v1/credits/reservations)
+	CreateReservation(w http.ResponseWriter, r *http.Request)
+	// AdjustReservationReward Adjust the reward secured by a reservation.
+	// (PATCH /api/v1/credits/reservations/{errandId})
+	AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID)
 	// GetLiveness Check process liveness.
 	// (GET /health/live)
 	GetLiveness(w http.ResponseWriter, r *http.Request)
 	// GetReadiness Check service readiness.
 	// (GET /health/ready)
 	GetReadiness(w http.ResponseWriter, r *http.Request)
-	// CreateReservation Reserve requester credits for an errand.
-	// (POST /internal/v1/credit-reservations)
-	CreateReservation(w http.ResponseWriter, r *http.Request)
-	// AdjustReservationReward Adjust the reward secured by a reservation.
-	// (PATCH /internal/v1/credit-reservations/{errandId})
-	AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -398,6 +298,18 @@ func (_ Unimplemented) ListMyCreditTransactions(w http.ResponseWriter, r *http.R
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// CreateReservation Reserve requester credits for an errand.
+// (POST /api/v1/credits/reservations)
+func (_ Unimplemented) CreateReservation(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// AdjustReservationReward Adjust the reward secured by a reservation.
+// (PATCH /api/v1/credits/reservations/{errandId})
+func (_ Unimplemented) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // GetLiveness Check process liveness.
 // (GET /health/live)
 func (_ Unimplemented) GetLiveness(w http.ResponseWriter, r *http.Request) {
@@ -407,18 +319,6 @@ func (_ Unimplemented) GetLiveness(w http.ResponseWriter, r *http.Request) {
 // GetReadiness Check service readiness.
 // (GET /health/ready)
 func (_ Unimplemented) GetReadiness(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// CreateReservation Reserve requester credits for an errand.
-// (POST /internal/v1/credit-reservations)
-func (_ Unimplemented) CreateReservation(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// AdjustReservationReward Adjust the reward secured by a reservation.
-// (PATCH /internal/v1/credit-reservations/{errandId})
-func (_ Unimplemented) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -491,34 +391,6 @@ func (siw *ServerInterfaceWrapper) ListMyCreditTransactions(w http.ResponseWrite
 	handler.ServeHTTP(w, r)
 }
 
-// GetLiveness operation middleware
-func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetLiveness(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetReadiness operation middleware
-func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetReadiness(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // CreateReservation operation middleware
 func (siw *ServerInterfaceWrapper) CreateReservation(w http.ResponseWriter, r *http.Request) {
 
@@ -550,6 +422,34 @@ func (siw *ServerInterfaceWrapper) AdjustReservationReward(w http.ResponseWriter
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdjustReservationReward(w, r, errandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetLiveness operation middleware
+func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetLiveness(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetReadiness operation middleware
+func (siw *ServerInterfaceWrapper) GetReadiness(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetReadiness(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -679,10 +579,10 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/health/ready", wrapper.GetReadiness)
 	})
 	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/internal/v1/credit-reservations", wrapper.CreateReservation)
+		r.Post(options.BaseURL+"/api/v1/credits/reservations", wrapper.CreateReservation)
 	})
 	r.Group(func(r chi.Router) {
-		r.Patch(options.BaseURL+"/internal/v1/credit-reservations/{errandId}", wrapper.AdjustReservationReward)
+		r.Patch(options.BaseURL+"/api/v1/credits/reservations/{errandId}", wrapper.AdjustReservationReward)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/credits/accounts/me", wrapper.GetMyCreditAccount)
