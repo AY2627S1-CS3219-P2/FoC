@@ -228,7 +228,7 @@ func TestGetMyCreditAccount(t *testing.T) {
 		}
 	})
 
-	t.Run("returns 409 WALLET_NOT_READY when wallet does not exist", func(t *testing.T) {
+	t.Run("returns 404 WALLET_NOT_READY when wallet does not exist", func(t *testing.T) {
 		repo := &mockReadRepo{
 			getAccountFn: func(ctx context.Context, userID uuid.UUID) (*credit.Account, error) {
 				return nil, credit.ErrWalletNotReady
@@ -242,8 +242,8 @@ func TestGetMyCreditAccount(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusConflict {
-			t.Fatalf("status = %d, want 409", rec.Code)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("status = %d, want 404", rec.Code)
 		}
 		var errResp gen.ErrorResponse
 		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {

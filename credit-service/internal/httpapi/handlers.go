@@ -73,7 +73,7 @@ func (h *Handler) GetMyCreditAccount(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		switch {
 		case errors.Is(err, credit.ErrWalletNotReady):
-			writeError(w, http.StatusConflict, gen.WALLETNOTREADY, "wallet is not ready")
+			writeError(w, http.StatusNotFound, gen.WALLETNOTREADY, "wallet is not ready")
 		default:
 			writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "service unavailable")
 		}
