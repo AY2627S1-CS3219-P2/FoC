@@ -7,7 +7,8 @@
 // Package auth verifies RS256 access tokens against the public keys that
 // user-service publishes at its JWKS endpoint, and exposes the claims the
 // gateway forwards. It holds no private key, so it cannot mint a token
-// (D-023 in ai/decisions.md). It does not check revocation.
+// (D-023 in ai/decisions.md). Revocation is checked after Verify, against the
+// keys user-service writes to Redis (internal/revocation, D-054).
 package auth
 
 import (
@@ -62,8 +63,12 @@ type Claims struct {
 	Subject string
 	// Role is STUDENT or ADMIN, forwarded as the role header.
 	Role string
-	// ID is the token's jti. It is parsed but not used or forwarded.
+	// ID is the token's jti, which the revocation check looks up. It is not
+	// forwarded.
 	ID string
+	// IssuedAt is the token's iat, which the revocation check compares with
+	// the account's suspension time. It is not forwarded.
+	IssuedAt time.Time
 }
 
 // Verifier verifies access tokens against the issuer's published RSA keys.
@@ -148,11 +153,18 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (Claims, erro
 	if typ.Typ != "access" {
 		return Claims{}, ErrWrongType
 	}
+	// The revocation check needs both: jti for a logout, iat for a suspension.
+	// user-service always sets them, so a token without one is refused rather
+	// than let through unchecked.
+	if registered.ID == "" || registered.IssuedAt == nil {
+		return Claims{}, ErrMalformed
+	}
 
 	return Claims{
-		Subject: registered.Subject,
-		Role:    typ.Role,
-		ID:      registered.ID,
+		Subject:  registered.Subject,
+		Role:     typ.Role,
+		ID:       registered.ID,
+		IssuedAt: registered.IssuedAt.Time,
 	}, nil
 }
 

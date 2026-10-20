@@ -235,6 +235,9 @@ func TestSupplierWithUnfinishedErrandIsKept(t *testing.T) {
 	body := testSupplier()
 	sup := s.createSupplier(t, admin, body)
 	path := suppliersPath + "/" + sup.ID
+	// The requester's credit account opens on user.registered; posting before it
+	// has would get order-service's 503.
+	s.startingBalance(t, requester)
 
 	// Built by hand: errandInput skips the suppliers these tests make.
 	e := s.createErrand(t, requester, createErrandRequest{

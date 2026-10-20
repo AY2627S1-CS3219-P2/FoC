@@ -69,6 +69,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("parse Redis URL: %w", err)
 	}
+	// go-redis ignores a context's deadline on socket reads and writes unless
+	// this is set, so the revocation check's 500 ms bound would not hold against
+	// a Redis that accepts the connection and then stops answering.
+	redisOptions.ContextTimeoutEnabled = true
 	redisClient := redis.NewClient(redisOptions)
 	defer func() { _ = redisClient.Close() }()
 	if err := redisClient.Ping(ctx).Err(); err != nil {
@@ -107,7 +111,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),
 		sessionRepository,
-		accessTokenTTL,
+		accessTokenTTL+jwt.ClockSkew,
 		repository.NewRedisOTPStore(redisClient),
 		otpDeliverer, // AI-generated (edited by James Teo).
 	)
@@ -134,6 +138,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// AI-generated (edited by ZI YANG): supply the recorded Redis refresh lock through the composition root.
 	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, repository.NewRedisRefreshLock(redisClient), time.Now)
 	logoutService := session.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
+	revocationReader := repository.NewRedisBlocklistReader(redisClient)
 	httpHandler := router.Setup(routes.Dependencies{
 		Auth: handlers.AuthDependencies{
 			Registrar:      accountService,
@@ -161,7 +166,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			),
 			Logger: logger,
 		},
-		TokenVerifier: jwtPrincipalVerifier{service: jwtService},
+		TokenVerifier:     jwtPrincipalVerifier{service: jwtService},
+		RevocationChecker: jwtRevocationChecker{reader: revocationReader},
 	})
 
 	server := newHTTPServer(":"+cfg.Port, httpHandler)
@@ -199,6 +205,17 @@ func newHealthCheck(checks ...func(context.Context) error) handlers.HealthCheck 
 
 type jwtPrincipalVerifier struct{ service *jwt.Service }
 
+type jwtRevocationChecker struct {
+	reader *repository.RedisBlocklistReader
+}
+
+func (c jwtRevocationChecker) Check(ctx context.Context, principal handlers.Principal) (bool, error) {
+	if c.reader == nil {
+		return false, errors.New("Redis revocation reader is required")
+	}
+	return c.reader.IsRevoked(ctx, principal.JTI, principal.UserID, principal.IssuedAt)
+}
+
 func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (handlers.Principal, error) {
 	if err := ctx.Err(); err != nil {
 		return handlers.Principal{}, err
@@ -213,7 +230,7 @@ func (v jwtPrincipalVerifier) Verify(ctx context.Context, rawToken string) (hand
 	if verified.Type != jwt.AccessToken {
 		return handlers.Principal{}, errors.New("JWT is not an access token")
 	}
-	return handlers.Principal{UserID: verified.Subject, Role: verified.Role}, nil
+	return handlers.Principal{UserID: verified.Subject, Role: verified.Role, JTI: verified.JTI, IssuedAt: verified.IssuedAt}, nil
 }
 
 func parseTokenTTL(value string, defaultValue time.Duration) (time.Duration, error) {

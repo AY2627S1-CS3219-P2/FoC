@@ -13,19 +13,20 @@ import (
 )
 
 type fakeAccountRepository struct {
-	user                 *User
-	hasAdmin             bool
-	activeAdmins         int
-	countActiveAdminsErr error
-	lookupErr            error
-	updated              *User
-	status               AccountStatus
-	callOrder            *[]string
-	statusErr            error
-	statusErrs           []error   // AI-generated (edited by ZI YANG).
-	tokensValidAfter     time.Time // AI-generated (edited by nigeltzy).
-	createWithTaskCalled bool
-	activateErr          error // AI-generated (edited by James Teo).
+	user                   *User
+	hasAdmin               bool
+	activeAdmins           int
+	countActiveAdminsCalls int
+	countActiveAdminsErr   error
+	lookupErr              error
+	updated                *User
+	status                 AccountStatus
+	callOrder              *[]string
+	statusErr              error
+	statusErrs             []error   // AI-generated (edited by ZI YANG).
+	tokensValidAfter       time.Time // AI-generated (edited by nigeltzy).
+	createWithTaskCalled   bool
+	activateErr            error // AI-generated (edited by James Teo).
 }
 
 func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
@@ -33,6 +34,7 @@ func (f *fakeAccountRepository) HasAdmin(context.Context) (bool, error) {
 }
 
 func (f *fakeAccountRepository) CountActiveAdmins(context.Context) (int, error) {
+	f.countActiveAdminsCalls++
 	return f.activeAdmins, f.countActiveAdminsErr
 }
 
@@ -94,17 +96,20 @@ type fakeSuspensionWriter struct {
 }
 
 type fakeOTPStore struct {
-	count        int64
-	incrementErr error
-	storedEmail  string
-	storedHash   string
-	storeErr     error
-	hash         string
-	hashFound    bool
-	requestFound bool
-	deleteErr    error
-	attempts     int64 // AI-generated (edited by James Teo).
-	deleted      bool  // AI-generated (edited by James Teo).
+	count int64
+	// AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — records
+	// rate-limit calls to prove refused resends do not consume quota.
+	incrementRequestCountCalls int
+	incrementErr               error
+	storedEmail                string
+	storedHash                 string
+	storeErr                   error
+	hash                       string
+	hashFound                  bool
+	requestFound               bool
+	deleteErr                  error
+	attempts                   int64 // AI-generated (edited by James Teo).
+	deleted                    bool  // AI-generated (edited by James Teo).
 }
 
 func (f *fakeOTPStore) LookupHash(context.Context, string) (string, bool, error) {
@@ -141,6 +146,7 @@ func (f *fakeOTPDeliverer) DeliverOTP(_ context.Context, email, otp string) erro
 }
 
 func (f *fakeOTPStore) IncrementRequestCount(_ context.Context, _ string) (int64, error) {
+	f.incrementRequestCountCalls++
 	return f.count, f.incrementErr
 }
 

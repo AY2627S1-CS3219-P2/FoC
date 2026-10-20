@@ -255,17 +255,13 @@ func verificationCode(ctx context.Context, email string) (string, error) {
 	defer cancel()
 	var code string
 	last, ok := poll(ctx, func(ctx context.Context) (bool, string) {
-		cmd := exec.CommandContext(ctx, "docker", "compose", "logs", "--no-log-prefix", "user-service")
-		cmd.Dir = repoRoot
-		out, err := cmd.Output()
+		codes, err := verificationCodes(ctx, email)
 		if err != nil {
-			var exit *exec.ExitError
-			if errors.As(err, &exit) && len(exit.Stderr) > 0 {
-				return false, "docker compose logs user-service: " + strings.TrimSpace(string(exit.Stderr))
-			}
-			return false, "docker compose logs user-service: " + err.Error()
+			return false, err.Error()
 		}
-		code = codeFor(out, email)
+		if len(codes) > 0 {
+			code = codes[len(codes)-1]
+		}
 		return code != "", "no code for " + email + " in the log yet"
 	})
 	if !ok {
@@ -276,21 +272,45 @@ func verificationCode(ctx context.Context, email string) (string, error) {
 	return code, nil
 }
 
+func verificationCodes(ctx context.Context, email string) ([]string, error) {
+	// AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — exposes all
+	// logged codes so the issue #31 E2E test can detect an unwanted resend.
+	cmd := exec.CommandContext(ctx, "docker", "compose", "logs", "--no-log-prefix", "user-service")
+	cmd.Dir = repoRoot
+	out, err := cmd.Output()
+	if err != nil {
+		var exit *exec.ExitError
+		if errors.As(err, &exit) && len(exit.Stderr) > 0 {
+			return nil, fmt.Errorf("docker compose logs user-service: %s", strings.TrimSpace(string(exit.Stderr)))
+		}
+		return nil, fmt.Errorf("docker compose logs user-service: %w", err)
+	}
+	return codesFor(out, email), nil
+}
+
 // AI-generated (edited by James Teo).
 // codeFor returns the last code user-service's log holds for email. Each line
 // the service logs is one JSON object; anything else is skipped.
 func codeFor(logs []byte, email string) string {
-	var code string
+	codes := codesFor(logs, email)
+	if len(codes) == 0 {
+		return ""
+	}
+	return codes[len(codes)-1]
+}
+
+func codesFor(logs []byte, email string) []string {
+	var codes []string
 	for _, line := range bytes.Split(logs, []byte("\n")) {
 		var entry struct {
 			Email string `json:"email"`
 			OTP   string `json:"otp"`
 		}
 		if json.Unmarshal(line, &entry) == nil && entry.Email == email && entry.OTP != "" {
-			code = entry.OTP
+			codes = append(codes, entry.OTP)
 		}
 	}
-	return code
+	return codes
 }
 
 // login signs in through the gateway, which moves the refresh token into a

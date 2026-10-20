@@ -84,11 +84,18 @@ instead of every test timing out on its own.
 | `TestRewardChangeMovesTheHold` | raising and then lowering a reward moves the hold each time, and cancelling returns all of it |
 | `TestLogoutRevokesTheAccessToken` | a student's token works on `GET /api/orders/open`, and after `POST /auth/logout` the same token gets 401 |
 | `TestSuspensionRevokesTheAccessToken` | after an ADMIN suspends a student with `PATCH /api/users/{uid}/status`, the token the student already holds gets 401 on `GET /api/orders/open` |
+| `TestGatewayRefusesALoggedOutToken` | after `POST /auth/logout`, the same token gets 401 on `GET /api/suppliers` and `GET /api/credits/accounts/me`, routes whose service does not check the revocation keys itself |
+| `TestGatewayRefusesASuspendedTokenUntilReactivated` | after an ADMIN suspends a student, their token gets 401 on `GET /api/suppliers`, `GET /api/credits/accounts/me` and `GET /api/users/{uid}`; after reactivation a fresh login gets 200 while the old token stays refused |
+| `TestSuspendedStudentIsRefusedAtOnce` | a suspended student's existing token gets 401 on `GET /api/users/{uid}`, and a newly issued token works after reactivation |
+| `TestLoggedOutTokenIsRefused` | after logout, the same token gets 401 on `GET /api/users/{uid}` |
+| `TestSuspendedAccountGetsNoNewCode` | after an ADMIN suspends a student, `POST /auth/resend-otp` answers 409 and user-service logs no additional OTP for that email |
 | `TestAdminManagesASupplier` | an ADMIN creates a supplier (201), reads it back as sent, updates it (200), deletes it (204); then `GET` is 404, `GET /api/suppliers?q=` no longer lists it, and `GET /api/suppliers/not-a-uuid` is 404 |
 | `TestACreateThatLeavesOutIsAvailableIsUnavailable` | a `POST` with no `is_available` makes an unavailable supplier (D-072); the suite's other supplier bodies always send it |
 | `TestStudentCannotWriteSuppliers` | a student's create, update and delete are each 403, also with `X-User-Role: ADMIN` and `X-User-Id` forged; the admin's read shows the supplier unchanged |
 | `TestSupplierWithUnfinishedErrandIsKept` | with an unfinished errand naming the supplier, `DELETE` is 409 and the supplier is still readable; after the requester cancels, `DELETE` is 204 and the errand still carries the supplier's name (D-052) |
 | `TestLoggedOutAdminCannotWriteSuppliers` | after `POST /auth/logout`, the admin's access token, not yet expired, gets 401 on `POST /api/suppliers`, and the write created nothing |
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
+<!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 
 ## Notes
 

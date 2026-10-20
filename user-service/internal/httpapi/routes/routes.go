@@ -14,10 +14,11 @@ import (
 
 // Dependencies contains the grouped handler dependencies required to register routes.
 type Dependencies struct {
-	Auth          handlers.AuthDependencies
-	Profile       handlers.ProfileDependencies
-	System        handlers.SystemDependencies
-	TokenVerifier handlers.TokenVerifier
+	Auth              handlers.AuthDependencies
+	Profile           handlers.ProfileDependencies
+	System            handlers.SystemDependencies
+	TokenVerifier     handlers.TokenVerifier
+	RevocationChecker handlers.RevocationChecker
 }
 
 // GetRoutes constructs grouped handlers and returns their route-registration function.
@@ -36,9 +37,9 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			router.Post("/users/login", authHandler.Login)
 			router.Post("/users/refresh", authHandler.Refresh)
 			router.Post("/users/logout", authHandler.Logout)
-			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
-			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
-			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
 		})
 	}
 }
