@@ -202,7 +202,9 @@ func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.U
 // UpdateAccountStatusByID sets the account status. Suspending also sets
 // tokens_valid_after, so refresh tokens issued before it are rejected;
 // reactivating leaves it unchanged. The caller passes the timestamp so it
-// matches the suspension key written to Redis.
+// matches the suspension key written to Redis. Reactivating a SUSPENDED
+// student also queues user.registered in the same transaction, unless the
+// student already has one.
 func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -220,7 +222,7 @@ func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uu
 	if _, err := tx.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid); err != nil {
 		return fmt.Errorf("update account status: %w", mapDatabaseError(err))
 	}
-	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — applies D-062's
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — applies D-078's
 	// exactly-once reactivation event guard inside the status transaction.
 	if currentStatus == user.AccountStatusSuspended && status == user.AccountStatusActive && role == user.AccountRoleStudent {
 		event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())

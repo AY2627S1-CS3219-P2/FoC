@@ -202,7 +202,7 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - If the authenticated principal has the ADMIN role and is modifying a different user's account, the currentPassword requirement must be bypassed. Admins are authorized to force-reset passwords without knowing the target's existing credentials. If an admin is changing their own password, the currentPassword rule still applies.
    - a password change should utilize a mechanism similar to the existing suspension mechanism: the service updates the user's tokens_valid_after field in the users table to the current timestamp. The API Gateway will subsequently reject any existing access tokens where the iat (Issued At) claim is older than this new timestamp. The service must also call RevokeAllUserSessions to immediately invalidate all refresh tokens in PostgreSQL
 6. PATCH /api/v1/users/{uid}/status: An ADMIN-only endpoint to transition an account status between ACTIVE and SUSPENDED
-   <!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-062's status-route rules. -->
+   <!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-078's status-route rules. -->
    - must reject any attempt to suspend an admin if they are the last ACTIVE admin in the system.
    - Errors: 409 conflict if attempting to suspend the last remaining active admin ({"error": "cannot suspend the last active admin"}) or transition an UNVERIFIED account ({"error": "account is not verified"})
 7. POST /api/v1/users/refresh : Accepts a valid refresh token. Issues a new access/refresh token pair and rotates the old refresh token in the database (uses `RotateSession` of the Session Repository's interface)
@@ -468,7 +468,7 @@ In the case where the PostgreSQL fails after the Redis operation completes the i
 
 Events are sent to the message broker through the outbox: `internal/relay` publishes each `outbox_events` row to RabbitMQ (`RABBITMQ_URL`) with publisher confirms and retries a failed publish. The service starts without the broker; events wait in the outbox until it is reachable.
 
-<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — updates the D-062 event behavior. -->
+<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — updates the D-078 event behavior. -->
 Accounts activated before user-service started queuing `user.registered` get that event once, from a one-off migration (`000006`): one `user.registered` row for every `ACTIVE` `STUDENT` account that has none yet, with `occurredAt` set to the account's `date_created`. `ADMIN`, `UNVERIFIED` and `SUSPENDED` accounts get none from it. An `UNVERIFIED` account gets its event when it verifies its email through `verify-otp`; a `STUDENT` reactivated through the admin status route queues the event if it has none yet. Re-running the migration queues nothing more, and rolling it back leaves the queued rows in place.
 
 Never prune `user.registered` rows from `outbox_events`: `000006`'s duplicate guard relies on them to skip accounts that already have their event.

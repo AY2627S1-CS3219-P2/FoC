@@ -23,6 +23,11 @@ Detail for rows **D-010 – D-015** in [`../decisions.md`](../decisions.md).
 > **It is now out of date** on Redis ownership (D-024) and on what logout does
 > to an access token (D-025a). The current picture is
 > [`architecture.md`](architecture.md), drawn in Mermaid so it diffs in review.
+>
+> **Updated 2026-10-20.** D-054 superseded D-024 and D-025, and the gateway
+> reads the revocation keys again (D-077), so the diagram's Redis lookup at the
+> gateway is what runs now, and a logged-out or suspended token stops working
+> at once. The D-024 notes below describe the state before that.
 
 ## Trust zones
 

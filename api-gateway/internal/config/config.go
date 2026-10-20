@@ -14,6 +14,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -29,6 +30,11 @@ type Config struct {
 	// JWKSURL is user-service's JWKS endpoint, from which the gateway fetches the
 	// RSA public keys it verifies access tokens with (JWKS_URL).
 	JWKSURL string
+
+	// RedisURL is the Redis user-service writes the access-token revocation
+	// keys to (REDIS_URL, D-054). It can carry a password, so it never goes
+	// into an error message or a log line.
+	RedisURL string
 
 	// RefreshTokenTTL is the Max-Age of the refresh-token cookie
 	// (REFRESH_TOKEN_TTL). It must equal user-service's JWT_REFRESH_TOKEN_TTL:
@@ -50,8 +56,9 @@ type Downstream struct {
 }
 
 // Load reads the environment and returns an error naming every required
-// variable that is unset or blank, or a REFRESH_TOKEN_TTL that is not a Go
-// duration. There are no defaults: every variable is required.
+// variable that is unset or blank, a REFRESH_TOKEN_TTL that is not a Go
+// duration, or a REDIS_URL that is not redis:// or rediss://. There are no
+// defaults: every variable is required.
 func Load() (Config, error) {
 	rawTTL := os.Getenv("REFRESH_TOKEN_TTL")
 	ttl, err := time.ParseDuration(rawTTL)
@@ -62,6 +69,7 @@ func Load() (Config, error) {
 	cfg := Config{
 		Port:            os.Getenv("PORT"),
 		JWKSURL:         os.Getenv("JWKS_URL"),
+		RedisURL:        os.Getenv("REDIS_URL"),
 		RefreshTokenTTL: ttl,
 		Downstream: Downstream{
 			User:     os.Getenv("USER_BASE_URL"),
@@ -74,6 +82,7 @@ func Load() (Config, error) {
 	required := map[string]string{
 		"PORT":              cfg.Port,
 		"JWKS_URL":          cfg.JWKSURL,
+		"REDIS_URL":         cfg.RedisURL,
 		"USER_BASE_URL":     cfg.Downstream.User,
 		"SUPPLIER_BASE_URL": cfg.Downstream.Supplier,
 		"ORDER_BASE_URL":    cfg.Downstream.Order,
@@ -92,6 +101,12 @@ func Load() (Config, error) {
 	sort.Strings(missing)
 	if len(missing) > 0 {
 		return Config{}, fmt.Errorf("config: required environment variables not set: %s", strings.Join(missing, ", "))
+	}
+
+	// The scheme is checked by prefix, never by echoing the value: the URL can
+	// carry a password.
+	if !strings.HasPrefix(cfg.RedisURL, "redis://") && !strings.HasPrefix(cfg.RedisURL, "rediss://") {
+		return Config{}, errors.New("config: REDIS_URL must start with redis:// or rediss://")
 	}
 
 	return cfg, nil

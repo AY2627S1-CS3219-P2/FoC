@@ -9,10 +9,14 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
 	"strings"
+	"time"
+
+	"github.com/go-chi/chi/v5/middleware"
 
 	"foc/api-gateway/internal/auth"
 	"foc/api-gateway/internal/proxy"
@@ -21,11 +25,20 @@ import (
 // bearerPrefix is the Authorization scheme RequireToken accepts.
 const bearerPrefix = "Bearer "
 
-// RequireToken verifies the bearer access token and puts the resulting
-// identity on the request context, where the proxy reads it to set the claim
-// headers. It answers 401 when the token is missing or fails verification,
-// and 503 when the signing keys cannot be fetched.
-func RequireToken(verifier *auth.Verifier) func(http.Handler) http.Handler {
+// RevocationChecker reports whether user-service has revoked a verified
+// token: logged out, or issued at or before its account's suspension (D-054).
+// internal/revocation's Checker is the one NewRouter gets outside tests. An
+// error means the check could not be made.
+type RevocationChecker interface {
+	Revoked(ctx context.Context, tokenID, subject string, issuedAt time.Time) (bool, error)
+}
+
+// RequireToken verifies the bearer access token, checks it has not been
+// revoked, and puts the resulting identity on the request context, where the
+// proxy reads it to set the claim headers. It answers 401 when the token is
+// missing, fails verification or is revoked, and 503 when the signing keys
+// cannot be fetched or the revocation check cannot be made (D-077).
+func RequireToken(verifier *auth.Verifier, revocations RevocationChecker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			header := r.Header.Get("Authorization")
@@ -54,6 +67,29 @@ func RequireToken(verifier *auth.Verifier) func(http.Handler) http.Handler {
 					// response does not reveal which check failed.
 					writeError(w, http.StatusUnauthorized, "invalid token")
 				}
+				return
+			}
+
+			// Only a token whose signature, exp and typ have passed reaches
+			// Redis, so junk tokens cost no lookup. A refusal logs the
+			// request's id and the token's sub, never the token itself.
+			revoked, err := revocations.Revoked(r.Context(), claims.ID, claims.Subject, claims.IssuedAt)
+			switch {
+			case err != nil:
+				// Fail closed: a token that cannot be checked is not let
+				// through. 503, not 401: the frontend answers a 401 by
+				// refreshing, and refresh needs Redis too, so an outage
+				// reported as 401 would sign every user out.
+				log.Printf("httpapi: %s %s request_id=%q sub=%q: revocation check failed: %v",
+					r.Method, r.URL.Path, middleware.GetReqID(r.Context()), claims.Subject, err)
+				writeError(w, http.StatusServiceUnavailable, "cannot check tokens right now")
+				return
+			case revoked:
+				// The same message as a bad signature, so the response does
+				// not say which check failed.
+				log.Printf("httpapi: %s %s request_id=%q sub=%q: token revoked",
+					r.Method, r.URL.Path, middleware.GetReqID(r.Context()), claims.Subject)
+				writeError(w, http.StatusUnauthorized, "invalid token")
 				return
 			}
 

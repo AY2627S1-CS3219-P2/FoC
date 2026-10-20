@@ -117,9 +117,9 @@ All paths below are relative to `http://localhost:8081`. You may refer to the [o
 | `POST` | `/api/v1/users/logout` | Bearer access token | JSON body: `refreshToken`. Invalidates the access token and refresh session; success returns `204`; errors include `400`, `401`, `413`, and `500`. |
 | `GET` | `/api/v1/users/{uid}` | Bearer access token | Returns a full profile to administrators and a restricted profile to other callers. Unknown or malformed user IDs return `404`. |
 | `PUT` | `/api/v1/users/{uid}` | Bearer access token | JSON body may contain `username`, `phone_num` (at most 20 characters), `currentPassword`, and `newPassword`. The caller may update their own profile, or an admin may update any profile. Returns the updated profile. |
-<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — documents D-062's two 409 responses. -->
 | `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated; `409` means either the last active admin would be suspended or the account has not verified its email; other errors include `400`, `401`, `403`, `404`, `413`, and `500`. |
 | `GET` | `/.well-known/jwks.json` | None | Returns the active and retired public JWT keys. This endpoint is intended to be reachable only through the API gateway. |
+<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — documents D-078's two 409 responses. -->
 
 For protected endpoints, send the token as follows:
 

@@ -121,7 +121,7 @@ func TestPostgresRepositoryUpdateAccountStatusByID(t *testing.T) {
 }
 
 func TestAccountServiceRejectsUnverifiedStatusTransitionsWithPostgres(t *testing.T) {
-	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — covers D-062's
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — covers D-078's
 	// full AccountService refusal path against real PostgreSQL and recording fakes.
 	ctx := context.Background()
 	pool := newIntegrationPool(t, ctx)
@@ -134,6 +134,10 @@ func TestAccountServiceRejectsUnverifiedStatusTransitionsWithPostgres(t *testing
 			account.AccountStatus = user.AccountStatusUnverified
 			if err := users.Create(ctx, account); err != nil {
 				t.Fatalf("create account: %v", err)
+			}
+			before, err := users.GetByID(ctx, account.UID)
+			if err != nil {
+				t.Fatalf("get account before the refused change: %v", err)
 			}
 
 			writer := &recordingSuspensionWriter{}
@@ -151,14 +155,91 @@ func TestAccountServiceRejectsUnverifiedStatusTransitionsWithPostgres(t *testing
 				t.Fatalf("account status = %q, want UNVERIFIED", got.AccountStatus)
 			}
 			var events int
-			if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox_events`).Scan(&events); err != nil {
+			if err := pool.QueryRow(ctx, `SELECT COUNT(*) FROM outbox_events WHERE payload->>'userId' = $1`, account.UID.String()).Scan(&events); err != nil {
 				t.Fatalf("count outbox events: %v", err)
 			}
 			if events != 0 || writer.calls != 0 || sessions.calls != 0 {
 				t.Fatalf("side effects = outbox %d, suspension %d, sessions %d; want none", events, writer.calls, sessions.calls)
 			}
+
+			// The refusal leaves the account verifiable: its emailed code still
+			// activates it, with exactly one user.registered and the token
+			// cutoff untouched.
+			if err := users.ActivateUser(ctx, account.Email); err != nil {
+				t.Fatalf("activate after the refused change: %v", err)
+			}
+			activated, err := users.GetByID(ctx, account.UID)
+			if err != nil {
+				t.Fatalf("get activated account: %v", err)
+			}
+			if activated.AccountStatus != user.AccountStatusActive {
+				t.Fatalf("account status after activation = %q, want ACTIVE", activated.AccountStatus)
+			}
+			if !activated.TokensValidAfter.Equal(before.TokensValidAfter) {
+				t.Fatalf("tokens_valid_after = %s, want unchanged %s", activated.TokensValidAfter, before.TokensValidAfter)
+			}
+			if got := countRegistrationEvents(t, ctx, pool, account.UID); got != 1 {
+				t.Fatalf("user.registered events after activation = %d, want 1", got)
+			}
 		})
 	}
+}
+
+// TestReactivationQueuesUserRegisteredExactlyOnce exercises the reactivation
+// guard where it can bite: from SUSPENDED, however many times, and for a
+// student whose email verification already queued the event.
+func TestReactivationQueuesUserRegisteredExactlyOnce(t *testing.T) {
+	ctx := context.Background()
+	pool := newIntegrationPool(t, ctx)
+	users := NewPostgresRepository(pool)
+	at := time.Now().UTC().Truncate(time.Second)
+
+	cycle := func(t *testing.T, uid uuid.UUID, times int) {
+		t.Helper()
+		for i := range times {
+			suspendedAt := at.Add(time.Duration(i) * time.Minute)
+			if err := users.UpdateAccountStatusByID(ctx, uid, user.AccountStatusSuspended, suspendedAt); err != nil {
+				t.Fatalf("suspend %d: %v", i+1, err)
+			}
+			if err := users.UpdateAccountStatusByID(ctx, uid, user.AccountStatusActive, suspendedAt); err != nil {
+				t.Fatalf("reactivate %d: %v", i+1, err)
+			}
+		}
+	}
+
+	t.Run("suspended and reactivated twice", func(t *testing.T) {
+		account := createIntegrationAccount(t, ctx, users, "reactivated-twice", user.AccountRoleStudent)
+		cycle(t, account.UID, 2)
+		if got := countRegistrationEvents(t, ctx, pool, account.UID); got != 1 {
+			t.Fatalf("user.registered events = %d, want 1", got)
+		}
+	})
+
+	t.Run("verified by email, then suspended and reactivated", func(t *testing.T) {
+		account := integrationAccount("verified-then-reactivated", user.AccountRoleStudent)
+		account.AccountStatus = user.AccountStatusUnverified
+		if err := users.Create(ctx, account); err != nil {
+			t.Fatalf("create account: %v", err)
+		}
+		if err := users.ActivateUser(ctx, account.Email); err != nil {
+			t.Fatalf("activate: %v", err)
+		}
+		cycle(t, account.UID, 1)
+		if got := countRegistrationEvents(t, ctx, pool, account.UID); got != 1 {
+			t.Fatalf("user.registered events = %d, want 1", got)
+		}
+	})
+}
+
+func countRegistrationEvents(t *testing.T, ctx context.Context, pool *pgxpool.Pool, uid uuid.UUID) int {
+	t.Helper()
+	var n int
+	if err := pool.QueryRow(ctx, `
+		SELECT COUNT(*) FROM outbox_events
+		WHERE routing_key = 'user.registered' AND payload->>'userId' = $1`, uid.String()).Scan(&n); err != nil {
+		t.Fatalf("count user.registered events: %v", err)
+	}
+	return n
 }
 
 type recordingSuspensionWriter struct{ calls int }

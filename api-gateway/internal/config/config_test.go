@@ -20,6 +20,7 @@ func all() map[string]string {
 	return map[string]string{
 		"PORT":              "8080",
 		"JWKS_URL":          "http://user-service:8081/.well-known/jwks.json",
+		"REDIS_URL":         "redis://redis:6379",
 		"USER_BASE_URL":     "http://user-service:8081",
 		"SUPPLIER_BASE_URL": "http://supplier-service:8082",
 		"ORDER_BASE_URL":    "http://order-service:8083",
@@ -33,7 +34,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 	// t.Setenv restores each variable when the test ends and panics under
 	// t.Parallel, so no test leaks config into another.
 	for _, name := range []string{
-		"PORT", "JWKS_URL", "USER_BASE_URL",
+		"PORT", "JWKS_URL", "REDIS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
 		"REFRESH_TOKEN_TTL",
 	} {
@@ -53,6 +54,58 @@ func TestLoadSucceedsWithEverythingSet(t *testing.T) {
 	}
 	if cfg.Downstream.Supplier != "http://supplier-service:8082" {
 		t.Errorf("Downstream.Supplier = %q", cfg.Downstream.Supplier)
+	}
+	if cfg.RedisURL != "redis://redis:6379" {
+		t.Errorf("RedisURL = %q", cfg.RedisURL)
+	}
+}
+
+func TestRedisURLIsRequired(t *testing.T) {
+	vars := all()
+	vars["REDIS_URL"] = ""
+	setEnv(t, vars)
+
+	_, err := config.Load()
+	if err == nil || !strings.Contains(err.Error(), "REDIS_URL") {
+		t.Fatalf("Load err = %v, want it to name REDIS_URL", err)
+	}
+}
+
+func TestRedisURLNeedsARedisScheme(t *testing.T) {
+	for _, url := range []string{"redis://redis:6379", "rediss://redis:6380/0"} {
+		t.Run("accepts "+url, func(t *testing.T) {
+			vars := all()
+			vars["REDIS_URL"] = url
+			setEnv(t, vars)
+			if _, err := config.Load(); err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+		})
+	}
+	for _, url := range []string{"http://redis:6379", "redis:6379", "unix:///tmp/redis.sock"} {
+		t.Run("refuses "+url, func(t *testing.T) {
+			vars := all()
+			vars["REDIS_URL"] = url
+			setEnv(t, vars)
+			if _, err := config.Load(); err == nil {
+				t.Fatal("Load: expected an error, got nil")
+			}
+		})
+	}
+}
+
+// The URL can carry a password, so a refusal must not repeat it.
+func TestRedisURLErrorDoesNotLeakThePassword(t *testing.T) {
+	vars := all()
+	vars["REDIS_URL"] = "http://user:s3cret-pass@redis:6379"
+	setEnv(t, vars)
+
+	_, err := config.Load()
+	if err == nil {
+		t.Fatal("Load: expected an error, got nil")
+	}
+	if strings.Contains(err.Error(), "s3cret-pass") {
+		t.Errorf("error %q contains the password", err)
 	}
 }
 
