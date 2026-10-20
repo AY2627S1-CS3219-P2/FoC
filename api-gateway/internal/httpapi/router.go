@@ -24,6 +24,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	// AI-generated (edited by James Teo).
@@ -88,7 +89,11 @@ func authRoutes() []authRoute {
 // routes and the /api/<service> prefixes behind RequireToken. Clients call
 // these public paths, so renaming one, or moving one out of RequireToken,
 // changes the gateway's API (D-027, D-043 and D-056 in ai/decisions.md).
-func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
+// revocations is consulted on every token RequireToken verifies (D-054).
+func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocations RevocationChecker, refreshTokenTTL time.Duration) (http.Handler, error) {
+	if revocations == nil {
+		return nil, errors.New("httpapi: NewRouter needs a revocation checker")
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	// AI-generated (edited by nigeltzy).
@@ -154,7 +159,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 		}
 
 		r.Group(func(gr chi.Router) {
-			gr.Use(RequireToken(verifier))
+			gr.Use(RequireToken(verifier, revocations))
 			// Both forms: the bare prefix and everything beneath it.
 			gr.Handle(route.prefix, p)
 			gr.Handle(route.prefix+"/*", p)

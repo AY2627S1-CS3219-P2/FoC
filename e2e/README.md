@@ -84,6 +84,8 @@ instead of every test timing out on its own.
 | `TestRewardChangeMovesTheHold` | raising and then lowering a reward moves the hold each time, and cancelling returns all of it |
 | `TestLogoutRevokesTheAccessToken` | a student's token works on `GET /api/orders/open`, and after `POST /auth/logout` the same token gets 401 |
 | `TestSuspensionRevokesTheAccessToken` | after an ADMIN suspends a student with `PATCH /api/users/{uid}/status`, the token the student already holds gets 401 on `GET /api/orders/open` |
+| `TestGatewayRefusesALoggedOutToken` | after `POST /auth/logout`, the same token gets 401 on `GET /api/suppliers` and `GET /api/credits/accounts/me`, routes whose service does not check the revocation keys itself |
+| `TestGatewayRefusesASuspendedTokenUntilReactivated` | after an ADMIN suspends a student, their token gets 401 on `GET /api/suppliers`, `GET /api/credits/accounts/me` and `GET /api/users/{uid}`; after reactivation a fresh login gets 200 while the old token stays refused |
 
 ## Notes
 

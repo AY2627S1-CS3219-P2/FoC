@@ -73,6 +73,7 @@ func sign(t *testing.T, method jwt.SigningMethod, key any, kid string, claims jw
 func accessClaims(extra jwt.MapClaims) jwt.MapClaims {
 	c := jwt.MapClaims{
 		"sub": "u1", "typ": "access", "role": "STUDENT", "jti": "j1",
+		"iat": time.Now().Add(-time.Minute).Unix(),
 		"exp": time.Now().Add(time.Hour).Unix(),
 	}
 	for k, v := range extra {
@@ -129,6 +130,21 @@ func TestVerify(t *testing.T) {
 			wantErr: auth.ErrWrongType,
 		},
 		{
+			name:    "no jti: a logout could not be checked",
+			token:   sign(t, jwt.SigningMethodRS256, key, testKID, accessClaims(jwt.MapClaims{"jti": nil})),
+			wantErr: auth.ErrMalformed,
+		},
+		{
+			name:    "empty jti",
+			token:   sign(t, jwt.SigningMethodRS256, key, testKID, accessClaims(jwt.MapClaims{"jti": ""})),
+			wantErr: auth.ErrMalformed,
+		},
+		{
+			name:    "no iat: a suspension could not be checked",
+			token:   sign(t, jwt.SigningMethodRS256, key, testKID, accessClaims(jwt.MapClaims{"iat": nil})),
+			wantErr: auth.ErrMalformed,
+		},
+		{
 			name:    "signed by another key under the same kid",
 			token:   sign(t, jwt.SigningMethodRS256, otherKey, testKID, accessClaims(nil)),
 			wantErr: auth.ErrInvalidSignature,
@@ -170,6 +186,9 @@ func TestVerify(t *testing.T) {
 			}
 			if claims.Subject != "u1" || claims.Role != "STUDENT" || claims.ID != "j1" {
 				t.Errorf("claims = %+v", claims)
+			}
+			if age := time.Since(claims.IssuedAt); age < 50*time.Second || age > 70*time.Second {
+				t.Errorf("IssuedAt = %v, want about a minute ago", claims.IssuedAt)
 			}
 		})
 	}
