@@ -61,6 +61,10 @@ func (m *mockReservationRepo) AdjustReservationReward(ctx context.Context, erran
 	return nil, nil, errors.New("not implemented")
 }
 
+func (m *mockReservationRepo) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+	return nil
+}
+
 func setupTestRouter(t *testing.T, readRepo credit.ReadRepository, resRepo credit.ReservationRepository, healthErr error) (http.Handler, *auth.Verifier, *issuer) {
 	t.Helper()
 	iss := newIssuer(t)

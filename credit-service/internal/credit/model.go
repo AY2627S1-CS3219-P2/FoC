@@ -61,6 +61,7 @@ type Reservation struct {
 	RequesterID uuid.UUID
 	Amount      int64
 	Status      ReservationStatus
+	Version     int64
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }

@@ -8,6 +8,7 @@ package messaging_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"testing"
@@ -21,8 +22,9 @@ import (
 )
 
 type mockLifecycleService struct {
-	refundFn func(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	payoutFn func(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error
+	refundFn    func(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
+	payoutFn    func(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error
+	rewardSetFn func(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
 func (m *mockLifecycleService) RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
@@ -35,6 +37,13 @@ func (m *mockLifecycleService) RefundReservation(ctx context.Context, errandID, 
 func (m *mockLifecycleService) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error {
 	if m.payoutFn != nil {
 		return m.payoutFn(ctx, errandID, courierID, eventID, occurredAt)
+	}
+	return nil
+}
+
+func (m *mockLifecycleService) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+	if m.rewardSetFn != nil {
+		return m.rewardSetFn(ctx, errandID, eventID, newReward, version, occurredAt)
 	}
 	return nil
 }
@@ -257,5 +266,63 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 			Body:        []byte(`{bad-json`),
 		}
 		h.HandleDelivery(ctx, d)
+	})
+}
+
+func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
+	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	eventID := uuid.New()
+	errandID := uuid.New()
+	now := time.Now().UTC()
+
+	var calledErrand, calledEvent uuid.UUID
+	var calledReward, calledVersion int64
+	var calledTime time.Time
+
+	svc := &mockLifecycleService{
+		rewardSetFn: func(ctx context.Context, eID, evID uuid.UUID, reward, version int64, occ time.Time) error {
+			calledErrand = eID
+			calledEvent = evID
+			calledReward = reward
+			calledVersion = version
+			calledTime = occ
+			return nil
+		},
+	}
+	h := messaging.NewLifecycleHandler(svc, logger)
+
+	t.Run("valid reward_set payload dispatches successfully", func(t *testing.T) {
+		body := fmt.Sprintf(`{
+			"schemaVersion": 1,
+			"eventId": "%s",
+			"errandId": "%s",
+			"amount": 75,
+			"version": 3,
+			"occurredAt": "%s"
+		}`, eventID, errandID, now.Format(time.RFC3339Nano))
+
+		err := h.Dispatch(context.Background(), messaging.RoutingRewardSet, []byte(body))
+		if err != nil {
+			t.Fatalf("unexpected dispatch error: %v", err)
+		}
+		if calledErrand != errandID || calledEvent != eventID || calledReward != 75 || calledVersion != 3 || !calledTime.Equal(now) {
+			t.Fatalf("dispatch did not forward expected values: errand=%s, event=%s, reward=%d, version=%d, time=%v",
+				calledErrand, calledEvent, calledReward, calledVersion, calledTime)
+		}
+	})
+
+	t.Run("missing version is rejected as malformed", func(t *testing.T) {
+		body := fmt.Sprintf(`{
+			"schemaVersion": 1,
+			"eventId": "%s",
+			"errandId": "%s",
+			"amount": 75,
+			"occurredAt": "%s"
+		}`, eventID, errandID, now.Format(time.RFC3339Nano))
+
+		err := h.Dispatch(context.Background(), messaging.RoutingRewardSet, []byte(body))
+		if !errors.Is(err, messaging.ErrMalformedEvent) {
+			t.Fatalf("expected ErrMalformedEvent, got %v", err)
+		}
 	})
 }

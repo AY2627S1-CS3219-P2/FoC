@@ -268,6 +268,80 @@ func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, er
 	return opRes, res, nil
 }
 
+func (m *inMemoryStateMachineRepo) ApplyRewardSet(_ context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	res, exists := m.reservations[errandID]
+	if !exists {
+		return credit.ErrReservationNotFound
+	}
+	if res.Status != credit.ReservationStatusReserved {
+		return nil
+	}
+	if version <= res.Version {
+		return nil
+	}
+
+	currentAmount := res.Amount
+	if currentAmount == newReward {
+		res.Version = version
+		return nil
+	}
+
+	acc := m.accounts[res.RequesterID]
+	if acc == nil {
+		return credit.ErrWalletNotReady
+	}
+	if acc.IntegrityStatus != credit.IntegrityConsistent {
+		return credit.ErrAccountIntegrityFlagged
+	}
+
+	now := time.Now().UTC()
+	diff := newReward - currentAmount
+	if diff > 0 {
+		if acc.AvailableCredits < diff {
+			acc.IntegrityStatus = credit.IntegrityFlagged
+			return credit.ErrInsufficientCredits
+		}
+		acc.AvailableCredits -= diff
+		acc.ReservedCredits += diff
+		res.Amount = newReward
+		res.Version = version
+		res.UpdatedAt = now
+
+		tx := &credit.TransactionOperation{
+			OperationID:    eventID,
+			ErrandID:       &errandID,
+			Reason:         credit.TransactionReasonRewardIncreased,
+			AvailableDelta: -diff,
+			ReservedDelta:  diff,
+			OccurredAt:     &occurredAt,
+			CreatedAt:      now,
+		}
+		m.recordUserTx(res.RequesterID, tx)
+	} else {
+		dec := -diff
+		acc.AvailableCredits += dec
+		acc.ReservedCredits -= dec
+		res.Amount = newReward
+		res.Version = version
+		res.UpdatedAt = now
+
+		tx := &credit.TransactionOperation{
+			OperationID:    eventID,
+			ErrandID:       &errandID,
+			Reason:         credit.TransactionReasonRewardDecreased,
+			AvailableDelta: dec,
+			ReservedDelta:  -dec,
+			OccurredAt:     &occurredAt,
+			CreatedAt:      now,
+		}
+		m.recordUserTx(res.RequesterID, tx)
+	}
+	return nil
+}
+
 func (m *inMemoryStateMachineRepo) RefundReservation(_ context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

@@ -144,6 +144,14 @@
       "arguments": {}
     },
     {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "credit.errand.lifecycle",
+      "destination_type": "queue",
+      "routing_key": "errand.reward_set",
+      "arguments": {}
+    },
+    {
       "source": "foc.dlx",
       "vhost": "foc",
       "destination": "credit.registration.dlq",

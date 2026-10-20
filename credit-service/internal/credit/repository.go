@@ -25,6 +25,9 @@ type ReservationRepository interface {
 
 	// AdjustReservationReward modifies an existing reservation's reward amount idempotently.
 	AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error)
+
+	// ApplyRewardSet reconciles an existing reservation's reward amount with an errand.reward_set event (D-057).
+	ApplyRewardSet(ctx context.Context, errandID uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
 // SettlementRepository manages refunds and payouts from asynchronous errand lifecycle events.

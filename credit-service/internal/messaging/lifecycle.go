@@ -32,6 +32,7 @@ const (
 	RoutingCancelled = "errand.cancelled"
 	RoutingExpired   = "errand.expired"
 	RoutingFailed    = "errand.failed"
+	RoutingRewardSet = "errand.reward_set"
 )
 
 var LifecycleRoutingKeys = []string{
@@ -39,12 +40,14 @@ var LifecycleRoutingKeys = []string{
 	RoutingCancelled,
 	RoutingExpired,
 	RoutingFailed,
+	RoutingRewardSet,
 }
 
 // LifecycleService declares the domain actions needed by lifecycle consumers.
 type LifecycleService interface {
 	RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
 	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error
+	ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
 // LifecycleHandler processes errand lifecycle events.
@@ -80,6 +83,16 @@ type refundPayload struct {
 	ErrandID      uuid.UUID `json:"errandId"`
 	Amount        *int64    `json:"amount,omitempty"`
 	OccurredAt    time.Time `json:"occurredAt"`
+}
+
+type rewardSetPayload struct {
+	SchemaVersion int        `json:"schemaVersion"`
+	EventID       uuid.UUID  `json:"eventId"`
+	ErrandID      uuid.UUID  `json:"errandId"`
+	RequesterID   *uuid.UUID `json:"requesterId,omitempty"`
+	Amount        int64      `json:"amount"`
+	Version       *int64     `json:"version"`
+	OccurredAt    time.Time  `json:"occurredAt"`
 }
 
 // Dispatch validates the event payload and delegates to the appropriate domain service method.
@@ -150,6 +163,40 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 			return errors.New("lifecycle service is required")
 		}
 		return h.service.RefundReservation(ctx, ev.ErrandID, ev.EventID, reason, ev.OccurredAt)
+
+	case RoutingRewardSet:
+		var ev rewardSetPayload
+		dec := json.NewDecoder(bytes.NewReader(body))
+		if err := dec.Decode(&ev); err != nil {
+			return fmt.Errorf("%w: decode %s: %v", ErrMalformedEvent, routingKey, err)
+		}
+		var trailing struct{}
+		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
+			return fmt.Errorf("%w: trailing characters in JSON payload", ErrMalformedEvent)
+		}
+
+		if ev.SchemaVersion != 0 && ev.SchemaVersion != 1 {
+			return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, ev.SchemaVersion)
+		}
+		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil {
+			return fmt.Errorf("%w: missing required UUIDs", ErrMalformedEvent)
+		}
+		if ev.Amount <= 0 {
+			return fmt.Errorf("%w: amount must be positive", ErrMalformedEvent)
+		}
+		if ev.Version == nil || *ev.Version <= 0 {
+			return fmt.Errorf("%w: version must be positive", ErrMalformedEvent)
+		}
+		if ev.OccurredAt.IsZero() {
+			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
+		}
+
+		h.checkClockSkew(ev.EventID, ev.OccurredAt)
+
+		if h.service == nil {
+			return errors.New("lifecycle service is required")
+		}
+		return h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
 
 	default:
 		return fmt.Errorf("%w: unsupported routing key %s", ErrMalformedEvent, routingKey)

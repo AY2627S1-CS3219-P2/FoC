@@ -36,6 +36,10 @@ func (s *reservationRepositoryStub) AdjustReservationReward(_ context.Context, _
 	return nil, nil, nil
 }
 
+func (s *reservationRepositoryStub) ApplyRewardSet(_ context.Context, _ uuid.UUID, _ uuid.UUID, _ int64, _ int64, _ time.Time) error {
+	return nil
+}
+
 func TestCreateReservationValidations(t *testing.T) {
 	repo := &reservationRepositoryStub{}
 	service := NewService(nil, WithReservationRepository(repo))
