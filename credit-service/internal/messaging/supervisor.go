@@ -130,9 +130,6 @@ func (s *Supervisor) connectAndConsume(ctx context.Context) error {
 		}
 		defer func() { _ = ch.Close() }()
 
-		if err := ch.Confirm(false); err != nil {
-			return fmt.Errorf("enable publisher confirms: %w", err)
-		}
 		if err := ch.Qos(1, 0, false); err != nil {
 			return fmt.Errorf("set qos on registration channel: %w", err)
 		}
@@ -143,12 +140,11 @@ func (s *Supervisor) connectAndConsume(ctx context.Context) error {
 			return fmt.Errorf("consume registration: %w", err)
 		}
 
-		replier := &channelReplier{ch: ch}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			for d := range deliveries {
-				s.registrationHandler.HandleDelivery(consumerCtx, d, replier)
+				s.registrationHandler.HandleDelivery(consumerCtx, d)
 			}
 		}()
 	}

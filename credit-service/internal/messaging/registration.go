@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
-// Tool: Antigravity, date: 2026-10-19
-// Scope: Updated user.registered event handling with Direct Reply-to, schemaVersion 1 enforcement, transport validation, and 5-attempt retry/DLQ policy per sourceOfTruth.md Phase 11.
+// Tool: Antigravity, date: 2026-10-20
+// Scope: Removed obsolete Direct Reply-to dead code; user.registered is handled as a standard unidirectional event.
 // Author review: PENDING - reviewer to complete
 
 // Package messaging adapts broker events into credit-service use cases.
@@ -34,11 +34,6 @@ var ErrMalformedEvent = errors.New("messaging: malformed event")
 // InitialAllocator is the credit use case needed by the user.registered handler.
 type InitialAllocator interface {
 	AllocateInitialCredits(context.Context, uuid.UUID, time.Time) error
-}
-
-// Replier publishes Direct Reply-to responses.
-type Replier interface {
-	Reply(ctx context.Context, replyTo, correlationID string, body []byte) error
 }
 
 // RegistrationHandler handles user.registered events.
@@ -113,8 +108,8 @@ func (h *RegistrationHandler) Handle(ctx context.Context, body []byte) error {
 	return nil
 }
 
-// HandleDelivery processes an AMQP message, validates transport/correlation headers, invokes Handle, and publishes Direct Reply-to.
-func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Delivery, replier Replier) {
+// HandleDelivery processes an AMQP message, validates transport headers, invokes Handle, and acks/nacks.
+func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) {
 	if err := validateTransport(d.RoutingKey, d.ContentType, d.ContentEncoding, d.Body, []string{RoutingUserRegistered}); err != nil {
 		h.logger.Warn("rejecting registration message with invalid transport to DLQ", "error", err)
 		_ = d.Nack(false, false)
@@ -138,14 +133,6 @@ func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Deliver
 		return
 	}
 
-	// Publish Direct Reply-to response only if requested by caller
-	if d.ReplyTo != "" && replier != nil {
-		replyPayload := []byte(`{"schemaVersion":1,"outcome":"ALLOCATED"}`)
-		if err := replier.Reply(ctx, d.ReplyTo, d.CorrelationId, replyPayload); err != nil {
-			h.logger.Warn("direct reply-to publication failed (transient loss permitted)", "error", err)
-		}
-	}
-
 	_ = d.Ack(false)
 }
 
@@ -163,10 +150,6 @@ func RunRegistrationConsumer(ctx context.Context, amqpURL string, handler *Regis
 	}
 	defer func() { _ = ch.Close() }()
 
-	if err := ch.Confirm(false); err != nil {
-		return fmt.Errorf("enable publisher confirms on channel: %w", err)
-	}
-
 	if err := ch.Qos(1, 0, false); err != nil {
 		return fmt.Errorf("set RabbitMQ qos: %w", err)
 	}
@@ -176,37 +159,9 @@ func RunRegistrationConsumer(ctx context.Context, amqpURL string, handler *Regis
 		return fmt.Errorf("consume %s: %w", RegistrationQueue, err)
 	}
 
-	replier := &channelReplier{ch: ch}
-
 	for delivery := range deliveries {
-		handler.HandleDelivery(ctx, delivery, replier)
+		handler.HandleDelivery(ctx, delivery)
 	}
 
 	return ctx.Err()
-}
-
-type channelReplier struct {
-	ch *amqp.Channel
-}
-
-func (r *channelReplier) Reply(ctx context.Context, replyTo, correlationID string, body []byte) error {
-	confirmation, err := r.ch.PublishWithDeferredConfirmWithContext(
-		ctx,
-		"",      // default exchange
-		replyTo, // Direct Reply-to routing key
-		false,
-		false,
-		amqp.Publishing{
-			ContentType:   "application/json",
-			CorrelationId: correlationID,
-			Body:          body,
-		},
-	)
-	if err != nil {
-		return err
-	}
-	if !confirmation.Wait() {
-		return errors.New("nack received on direct reply-to publication")
-	}
-	return nil
 }
