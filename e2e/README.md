@@ -84,11 +84,21 @@ instead of every test timing out on its own.
 | `TestRewardChangeMovesTheHold` | raising and then lowering a reward moves the hold each time, and cancelling returns all of it |
 | `TestLogoutRevokesTheAccessToken` | a student's token works on `GET /api/orders/open`, and after `POST /auth/logout` the same token gets 401 |
 | `TestSuspensionRevokesTheAccessToken` | after an ADMIN suspends a student with `PATCH /api/users/{uid}/status`, the token the student already holds gets 401 on `GET /api/orders/open` |
+| `TestAdminManagesASupplier` | an ADMIN creates a supplier (201), reads it back as sent, updates it (200), deletes it (204); then `GET` is 404, `GET /api/suppliers?q=` no longer lists it, and `GET /api/suppliers/not-a-uuid` is 404 |
+| `TestACreateThatLeavesOutIsAvailableIsUnavailable` | a `POST` with no `is_available` makes an unavailable supplier (D-072); the suite's other supplier bodies always send it |
+| `TestStudentCannotWriteSuppliers` | a student's create, update and delete are each 403, also with `X-User-Role: ADMIN` and `X-User-Id` forged; the admin's read shows the supplier unchanged |
+| `TestSupplierWithUnfinishedErrandIsKept` | with an unfinished errand naming the supplier, `DELETE` is 409 and the supplier is still readable; after the requester cancels, `DELETE` is 204 and the errand still carries the supplier's name (D-052) |
+| `TestLoggedOutAdminCannotWriteSuppliers` | after `POST /auth/logout`, the admin's access token, not yet expired, gets 401 on `POST /api/suppliers`, and the write created nothing |
 
 ## Notes
 
 - Every test registers its own students (`e2e<random>@u.nus.edu`) and runs in
   parallel with the others; no test reads another's data or depends on order.
+- The supplier tests make their own suppliers, named `e2e-<random hex>` with a
+  random location, and delete them as an admin when they finish (a 404 there is
+  fine). `availableSupplier` skips names starting `e2e-`, so an errand test never
+  picks a supplier one of them is about to delete. A failed run can leave one
+  behind; it never matches a later run's, and `docker compose down -v` wipes it.
 - Those accounts and errands stay in your local databases. Errands left
   `ACCEPTED` or `PICKED_UP` have no timer, so they stay active.
   `docker compose down -v` wipes everything.

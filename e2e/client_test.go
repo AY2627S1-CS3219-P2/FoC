@@ -7,6 +7,12 @@
 //   the calls the scenarios make, all on the browser's paths (D-027, D-053).
 //   It imports nothing from the services.
 // Author review: James Teo — reviewed and verified.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: supplierSummary reads the name, and availableSupplier skips suppliers
+//   named e2e-, which suppliers_test.go creates and deletes.
+// Author review: PENDING — <reviewer to complete>
 
 package e2e
 
@@ -479,6 +485,7 @@ type amendRewardRequest struct {
 // list is a bare JSON array with snake_case names (D-036, D-037).
 type supplierSummary struct {
 	ID          string `json:"id"`
+	Name        string `json:"name"`
 	IsAvailable bool   `json:"is_available"`
 }
 
@@ -505,7 +512,9 @@ func (s *stack) availableSupplier(t *testing.T, u user) string {
 	var suppliers []supplierSummary
 	require.NoError(t, r.decode(&suppliers))
 	for _, sup := range suppliers {
-		if sup.IsAvailable {
+		// The e2e- suppliers are other tests' own and may be deleted while this
+		// one runs (suppliers_test.go), so an errand never names one.
+		if sup.IsAvailable && !strings.HasPrefix(sup.Name, "e2e-") {
 			return sup.ID
 		}
 	}
