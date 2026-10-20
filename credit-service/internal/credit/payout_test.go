@@ -24,28 +24,28 @@ func TestPayoutReservationValidations(t *testing.T) {
 	validOccurredAt := time.Now().UTC()
 
 	t.Run("rejects nil errand ID", func(t *testing.T) {
-		err := service.PayoutReservation(context.Background(), uuid.Nil, validCourierID, validEventID, validOccurredAt)
+		err := service.PayoutReservation(context.Background(), uuid.Nil, validCourierID, validEventID, nil, validOccurredAt)
 		if !errors.Is(err, ErrInvalidErrandID) {
 			t.Fatalf("expected ErrInvalidErrandID, got %v", err)
 		}
 	})
 
 	t.Run("rejects nil courier ID", func(t *testing.T) {
-		err := service.PayoutReservation(context.Background(), validErrandID, uuid.Nil, validEventID, validOccurredAt)
+		err := service.PayoutReservation(context.Background(), validErrandID, uuid.Nil, validEventID, nil, validOccurredAt)
 		if !errors.Is(err, ErrInvalidUserID) {
 			t.Fatalf("expected ErrInvalidUserID, got %v", err)
 		}
 	})
 
 	t.Run("rejects nil event ID", func(t *testing.T) {
-		err := service.PayoutReservation(context.Background(), validErrandID, validCourierID, uuid.Nil, validOccurredAt)
+		err := service.PayoutReservation(context.Background(), validErrandID, validCourierID, uuid.Nil, nil, validOccurredAt)
 		if !errors.Is(err, ErrInvalidOperationID) {
 			t.Fatalf("expected ErrInvalidOperationID, got %v", err)
 		}
 	})
 
 	t.Run("rejects zero occurredAt", func(t *testing.T) {
-		err := service.PayoutReservation(context.Background(), validErrandID, validCourierID, validEventID, time.Time{})
+		err := service.PayoutReservation(context.Background(), validErrandID, validCourierID, validEventID, nil, time.Time{})
 		if err == nil {
 			t.Fatal("expected error for zero occurredAt")
 		}
@@ -53,7 +53,7 @@ func TestPayoutReservationValidations(t *testing.T) {
 
 	t.Run("rejects missing repository", func(t *testing.T) {
 		svc := NewService(nil)
-		err := svc.PayoutReservation(context.Background(), validErrandID, validCourierID, validEventID, validOccurredAt)
+		err := svc.PayoutReservation(context.Background(), validErrandID, validCourierID, validEventID, nil, validOccurredAt)
 		if err == nil {
 			t.Fatal("expected error when settlement repository is missing")
 		}
@@ -70,7 +70,7 @@ func TestPayoutReservationDelegation(t *testing.T) {
 		repo := &settlementRepositoryStub{}
 		service := NewService(nil, WithSettlementRepository(repo))
 
-		err := service.PayoutReservation(context.Background(), errandID, courierID, eventID, occurredAt)
+		err := service.PayoutReservation(context.Background(), errandID, courierID, eventID, nil, occurredAt)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -87,7 +87,7 @@ func TestPayoutReservationDelegation(t *testing.T) {
 		repo := &settlementRepositoryStub{err: ErrSelfPayoutNotAllowed}
 		service := NewService(nil, WithSettlementRepository(repo))
 
-		err := service.PayoutReservation(context.Background(), errandID, courierID, eventID, occurredAt)
+		err := service.PayoutReservation(context.Background(), errandID, courierID, eventID, nil, occurredAt)
 		if !errors.Is(err, ErrSelfPayoutNotAllowed) {
 			t.Fatalf("expected ErrSelfPayoutNotAllowed, got %v", err)
 		}
@@ -105,7 +105,7 @@ func TestPayoutReservationDelegation(t *testing.T) {
 			repo := &settlementRepositoryStub{err: targetErr}
 			service := NewService(nil, WithSettlementRepository(repo))
 
-			err := service.PayoutReservation(context.Background(), errandID, courierID, eventID, occurredAt)
+			err := service.PayoutReservation(context.Background(), errandID, courierID, eventID, nil, occurredAt)
 			if !errors.Is(err, targetErr) {
 				t.Fatalf("expected error %v, got %v", targetErr, err)
 			}

@@ -233,4 +233,36 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(90), acc.AvailableCredits)
 		require.Equal(t, int64(10), acc.ReservedCredits)
 	})
+
+	t.Run("PayoutReservation (D-059) settles by event amount and returns leftover hold", func(t *testing.T) {
+		requesterID := uuid.New()
+		courierID := uuid.New()
+		errandID := uuid.New()
+		eventID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
+
+		// Hold 50 credits
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 50)
+		require.NoError(t, err)
+
+		// Event specifies amount 30 (leftover 20 returned to requester)
+		settleAmount := int64(30)
+		err = env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &settleAmount, now)
+		require.NoError(t, err)
+
+		// Requester: started with 100, held 50 (available 50), returned 20 -> available 70, reserved 0
+		reqAcc, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), reqAcc.AvailableCredits)
+		require.Equal(t, int64(0), reqAcc.ReservedCredits)
+
+		// Courier: started with 100, received 30 -> available 130, reserved 0
+		courierAcc, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(130), courierAcc.AvailableCredits)
+		require.Equal(t, int64(0), courierAcc.ReservedCredits)
+	})
 }

@@ -46,7 +46,7 @@ var LifecycleRoutingKeys = []string{
 // LifecycleService declares the domain actions needed by lifecycle consumers.
 type LifecycleService interface {
 	RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error
+	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 	ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
@@ -124,7 +124,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.PayoutReservation(ctx, ev.ErrandID, *ev.CourierID, ev.EventID, ev.OccurredAt)
+		return h.service.PayoutReservation(ctx, ev.ErrandID, *ev.CourierID, ev.EventID, ev.Amount, ev.OccurredAt)
 
 	case RoutingCancelled, RoutingExpired, RoutingFailed:
 		var ev refundPayload

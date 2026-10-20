@@ -392,7 +392,7 @@ func (m *inMemoryStateMachineRepo) RefundReservation(_ context.Context, errandID
 	return nil
 }
 
-func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error {
+func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -411,6 +411,12 @@ func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID
 		return credit.ErrSelfPayoutNotAllowed
 	}
 
+	payoutAmount := res.Amount
+	if amount != nil && *amount > 0 && *amount < res.Amount {
+		payoutAmount = *amount
+	}
+	leftover := res.Amount - payoutAmount
+
 	courierAcc, courierExists := m.accounts[courierID]
 	if !courierExists || courierAcc.IntegrityStatus != credit.IntegrityConsistent {
 		m.pendingPayouts[errandID] = &credit.PendingPayout{
@@ -425,7 +431,8 @@ func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID
 
 	reqAcc := m.accounts[res.RequesterID]
 	reqAcc.ReservedCredits -= res.Amount
-	courierAcc.AvailableCredits += res.Amount
+	reqAcc.AvailableCredits += leftover
+	courierAcc.AvailableCredits += payoutAmount
 	res.Status = credit.ReservationStatusPaidOut
 	now := time.Now().UTC()
 	res.UpdatedAt = now
@@ -439,16 +446,28 @@ func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID
 		OccurredAt:     &occurredAt,
 		CreatedAt:      now,
 	}
+	m.recordUserTx(res.RequesterID, tx1)
+	if leftover > 0 {
+		txLeftover := &credit.TransactionOperation{
+			OperationID:    eventID,
+			ErrandID:       &errandID,
+			Reason:         credit.TransactionReasonRewardDecreased,
+			AvailableDelta: leftover,
+			ReservedDelta:  0,
+			OccurredAt:     &occurredAt,
+			CreatedAt:      now,
+		}
+		m.recordUserTx(res.RequesterID, txLeftover)
+	}
 	tx2 := &credit.TransactionOperation{
 		OperationID:    eventID,
 		ErrandID:       &errandID,
 		Reason:         credit.TransactionReasonErrandCompletedPayout,
-		AvailableDelta: res.Amount,
+		AvailableDelta: payoutAmount,
 		ReservedDelta:  0,
 		OccurredAt:     &occurredAt,
 		CreatedAt:      now,
 	}
-	m.recordUserTx(res.RequesterID, tx1)
 	m.recordUserTx(courierID, tx2)
 	return nil
 }
@@ -598,7 +617,7 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				e := errands[r.Intn(len(errands))]
 				courier := users[r.Intn(len(users))]
 				eventID := uuid.New()
-				err := svc.PayoutReservation(ctx, e, courier, eventID, time.Now().UTC())
+				err := svc.PayoutReservation(ctx, e, courier, eventID, nil, time.Now().UTC())
 				historyLog = append(historyLog, fmt.Sprintf("step %d: PayoutReservation(errand=%s, courier=%s) -> err=%v", step, e, courier, err))
 
 			case 5: // Replay / Duplicate settlement step
@@ -606,8 +625,8 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				courier := users[r.Intn(len(users))]
 				eventID := uuid.New()
 				if r.Float32() < 0.5 {
-					_ = svc.PayoutReservation(ctx, e, courier, eventID, time.Now().UTC())
-					err := svc.PayoutReservation(ctx, e, courier, eventID, time.Now().UTC())
+					_ = svc.PayoutReservation(ctx, e, courier, eventID, nil, time.Now().UTC())
+					err := svc.PayoutReservation(ctx, e, courier, eventID, nil, time.Now().UTC())
 					historyLog = append(historyLog, fmt.Sprintf("step %d: Duplicate PayoutReservation(errand=%s) -> err=%v", step, e, err))
 				} else {
 					_ = svc.RefundReservation(ctx, e, eventID, credit.TransactionReasonErrandCancelled, time.Now().UTC())
@@ -646,7 +665,7 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 	t.Run("rejects self-payout", func(t *testing.T) {
 		errandID := uuid.New()
 		_, _, _ = svc.CreateReservation(context.Background(), errandID, u1, 50)
-		err := svc.PayoutReservation(context.Background(), errandID, u1, uuid.New(), time.Now().UTC())
+		err := svc.PayoutReservation(context.Background(), errandID, u1, uuid.New(), nil, time.Now().UTC())
 		if !errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
 			t.Fatalf("expected ErrSelfPayoutNotAllowed, got %v", err)
 		}

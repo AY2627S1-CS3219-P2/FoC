@@ -31,14 +31,14 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 		// 1. Look up and lock the reservation by errandId.
 		var res credit.Reservation
 		err := tx.QueryRow(txCtx, `
-			SELECT id, errand_id, requester_id, amount, status, created_at, updated_at
+			SELECT id, errand_id, requester_id, amount, status, version, created_at, updated_at
 			FROM credit_reservations
 			WHERE errand_id = $1
 			FOR UPDATE`,
 			errandID,
 		).Scan(
 			&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
-			&res.Status, &res.CreatedAt, &res.UpdatedAt,
+			&res.Status, &res.Version, &res.CreatedAt, &res.UpdatedAt,
 		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -220,7 +220,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 }
 
 // PayoutReservation executes the completion payout settlement transaction described in Phase 7.
-func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, occurredAt time.Time) error {
+func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		// 1. Lock the reservation.
 		var res credit.Reservation
@@ -270,6 +270,14 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 		if res.RequesterID == courierID {
 			return credit.ErrSelfPayoutNotAllowed
 		}
+
+		// D-059: Determine payout amount and any surplus hold returned to requester.
+		// Implemented to settle by event amount and return surplus hold; can be revised later if domain boundary contracts evolve.
+		payoutAmount := res.Amount
+		if amount != nil && *amount > 0 && *amount < res.Amount {
+			payoutAmount = *amount
+		}
+		leftover := res.Amount - payoutAmount
 
 		// 6. Lock requester and courier accounts in ascending UUID order.
 		var (
@@ -362,7 +370,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				return fmt.Errorf("flag requester account on projection mismatch: %w", err)
 			}
 			blockedReason = "ACCOUNT_FLAGGED"
-		} else if courierAvail+res.Amount > credit.MaxBalanceCredits {
+		} else if courierAvail+payoutAmount > credit.MaxBalanceCredits {
 			blockedReason = "AVAILABLE_LIMIT_EXCEEDED"
 		}
 
@@ -411,42 +419,56 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return nil
 		}
 
-		// 8. Subtract stored amount from requester reserved credits.
+		// 8. Subtract stored amount from requester reserved credits, returning any leftover to available (D-059).
 		cmdTag, err := tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET reserved_credits = reserved_credits - $1,
+			    available_credits = available_credits + $2,
 			    version = version + 1,
 			    updated_at = NOW()
-			WHERE user_id = $2 AND reserved_credits >= $1`,
-			res.Amount, res.RequesterID,
+			WHERE user_id = $3 AND reserved_credits >= $1`,
+			res.Amount, leftover, res.RequesterID,
 		)
 		if err != nil || cmdTag.RowsAffected() != 1 {
 			return fmt.Errorf("payout requester reserved debit failed: %w", err)
 		}
 
-		// 9. Add the same amount to courier available credits.
+		// 9. Add payoutAmount to courier available credits.
 		cmdTag, err = tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET available_credits = available_credits + $1,
 			    version = version + 1,
 			    updated_at = NOW()
 			WHERE user_id = $2 AND available_credits + $1 <= $3`,
-			res.Amount, courierID, credit.MaxBalanceCredits,
+			payoutAmount, courierID, credit.MaxBalanceCredits,
 		)
 		if err != nil || cmdTag.RowsAffected() != 1 {
 			return fmt.Errorf("payout courier available credit failed: %w", err)
 		}
 
-		// 10. Use completion eventId as operationId and append requester deduction and courier payout under it.
-		_, err = tx.Exec(txCtx, `
-			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+		// 10. Use completion eventId as operationId and append requester deduction, courier payout, and any surplus return under it.
+		if leftover > 0 {
+			_, err = tx.Exec(txCtx, `
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				VALUES
+					($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
+					($1, $2, $3, 'AVAILABLE', $6, 'REWARD_DECREASED', $5, NOW()),
+					($7, $2, $3, 'AVAILABLE', $8, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
+				res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), leftover, courierID, payoutAmount,
 			)
-			VALUES
-				($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
-				($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
-			res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
-		)
+		} else {
+			_, err = tx.Exec(txCtx, `
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				VALUES
+					($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
+					($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
+				res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
+			)
+		}
 		if err != nil {
 			return fmt.Errorf("insert payout ledger entries: %w", err)
 		}

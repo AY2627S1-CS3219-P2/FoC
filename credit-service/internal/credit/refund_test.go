@@ -33,7 +33,7 @@ func (s *settlementRepositoryStub) RefundReservation(_ context.Context, errandID
 	return s.err
 }
 
-func (s *settlementRepositoryStub) PayoutReservation(_ context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, occurredAt time.Time) error {
+func (s *settlementRepositoryStub) PayoutReservation(_ context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, _ *int64, occurredAt time.Time) error {
 	s.called = true
 	s.errandID = errandID
 	s.courierID = courierID

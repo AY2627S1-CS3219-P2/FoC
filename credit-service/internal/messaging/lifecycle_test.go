@@ -23,7 +23,7 @@ import (
 
 type mockLifecycleService struct {
 	refundFn    func(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	payoutFn    func(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error
+	payoutFn    func(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 	rewardSetFn func(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
@@ -34,9 +34,9 @@ func (m *mockLifecycleService) RefundReservation(ctx context.Context, errandID, 
 	return nil
 }
 
-func (m *mockLifecycleService) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, occurredAt time.Time) error {
+func (m *mockLifecycleService) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	if m.payoutFn != nil {
-		return m.payoutFn(ctx, errandID, courierID, eventID, occurredAt)
+		return m.payoutFn(ctx, errandID, courierID, eventID, amount, occurredAt)
 	}
 	return nil
 }
@@ -59,7 +59,7 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 	var calledTime time.Time
 
 	svc := &mockLifecycleService{
-		payoutFn: func(ctx context.Context, eID, cID, evID uuid.UUID, occ time.Time) error {
+		payoutFn: func(ctx context.Context, eID, cID, evID uuid.UUID, _ *int64, occ time.Time) error {
 			calledErrand = eID
 			calledCourier = cID
 			calledEvent = evID
@@ -99,7 +99,7 @@ func TestLifecycleHandler_DispatchCompletedWithOrderServiceEnvelope(t *testing.T
 	var calledErrand, calledCourier, calledEvent uuid.UUID
 
 	svc := &mockLifecycleService{
-		payoutFn: func(ctx context.Context, eID, cID, evID uuid.UUID, occ time.Time) error {
+		payoutFn: func(ctx context.Context, eID, cID, evID uuid.UUID, _ *int64, occ time.Time) error {
 			calledErrand = eID
 			calledCourier = cID
 			calledEvent = evID
