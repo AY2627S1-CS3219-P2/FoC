@@ -17,6 +17,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
+var _ credit.ReservationRepository = (*PostgresRepository)(nil)
+
 var errReservationRaceLost = errors.New("concurrent reservation creation race lost")
 
 // advisoryLockKey converts a UUID into a deterministic int64 for PostgreSQL transaction advisory locking.
@@ -193,7 +195,7 @@ func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUI
 }
 
 // AdjustReservationReward executes the reward adjustment transaction described in Phase 5.
-func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, currentAmount int64, newAmount int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	var resOp *credit.OperationResult
 	var resRev *credit.Reservation
 
@@ -217,7 +219,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		)
 		if err == nil {
 			// Row exists. Compare stored fields directly.
-			if op.ErrandID != errandID || op.CurrentAmount != currentAmount || op.NewAmount != newAmount {
+			if op.ErrandID != errandID || op.NewAmount != newReward {
 				return credit.ErrIdempotencyConflict
 			}
 			resOp = &op
@@ -235,6 +237,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		}
 
 		// 3. Lock the reservation by errandId.
+		newAmount := newReward
 		var reservation credit.Reservation
 		err = tx.QueryRow(txCtx, `
 			SELECT id, errand_id, requester_id, amount, status, created_at, updated_at
@@ -253,6 +256,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			}
 			return fmt.Errorf("lock reservation for adjust: %w", err)
 		}
+		currentAmount := reservation.Amount
 
 		// 4. Require reservation status RESERVED.
 		if reservation.Status != credit.ReservationStatusReserved {
