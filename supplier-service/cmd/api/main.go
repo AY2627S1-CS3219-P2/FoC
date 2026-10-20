@@ -20,7 +20,6 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/redis/go-redis/v9"
 
 	"foc/supplier-service/internal/auth"
 	"foc/supplier-service/internal/config"
@@ -62,12 +61,10 @@ func main() {
 	// Neither user-service nor Redis is waited for here: the keys are fetched
 	// on the first admin write and go-redis connects lazily.
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
-	redisOpts, err := redis.ParseURL(cfg.RedisURL)
+	rdb, err := auth.NewRedisClient(cfg.RedisURL)
 	if err != nil {
-		// The error would quote REDIS_URL, which can carry a password.
-		log.Fatal("REDIS_URL is not a valid Redis URL")
+		log.Fatal(err)
 	}
-	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()
 
 	router := httpapi.NewRouter(svc, verifier, auth.NewRevocations(rdb))

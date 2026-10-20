@@ -50,8 +50,12 @@ var (
 	ErrKeysUnavailable = errors.New("auth: signing keys unavailable")
 )
 
-// clockSkew is the leeway on exp and nbf, so a few seconds of drift between
-// user-service and supplier-service does not reject a valid token.
+// clockSkew is the leeway on iat and nbf, so a few seconds of drift between
+// user-service and supplier-service does not reject a valid token. exp gets
+// none: user-service keeps a logged-out token's jti key only until the token's
+// exp, so a token accepted for clockSkew past exp could be replayed after its
+// logout had stopped being checkable. A token near its end is refused up to
+// clockSkew early instead, and the frontend answers that 401 by refreshing.
 const clockSkew = 5 * time.Second
 
 // The iss and aud user-service puts on every token it signs, and requires
@@ -145,6 +149,10 @@ func (v *Verifier) Verify(ctx context.Context, token string) (Claims, error) {
 	}
 	if !parsed.Valid {
 		return Claims{}, ErrInvalidSignature
+	}
+	// jwt.WithLeeway applies to exp too, so the strict check is made here.
+	if registered.ExpiresAt == nil || !time.Now().Before(registered.ExpiresAt.Time) {
+		return Claims{}, ErrExpired
 	}
 
 	// typ and role are not registered claims, so they come off the payload.

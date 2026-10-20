@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -223,18 +224,58 @@ func TestACachedKeyOutlivesAnOutage(t *testing.T) {
 	assert.EqualValues(t, 1, ks.fetches.Load())
 }
 
-func TestAnOversizedKeySetIsRefused(t *testing.T) {
-	// A key set far past maxKeySetBytes is cut off mid-document, so it cannot
-	// parse and the keys are reported unavailable instead of buffered whole.
+func TestExpIsStrictButIatKeepsItsLeeway(t *testing.T) {
+	// user-service keeps a logged-out token's jti key only until exp, so a token
+	// 2 s past exp, inside the leeway, must not verify. A token issued 3 s in
+	// the future, a clock that runs ahead, still does.
 	a, _ := testKeys(t)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"keys":[{"kty":"RSA","kid":"k1","n":"`))
-		_, _ = w.Write(make([]byte, 2*maxKeySetBytes))
-	}))
-	t.Cleanup(srv.Close)
-	v := NewVerifier(srv.URL, srv.Client())
+	_, v := newKeySet(t, map[string]*rsa.PublicKey{"k1": &a.PublicKey})
+	now := time.Now()
+	with := func(edit func(jwt.MapClaims)) string {
+		c := accessClaims(uuid.New(), now)
+		edit(c)
+		return sign(t, jwt.SigningMethodRS256, a, "k1", c)
+	}
 
-	_, err := v.Verify(context.Background(), sign(t, jwt.SigningMethodRS256, a, "k1", accessClaims(uuid.New(), time.Now())))
+	_, err := v.Verify(context.Background(), with(func(c jwt.MapClaims) { c["exp"] = now.Add(-2 * time.Second).Unix() }))
+	require.ErrorIs(t, err, ErrExpired, "past exp, within the leeway")
 
-	require.ErrorIs(t, err, ErrKeysUnavailable)
+	_, err = v.Verify(context.Background(), with(func(c jwt.MapClaims) { c["exp"] = now.Add(time.Minute).Unix() }))
+	require.NoError(t, err, "before exp")
+
+	_, err = v.Verify(context.Background(), with(func(c jwt.MapClaims) { c["iat"] = now.Add(3 * time.Second).Unix() }))
+	require.NoError(t, err, "iat a few seconds ahead is clock skew")
+}
+
+func TestAnOversizedKeySetIsRefused(t *testing.T) {
+	// Both documents are complete, valid JWKS carrying the signing key; only the
+	// size differs. The small one verifies, so the large one being refused can
+	// only be the cap: without it the oversized document would decode too.
+	a, _ := testKeys(t)
+	keySetWithPadding := func(padding int) []byte {
+		doc, err := json.Marshal(map[string]any{
+			"keys": []map[string]string{{
+				"kty": "RSA", "kid": "k1",
+				"n": base64.RawURLEncoding.EncodeToString(a.PublicKey.N.Bytes()),
+				"e": base64.RawURLEncoding.EncodeToString(big.NewInt(int64(a.PublicKey.E)).Bytes()),
+			}},
+			"padding": strings.Repeat("x", padding),
+		})
+		require.NoError(t, err)
+		return doc
+	}
+	verifierServing := func(doc []byte) *Verifier {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(doc) }))
+		t.Cleanup(srv.Close)
+		return NewVerifier(srv.URL, srv.Client())
+	}
+	token := sign(t, jwt.SigningMethodRS256, a, "k1", accessClaims(uuid.New(), time.Now()))
+
+	_, err := verifierServing(keySetWithPadding(1024)).Verify(context.Background(), token)
+	require.NoError(t, err, "a small key set verifies")
+
+	big := keySetWithPadding(2 * maxKeySetBytes)
+	require.Greater(t, len(big), maxKeySetBytes)
+	_, err = verifierServing(big).Verify(context.Background(), token)
+	require.ErrorIs(t, err, ErrKeysUnavailable, "a key set over the cap is refused")
 }

@@ -51,8 +51,8 @@ docker compose up supplier-service supplier-db
 The service verifies the caller itself (D-041, D-054). `POST`, `PUT` and
 `DELETE /suppliers` need `Authorization: Bearer <access token>` from a login
 through user-service. The token's RS256 signature is checked against
-user-service's published keys (`JWKS_URL`), along with `iss`, `aud`, `exp` and
-`typ`; then the revocation keys user-service writes to Redis (`REDIS_URL`), so
+user-service's published keys (`JWKS_URL`), along with `iss`, `aud`, `exp` (with
+no leeway, because the logout key expires at `exp`) and `typ`; then the revocation keys user-service writes to Redis (`REDIS_URL`), so
 a logged-out or suspended admin's token stops working at once. The caller is
 the token's `sub` and `role`. `X-User-Id` and `X-User-Role` are ignored.
 
