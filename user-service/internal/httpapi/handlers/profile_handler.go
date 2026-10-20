@@ -122,6 +122,8 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 			// AI-generated (edited by ZI YANG): maps the recorded last-active-admin guard to its public conflict response.
 		} else if errors.Is(err, user.ErrLastAdmin) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "cannot suspend the last active admin"})
+		} else if errors.Is(err, user.ErrAccountUnverified) {
+			writeJSON(w, http.StatusConflict, map[string]string{"error": "account is not verified"})
 		} else {
 			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, err, "account status unavailable")
 		}

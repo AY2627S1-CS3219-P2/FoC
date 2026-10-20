@@ -1,25 +1,29 @@
 # Supplier Service
 
+<!--
+AI Assistance Disclosure:
+Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+Scope: Status, the "Others reading suppliers" boundary and the openapi gotcha
+  now say the interface is REST (D-055, D-074) and the gRPC direction was
+  withdrawn; the opening no longer calls this the only implemented service.
+Author review: PENDING — <reviewer to complete>
+-->
+
 Authority on campus suppliers — the stores, facilities and pickup locations an
 errand can point at (mandatory requirement M3). It owns the supplier record, the
 rules for changing one, and its own Postgres database. It deliberately knows
 nothing about errands, orders, matching, users or credits: a supplier has no
 idea it has ever been ordered from, and nothing in this folder should teach it.
 
-This is the only implemented service in the repo, so its layering is the
-reference the other four copy (root §6 points here by name). Changing the
-*shape* of that layering is a repo-wide decision, not a local one.
+Its layering is the reference the other services copy (root §6 points here by
+name). Changing the *shape* of that layering is a repo-wide decision, not a
+local one.
 
-**Status: implemented and merged (PR #1).** The code on `main` today is a REST
-API (`internal/httpapi`), which is what the "Boundaries" and "Gotchas" sections
-below still describe. **A gRPC replacement is decided (D-035, D-037 to D-040)
-but not yet merged** — it is on `feat/supplier-service-grpc` (PR #8), which
-also rewrites this file. Until #8 merges, treat the REST description below as
-current and the gRPC decisions as the direction, not yet the code:
-
-```bash
-git ls-tree -r --name-only feat/supplier-service-grpc:supplier-service
-```
+**Status: implemented and merged (PR #1).** The interface is the REST API in
+`internal/httpapi` (D-055, D-074), with the JSON shape of D-036 and the URLs of
+D-037. The gateway proxies it at `/api/suppliers`, and order-service reads and
+checks it over HTTP. A gRPC replacement was decided and then withdrawn (D-074);
+PR #8 is closed.
 
 ## Owner
 
@@ -35,16 +39,19 @@ decide, and must be recorded before an agent builds to them (root §1).
   (`internal/orderclient`, `ORDER_BASE_URL`), forwarding the admin's token
   (F2.2.3).
 - **`user-service`.** Admin-only endpoints need a role, not a user. Do not query
-  the users table and do not fetch a user record to inspect it — the role
-  arrives with the request (see Gotchas).
+  the users table and do not fetch a user record to inspect it — the role is the
+  `role` claim of the access token the service verifies itself (D-041), against
+  user-service's published keys and the revocation keys it writes to Redis
+  (D-054; see Gotchas).
 - **`credit-service`.** Prices, wallets and payouts are not supplier fields. A
   supplier is a place, not a price list.
 - **`frontend`.** It will eventually want a supplier merged with data this
   service does not hold. Compose that at the caller; do not grow a field here
   that only another service can fill.
-- **Others reading suppliers.** Point them at this service's HTTP API — the
-  gRPC contract decided in D-035 is not merged yet (see Status above). Never
-  share `SUPPLIER_DB_URL`, and never factor the `Supplier` struct into a package
+- **Others reading suppliers.** Point them at this service's HTTP API.
+  order-service's `GET /suppliers/{id}` lookup (`order-service/internal/
+  supplierclient`) is the reader inside the network today, and it sends no
+  token. Never share `SUPPLIER_DB_URL`, and never factor the `Supplier` struct into a package
   they import — a duplicated struct on their side is the correct outcome
   (root §4.2).
 - **`../data/csv/` and `../data/images/`** are repo-level shared assets, not
@@ -57,8 +64,8 @@ Module path `foc/supplier-service`. The per-file detail the other services
 mirror:
 
 ```
-cmd/api/             wiring only — config, pool, migrate, order client, seed,
-                     router, listen
+cmd/api/             wiring only — config, pool, migrate, order client, token
+                     verifier, Redis client, seed, router, listen
 internal/supplier/   the domain: model.go, service.go (business rules),
                      repository.go (the Repository *interface*), errors.go
                      (sentinel errors the transport layer maps to status codes),
@@ -66,8 +73,12 @@ internal/supplier/   the domain: model.go, service.go (business rules),
 internal/repository/ Postgres adapter implementing supplier.Repository, via pgx
 internal/orderclient/ order-service client for the delete check, implementing
                       supplier.ErrandCounter
-internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go
-internal/middleware/ request guards (currently the admin-role check)
+internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go;
+                     auth.go — the token check and the admin-role guard on the
+                     write routes
+internal/auth/       verifies access tokens against user-service's keys and
+                     checks D-054's revocation keys; a copy of order-service's
+                     package, not an import (root §4.2)
 internal/config/     Load() reads env once into a Config struct, then passed down
 seed/                first-boot CSV load; depends on the domain, not vice versa
 migrations/          golang-migrate .up/.down pairs, applied at startup from
@@ -77,12 +88,18 @@ migrations/          golang-migrate .up/.down pairs, applied at startup from
 ## Local development
 
 Port **8082** (root §3). Env vars `PORT`, `SUPPLIER_DB_URL`, `SEED_CSV_PATH`,
-`ORDER_BASE_URL`, with placeholders in the root `.env.example` and this
-folder's own.
+`ORDER_BASE_URL`, `JWKS_URL` and `REDIS_URL`. This folder's `.env.example` has
+all of them with the in-network values Compose uses. The root `.env.example` has
+`SUPPLIER_DB_URL` and `SEED_CSV_PATH` in its Supplier service block, `JWKS_URL`
+and `REDIS_URL` in its API Gateway and Redis sections, and `ORDER_BASE_URL` in
+its API Gateway section; `PORT` is the default 8082 and has no placeholder.
+Admin writes need user-service's keys at `JWKS_URL` and Redis at `REDIS_URL`
+reachable; reads need neither.
 
 ```bash
 go run ./cmd/api     # from supplier-service/; migrates then seeds on startup
-go test ./...        # unit tests: service layer, order-service client (httptest), CSV parser, no Docker needed
+go test ./...        # unit tests: service layer, token check, order-service client (httptest), CSV parser, no Docker needed
+go test -tags=integration ./...   # admin writes over real PostgreSQL and Redis (testcontainers); needs Docker
 docker compose up supplier-service supplier-db    # from the repo root
 ```
 
@@ -102,14 +119,19 @@ docker compose up supplier-service supplier-db    # from the repo root
   any, and it returns `ErrInUse` (409); no answer, and it refuses rather than
   deletes. Otherwise it calls `repo.SoftDelete`, which sets `deleted_at` and
   flips `is_available` to false rather than removing the row.
-- **Admin auth trusts an `X-User-Role: ADMIN` header** — interim, and not
-  secure. Swapping `HeaderRoleExtractor` for the real mechanism is the only
-  change needed here once the team decides it.
-- **There is no `api/openapi.yaml`, and there will not be one.** The owner has
-  decided the contract is gRPC instead (D-035, D-039): a `.proto`, generated
-  with `buf`, on `feat/supplier-service-grpc` (PR #8), not yet merged. Until
-  then the DTOs in `internal/httpapi` are still the hand-written REST contract
-  in code today.
+- **Admin writes are authorized from the verified token, never from a header.**
+  `POST`, `PUT` and `DELETE /suppliers` pass `authenticate` (`internal/httpapi/
+  auth.go`): exactly one `Authorization: Bearer` header, RS256 signature, `iss`,
+  `aud`, `exp`, `typ` `access`, then D-054's revocation keys in Redis. The caller
+  is the token's `sub` and `role`; `X-User-Id` and `X-User-Role` are ignored
+  (D-041). 401 is a token problem only (a wrong role is 403, because the
+  frontend answers a 401 by refreshing and retrying); 503 when the keys or Redis
+  cannot be read — an admin write fails closed. Reads and `/health` need no
+  token: order-service's supplier lookup sends none.
+- **There is no `api/openapi.yaml` yet.** The contract is the hand-written REST
+  surface: the routes in `internal/httpapi/router.go` and the JSON in
+  `internal/httpapi/dto.go`, shaped per D-036 and addressed per D-037. Writing
+  the spec (D-005, root §8) is still owed.
 - <!-- AI-generated (edited by PENDING). --> **A corrected seed CSV does not reach an existing database.**
   `seed.EnsureSeeded` only seeds when the `suppliers` table is empty, and
   `compose.yaml` persists it in the named volume `supplier-db-data` — so

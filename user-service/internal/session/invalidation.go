@@ -29,6 +29,9 @@ type AccessTokenClaims struct {
 // different account than the verified access token.
 var ErrSessionOwnershipMismatch = errors.New("mismatched session")
 
+// minimumLogoutTTL is added to every blocklist key's lifetime. It must equal
+// jwt.ClockSkew: readers accept a token up to that long past its exp, so the
+// key has to outlive the exp by as much.
 const minimumLogoutTTL = 5 * time.Second
 
 // AccessTokenVerifier verifies a bearer access token and returns only the
@@ -59,8 +62,8 @@ func NewLogoutService(sessions user.SessionRepository, blocklist BlocklistWriter
 	return &LogoutService{sessions: sessions, blocklist: blocklist, now: now}
 }
 
-// Logout blocks the access-token JTI with its remaining lifetime, or the
-// recorded clock-skew minimum, then revokes the hashed refresh token.
+// Logout blocks the access-token JTI for its remaining lifetime plus
+// minimumLogoutTTL, then revokes the hashed refresh token.
 // PostgreSQL is not touched if Redis fails.
 func (s *LogoutService) Logout(ctx context.Context, access AccessTokenClaims, refreshToken string) error {
 	if s.sessions == nil || s.blocklist == nil {

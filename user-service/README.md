@@ -125,8 +125,9 @@ All paths below are relative to `http://localhost:8081`. You may refer to the [o
 | `POST` | `/api/v1/users/logout` | Bearer access token | JSON body: `refreshToken`. Invalidates the access token and refresh session; success returns `204`; errors include `400`, `401`, `413`, and `500`. |
 | `GET` | `/api/v1/users/{uid}` | Bearer access token | Returns a full profile to administrators and a restricted profile to other callers. Unknown or malformed user IDs return `404`. |
 | `PUT` | `/api/v1/users/{uid}` | Bearer access token | JSON body may contain `username`, `phone_num` (at most 20 characters), `currentPassword`, and `newPassword`. The caller may update their own profile, or an admin may update any profile. Returns the updated profile. |
-| `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated; errors include `400`, `401`, `403`, `404`, `409`, `413`, and `500`. |
+| `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated; `409` means either the last active admin would be suspended or the account has not verified its email; other errors include `400`, `401`, `403`, `404`, `413`, and `500`. |
 | `GET` | `/.well-known/jwks.json` | None | Returns the active and retired public JWT keys. The endpoint is unauthenticated so token-verifying services can read it over the private network; it is not published to the host. |
+<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — documents D-078's two 409 responses. -->
 
 When running with Compose, `user-service` has no `ports:` entry and is not
 reachable directly from the host. Call its public routes through the gateway:
@@ -152,8 +153,8 @@ JWT signature and `iss`, `aud`, `exp`, and `typ` claims. Readers must take the
 
 | Key | Value | TTL | Written by |
 |---|---|---|---|
-| `jti:<access-token jti>` | `1` | Until the access token's `exp`; 5 seconds when logout arrives after `exp` but within the clock-skew leeway | Logout, only when the refresh session is live and belongs to the caller; missing or revoked sessions return `204` and write nothing. |
-| `suspended:uid:<uid>` | Suspension time in UTC whole seconds, formatted with `time.RFC3339Nano`, for example `2026-10-18T09:15:42Z` | `JWT_ACCESS_TOKEN_TTL` (15 minutes by default) | `PATCH /api/v1/users/{uid}/status` when the status becomes `SUSPENDED`. |
+| `jti:<access-token jti>` | `1` | The access token's remaining lifetime plus 5 seconds, the clock skew readers allow past `exp`; 5 seconds when logout arrives after `exp` but within that leeway | Logout, only when the refresh session is live and belongs to the caller; missing or revoked sessions return `204` and write nothing. |
+| `suspended:uid:<uid>` | Suspension time in UTC whole seconds, formatted with `time.RFC3339Nano`, for example `2026-10-18T09:15:42Z` | `JWT_ACCESS_TOKEN_TTL` plus 5 seconds (15 minutes 5 seconds by default) | `PATCH /api/v1/users/{uid}/status` when the status becomes `SUSPENDED`. |
 
 A verified token is revoked when its JTI key exists, when its suspension key
 exists and its `iat` is at or before the stored time, or when the stored time

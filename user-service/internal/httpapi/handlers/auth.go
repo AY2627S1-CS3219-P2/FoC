@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
 
@@ -71,6 +72,11 @@ func RequireJWT(verifier TokenVerifier, revocationChecker RevocationChecker, log
 				return
 			}
 			if revoked {
+				// Logged with the account and the request, never the token.
+				if logger != nil {
+					logger.InfoContext(r.Context(), "revoked access token refused",
+						"user_id", principal.UserID, "request_id", middleware.GetReqID(r.Context()))
+				}
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 				return
 			}

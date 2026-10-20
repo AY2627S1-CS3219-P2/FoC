@@ -16,6 +16,11 @@
 #   refuse to parse the file at all); mechanical fix, no service definition
 #   changed.
 # Author review: PENDING — <reviewer to complete>
+# Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+# Scope: supplier-service gets JWKS_URL and REDIS_URL, so it verifies admin
+#   tokens and their revocation itself (D-041, D-054), and the note at the top
+#   no longer says it trusts the gateway's identity headers. SHARED FILE.
+# Author review: PENDING — <reviewer to complete>
 
 services:
   user-db:
@@ -34,9 +39,9 @@ services:
 
 # Only services with a `ports:` key are reachable from the host; api-gateway
 # (host port 8080) is the only one other machines can reach, and rabbitmq
-# listens on 127.0.0.1 only. supplier-service still trusts the gateway's
-# X-User-Id and X-User-Role headers, so publishing it lets a client skip
-# token verification (D-010 in ai/decisions.md).
+# listens on 127.0.0.1 only. supplier-service verifies the bearer token on its
+# own admin writes (D-041, D-054), but it holds no ports: key all the same
+# (D-010 in ai/decisions.md).
 #
 # credit-service is not in this file yet.
 # The frontend is not in this file either: `npm run dev` in frontend/ serves
@@ -45,8 +50,8 @@ services:
   # ---- Redis ------------------------------------------------------------
   # AI-generated (edited by nigeltzy) — rewritten for D-024.
   # user-service's store, including the access-token revocation keys that
-  # order-service reads. No `ports:` key, so it is reachable only inside this
-  # network.
+  # the gateway, order-service and supplier-service read. No `ports:` key, so
+  # it is reachable only inside this network.
   redis:
     image: redis:7-alpine
     # Append-only persistence, so the jti blocklist survives a restart.
@@ -97,13 +102,17 @@ services:
     build:
       context: .
       dockerfile: api-gateway/Dockerfile
-    # No depends_on: the gateway fetches JWKS on first use, so it can start
-    # before user-service.
+    # No depends_on: the gateway fetches JWKS and connects to Redis on first
+    # use, so it can start before user-service and Redis. Authenticated routes
+    # answer 503 until both answer.
     environment:
       PORT: 8080
       # user-service's JWKS endpoint. Until user-service is running, authenticated
       # routes return 503.
       JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      # The Redis user-service writes the revocation keys to. Every verified
+      # token is checked against them.
+      REDIS_URL: redis://redis:6379
       # All four base URLs are required, including services not in this file yet.
       USER_BASE_URL: http://user-service:8081
       SUPPLIER_BASE_URL: http://supplier-service:8082
@@ -140,6 +149,10 @@ services:
       SUPPLIER_DB_URL: postgres://postgres:postgres@supplier-db:5432/supplier?sslmode=disable
       # Asked before each delete; deletes are refused while it is unreachable.
       ORDER_BASE_URL: http://order-service:8083
+      # Admin writes need a verified, unrevoked token (D-041, D-054). Neither is
+      # waited for at startup: the keys are fetched on the first write.
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
   rabbitmq:

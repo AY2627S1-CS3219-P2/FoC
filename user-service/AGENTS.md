@@ -183,8 +183,8 @@ Example repository method signatures:
 - Environment Variable: REDIS_URL (e.g., redis://localhost:6379/0).
 - Use the industry standard [github.com/redis/go-redis/v9](https://github.com/redis/go-redis/v9).
 - Key Formats:
-  - JTI Blocklist: `jti:<jti-uuid>`; value `1`; TTL until the token's `exp`, or exactly 5 seconds when logout is within the clock-skew leeway after expiry. Readers reject the token when the key exists.
-  - Suspension: `suspended:uid:<user-uuid>`; value is the UTC suspension time in whole seconds formatted with `time.RFC3339Nano`; TTL is `JWT_ACCESS_TOKEN_TTL` (15 minutes by default). Readers reject a verified token when its `iat` is at or before the stored time, and reject it when the value does not parse.
+  - JTI Blocklist: `jti:<jti-uuid>`; value `1`; TTL is the token's remaining lifetime plus 5 seconds (the clock skew readers allow past `exp`), or 5 seconds when logout comes after `exp`. Readers reject the token when the key exists.
+  - Suspension: `suspended:uid:<user-uuid>`; value is the UTC suspension time in whole seconds formatted with `time.RFC3339Nano`; TTL is `JWT_ACCESS_TOKEN_TTL` plus 5 seconds (15 minutes 5 seconds by default). Readers reject a verified token when its `iat` is at or before the stored time, and reject it when the value does not parse.
 - **Reader rule:** Every service that verifies tokens must verify the signature and `iss`, `aud`, `exp`, and `typ` claims before reading these keys. It must take `uid` and `jti` only from the verified token. User-service is the only writer (D-054).
 - Unavailable Behavior: Fail-closed. If a `Set` operation to Redis fails during logout, the application must immediately return a 500 Internal Server Error and abort the subsequent PostgreSQL transaction, forcing the frontend client to retry.
 - The user-service should adopt the Gateway's Redis configuration: redis:7-alpine (or 8-alpine depending on Gateway) with `--appendonly yes` and a persistent volume. This guarantees state recovery across container restarts.
@@ -202,8 +202,9 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - If the authenticated principal has the ADMIN role and is modifying a different user's account, the currentPassword requirement must be bypassed. Admins are authorized to force-reset passwords without knowing the target's existing credentials. If an admin is changing their own password, the currentPassword rule still applies.
    - a password change should utilize a mechanism similar to the existing suspension mechanism: the service updates the user's tokens_valid_after field in the users table to the current timestamp. The API Gateway will subsequently reject any existing access tokens where the iat (Issued At) claim is older than this new timestamp. The service must also call RevokeAllUserSessions to immediately invalidate all refresh tokens in PostgreSQL
 6. PATCH /api/v1/users/{uid}/status: An ADMIN-only endpoint to transition an account status between ACTIVE and SUSPENDED
+   <!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-078's status-route rules. -->
    - must reject any attempt to suspend an admin if they are the last ACTIVE admin in the system.
-   - Errors: 409 conflict if attempting to suspend the last remaining active admin ({"error": "cannot suspend the last active admin"})
+   - Errors: 409 conflict if attempting to suspend the last remaining active admin ({"error": "cannot suspend the last active admin"}) or transition an UNVERIFIED account ({"error": "account is not verified"})
 7. POST /api/v1/users/refresh : Accepts a valid refresh token. Issues a new access/refresh token pair and rotates the old refresh token in the database (uses `RotateSession` of the Session Repository's interface)
    - Request: JSON body {"refreshToken": "string"}. No HTTP Authorization header required.
    - Response: 200 OK with JSON {"accessToken": "string", "refreshToken": "string"}.
@@ -212,7 +213,7 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    - **Execution Sequence & Ownership Verification:**
      1. Hash the incoming refresh token and query PostgreSQL to read the session. If the session is missing or already has a populated `revoked_at` field, immediately return `204 No Content` (idempotent success).
      2. Verify that the session's `uid` matches the verified access token's `sub` claim. If they do not match, reject the request with a `400 Bad Request` (e.g., `{"error": "mismatched session"}`).
-     3. Push the access token's `jti` to the Redis blocklist. If the access token is in the 5-second clock-skew window (meaning its theoretical remaining lifetime is ≤ 0), set the Redis TTL to exactly 5 seconds. If the Redis `SET` operation fails, abort the transaction and return a `500 Internal Server Error`.
+     3. Push the access token's `jti` to the Redis blocklist with a TTL of its remaining lifetime plus 5 seconds. If the access token is in the 5-second clock-skew window (meaning its theoretical remaining lifetime is ≤ 0), the TTL is exactly 5 seconds. If the Redis `SET` operation fails, abort the transaction and return a `500 Internal Server Error`.
      4. Revoke the refresh session in PostgreSQL by setting the `revoked_at` field to the current timestamp. Do not use `DELETE`.
    - Request: Standard Authorization: Bearer <access_token> header, plus a JSON body {"refreshToken": "string"}.
    - Response: 204 No Content (empty body) on success, and response should be idempotent should with 204 in case session is already revoked, or when the supplied refresh token does not exist
@@ -258,9 +259,9 @@ The API contract is defined in `api/openapi.yaml` and must strictly align with t
 *   **PUT /api/v1/users/{uid}**
     *   **Statuses:** `200 OK`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict`, `500 Internal Server Error`.
     *   **Schema Constraints:** The `UpdateProfileRequest.password` field must declare the 8-128 character policy.
-    *   **Authorization:** The handler reads the verified `X-User-ID` header injected by the API Gateway to verify the caller's identity; it does not parse a Bearer token directly.
+    *   **Authorization:** `RequireJWT` verifies the bearer access token and checks the revocation keys; the handler takes the caller from the verified principal and ignores `X-User-ID` and `X-User-Role`.
 *   **PATCH /api/v1/users/{uid}/status**
-    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict` (last admin), `500 Internal Server Error`.
+    *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `409 Conflict` (last admin or unverified account), `500 Internal Server Error`.
 *   **POST /api/v1/users/refresh**
     *   **Statuses:** `200 OK`, `400 Bad Request`, `401 Unauthorized`, `429 Too Many Requests`, `500 Internal Server Error`.
 *   **POST /api/v1/users/logout**
@@ -467,7 +468,8 @@ In the case where the PostgreSQL fails after the Redis operation completes the i
 
 Events are sent to the message broker through the outbox: `internal/relay` publishes each `outbox_events` row to RabbitMQ (`RABBITMQ_URL`) with publisher confirms and retries a failed publish. The service starts without the broker; events wait in the outbox until it is reachable.
 
-Accounts activated before user-service started queuing `user.registered` get that event once, from a one-off migration (`000006`): one `user.registered` row for every `ACTIVE` `STUDENT` account that has none yet, with `occurredAt` set to the account's `date_created`. `ADMIN`, `UNVERIFIED` and `SUSPENDED` accounts get none from it. An `UNVERIFIED` account gets its event when it verifies its email through `verify-otp`; the admin status route (`PATCH /api/v1/users/{uid}/status`) queues none, a gap tracked in issue #30. Re-running the migration queues nothing more, and rolling it back leaves the queued rows in place.
+<!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — updates the D-078 event behavior. -->
+Accounts activated before user-service started queuing `user.registered` get that event once, from a one-off migration (`000006`): one `user.registered` row for every `ACTIVE` `STUDENT` account that has none yet, with `occurredAt` set to the account's `date_created`. `ADMIN`, `UNVERIFIED` and `SUSPENDED` accounts get none from it. An `UNVERIFIED` account gets its event when it verifies its email through `verify-otp`; a `STUDENT` reactivated through the admin status route queues the event if it has none yet. Re-running the migration queues nothing more, and rolling it back leaves the queued rows in place.
 
 Never prune `user.registered` rows from `outbox_events`: `000006`'s duplicate guard relies on them to skip accounts that already have their event.
 

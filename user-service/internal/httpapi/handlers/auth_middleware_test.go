@@ -148,3 +148,24 @@ func TestPrincipalFromContextWithoutPrincipal(t *testing.T) {
 		t.Fatal("principal found in empty context")
 	}
 }
+
+// A token that fails verification is refused before the revocation keys are
+// read, so junk tokens cost no Redis lookup.
+func TestRequireJWTNeverChecksAnUnverifiedToken(t *testing.T) {
+	checker := &fakeRevocationChecker{}
+	next := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("handler reached with an unverified token")
+	})
+	request := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	request.Header.Set("Authorization", "Bearer invalid")
+	response := httptest.NewRecorder()
+
+	handlers.RequireJWT(&fakeTokenVerifier{err: errors.New("invalid JWT")}, checker, nil)(next).ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", response.Code)
+	}
+	if checker.calls != 0 {
+		t.Fatalf("revocation checks = %d, want 0", checker.calls)
+	}
+}

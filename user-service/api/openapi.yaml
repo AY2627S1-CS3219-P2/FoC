@@ -682,7 +682,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '409':
-          description: Conflict. The last active administrator cannot be suspended.
+          # AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-078's second conflict case.
+          description: Conflict. The last active administrator cannot be suspended, or the account has not verified its email yet.
           content:
             application/json:
               schema:

@@ -69,6 +69,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("parse Redis URL: %w", err)
 	}
+	// go-redis ignores a context's deadline on socket reads and writes unless
+	// this is set, so the revocation check's 500 ms bound would not hold against
+	// a Redis that accepts the connection and then stops answering.
+	redisOptions.ContextTimeoutEnabled = true
 	redisClient := redis.NewClient(redisOptions)
 	defer func() { _ = redisClient.Close() }()
 	if err := redisClient.Ping(ctx).Err(); err != nil {
