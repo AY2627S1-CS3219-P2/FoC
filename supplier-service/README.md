@@ -48,7 +48,8 @@ docker compose up supplier-service supplier-db
 |---|---|
 | An id that is not a UUID (`GET`, `PUT` or `DELETE /suppliers/not-a-uuid`) | 404 `supplier not found`, the same as an unknown id; order-service is not asked |
 | An upper-case id | the same supplier as the lower-case one |
-| `POST` or `PUT` body over 64 KiB | 413 `request body too large`; nothing is saved |
+| `POST` or `PUT` body over 64 KiB, padding after the JSON included | 413 `request body too large`; nothing is saved |
+| `POST` or `PUT` body that is not exactly one JSON value (trailing data after it) | 400 `invalid JSON body` |
 | Two creates, or a create and an update, landing on the same name, building and location at once | one succeeds and the other gets 409 |
 | `PUT` of a supplier that was deleted a moment earlier | 404; nothing is saved |
 

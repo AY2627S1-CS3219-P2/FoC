@@ -8,6 +8,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	// AI-generated (edited by James Teo).
 	"log"
 	"net/http"
@@ -111,17 +112,26 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// decodeBody reads the request body into dst through a 64 KiB cap. A body over
-// the cap is 413 and one that is not valid JSON is 400; either way it writes the
-// answer and reports false.
+// decodeBody reads the whole request body, through a 64 KiB cap, and then
+// unmarshals it into dst. A body over the cap is 413 and one that is not a
+// single valid JSON value is 400; either way it writes the answer and reports
+// false.
+//
+// The body is read in full before it is parsed: json.Decoder stops after the
+// first value, so a valid supplier followed by 70 KiB of whitespace would
+// otherwise be saved without the cap ever being reached.
 func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
-	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err != nil {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
 			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
 			return false
 		}
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON body")
 		return false
 	}

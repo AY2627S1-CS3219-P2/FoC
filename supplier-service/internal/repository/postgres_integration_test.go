@@ -58,9 +58,49 @@ func TestRepositoryOverPostgres(t *testing.T) {
 	svc := supplier.NewService(repo, noErrands{})
 	ctx := context.Background()
 
-	t.Run("ten concurrent identical creates give one success and nine duplicates", func(t *testing.T) {
-		// Each create passes ExistsDuplicate before any has inserted, so the
-		// unique index is what refuses the rest.
+	t.Run("ten concurrent inserts of one supplier give one success and nine ErrDuplicate", func(t *testing.T) {
+		// Straight to repo.Create with distinct ids, skipping the service's
+		// ExistsDuplicate pre-check, so every losing insert is refused by the
+		// unique index whatever the scheduling. Through the service, a slow
+		// racer could be turned away by the pre-check and the mapping from the
+		// database's error would go untested.
+		const n = 10
+		results := make(chan error, n)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				s := stall("Constraint Stall")
+				s.ID = uuid.NewString()
+				s.CreatedAt, s.UpdatedAt = time.Now().UTC(), time.Now().UTC()
+				<-start
+				results <- repo.Create(ctx, s)
+			}()
+		}
+		close(start)
+		wg.Wait()
+		close(results)
+
+		var created, duplicates int
+		for err := range results {
+			switch {
+			case err == nil:
+				created++
+			case errors.Is(err, supplier.ErrDuplicate):
+				duplicates++
+			default:
+				t.Errorf("a losing insert must be ErrDuplicate, got %v", err)
+			}
+		}
+		assert.Equal(t, 1, created)
+		assert.Equal(t, n-1, duplicates)
+	})
+
+	t.Run("ten concurrent identical creates through the service give one success and nine duplicates", func(t *testing.T) {
+		// Whether a loser is stopped by the pre-check or by the unique index,
+		// the caller sees ErrDuplicate.
 		const n = 10
 		results := make(chan error, n)
 		start := make(chan struct{})

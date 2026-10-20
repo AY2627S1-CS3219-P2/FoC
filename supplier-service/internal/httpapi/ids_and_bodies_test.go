@@ -138,6 +138,32 @@ func TestABodyOverTheCapIs413(t *testing.T) {
 	}
 }
 
+func TestAValidBodyFollowedByHugeWhitespaceIs413(t *testing.T) {
+	// A decoder that stops after the first JSON value would save this supplier
+	// and answer 201 or 200: the padding after it would never be read.
+	padded := validBody + "}" + strings.Repeat(" ", 70<<10)
+	for _, m := range []struct{ method, path string }{
+		{http.MethodPost, "/suppliers"},
+		{http.MethodPut, "/suppliers/" + storedID},
+	} {
+		t.Run(m.method, func(t *testing.T) {
+			repo := newStubRepository()
+
+			rec, _ := send(t, repo, m.method, m.path, padded)
+
+			assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code, rec.Body.String())
+			assert.JSONEq(t, `{"error":"request body too large"}`, rec.Body.String())
+			assert.Zero(t, repo.writes, "nothing is saved")
+		})
+	}
+}
+
+func TestSmallTrailingWhitespaceIsFine(t *testing.T) {
+	rec, _ := send(t, newStubRepository(), http.MethodPost, "/suppliers", validBody+"}\n  \n")
+
+	assert.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+}
+
 func TestABodyUnderTheCapStillWorks(t *testing.T) {
 	// 60 KiB of description is over any real supplier but under the cap.
 	body := validBody + `,"description":"` + strings.Repeat("x", 60<<10) + `"}`
@@ -148,7 +174,7 @@ func TestABodyUnderTheCapStillWorks(t *testing.T) {
 }
 
 func TestAnInvalidBodyIsStill400(t *testing.T) {
-	for _, body := range []string{"", "{", "not json", `{"name": 3}`} {
+	for _, body := range []string{"", "{", "not json", `{"name": 3}`, validBody + "}garbage", validBody + "}" + validBody + "}"} {
 		rec, _ := send(t, newStubRepository(), http.MethodPost, "/suppliers", body)
 		assert.Equal(t, http.StatusBadRequest, rec.Code, "body %q", body)
 		assert.JSONEq(t, `{"error":"invalid JSON body"}`, rec.Body.String())
