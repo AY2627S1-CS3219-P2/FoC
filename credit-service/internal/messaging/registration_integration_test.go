@@ -196,10 +196,10 @@ func declareRegistrationTopology(amqpURL string) error {
 	if err := ch.ExchangeDeclare("foc.events", "topic", true, false, false, false, nil); err != nil {
 		return err
 	}
-	if _, err := ch.QueueDeclare(registrationQueue, true, false, false, false, nil); err != nil {
+	if _, err := ch.QueueDeclare(RegistrationQueue, true, false, false, false, nil); err != nil {
 		return err
 	}
-	return ch.QueueBind(registrationQueue, "user.registered", "foc.events", false, nil)
+	return ch.QueueBind(RegistrationQueue, "user.registered", "foc.events", false, nil)
 }
 
 func publishUserRegistered(amqpURL string, body []byte) error {
