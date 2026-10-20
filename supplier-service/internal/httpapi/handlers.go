@@ -1,3 +1,9 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: Delete forwards the token authenticate verified to order-service,
+//   instead of copying the raw Authorization header.
+// Author review: PENDING — <reviewer to complete>
+
 package httpapi
 
 import (
@@ -9,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"foc/supplier-service/internal/auth"
 	// AI-generated (edited by James Teo).
 	"foc/supplier-service/internal/orderclient"
 	"foc/supplier-service/internal/supplier"
@@ -94,9 +101,12 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 // why this is a soft delete.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	// order-service answers the errand check only for an ADMIN's token, so
-	// the admin's own Authorization header goes along with it.
-	ctx := orderclient.WithToken(r.Context(), r.Header.Get("Authorization"))
+	// order-service answers the errand check only for an ADMIN's token, so the
+	// token authenticate verified goes along with it.
+	ctx := r.Context()
+	if token, ok := auth.TokenFromContext(ctx); ok {
+		ctx = orderclient.WithToken(ctx, "Bearer "+token)
+	}
 	err := h.svc.Delete(ctx, id)
 	if handleServiceError(w, err) {
 		return

@@ -5,6 +5,13 @@
 //   order-service: 409, 204, 500, 404, the role check's 403, and the admin's
 //   token reaching order-service.
 // Author review: James Teo — reviewed and verified.
+//
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: The delete cases now send signed tokens through the real verifier
+//   instead of an X-User-Role header, plus a student and an anonymous caller
+//   forging that header (403 and 401, order-service not asked).
+// Author review: PENDING — <reviewer to complete>
 
 package httpapi_test
 
@@ -124,9 +131,16 @@ func activeErrands(n int) string {
 }
 
 func TestDelete_AsksOrderServiceBeforeDeleting(t *testing.T) {
-	type caller struct{ role, authorization string }
-	admin := caller{role: "ADMIN", authorization: "Bearer admin-token"}
-	student := caller{role: "STUDENT", authorization: "Bearer student-token"}
+	// forged are headers a client invented; none of them may matter.
+	type caller struct {
+		authorization string
+		forged        map[string]string
+	}
+	forgedAdmin := map[string]string{"X-User-Role": "ADMIN", "X-User-Id": "11111111-1111-4111-8111-111111111111"}
+	admin := caller{authorization: "Bearer " + mintToken(t, tokenSpec{role: "ADMIN"})}
+	student := caller{authorization: "Bearer " + mintToken(t, tokenSpec{role: "STUDENT"})}
+	forgedByStudent := caller{authorization: student.authorization, forged: forgedAdmin}
+	anonymous := caller{forged: forgedAdmin}
 
 	tests := []struct {
 		name   string
@@ -209,6 +223,24 @@ func TestDelete_AsksOrderServiceBeforeDeleting(t *testing.T) {
 			wantStatus:  http.StatusForbidden,
 			wantBody:    `{"error":"admin role required"}`,
 		},
+		{
+			name:        "a student forging X-User-Role: ADMIN: 403 without asking order-service",
+			id:          storedID,
+			caller:      forgedByStudent,
+			orderStatus: http.StatusOK,
+			orderBody:   activeErrands(0),
+			wantStatus:  http.StatusForbidden,
+			wantBody:    `{"error":"admin role required"}`,
+		},
+		{
+			name:        "no token, forged headers: 401 without asking order-service",
+			id:          storedID,
+			caller:      anonymous,
+			orderStatus: http.StatusOK,
+			orderBody:   activeErrands(0),
+			wantStatus:  http.StatusUnauthorized,
+			wantBody:    `{"error":"missing, invalid or expired access token"}`,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -217,11 +249,16 @@ func TestDelete_AsksOrderServiceBeforeDeleting(t *testing.T) {
 			if tc.orderDown {
 				srv.Close() // its port now refuses connections at once
 			}
-			router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)))
+			router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)),
+				startKeySet(t, http.StatusOK), &fakeRevocations{})
 
 			req := httptest.NewRequest(http.MethodDelete, "/suppliers/"+tc.id, nil)
-			req.Header.Set("Authorization", tc.caller.authorization)
-			req.Header.Set("X-User-Role", tc.caller.role)
+			if tc.caller.authorization != "" {
+				req.Header.Set("Authorization", tc.caller.authorization)
+			}
+			for k, v := range tc.caller.forged {
+				req.Header.Set(k, v)
+			}
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
