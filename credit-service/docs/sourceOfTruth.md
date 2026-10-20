@@ -101,11 +101,9 @@ The finished service will support the following behavior:
   or amount details are rejected. After reservation success, Order Service must
   stop issuing creation requests for that errand.
 - **Reward adjustment:** while Order Service permits an errand to be edited, it
-  can synchronously request a change from the reservation's stated
-  `currentAmount` to a `newAmount`. Credit Service checks that the stated amount
-  matches its stored reservation, reserves an increase or releases a decrease,
-  updates the same reservation row, and appends the changes to the ledger. A
-  mismatch reports Credit Service's current amount without changing balances.
+  can synchronously request an adjustment of the held reward. The request specifies the target reward (`newReward`), and Credit
+  Service adjusts the held balance by computing the delta against the currently
+  stored reservation.
 - **Cancellation, expiry, or terminal failure:** after receiving one of these
   lifecycle outcomes through RabbitMQ, Credit Service returns the reservation's
   current stored amount from reserved to available and marks the reservation
@@ -570,14 +568,17 @@ They require the user's bearer token and are reachable through the API Gateway.
 
 Internal Order Service commands will use private-network REST routes:
 
-- `POST /internal/v1/credit-reservations`
-- `PATCH /internal/v1/credit-reservations/{errandId}`
+- `POST /api/v1/credits/reservations` (aliased as `/internal/v1/credit-reservations`)
+- `PATCH /api/v1/credits/reservations/{errandId}` (aliased as `/internal/v1/credit-reservations/{errandId}`)
 
-The API Gateway will not proxy `/internal/*`. For the current project these
-routes trust the private service network, as already decided. They must never be
-published with a host port or added to the gateway route table. A future service
-identity mechanism can strengthen this boundary without changing the domain
-operations.
+The API Gateway explicitly blocks public browser access to any `/api/credits/reservations`
+route (returning 404), ensuring that reservation creation and adjustment can only
+be invoked internally over the Docker network.
+For caller identification, Order Service forwards the requester's access token in the
+`Authorization: Bearer <jwt>` header and passes the request correlation ID in
+`X-Request-Id`. Credit Service extracts `requesterId` from the JWT `sub` claim if
+omitted from the request body, and uses `X-Request-Id` as the ledger `operationId`
+if omitted from the body.
 
 Private routing is not caller authentication: version 1 does not prove that a
 caller of these routes is Order Service. This is an accepted version-one
@@ -769,8 +770,8 @@ is generated and tested against the decisions actually made.
 
 1. Change reservation creation from the public route to the private internal
    route and require `requesterId`, `amount`, and `errandId`.
-2. Change reward adjustment to the private route and require `currentAmount`,
-   `newAmount`, and `operationId`.
+2. Mount `/api/v1/credits/reservations` routes and specify the target-state reward
+   adjustment schema (`newReward` + `X-Request-Id`).
 3. Keep user account and transaction-history reads under the public bearer-token
    routes. In OpenAPI, explicitly retain bearer security on those operations and
    set `security: []` on each private reservation command so it does not inherit
@@ -1255,30 +1256,48 @@ table above rather than choosing statuses independently.
 
 ### Phase 5: implement reward adjustment
 
+Reward adjustment accepts `{"newReward": <int>}` with the caller's request
+correlation ID in `X-Request-Id`.
+
+#### Why Caller Compare-and-Swap (CAS) is Not Needed
+In this architecture, caller-level CAS is not needed for the following reasons:
+1. **Single-Writer Authority:** Only the student who created the errand can amend
+   its reward. Couriers and other users cannot alter errand rewards.
+2. **Upstream Serialization:** Order Service owns the errand aggregate and enforces
+   optimistic concurrency control on the order row (`cur.Version != in.Version`)
+   under an exclusive database lock during amendment. Order Service guarantees that
+   two concurrent edit requests cannot both succeed for the same errand.
+3. **Database Concurrency in Credit Service:** Credit Service takes an exclusive
+   row lock (`SELECT ... FOR UPDATE`) on the reservation row for `errandId` during
+   adjustment.
+4. **Deterministic Delta:** Credit Service reads the authoritative current amount
+   from the locked reservation row, calculates $\Delta = \text{newReward} - \text{currentStoredAmount}$,
+   and moves the difference atomically between `available` and `reserved`.
+
 Reward adjustment executes this transaction:
 
-1. Acquire a transaction-scoped PostgreSQL advisory lock derived from the
+1. Determine `operationId`: parse the incoming `X-Request-Id` header (or generate
+   a UUID if omitted).
+2. Acquire a transaction-scoped PostgreSQL advisory lock derived from the
    `operationId`. A hash collision may cause harmless extra waiting but cannot
    merge operations. Every adjustment path takes this lock before reading or
    mutating financial state.
-2. Look up `operationId`. Compare the stored `errandId`, `currentAmount`, and
-   `newAmount` directly; return the stored result for an identical retry and an
-   idempotency conflict if any value differs.
-3. Lock the reservation by `errandId`.
-4. Require reservation status `RESERVED`.
-5. Compare the stored amount with `currentAmount`; on mismatch persist the
-   typed failure containing the stored amount and return it without changing
-   balances.
-6. If `currentAmount == newAmount`, persist the successful operation result and
+3. Look up `operationId` in `credit_operation_results`. Return the stored result for
+   an identical retry, or an idempotency conflict if parameters differ.
+4. Lock the reservation by `errandId` (`SELECT ... FOR UPDATE`).
+5. Require reservation status `RESERVED`. If already in terminal status (`PAID_OUT`
+   or `REFUNDED`), reject with `409 Conflict: RESERVATION_STATE_CONFLICT`.
+6. Read the currently stored amount: `currentAmount = storedAmount`, `newAmount = newReward`.
+7. If `currentAmount == newAmount`, persist the successful operation result and
    return the unchanged reservation as `200 OK`.
-7. Otherwise, lock and verify the requester account.
-8. For an increase, conditionally move the positive difference from available
+8. Otherwise, lock and verify the requester account.
+9. For an increase, conditionally move the positive difference from available
    to reserved.
-9. For a decrease, move the difference from reserved to available.
-10. Update the same reservation row's amount and `updated_at`; do not insert a
-   second reservation.
-11. Append two new ledger entries under `operationId`.
-12. Persist the successful operation result and commit. Any deterministic
+10. For a decrease, move the difference from reserved to available.
+11. Update the same reservation row's amount and `updated_at`; do not insert a
+    second reservation.
+12. Append two new ledger entries under `operationId`.
+13. Persist the successful operation result and commit. Any deterministic
     failure reached after step 2 is likewise persisted before it is returned.
 
 The advisory lock closes the concurrent-new-operation race: a second request
