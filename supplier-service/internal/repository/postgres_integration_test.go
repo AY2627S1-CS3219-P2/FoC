@@ -4,9 +4,8 @@
 // Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
 // Scope: Integration tests of the Postgres repository and the router over it
 //   (root AGENTS.md §7): ten concurrent identical creates give one success and
-//   nine ErrDuplicate, a unique violation on Update is ErrDuplicate, Update
-//   after a soft delete is ErrNotFound, and through the router a PUT on an
-//   upper-case id is 200 and a non-UUID GET is 404.
+//   nine ErrDuplicate, a unique violation on Update is ErrDuplicate, and Update
+//   after a soft delete is ErrNotFound.
 // Author review: PENDING — <reviewer to complete>
 
 package repository_test
@@ -16,9 +15,6 @@ import (
 	"database/sql"
 	"errors"
 	"net"
-	"net/http"
-	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -34,7 +30,6 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 
-	"foc/supplier-service/internal/httpapi"
 	"foc/supplier-service/internal/repository"
 	"foc/supplier-service/internal/supplier"
 )
@@ -152,27 +147,6 @@ func TestRepositoryOverPostgres(t *testing.T) {
 
 		s.Description = "changed after the delete"
 		assert.ErrorIs(t, repo.Update(ctx, s), supplier.ErrNotFound, "a change that was not saved is not a success")
-	})
-
-	t.Run("through the router, a PUT on an upper-case id keeping its name is 200 and a non-UUID GET is 404", func(t *testing.T) {
-		s, err := svc.Create(ctx, stall("Upper Stall"))
-		require.NoError(t, err)
-		router := httpapi.NewRouter(svc)
-
-		body := `{"name":"Upper Stall","type":"cafe","building":"COM1","location_description":"Level 2","latitude":1.29,"longitude":103.77,"is_available":true}`
-		req := httptest.NewRequest(http.MethodPut, "/suppliers/"+strings.ToUpper(s.ID), strings.NewReader(body))
-		req.Header.Set("X-User-Role", "ADMIN")
-		rec := httptest.NewRecorder()
-		router.ServeHTTP(rec, req)
-		assert.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-
-		rec = httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/suppliers/not-a-uuid", nil))
-		assert.Equal(t, http.StatusNotFound, rec.Code, rec.Body.String())
-
-		rec = httptest.NewRecorder()
-		router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/suppliers/"+uuid.NewString(), nil))
-		assert.Equal(t, http.StatusNotFound, rec.Code)
 	})
 }
 

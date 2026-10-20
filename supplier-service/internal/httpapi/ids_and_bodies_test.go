@@ -78,15 +78,15 @@ func (m *stubRepository) Count(context.Context) (int, error) { return len(m.byID
 
 const validBody = `{"name":"Test Stall","type":"cafe","building":"COM1","location_description":"Level 2","latitude":1.29,"longitude":103.77`
 
-// send serves one admin request through a router over repo and a fake
-// order-service, and returns the response and what order-service was asked.
+// send serves one request as an admin with a signed token, through a router
+// over repo and a fake order-service, and returns the response and what order-service was asked.
 func send(t *testing.T, repo *stubRepository, method, path, body string) (*httptest.ResponseRecorder, []seenRequest) {
 	t.Helper()
 	orders, srv := startOrderService(t, http.StatusOK, activeErrands(0))
-	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)))
+	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)),
+		startKeySet(t, http.StatusOK), &fakeRevocations{})
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	req.Header.Set("X-User-Role", "ADMIN")
-	req.Header.Set("Authorization", "Bearer admin-token")
+	req.Header.Set("Authorization", "Bearer "+mintToken(t, tokenSpec{}))
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	return rec, orders.requests()
