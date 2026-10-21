@@ -4,7 +4,14 @@
 // Author review: Nigeltzy - AI built this implementation for testing based on my requirements. Seems valid as a test.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { clearLastView, readLastView, writeLastView } from "./lastView";
+// AI-generated (edited by James Teo): the acting-mode functions too.
+import {
+  clearLastView,
+  readLastMode,
+  readLastView,
+  writeLastMode,
+  writeLastView,
+} from "./lastView";
 
 /**
  * An in-memory stand-in for sessionStorage. These tests run in vitest's node
@@ -65,5 +72,63 @@ describe("lastView", () => {
     expect(readLastView()).toBeNull();
     expect(() => writeLastView("suppliers")).not.toThrow();
     expect(() => clearLastView()).not.toThrow();
+  });
+});
+
+// AI-generated (edited by James Teo): the remembered acting mode.
+describe("lastMode", () => {
+  beforeEach(() => {
+    vi.unstubAllGlobals();
+    vi.stubGlobal("sessionStorage", fakeStorage());
+  });
+
+  it("round-trips each acting mode", () => {
+    writeLastMode("delivering");
+    expect(readLastMode()).toBe("delivering");
+    writeLastMode("requesting");
+    expect(readLastMode()).toBe("requesting");
+  });
+
+  it("returns null when nothing is stored", () => {
+    expect(readLastMode()).toBeNull();
+  });
+
+  it("rejects a value that is not an acting mode", () => {
+    sessionStorage.setItem("foc.actingMode", "courier");
+    expect(readLastMode()).toBeNull();
+  });
+
+  it("is kept apart from the view", () => {
+    writeLastView("find-errands");
+    writeLastMode("delivering");
+    expect(readLastView()).toBe("find-errands");
+    expect(readLastMode()).toBe("delivering");
+  });
+
+  it("is forgotten together with the view", () => {
+    // Logout, a password change and an expired session all clear both, so
+    // the next account on this tab starts at Home in Requesting mode.
+    writeLastView("find-errands");
+    writeLastMode("delivering");
+    clearLastView();
+    expect(readLastView()).toBeNull();
+    expect(readLastMode()).toBeNull();
+  });
+
+  it("survives storage being unavailable", () => {
+    vi.stubGlobal("sessionStorage", {
+      getItem() {
+        throw new DOMException("denied");
+      },
+      setItem() {
+        throw new DOMException("denied");
+      },
+      removeItem() {
+        throw new DOMException("denied");
+      },
+    });
+
+    expect(readLastMode()).toBeNull();
+    expect(() => writeLastMode("delivering")).not.toThrow();
   });
 });

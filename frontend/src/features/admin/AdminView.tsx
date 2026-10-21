@@ -6,8 +6,9 @@
 // Author review: nigeltzy - Checked that the component was generated and 
 // updated according to the format and requirements that were previously discussed and set.
 
-// AI-generated (edited by James Teo): useEffect, useRef, UsersApiError and
-// AccountStatus, for the suspend and reactivate control.
+// AI-generated (edited by James Teo): useEffect, for an account handed over
+// from an errand's detail; useRef, UsersApiError and AccountStatus, for the
+// suspend and reactivate control.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { MockBadge } from "../../components/MockBadge";
 import { Modal } from "../../components/Modal";
@@ -19,12 +20,21 @@ import {
   type UserProfile,
   type UsersApi,
 } from "../profile/usersApi";
+// AI-generated (edited by James Teo): the app's date format.
+import { formatDateTime } from "../errands/time";
 
 interface AdminViewProps {
   /** Null in a fixture build, which has no user-service to call. */
   usersApi: UsersApi | null;
   /** The signed-in admin's own ID, so the reset is not offered on it. */
   currentUserId: string;
+  // AI-generated (edited by James Teo).
+  /**
+   * An account ID handed over from an errand's detail (Look up account),
+   * filled in and looked up as the screen opens. App remounts this view for
+   * each hand-over.
+   */
+  initialAccountId?: string | null;
   onNotify: (message: ToastMessage) => void;
 }
 
@@ -37,8 +47,14 @@ interface AdminViewProps {
  * Lookup is by account ID because that is the only key user-service's API
  * offers: it has no endpoint to list or search users.
  */
-export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps) {
-  const [query, setQuery] = useState("");
+// AI-generated (edited by James Teo): initialAccountId.
+export function AdminView({
+  usersApi,
+  currentUserId,
+  initialAccountId,
+  onNotify,
+}: AdminViewProps) {
+  const [query, setQuery] = useState(initialAccountId ?? "");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -66,6 +82,13 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
     confirmButtonRef.current?.focus();
   }, [changingStatus]);
 
+  // AI-generated (edited by James Teo): a handed-over account is looked up once,
+  // as the screen opens.
+  useEffect(() => {
+    if (usersApi && initialAccountId) void findAccount(usersApi, initialAccountId.trim());
+    // Once per mount, by design: App remounts this view for each hand-over.
+  }, []);
+
   if (!usersApi) {
     return (
       <section>
@@ -79,9 +102,14 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
   }
   const api = usersApi;
 
+  // AI-generated (edited by James Teo): the lookup itself moved into
+  // findAccount, which the hand-over from an errand's detail also uses.
   async function lookUp(e: FormEvent) {
     e.preventDefault();
-    const uid = query.trim();
+    await findAccount(api, query.trim());
+  }
+
+  async function findAccount(client: UsersApi, uid: string) {
     // UX only: user-service answers 404 to anything that is not a UUID.
     if (!UUID_PATTERN.test(uid)) {
       setError("Enter a full account ID, like 3f2b8c1e-…, as shown on that user's Profile.");
@@ -95,7 +123,7 @@ export function AdminView({ usersApi, currentUserId, onNotify }: AdminViewProps)
     setConfirmingStatus(false);
     setStatusError(null);
     try {
-      setProfile(await api.getUser(uid));
+      setProfile(await client.getUser(uid));
     } catch (err) {
       setError(err instanceof Error ? err.message : "The lookup failed. Try again.");
     } finally {
@@ -327,12 +355,10 @@ const STATUS_ACTIONS: Partial<Record<StatusControl, StatusAction>> = {
     buttonClass: "btn-danger",
     confirmBoxClass: "confirm-box",
     verb: "Suspend",
-    // What user-service does today: login and refresh are refused, but an
-    // access token already issued works until it expires. That lifetime is
-    // user-service's JWT_ACCESS_TOKEN_TTL setting, so the wording names no
-    // time that could stop matching it.
+    // The gateway refuses a suspended account's token on its next request, so
+    // the student is signed out then, not when the token expires.
     consequence:
-      "They can't sign in again until you reactivate them, and their current session ends when it next refreshes. Their errands don't change.",
+      "They can't sign in again until you reactivate them, and they're signed out at their next action. Their errands don't change.",
     confirmLabel: "Yes, suspend",
     busyLabel: "Suspending…",
     run: (api, uid) => api.suspendUser(uid),
@@ -373,24 +399,15 @@ function Row({ label, value }: { label: string; value?: string }) {
   );
 }
 
-// AI-generated (edited by James Teo): the Credits screen's date format instead
-// of the browser's locale string.
+// AI-generated (edited by James Teo): "18 Oct, 20:37", the errand screens'
+// format, instead of the browser's locale string.
 /**
  * A date and time as "18 Oct, 20:37", in the device's time zone unless
  * `timeZone` names one. An unreadable date is shown as sent.
  */
 export function formatDate(iso?: string, timeZone?: string): string | undefined {
   if (!iso) return undefined;
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  const day = date.toLocaleDateString("en-SG", { day: "numeric", month: "short", timeZone });
-  const time = date.toLocaleTimeString("en-SG", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone,
-  });
-  return `${day}, ${time}`;
+  return formatDateTime(iso, timeZone) || iso;
 }
 
 interface ResetPasswordFormProps {

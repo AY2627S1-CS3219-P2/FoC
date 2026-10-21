@@ -59,6 +59,13 @@ interface LoginPageProps {
   resumeVerification: (email: string) => Promise<PendingRegistration>;
   /** True when the fixture client is in use; shows the mock notice. */
   isMock: boolean;
+  // AI-generated (edited by James Teo).
+  /**
+   * True when the app ended the session rather than the user logging out: a
+   * refresh failed, as when a background poll finds the session revoked. The
+   * card then says they were signed out.
+   */
+  sessionEnded?: boolean;
 }
 
 type Tab = "login" | "signup";
@@ -76,6 +83,8 @@ export function LoginPage({
   resendOtp,
   resumeVerification,
   isMock,
+  // AI-generated (edited by James Teo).
+  sessionEnded = false,
 }: LoginPageProps) {
   const [tab, setTab] = useState<Tab>("login");
   const [identifier, setIdentifier] = useState("");
@@ -85,6 +94,9 @@ export function LoginPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [suspended, setSuspended] = useState(false);
+  // AI-generated (edited by James Teo): set at the next submit or tab switch, so
+  // the signed-out notice never sits above a later login error.
+  const [signedOutSeen, setSignedOutSeen] = useState(false);
 
   // F1.1.2.7 — set once registration is open and awaiting its code. While
   // this is non-null the OTP step replaces the form entirely: there is no
@@ -114,6 +126,8 @@ export function LoginPage({
     setTab(next);
     setError(null);
     setSuspended(false);
+    // AI-generated (edited by James Teo).
+    setSignedOutSeen(true);
   };
 
   const submit = async (e: FormEvent) => {
@@ -121,6 +135,8 @@ export function LoginPage({
     setBusy(true);
     setError(null);
     setSuspended(false);
+    // AI-generated (edited by James Teo).
+    setSignedOutSeen(true);
     try {
       if (tab === "login") {
         onAuthenticated(await logIn(identifier, password));
@@ -205,6 +221,17 @@ export function LoginPage({
         <p className="auth-sub">Someone&rsquo;s already walking past. Ask them.</p>
 
         {isMock && <MockBadge service="user-service" />}
+
+        {/* AI-generated (edited by James Teo): why sign-in is showing when the
+            user did not log out. An alert is read out as it appears. It
+            gives no reason, so a suspended account learns that only from
+            the login error, as before. Gone once the user submits or
+            switches tab. */}
+        {sessionEnded && !signedOutSeen && (
+          <p className="status signed-out" role="alert">
+            You were signed out. Sign in again to continue.
+          </p>
+        )}
 
         <div className="tabs">
           <button

@@ -89,6 +89,11 @@ instead of every test timing out on its own.
 | `TestSuspendedStudentIsRefusedAtOnce` | a suspended student's existing token gets 401 on `GET /api/users/{uid}`, and a newly issued token works after reactivation |
 | `TestLoggedOutTokenIsRefused` | after logout, the same token gets 401 on `GET /api/users/{uid}` |
 | `TestSuspendedAccountGetsNoNewCode` | after an ADMIN suspends a student, `POST /auth/resend-otp` answers 409 and user-service logs no additional OTP for that email |
+| `TestAdminManagesASupplier` | an ADMIN creates a supplier (201), reads it back as sent, updates it (200), deletes it (204); then `GET` is 404, `GET /api/suppliers?q=` no longer lists it, and `GET /api/suppliers/not-a-uuid` is 404 |
+| `TestACreateThatLeavesOutIsAvailableIsUnavailable` | a `POST` with no `is_available` makes an unavailable supplier (D-072); the suite's other supplier bodies always send it |
+| `TestStudentCannotWriteSuppliers` | a student's create, update and delete are each 403, also with `X-User-Role: ADMIN` and `X-User-Id` forged; the admin's read shows the supplier unchanged |
+| `TestSupplierWithUnfinishedErrandIsKept` | with an unfinished errand naming the supplier, `DELETE` is 409 and the supplier is still readable; after the requester cancels, `DELETE` is 204 and the errand still carries the supplier's name (D-052) |
+| `TestLoggedOutAdminCannotWriteSuppliers` | after `POST /auth/logout`, the admin's access token, not yet expired, gets 401 on `POST /api/suppliers`, and the write created nothing |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 
@@ -96,6 +101,11 @@ instead of every test timing out on its own.
 
 - Every test registers its own students (`e2e<random>@u.nus.edu`) and runs in
   parallel with the others; no test reads another's data or depends on order.
+- The supplier tests make their own suppliers, named `e2e-<random hex>` with a
+  random location, and delete them as an admin when they finish (a 404 there is
+  fine). `availableSupplier` skips names starting `e2e-`, so an errand test never
+  picks a supplier one of them is about to delete. A failed run can leave one
+  behind; it never matches a later run's, and `docker compose down -v` wipes it.
 - Those accounts and errands stay in your local databases. Errands left
   `ACCEPTED` or `PICKED_UP` have no timer, so they stay active.
   `docker compose down -v` wipes everything.

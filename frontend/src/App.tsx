@@ -20,7 +20,8 @@
 // updates thereafter according to updating requirements and changes to other files.
 // This file is the main entry point and so I typically review it every testing cycle as well.
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+// AI-generated (edited by James Teo): useRef, for the signed-in flag below.
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AppShell } from "./components/AppShell";
 import { Toast, type ToastMessage } from "./components/Toast";
 import * as authApi from "./features/auth/authApi";
@@ -29,12 +30,27 @@ import { LoginPage } from "./features/auth/LoginPage";
 import type { ActingMode, Session } from "./features/auth/types";
 import { config } from "./lib/config";
 import { createTokenStore } from "./lib/tokens";
-import { clearLastView, readLastView, writeLastView } from "./lib/lastView";
+// AI-generated (edited by James Teo): the remembered acting mode, and polling.
+import {
+  clearLastView,
+  readLastMode,
+  readLastView,
+  writeLastMode,
+  writeLastView,
+} from "./lib/lastView";
+import { usePolling } from "./lib/polling";
 import { createAuthorizedSend } from "./features/auth/session";
 import { createSuppliersApi } from "./features/suppliers/suppliersApi";
 import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
-import * as creditsApi from "./features/credits/creditsApi";
-import { CreditsView } from "./features/credits/CreditsView";
+// AI-generated (edited by James Teo): the order-service and credit-service
+// clients replace the mocks, and NeedsService stands in for their screens in
+// a fixture build.
+import { NeedsService } from "./components/NeedsService";
+import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
+import { createOrdersApi } from "./features/errands/ordersApi";
+import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
+import { AllErrandsView } from "./features/errands/AllErrandsView";
+import { FindErrandsView } from "./features/errands/FindErrandsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
 import { HomeView } from "./features/home/HomeView";
@@ -42,7 +58,8 @@ import { ProfileView } from "./features/profile/ProfileView";
 import { createUsersApi, type UserProfile } from "./features/profile/usersApi";
 import { AdminView } from "./features/admin/AdminView";
 import { SuppliersView } from "./features/suppliers/SuppliersView";
-import type { ViewName } from "./views";
+// AI-generated (edited by James Teo): one availability rule for nav and guard.
+import { isViewAvailable, type ViewName } from "./views";
 
 /**
  * True unless the build sets VITE_USE_FIXTURES=true, in which case the auth
@@ -71,6 +88,16 @@ const authClient = usingGateway
 export function App() {
   const [session, setSession] = useState<Session | null>(null);
 
+  // AI-generated (edited by James Teo): true when the app ended the session
+  // itself, so the login page says why it is showing. onSessionExpired is
+  // made once and reads signedIn, so a refresh that fails after the user
+  // logged out or changed their password sets nothing.
+  const [sessionEnded, setSessionEnded] = useState(false);
+  const signedIn = useRef(false);
+  useEffect(() => {
+    signedIn.current = session !== null;
+  }, [session]);
+
   // True until the refresh cookie has been given its chance. Without this the
   // login page renders for a frame and then vanishes, which reads as a bug
   // even when the restore succeeds.
@@ -87,18 +114,37 @@ export function App() {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
     // AI-generated (edited by nigeltzy): and there is no user-service to edit a
     // profile in, so usersApi is null and the edit controls stay hidden.
-    if (!usingGateway) return { suppliers: createSuppliersFixture(), usersApi: null };
+    // AI-generated (edited by James Teo): nor an order-service or credit-service
+    // fixture, so those clients are null and their screens show NeedsService.
+    if (!usingGateway) {
+      return {
+        suppliers: createSuppliersFixture(),
+        usersApi: null,
+        orders: null,
+        creditAccounts: null,
+      };
+    }
     const authorizedSend = createAuthorizedSend({
       tokens,
       refresh: authApi.refreshAccessTokenViaGateway,
       onSessionExpired: () => {
         tokens.clear();
+        // AI-generated (edited by James Teo): the next account on this tab
+        // starts clean, as after a logout: no remembered view or mode, no
+        // balance, no account handed to the Admin screen.
+        clearLastView();
+        setMode("requesting");
+        setBalance({ status: "loading" });
+        setAdminLookupId(null);
+        // AI-generated (edited by James Teo): the login page says the user was
+        // signed out, unless the session had already ended another way.
+        if (signedIn.current) setSessionEnded(true);
         setSession(null);
         setView("home");
       },
@@ -106,6 +152,9 @@ export function App() {
     return {
       suppliers: createSuppliersApi(authorizedSend),
       usersApi: createUsersApi(authorizedSend),
+      // AI-generated (edited by James Teo).
+      orders: createOrdersApi(authorizedSend),
+      creditAccounts: createCreditAccountsApi(authorizedSend),
     };
   }, [tokens]);
 
@@ -113,13 +162,22 @@ export function App() {
   // Home. Read once, at initial state: doing it in an effect would render Home
   // first and then jump.
   const [view, setView] = useState<ViewName>(() => readLastView() ?? "home");
-  const [mode, setMode] = useState<ActingMode>("requesting");
+  // AI-generated (edited by James Teo): the acting mode is restored the same
+  // way, so a reload on a courier screen stays in Delivering mode.
+  const [mode, setMode] = useState<ActingMode>(() => readLastMode() ?? "requesting");
   const [toast, setToast] = useState<ToastMessage | null>(null);
 
   // Balance lives here because the sidebar, the top bar and NewErrandView all
-  // show it. It comes from the credit-service fixture (creditsApi.ts).
-  const [available, setAvailable] = useState<number | null>(null);
-  const [held, setHeld] = useState<number | null>(null);
+  // show it.
+  // AI-generated (edited by James Teo): it comes from credit-service
+  // (creditAccountsApi.ts), and the Credits screen shows this same copy. The
+  // shell shows "—" unless it is "ready": while loading, with no account yet,
+  // when credit-service fails, for an admin and in a fixture build.
+  const [balance, setBalance] = useState<Balance>({ status: "loading" });
+
+  // AI-generated (edited by James Teo): an account ID handed from an errand's
+  // detail to the Admin screen, which looks it up on opening.
+  const [adminLookupId, setAdminLookupId] = useState<string | null>(null);
 
   /**
    * A reload drops the in-memory access token but keeps the HttpOnly refresh
@@ -152,18 +210,32 @@ export function App() {
     if (session) writeLastView(view);
   }, [session, view]);
 
+  // AI-generated (edited by James Teo).
   useEffect(() => {
-    if (!session) return;
-    let cancelled = false;
-    creditsApi.getBalance().then((balance) => {
-      if (cancelled) return;
-      setAvailable(balance.available);
-      setHeld(balance.held);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [session]);
+    if (session) writeLastMode(mode);
+  }, [session, mode]);
+
+  // AI-generated (edited by James Teo): credit-service's accounts/me, polled
+  // every 10 s for a STUDENT session while the tab is visible, and refreshed
+  // at once after the user's own errand actions. An ADMIN session has no
+  // credit account and polls nothing. "No account yet" keeps polling, so a
+  // new student's account appears without a reload.
+  const refreshBalance = usePolling(
+    session?.role === "STUDENT" && creditAccounts
+      ? async (isActive) => {
+          try {
+            const account = await creditAccounts.getAccount();
+            if (!isActive()) return;
+            setBalance(account ? { status: "ready", account } : { status: "none" });
+          } catch (err) {
+            if (isActive()) setBalance({ status: "unavailable" });
+            throw err;
+          }
+        }
+      : null,
+    10_000,
+    [creditAccounts, session?.userId],
+  );
 
   const dismissToast = useCallback(() => setToast(null), []);
 
@@ -171,6 +243,8 @@ export function App() {
     (result: AuthResult) => {
       // The access token goes to the store; only the profile reaches component state.
       tokens.setPair(result.tokens);
+      // AI-generated (edited by James Teo).
+      setSessionEnded(false);
       setSession(result.session);
     },
     [tokens],
@@ -188,6 +262,14 @@ export function App() {
     await authClient.logOut(tokens.getAccessToken());
     tokens.clear();
     clearLastView();
+    // AI-generated (edited by James Teo): nothing of this session's carries
+    // over to the next sign-in on this tab. The user logged out, so the
+    // login page has nothing to explain, even if a poll's refresh failed
+    // while the logout was on its way.
+    setMode("requesting");
+    setBalance({ status: "loading" });
+    setAdminLookupId(null);
+    setSessionEnded(false);
     setSession(null);
     setView("home");
   }, [tokens]);
@@ -220,6 +302,12 @@ export function App() {
   const handlePasswordChanged = useCallback(() => {
     tokens.clear();
     clearLastView();
+    // AI-generated (edited by James Teo): the toast below says why; a poll whose
+    // refresh failed during the change must not add "signed out" to it.
+    setMode("requesting");
+    setBalance({ status: "loading" });
+    setAdminLookupId(null);
+    setSessionEnded(false);
     setSession(null);
     setView("home");
     setToast({ text: "Password changed. Log in with your new password.", kind: "success" });
@@ -240,6 +328,8 @@ export function App() {
           resendOtp={authClient.resendOtp}
           resumeVerification={authClient.resumeVerification}
           isMock={!usingGateway}
+          // AI-generated (edited by James Teo).
+          sessionEnded={sessionEnded}
         />
         {/* AI-generated (edited by nigeltzy): carries the password-changed
             notice onto the login page. */}
@@ -251,33 +341,120 @@ export function App() {
   // AI-generated (edited by nigeltzy).
   // A remembered "admin" view can outlive the account's ADMIN role, so a
   // non-admin session falls back to Home rather than rendering it.
-  const shownView: ViewName = view === "admin" && session.role !== "ADMIN" ? "home" : view;
+  // AI-generated (edited by James Teo): widened to every view the session's
+  // role and mode do not offer, by the rule the nav uses.
+  const role = session.role;
+  const shownView: ViewName = isViewAvailable(view, role, mode) ? view : "home";
+  const { available, held } = balanceFigures(balance);
+
+  // AI-generated (edited by James Teo): navigation, mode and the hand-over to
+  // the Admin screen.
+  /** A nav or in-page link: an account handed to the Admin screen is dropped. */
+  const navigate = (next: ViewName) => {
+    setAdminLookupId(null);
+    setView(next);
+  };
+
+  /** Switching to a mode that does not offer the current view lands on Home. */
+  const changeMode = (next: ActingMode) => {
+    setMode(next);
+    if (!isViewAvailable(view, role, next)) setView("home");
+  };
+
+  /** From an errand's detail: the Admin screen, with that account looked up. */
+  const lookUpAccount = (uid: string) => {
+    setAdminLookupId(uid);
+    setView("admin");
+  };
+
+  /** After a post: the held credits show at once, then the new errand. */
+  const handlePosted = () => {
+    refreshBalance();
+    navigate("my-errands");
+  };
 
   return (
     <>
+      {/* AI-generated (edited by James Teo): navigate, changeMode and the
+          balance's figures. */}
       <AppShell
         session={session}
         view={shownView}
-        onNavigate={setView}
+        onNavigate={navigate}
         mode={mode}
-        onModeChange={setMode}
+        onModeChange={changeMode}
         available={available}
         held={held}
         onLogOut={handleLogOut}
       >
-        {shownView === "home" && <HomeView mode={mode} onNavigate={setView} />}
+        {/* AI-generated (edited by James Teo): Home's shortcuts follow the role. */}
+        {shownView === "home" && <HomeView mode={mode} role={role} onNavigate={navigate} />}
 
-        {shownView === "new-errand" && (
-          <NewErrandView
-            suppliersApi={suppliers}
-            suppliersMock={!usingGateway}
-            available={available ?? 0}
-            onNotify={setToast}
-            onPosted={() => setView("my-errands")}
-          />
-        )}
+        {/* AI-generated (edited by James Teo): the errand and credit screens
+            get their clients, or NeedsService when the build has none. My
+            errands remounts on a mode switch, so it starts on Active with
+            nothing of the other mode's left open. */}
+        {shownView === "new-errand" &&
+          (orders ? (
+            <NewErrandView
+              suppliersApi={suppliers}
+              ordersApi={orders}
+              available={available}
+              onNotify={setToast}
+              onPosted={handlePosted}
+              onCancel={() => navigate("my-errands")}
+              onOpenCredits={() => navigate("credits")}
+            />
+          ) : (
+            <NeedsService title="Post an errand" service="order-service" />
+          ))}
 
-        {shownView === "my-errands" && <MyErrandsView mode={mode} />}
+        {shownView === "find-errands" &&
+          (orders ? (
+            <FindErrandsView
+              ordersApi={orders}
+              suppliersApi={suppliers}
+              usersApi={usersApi}
+              userId={session.userId}
+              available={available}
+              onNotify={setToast}
+              onCreditsChanged={refreshBalance}
+            />
+          ) : (
+            <NeedsService title="Find errands" service="order-service" />
+          ))}
+
+        {shownView === "my-errands" &&
+          (orders ? (
+            <MyErrandsView
+              key={mode}
+              mode={mode}
+              ordersApi={orders}
+              suppliersApi={suppliers}
+              usersApi={usersApi}
+              userId={session.userId}
+              available={available}
+              onNotify={setToast}
+              onCreditsChanged={refreshBalance}
+              onNavigate={navigate}
+            />
+          ) : (
+            <NeedsService title="My errands" service="order-service" />
+          ))}
+
+        {shownView === "all-errands" &&
+          (orders ? (
+            <AllErrandsView
+              ordersApi={orders}
+              suppliersApi={suppliers}
+              usersApi={usersApi}
+              userId={session.userId}
+              onNotify={setToast}
+              onLookUpAccount={lookUpAccount}
+            />
+          ) : (
+            <NeedsService title="All errands" service="order-service" />
+          ))}
 
         {shownView === "suppliers" && (
           <SuppliersView
@@ -288,7 +465,14 @@ export function App() {
           />
         )}
 
-        {shownView === "credits" && <CreditsView />}
+        {/* AI-generated (edited by James Teo): Credits shows App's balance,
+            so it and the shell always agree. */}
+        {shownView === "credits" &&
+          (creditAccounts ? (
+            <CreditsView api={creditAccounts} balance={balance} onRetryBalance={refreshBalance} />
+          ) : (
+            <NeedsService title="Credits" service="credit-service" />
+          ))}
 
         {shownView === "profile" && (
           <ProfileView
@@ -299,14 +483,22 @@ export function App() {
             onPasswordChanged={handlePasswordChanged}
             onNotify={setToast}
             mode={mode}
-            onModeChange={setMode}
+            onModeChange={changeMode}
             onLogOut={handleLogOut}
           />
         )}
 
         {/* AI-generated (edited by nigeltzy). */}
+        {/* AI-generated (edited by James Teo): keyed by the handed-over account,
+            so each hand-over opens with that account looked up. */}
         {shownView === "admin" && (
-          <AdminView usersApi={usersApi} currentUserId={session.userId} onNotify={setToast} />
+          <AdminView
+            key={adminLookupId ?? ""}
+            usersApi={usersApi}
+            currentUserId={session.userId}
+            initialAccountId={adminLookupId}
+            onNotify={setToast}
+          />
         )}
       </AppShell>
 
