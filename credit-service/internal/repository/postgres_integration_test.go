@@ -230,15 +230,23 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(1), res.Version)
 
-		// 1. Stale version (1 <= 1) is ignored as a no-op
-		eventOld := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventOld, 50, 1, now)
+		// AI-generated (edited by choppyback).
+		// 1. The same version reconciles a PATCH whose response was lost without incrementing the version.
+		eventRecovery := uuid.New()
+		err = env.repo.ApplyRewardSet(ctx, errandID, eventRecovery, 50, 1, now)
 		require.NoError(t, err)
 
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
-		require.Equal(t, int64(80), acc.AvailableCredits)
-		require.Equal(t, int64(20), acc.ReservedCredits)
+		require.Equal(t, int64(50), acc.AvailableCredits)
+		require.Equal(t, int64(50), acc.ReservedCredits)
+		var reservationAmount, reservationVersion int64
+		require.NoError(t, env.pool.QueryRow(ctx, `
+			SELECT amount, version
+			FROM credit_reservations
+			WHERE errand_id = $1`, errandID).Scan(&reservationAmount, &reservationVersion))
+		require.Equal(t, int64(50), reservationAmount)
+		require.Equal(t, int64(1), reservationVersion)
 
 		// 2. Higher version (version: 2) updates hold to 35
 		eventNew := uuid.New()
@@ -250,9 +258,12 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(65), acc.AvailableCredits)
 		require.Equal(t, int64(35), acc.ReservedCredits)
 
-		// 3. Re-delivery of version 2 or older version is discarded
+		// 3. Exact re-delivery is harmless, while an older version is discarded.
 		eventDuplicate := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventDuplicate, 50, 2, now)
+		err = env.repo.ApplyRewardSet(ctx, errandID, eventDuplicate, 35, 2, now)
+		require.NoError(t, err)
+		eventOld := uuid.New()
+		err = env.repo.ApplyRewardSet(ctx, errandID, eventOld, 50, 1, now)
 		require.NoError(t, err)
 
 		acc, err = env.repo.GetAccount(ctx, userID)

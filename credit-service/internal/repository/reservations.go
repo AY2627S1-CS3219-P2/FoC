@@ -496,8 +496,10 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return nil
 		}
 
-		// D-057: Ignore if the event version is older than or equal to what has already been applied
-		if version <= reservation.Version {
+		// AI-generated (edited by choppyback).
+		// D-057: Ignore only events older than the saved Order Service version.
+		// An equal-version event may be recovery for a PATCH whose response was lost.
+		if version < reservation.Version {
 			return nil
 		}
 
