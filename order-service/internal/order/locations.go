@@ -14,9 +14,10 @@ import (
 const (
 	MaxItemDescription = 280
 	MaxDeliveryNote    = 140
-	// MaxReward keeps a reward inside the database's INTEGER column; F3.1.2
+	// MaxReward is the largest reward credit-service holds, so a larger one is
+	// refused here with a 400 rather than by credit-service (D-082). F3.1.2
 	// sets only the lower bound.
-	MaxReward = 2147483647
+	MaxReward = 1_000_000
 )
 
 // DeliveryLocations is the fixed campus list an errand may deliver to (D-053).

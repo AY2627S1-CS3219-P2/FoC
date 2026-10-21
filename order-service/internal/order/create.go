@@ -317,7 +317,7 @@ func validateReward(reward int) error {
 		return invalid("the reward must be at least 1 credit")
 	}
 	if reward > MaxReward {
-		return invalid("the reward is too large")
+		return invalid(fmt.Sprintf("the reward can be at most %d credits", MaxReward))
 	}
 	return nil
 }

@@ -8,9 +8,12 @@
 package creditclient
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -275,8 +278,53 @@ func TestAdjustSendsTheRequestersNewReward(t *testing.T) {
 	assert.Equal(t, "application/json", got.header.Get("Content-Type"))
 	assert.Equal(t, "Bearer "+testToken, got.header.Get("Authorization"), "the requester's own token is forwarded")
 	assert.Empty(t, got.header.Get("X-User-Id"), "no gateway-style identity header")
-	assert.Equal(t, "req-amend-1", got.header.Get("X-Request-Id"))
+	opID, err := uuid.Parse(got.header.Get("X-Request-Id"))
+	require.NoError(t, err, "X-Request-Id is the change's own UUID")
+	assert.NotEqual(t, uuid.Nil, opID)
 	assert.JSONEq(t, `{"newReward":12}`, string(got.body))
+}
+
+// credit-service keys each reward change on X-Request-Id, so every change,
+// including one back to an earlier reward, gets its own UUID, and a caller's
+// id is never sent, even one that is itself a UUID and is reused (D-081).
+func TestAdjustSendsANewOperationIDForEachRewardChange(t *testing.T) {
+	for _, corr := range []string{uuid.NewString(), "req-reused"} {
+		t.Run(corr, func(t *testing.T) {
+			srv, s := serve(t, respond(http.StatusOK, `{}`), respond(http.StatusOK, `{}`), respond(http.StatusOK, `{}`))
+			c := New(srv.URL, srv.Client(), nil)
+			errandID, requesterID := uuid.New(), uuid.New()
+
+			for _, reward := range []int{20, 10, 20} {
+				require.NoError(t, c.Adjust(tokenCtx(), errandID, requesterID, reward, corr))
+			}
+
+			reqs := s.requests()
+			require.Len(t, reqs, 3)
+			seen := map[uuid.UUID]bool{}
+			for i, req := range reqs {
+				sent := req.header.Get("X-Request-Id")
+				assert.NotEqual(t, corr, sent, "change %d forwarded the caller's id", i+1)
+				id, err := uuid.Parse(sent)
+				require.NoError(t, err, "change %d sent a UUID", i+1)
+				assert.NotEqual(t, uuid.Nil, id)
+				assert.False(t, seen[id], "change %d reused an earlier change's id", i+1)
+				seen[id] = true
+			}
+		})
+	}
+}
+
+func TestAdjustLogsTheOperationIDWithTheCorrelationID(t *testing.T) {
+	srv, s := serve(t, respond(http.StatusOK, `{}`))
+	var buf bytes.Buffer
+	log := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	require.NoError(t, New(srv.URL, srv.Client(), log).Adjust(tokenCtx(), uuid.New(), uuid.New(), 12, "req-amend-1"))
+
+	var line map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &line))
+	assert.Equal(t, "req-amend-1", line["request_id"])
+	assert.Equal(t, s.requests()[0].header.Get("X-Request-Id"), line["operation_id"])
 }
 
 func TestAdjustOutcomes(t *testing.T) {
@@ -329,21 +377,26 @@ func TestAdjustBoundsTheAttempt(t *testing.T) {
 	assert.Equal(t, int32(1), attempts.Load(), "a timeout is not retried either")
 }
 
-func TestCallsLeaveOutAnEmptyRequestID(t *testing.T) {
-	srv, s := serve(t, respond(http.StatusCreated, `{}`), respond(http.StatusOK, `{}`))
-	c := New(srv.URL, srv.Client(), nil)
+func TestReserveLeavesOutAnEmptyRequestID(t *testing.T) {
+	srv, s := serve(t, respond(http.StatusCreated, `{}`))
 	r := newReservation()
 	r.CorrelationID = ""
 
-	require.NoError(t, c.Reserve(tokenCtx(), r))
-	require.NoError(t, c.Adjust(tokenCtx(), r.ErrandID, r.RequesterID, 20, ""))
+	require.NoError(t, New(srv.URL, srv.Client(), nil).Reserve(tokenCtx(), r))
 
 	reqs := s.requests()
-	require.Len(t, reqs, 2)
-	for _, req := range reqs {
-		assert.Empty(t, req.header.Values("X-Request-Id"))
-		assert.Equal(t, "Bearer "+testToken, req.header.Get("Authorization"))
-	}
+	require.Len(t, reqs, 1)
+	assert.Empty(t, reqs[0].header.Values("X-Request-Id"))
+	assert.Equal(t, "Bearer "+testToken, reqs[0].header.Get("Authorization"))
+}
+
+func TestAdjustSendsAnOperationIDWithoutACorrelationID(t *testing.T) {
+	srv, s := serve(t, respond(http.StatusOK, `{}`))
+
+	require.NoError(t, New(srv.URL, srv.Client(), nil).Adjust(tokenCtx(), uuid.New(), uuid.New(), 20, ""))
+
+	_, err := uuid.Parse(s.requests()[0].header.Get("X-Request-Id"))
+	assert.NoError(t, err)
 }
 
 // step answers one request. release is closed when the test ends, so a step

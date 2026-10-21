@@ -163,6 +163,7 @@ func TestAmendValidatesLikeCreate(t *testing.T) {
 		{"item of only blank fillers", order.AmendInput{ItemDescription: ptr("\u3164\u2800")}},
 		{"reward 0", order.AmendInput{Reward: ptr(0)}},
 		{"negative reward", order.AmendInput{Reward: ptr(-3)}},
+		{"a reward past credit-service's limit", order.AmendInput{Reward: ptr(order.MaxReward + 1)}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
