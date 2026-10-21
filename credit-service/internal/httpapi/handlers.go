@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Implemented OpenAPI ServerInterface handlers for accounts, transactions, reservations, adjustments, and health per sourceOfTruth.md Phase 9 & 12.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package httpapi
 
@@ -221,8 +221,14 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Deterministic operation ID keyed on (errandId, newReward) to prevent stale X-Request-Id reuse
-	operationID := uuid.NewSHA1(uuid.NameSpaceOID, []byte(fmt.Sprintf("%s:%d", errandId, req.NewReward)))
+	operationID := uuid.New()
+	if requestID := r.Header.Get("X-Request-Id"); requestID != "" {
+		operationID, err = uuid.Parse(requestID)
+		if err != nil || operationID == uuid.Nil {
+			writeError(w, http.StatusBadRequest, gen.INVALIDREQUEST, "X-Request-Id must be a non-zero UUID")
+			return
+		}
+	}
 
 	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, identity.UserID, req.NewReward, operationID)
 	if err != nil {

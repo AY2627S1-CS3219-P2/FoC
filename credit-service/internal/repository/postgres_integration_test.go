@@ -4,7 +4,7 @@
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Integration tests for credit PostgresRepository covering migrations, initial allocation,
 //   reservations, adjustments, D-057 errand.reward_set versioning, and idempotency over PostgreSQL 16.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package repository_test
 
@@ -20,7 +20,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
@@ -177,11 +176,46 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(75), acc2.AvailableCredits)
 		require.Equal(t, int64(25), acc2.ReservedCredits)
 
+		// A later amendment may legitimately reuse an earlier target, but must use a new operation ID.
+		op3 := uuid.New()
+		resOp3, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, op3)
+		require.NoError(t, err)
+		require.Equal(t, credit.OutcomeSuccess, resOp3.OutcomeCode)
+		require.Equal(t, int64(60), res3.Amount)
+		acc3, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), acc3.AvailableCredits)
+		require.Equal(t, int64(60), acc3.ReservedCredits)
+
 		// 3. Unowned reservation returns ErrReservationNotFound
 		otherUser := uuid.New()
-		op3 := uuid.New()
-		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, op3)
+		op4 := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, op4)
 		require.ErrorIs(t, err, credit.ErrReservationNotFound)
+	})
+
+	t.Run("AdjustReservationReward commits a deterministic failure for retries", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, time.Now().UTC()))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 90)
+		require.NoError(t, err)
+
+		opID := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 110, opID)
+		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
+
+		// Refund the reservation, which changes the wallet state. The same
+		// operation ID must still replay its original outcome, not re-evaluate it.
+		err = env.repo.RefundReservation(ctx, errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
+		require.NoError(t, err)
+		stored, _, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 110, opID)
+		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
+		require.NotNil(t, stored)
+		require.Equal(t, credit.OutcomeInsufficientCredits, stored.OutcomeCode)
+		var amount int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&amount))
+		require.Equal(t, int64(90), amount)
 	})
 
 	t.Run("ApplyRewardSet (D-057) reconciles holds and enforces versioning", func(t *testing.T) {

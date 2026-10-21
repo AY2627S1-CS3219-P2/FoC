@@ -273,6 +273,13 @@ paths:
           schema:
             type: string
             format: uuid
+        - in: header
+          name: X-Request-Id
+          required: false
+          description: UUID identifying this logical adjustment; reuse it only for retries of that adjustment.
+          schema:
+            type: string
+            format: uuid
       requestBody:
         required: true
         content:
