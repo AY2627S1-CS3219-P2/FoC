@@ -20,10 +20,15 @@ import (
 const (
 	accessTokenBlocklistKeyPrefix = "jti:"
 	suspensionKeyPrefix           = "suspended:uid:"
+	revocationCheckTimeout        = 500 * time.Millisecond
 )
 
 type redisSetter interface {
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
+}
+
+type redisGetter interface {
+	MGet(ctx context.Context, keys ...string) *redis.SliceCmd
 }
 
 // RedisBlocklistWriter persists access-token invalidations in Redis.
@@ -34,6 +39,53 @@ type RedisBlocklistWriter struct {
 // NewRedisBlocklistWriter constructs an access-token blocklist adapter.
 func NewRedisBlocklistWriter(client redisSetter) *RedisBlocklistWriter {
 	return &RedisBlocklistWriter{client: client}
+}
+
+// RedisBlocklistReader checks access-token and suspension invalidations.
+type RedisBlocklistReader struct {
+	client redisGetter
+}
+
+// NewRedisBlocklistReader constructs a Redis revocation reader.
+func NewRedisBlocklistReader(client redisGetter) *RedisBlocklistReader {
+	return &RedisBlocklistReader{client: client}
+}
+
+// IsRevoked checks both invalidation keys in one bounded Redis operation.
+func (r *RedisBlocklistReader) IsRevoked(ctx context.Context, jti, uid uuid.UUID, issuedAt time.Time) (bool, error) {
+	if r.client == nil {
+		return false, errors.New("Redis client is required")
+	}
+	if jti == uuid.Nil || uid == uuid.Nil || issuedAt.IsZero() {
+		return false, errors.New("access-token claims are required")
+	}
+	checkCtx, cancel := context.WithTimeout(ctx, revocationCheckTimeout)
+	defer cancel()
+	values, err := r.client.MGet(checkCtx,
+		accessTokenBlocklistKeyPrefix+jti.String(),
+		suspensionKeyPrefix+uid.String(),
+	).Result()
+	if err != nil {
+		return false, fmt.Errorf("read Redis revocation keys: %w", err)
+	}
+	if len(values) != 2 {
+		return false, fmt.Errorf("read Redis revocation keys: got %d values, want 2", len(values))
+	}
+	if values[0] != nil {
+		return true, nil
+	}
+	if values[1] == nil {
+		return false, nil
+	}
+	suspensionValue, ok := values[1].(string)
+	if !ok {
+		return true, nil
+	}
+	suspendedAt, err := time.Parse(time.RFC3339Nano, suspensionValue)
+	if err != nil {
+		return true, nil
+	}
+	return !issuedAt.After(suspendedAt), nil
 }
 
 // AI-generated (edited by ZI YANG): assigns the lifetime calculation to the
@@ -59,8 +111,9 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 // AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — updated this comment
 // to remove a stale cross-service reader assertion. Author review: ZI YANG.
 
-// WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt, with
-// the given TTL.
+// WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt in
+// UTC whole-second RFC3339Nano form, with the given TTL. Readers reject a
+// verified token whose iat is at or before this value.
 func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error {
 	if w.client == nil {
 		return errors.New("Redis client is required")

@@ -134,6 +134,14 @@ func TestUpdateStatusHandlerCoversRecordedStatusTransitionsAndFailures(t *testin
 			wantStatus: http.StatusConflict,
 			wantError:  "cannot suspend the last active admin",
 		},
+		"rejects unverified account": {
+			body:       `{"status":"ACTIVE"}`,
+			path:       "/api/v1/users/" + uid.String() + "/status",
+			updater:    &fakeStatusUpdater{err: user.ErrAccountUnverified},
+			withUpdate: true,
+			wantStatus: http.StatusConflict,
+			wantError:  "account is not verified",
+		},
 	}
 
 	for name, tt := range tests {

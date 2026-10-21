@@ -1,3 +1,8 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: A missing is_available in a create or update body is now false, not true.
+// Author review: PENDING — <reviewer to complete>
+
 package httpapi
 
 import (
@@ -22,8 +27,11 @@ type supplierRequest struct {
 	IsAvailable         *bool   `json:"is_available"`
 }
 
+// toDomain converts the body. A missing is_available is false: a supplier is
+// available only when the body says so, and an admin can add one that starts
+// unavailable.
 func (req supplierRequest) toDomain() *supplier.Supplier {
-	available := true
+	available := false
 	if req.IsAvailable != nil {
 		available = *req.IsAvailable
 	}

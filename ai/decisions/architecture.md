@@ -15,8 +15,9 @@ Author review: Nigeltzy - The AI was use dto convert the team's original PNG dia
 
 Supersedes [`jwt-token-architecture-diagram.png`](jwt-token-architecture-diagram.png)
 as the current picture. **The PNG is kept deliberately**: it is what the team
-drew on 2026-09-19 and what D-010–D-018 were transcribed from. It is now out of
-date in two places, both flagged below.
+drew on 2026-09-19 and what D-010–D-018 were transcribed from. The decisions
+once departed from it in two places, both flagged below, and D-054 has since
+brought both back in line with it.
 
 Mermaid rather than an image so it renders on GitHub, diffs in review, and
 cannot silently drift from the decisions it depicts.
@@ -47,37 +48,38 @@ flowchart TB
     end
 
     UI -->|"/auth/* and /api/*<br/>Bearer access token"| GW
-    GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| SUP
-    GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| ORD
-    GW -->|"HTTP today, gRPC decided (D-013)<br/>X-User-Id / X-User-Role"| CRE
-    GW -->|"HTTP today, gRPC decided (D-013)<br/>/auth/* rewritten to /api/v1/users/*"| US
+    GW -->|"REST (D-055)<br/>Bearer token + X-User-Id / X-User-Role"| SUP
+    GW -->|"REST (D-055)<br/>Bearer token + X-User-Id / X-User-Role"| ORD
+    GW -->|"REST (D-055)<br/>Bearer token + X-User-Id / X-User-Role"| CRE
+    GW -->|"REST (D-055)<br/>/auth/* rewritten to /api/v1/users/*"| US
     GW -.->|"GET /.well-known/jwks.json<br/>public keys only, fetched lazily"| US
+    GW -->|"MGET the two revocation keys<br/>read only (D-054, D-077)"| RDS
 
     US --> UDB
     SUP --> SDB
-    US -->|"sole reader AND writer"| RDS
+    US -->|"sole writer; reads on its own routes"| RDS
 
     classDef built fill:#1b5e20,stroke:#4caf50,color:#fff
     classDef partial fill:#4a3800,stroke:#ffb300,color:#fff
     classDef absent fill:#3a1212,stroke:#c62828,color:#fff,stroke-dasharray: 4 3
     classDef store fill:#0d2b45,stroke:#2196f3,color:#fff
 
-    class GW built
-    class UI,SUP partial
-    class US,ORD,CRE absent
+    class GW,US,SUP,ORD built
+    class UI,CRE partial
     class UDB,SDB,RDS store
 ```
 
 | Colour | Meaning | Components |
 | --- | --- | --- |
-| Green | Built and verified | `api-gateway` |
-| Amber | Built, not yet integrated | Browser SPA (runs on fixtures), `supplier-service` (in PR #1, unmerged) |
-| Red, dashed | Folder exists, no code | `user-service`, `order-service`, `credit-service` |
+| Green | Built and on `main` | `api-gateway`, `user-service`, `supplier-service`, `order-service` |
+| Amber | Partly built | Browser SPA (the errand and credit screens still use mocks until PR #40), `credit-service` (a scaffold on `main`; the service is in PR #44) |
+| Red, dashed | Folder exists, no code | none |
 
-> **Changed from the PNG (1 of 2).** The original attached Redis to the API
-> Gateway. **D-024 took the gateway out of Redis entirely** — `user-service` is
-> now the only process that touches it, which is why the sole arrow into Redis
-> comes from `user-service`.
+> **Changed from the PNG (1 of 2), then back.** The original attached Redis to
+> the API Gateway. **D-024 took the gateway out of Redis entirely**, leaving
+> `user-service` as the only process that touched it. **D-054 put the gateway
+> back as a reader** (built as D-077): it reads the two revocation keys on every
+> authenticated request, and `user-service` is still their only writer.
 
 ---
 
@@ -90,7 +92,7 @@ sequenceDiagram
     participant GW as API Gateway
     participant US as user-service
     participant DB as User DB
-    Note over GW,US: HTTP today, gRPC decided (D-013)
+    Note over GW,US: REST (D-055), gRPC on hold
 
     UI->>GW: POST /auth/login {identifier, password}
     Note over GW: Public route, no token required.<br/>Authorization preserved, claim<br/>headers stripped regardless.
@@ -109,7 +111,7 @@ passes the response back.
 
 ---
 
-## 3. An authenticated request (D-013, D-022, D-024)
+## 3. An authenticated request (D-022, D-054, D-055, D-077)
 
 ```mermaid
 sequenceDiagram
@@ -117,8 +119,9 @@ sequenceDiagram
     participant UI as Browser SPA
     participant GW as API Gateway
     participant US as user-service
+    participant RDS as Redis
     participant SVC as supplier / order / credit
-    Note over GW,SVC: HTTP today, gRPC decided (D-013)
+    Note over GW,SVC: REST (D-055), gRPC on hold
 
     UI->>GW: GET /api/suppliers/42<br/>Authorization: Bearer AT<br/>X-User-Role: ADMIN (forged)
 
@@ -127,18 +130,25 @@ sequenceDiagram
         US-->>GW: public keys, by kid
     end
 
-    Note over GW: Verify RS256 signature and exp.<br/>NO revocation lookup (D-024).<br/>RS256 pinned, so none/HMAC is rejected.
+    Note over GW: Verify RS256 signature and exp.<br/>RS256 pinned, so none/HMAC is rejected.
 
     alt token invalid or expired
         GW-->>UI: 401
     else keys unreachable
         GW-->>UI: 503
     else valid
-        Note over GW: STRIP the forged X-User-Role,<br/>then INJECT from verified claims.<br/>This is what D-022 rests on.
-        GW->>SVC: GET /suppliers/42<br/>X-User-Id: uid<br/>X-User-Role: STUDENT
-        Note over SVC: Trusts the headers. Does not parse<br/>the JWT and never receives it.
-        SVC-->>GW: 200
-        GW-->>UI: 200
+        GW->>RDS: MGET jti:{jti}, suspended:uid:{sub}
+        alt logged out, or issued at or before the suspension
+            GW-->>UI: 401
+        else Redis does not answer
+            GW-->>UI: 503
+        else not revoked
+            Note over GW: STRIP the forged X-User-Role,<br/>then INJECT from verified claims.<br/>This is what D-022 rests on.
+            GW->>SVC: GET /suppliers/42<br/>Authorization: Bearer AT<br/>X-User-Id: uid<br/>X-User-Role: STUDENT
+            Note over SVC: order-service verifies the token itself (D-041).<br/>supplier-service checks it only on admin writes,<br/>so this read relies on the gateway's checks.
+            SVC-->>GW: 200
+            GW-->>UI: 200
+        end
     end
 ```
 
@@ -157,7 +167,7 @@ sequenceDiagram
     participant US as user-service
     participant DB as User DB
     participant RDS as Redis
-    Note over GW,US: HTTP today, gRPC decided (D-013)
+    Note over GW,US: REST (D-055), gRPC on hold
 
     UI->>GW: POST /auth/refresh {refresh token}
     GW->>US: POST /api/v1/users/refresh
@@ -174,8 +184,10 @@ sequenceDiagram
     GW-->>UI: response
 ```
 
-**This is where revocation actually bites.** The gateway takes no part in the
-decision; it only carries the request.
+**Revocation bites here:** a logged-out or suspended user cannot renew a
+session. The gateway takes no part in this decision; it only carries the
+request. It refuses the revoked access token itself on every other request
+(§3).
 
 > **Corrected 2026-09-22.** This diagram previously showed `user-service`
 > reading the Redis blocklist here. It does not. `RefreshService.activeAccount`
@@ -186,7 +198,7 @@ decision; it only carries the request.
 
 ---
 
-## 5. Logout and suspension, and what D-025 costs
+## 5. Logout and suspension (D-054, D-077)
 
 ```mermaid
 sequenceDiagram
@@ -197,7 +209,7 @@ sequenceDiagram
     participant SUP as supplier-service
     participant RDS as Redis
     participant DB as User DB
-    Note over GW,SUP: HTTP today, gRPC decided (D-013)
+    Note over GW,SUP: REST (D-055), gRPC on hold
 
     Note over UI,DB: LOGOUT
     UI->>GW: POST /auth/logout (Bearer AT + RT)
@@ -210,25 +222,26 @@ sequenceDiagram
     US->>RDS: set suspended:uid:uuid
     US->>DB: set tokens_valid_after
 
-    Note over UI,DB: WHAT THIS DOES NOT DO (D-025a)
+    Note over UI,DB: THE NEXT REQUEST WITH THE SAME ACCESS TOKEN
     UI->>GW: GET /api/suppliers/1 with the SAME access token
-    Note over GW: Signature valid, exp not reached.<br/>Nothing reads the blocklist here.
-    GW->>SUP: forwarded, still authorised
-    Note over UI,DB: The AT keeps working until exp, up to 15 minutes.<br/>The blocklist stops a session being RENEWED,<br/>not a token being USED.
+    Note over GW: Signature valid, exp not reached.
+    GW->>RDS: MGET jti:{jti}, suspended:uid:{uuid}
+    RDS-->>GW: jti found, or iat at or before the suspension
+    GW-->>UI: 401, nothing forwarded
+    Note over UI,DB: The browser's refresh then fails too, so it lands on sign-in.
 ```
 
-> **Changed from the PNG (2 of 2).** The original says logout makes the access
-> token *"stop working before its exp"*. Under **D-024** it does not — nothing
-> on the request path reads the blocklist. Accepted knowingly for the prototype
-> and recorded as **D-025a**.
+> **Changed from the PNG (2 of 2), then back.** The original says logout makes
+> the access token *"stop working before its exp"*. Under **D-024** it did not,
+> because nothing on the request path read the blocklist, and **D-025a**
+> accepted that for the prototype. **D-054 superseded both**: the gateway reads
+> the blocklist and the suspension key on every authenticated request (D-077),
+> so the token stops working at once, as the PNG said.
 
-> **Added 2026-09-22.** Both writes above currently have **no reader anywhere**.
-> The gateway does not read them (D-024), and `user-service` cannot — its Redis
-> interface is `Set`-only. `jti:` and `suspended:uid:` are write-only today.
-> That is the state D-024 left behind when it took the gateway out of Redis,
-> which removed the only planned reader, and it is what the open F1.7.2 / D-025a question
-> turns on. Note this does not mean revocation is unenforced: it is enforced at
-> **refresh**, from PostgreSQL, as §4 shows.
+> **Updated 2026-10-20.** The 2026-09-22 note here said both keys had no reader
+> anywhere. They now have four: the gateway on every authenticated request,
+> and order-service, supplier-service and user-service on their own routes (§6). Revocation
+> is still enforced at **refresh** as well, from PostgreSQL, as §4 shows.
 
 > **Corrected 2026-09-22.** The last arrow previously went to `user-service`.
 > A request for `/api/suppliers/1` is proxied straight to `supplier-service`;
@@ -243,8 +256,8 @@ itself about. Two different jobs get called "validating a token":
 
 | | Question | Needs | Who does it today |
 | --- | --- | --- | --- |
-| **Job 1** | Is this token genuine and unexpired? | The issuer's **public** key, and nothing else | **The API Gateway**, locally, on every request |
-| **Job 2** | Has it been killed early — logout, suspension? | **Shared state** (the Redis keys) | **Nobody** |
+| **Job 1** | Is this token genuine and unexpired? | The issuer's **public** key, and nothing else | **The API Gateway**, locally, on every request; order-service and supplier-service's admin writes check it again (D-041) |
+| **Job 2** | Has it been killed early — logout, suspension? | **Shared state** (the Redis keys) | **The API Gateway**, on every authenticated request (D-077); order-service, supplier-service and user-service also check on their own routes |
 
 Job 1 needs no network call. Access tokens are RS256 (D-023): `user-service`
 holds the private key and is the only process that can mint one (D-012); the
@@ -255,84 +268,78 @@ Job 2 cannot be answered from the token. A logged-out access token is
 byte-for-byte valid until its `exp`. Answering it means reading state that
 something else wrote.
 
-**Three models have been described. Only one is built.**
+**Three models have been described. A is what is built.**
 
 ```mermaid
 flowchart LR
-    subgraph A["Gateway reads Redis — replaced by D-024"]
+    subgraph A["Gateway reads Redis — built (D-054, D-077)"]
         direction TB
         A1["Gateway verifies"] --> A2["Gateway READS Redis"] --> A3["forward, or reject"]
     end
-    subgraph B["D-024 — ACCEPTED, and what is built"]
+    subgraph B["D-024 — superseded by D-054"]
         direction TB
         B1["Gateway verifies"] --> B3["forward"]
     end
-    subgraph C["Not recorded anywhere"]
+    subgraph C["Each service reads Redis too (D-054)"]
         direction TB
-        C1["Gateway forwards"] --> C2["user-service READS Redis"] --> C3["?"]
+        C1["Gateway forwards"] --> C2["service READS Redis"] --> C3["serve, or reject"]
     end
 ```
 
 **A** is what the PNG, the team's Mermaid step 8 and `user-service/AGENTS.md`
-("*If the Gateway cannot reach Redis … the request must be rejected*") still
-describe. **B** is what every line of code on every branch does. **C** has come
-up in discussion; nothing implements it, and it is worth saying why it does not
-follow from the current call graph: `user-service` is on the request path only
-for `/auth/*` and `/api/users/*`. `supplier-service`, `order-service` and
-`credit-service` are proxied to **directly by the gateway** and never call
-`user-service`, which has no base URL, no client and no endpoint for any of
-them. Under C those three services would go unchecked.
+("*If the Gateway cannot reach Redis … the request must be rejected*")
+describe, and what the gateway does since D-077: a revoked token gets 401, and
+when Redis does not answer it fails closed with 503. **B** was the state under
+D-024 until D-054 superseded it. **C** is D-054's other half: order-service,
+supplier-service and user-service's own routes check the keys themselves, and
+credit-service is still to. With A in place, C is defence in depth.
 
-### The Redis keys have no reader
+### Who reads the Redis keys
 
 | Key | Written by | Read by |
 | --- | --- | --- |
-| `jti:<jti>` | `user-service` on logout (`BlockAccessToken`) | — |
-| `suspended:uid:<uuid>` | `user-service` on suspension (`WriteSuspension`) | — |
+| `jti:<jti>` | `user-service` on logout (`BlockAccessToken`) | the API Gateway, `order-service`, `supplier-service`, `user-service`'s own routes |
+| `suspended:uid:<uuid>` | `user-service` on suspension (`WriteSuspension`) | the API Gateway, `order-service`, `supplier-service`, `user-service`'s own routes |
 
-`user-service`'s adapter is `RedisBlocklistWriter` and its interface is
-`Set`-only; there is no `Get` or `Exists` anywhere in the service. The gateway
-has no Redis client at all (D-024) — no dependency in its `go.mod`, no
-`REDIS_URL` in `internal/config`, no `depends_on` in `compose.yaml`. It parses
-`jti` off the token purely so downstream logs can correlate a session.
+`user-service` is still their only writer (D-054). The gateway reads them with
+one `MGET` per authenticated request, bounded at 500 ms
+(`api-gateway/internal/revocation`), and nothing in the gateway binary writes
+to Redis.
 
-This is not a bug in either service. The reader role was planned for the
-gateway; D-024 removed that role and did not reassign it. The writes stayed.
+### Revocation is also enforced at refresh, from PostgreSQL
 
-### Revocation is still enforced — at refresh, from PostgreSQL
-
-Worth stating plainly, because "nothing reads the blocklist" reads worse than
-it is. `RefreshService.activeAccount` checks `account_status` and
+`RefreshService.activeAccount` checks `account_status` and
 `tokens_valid_after`, and the replay check reads the session row's
 `revoked_at`. All PostgreSQL, no Redis. So a logged-out or suspended user
-**cannot renew a session**. What survives is the access token already in the
-browser, until its `exp` — up to 15 minutes. That is exactly D-025a, accepted
-knowingly.
+**cannot renew a session** either. Before D-054, the access token already in
+the browser kept working until its `exp`, up to 15 minutes (D-025a); the
+gateway's check now refuses it at once.
 
-### The one thing that cannot be settled by cleanup
+### F1.7.2 and D-025a
 
 **F1.7.2** in the product backlog says sessions terminate *upon* suspension.
-**D-025a** says up to 15 minutes later. Both cannot be true. Either F1.7.2 is
-amended, or D-025a is superseded and a reader is built. That is a team
-decision with a rationale to write, and no agent may pick it (root
-`AGENTS.md` §1).
+**D-025a** said up to 15 minutes later. D-054 superseded D-025a and the reader
+is built (D-077), so F1.7.2 holds. One gap is left: the gateway accepts a token
+up to 5 s past its `exp` (clock skew), and a revocation key can expire at about
+that `exp`, so a revoked token can pass for those 5 s until user-service keeps
+each key 5 s longer.
 
 ---
 
 ## 7. Where the code actually is, today
 
-Refreshed 2026-09-22.
+Refreshed 2026-10-20.
 
 | Component | State | Branch |
 | --- | --- | --- |
-| `api-gateway` | **Working.** vet/test clean, 25 tests. Never run against a real `user-service` | `feat/api-gateway-auth-proxy` |
-| Browser SPA | **Working on fixtures.** Builds clean, 62 tests. `VITE_GATEWAY_BASE_URL` defaults to empty, so it is not wired to the gateway | `feat/frontend-ui` |
-| `supplier-service` | **Working.** Trusts `X-User-Role` verbatim, by its own admission | **merged to `main`** (PR #1) |
-| `user-service` | **Working.** RS256/JWKS issuer, register/login/refresh/logout, profile, suspension, default admin. **No OTP** | `feat/user-service`, no PR |
-| `order-service` | Folder only | — |
-| `credit-service` | Folder only | — |
+| `api-gateway` | **Working.** Verifies tokens against the JWKS and checks the revocation keys; unit, router and Redis integration tests | `main` |
+| Browser SPA | **Working through the gateway** for sign-in, profile, admin and suppliers; the errand and credit screens still use mocks until PR #40 | `main` |
+| `supplier-service` | **Working.** Verifies the token and the revocation keys itself on admin writes, and ignores `X-User-Role` | `main` |
+| `user-service` | **Working.** RS256/JWKS issuer, register with email OTP, login/refresh/logout, profile, suspension, default admin, `user.registered` events | `main` |
+| `order-service` | **Working.** The errand lifecycle; verifies tokens and the revocation keys itself | `main` |
+| `credit-service` | Scaffold on `main`; the service is in PR #44 | `feat/initial-credit` |
 | `notification-service` | No folder, no owner, no decision row | — |
-| Redis | In `compose.yaml`; written by `user-service`, read by nobody (§6) | `feat/api-gateway-auth-proxy` |
+| Redis | In `compose.yaml`; written by `user-service`, read by the gateway, `order-service`, `supplier-service` and `user-service`'s own routes (§6) | `main` |
 
 ## 8. What this picture assumes, and does not yet have
 
@@ -340,7 +347,7 @@ Refreshed 2026-09-22.
   `user-service/AGENTS.md` that is on no branch. The team chose to build against
   it anyway — an exception to §1, noted above the Open table in
   [`../decisions.md`](../decisions.md).
-- **The gateway has never met a real `user-service`.** Every test mints its own
-  RS256 tokens against a stub JWKS.
+- **The gateway's unit tests mint their own RS256 tokens** against a stub JWKS;
+  the `e2e/` suite runs it against the real `user-service`.
 - **AWS deployment is undecided** (D-009). The private VPC this trust model
   assumes has no decision and no code behind it.

@@ -25,6 +25,10 @@ type Config struct {
 	// AI-generated (edited by James Teo): OTP_DELIVERY, "mailgun" (the default
 	// when empty) or "log"; cmd/api validates it at startup.
 	OTPDelivery string
+	// AI-generated (edited by James Teo).
+	// RabbitMQURL is the broker the outbox relay publishes to, as set. An
+	// empty value takes cmd/api's local-development default.
+	RabbitMQURL string
 }
 
 // Load reads the service configuration once from the process environment.
@@ -46,5 +50,7 @@ func Load() Config {
 		MailgunDomain:      os.Getenv("MAILGUN_DOMAIN"),
 		MailgunSenderEmail: os.Getenv("MAILGUN_SENDER_EMAIL"),
 		OTPDelivery:        os.Getenv("OTP_DELIVERY"), // AI-generated (edited by James Teo).
+		// AI-generated (edited by James Teo).
+		RabbitMQURL: os.Getenv("RABBITMQ_URL"),
 	}
 }

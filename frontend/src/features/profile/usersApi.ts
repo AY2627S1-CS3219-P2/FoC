@@ -10,7 +10,8 @@
 
 import type { AuthorizedSend } from "../auth/session";
 import { config } from "../../lib/config";
-import { NetworkError } from "../../lib/http";
+// AI-generated (edited by James Teo): HttpResponse, for request() below.
+import { NetworkError, type HttpResponse } from "../../lib/http";
 import type { AccountRole } from "../auth/types";
 
 /**
@@ -81,6 +82,18 @@ export interface UsersApi {
    * password then. It revokes every session of the target account.
    */
   resetPassword(uid: string, newPassword: string): Promise<UserProfile>;
+  // AI-generated (edited by James Teo): suspend and reactivate, user-service's
+  // PATCH /api/v1/users/{uid}/status with an UpdateStatusRequest. Two named
+  // functions rather than one taking the status, so no caller passes a flag.
+  /**
+   * ADMIN only. Sets the account SUSPENDED: user-service revokes every
+   * session it has and refuses its sign-in until it is reactivated. A 409
+   * means it is the last active admin. Resolves with nothing, because the
+   * 200 has an empty body; fetch the profile again to see the new status.
+   */
+  suspendUser(uid: string): Promise<void>;
+  /** ADMIN only. Sets the account ACTIVE again, so its password signs in. */
+  reactivateUser(uid: string): Promise<void>;
 }
 
 /**
@@ -91,23 +104,39 @@ export interface UsersApi {
  * or absent field unchanged, so one modal changes one thing.
  */
 export function createUsersApi(authorizedSend: AuthorizedSend): UsersApi {
-  async function call(
-    uid: string,
-    init: { method?: "GET" | "PUT"; body?: unknown } = {},
-  ): Promise<UserProfile> {
+  // AI-generated (edited by James Teo): the transport and error handling moved
+  // out of call() into request(), so the status route shares them without
+  // mapping its empty 200 body onto a profile.
+  async function request(
+    path: string,
+    init: { method?: "GET" | "PUT" | "PATCH"; body?: unknown } = {},
+  ): Promise<HttpResponse> {
     let response;
     try {
-      response = await authorizedSend({
-        baseUrl: config.gatewayBaseUrl,
-        path: `${PREFIX}/${encodeURIComponent(uid)}`,
-        ...init,
-      });
+      response = await authorizedSend({ baseUrl: config.gatewayBaseUrl, path, ...init });
     } catch (err) {
       if (err instanceof NetworkError) throw new UsersApiError(err.message, 0);
       throw err;
     }
     if (!response.ok) throw decodeError(response.body, response.status);
+    return response;
+  }
+
+  async function call(
+    uid: string,
+    init: { method?: "GET" | "PUT"; body?: unknown } = {},
+  ): Promise<UserProfile> {
+    const response = await request(`${PREFIX}/${encodeURIComponent(uid)}`, init);
     return toUserProfile(response.body);
+  }
+
+  // AI-generated (edited by James Teo): the body is UpdateStatusRequest, whose
+  // enum is ACTIVE and SUSPENDED only.
+  async function setStatus(uid: string, status: "ACTIVE" | "SUSPENDED"): Promise<void> {
+    await request(`${PREFIX}/${encodeURIComponent(uid)}/status`, {
+      method: "PATCH",
+      body: { status },
+    });
   }
 
   function update(uid: string, body: Record<string, string>) {
@@ -143,6 +172,15 @@ export function createUsersApi(authorizedSend: AuthorizedSend): UsersApi {
 
     resetPassword(uid, newPassword) {
       return update(uid, { newPassword });
+    },
+
+    // AI-generated (edited by James Teo).
+    suspendUser(uid) {
+      return setStatus(uid, "SUSPENDED");
+    },
+
+    reactivateUser(uid) {
+      return setStatus(uid, "ACTIVE");
     },
   };
 }

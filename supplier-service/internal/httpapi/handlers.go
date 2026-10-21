@@ -1,14 +1,31 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Sonnet 5.5), date: 2026-10-20
+// Scope: Delete forwards the token authenticate verified to order-service,
+//   instead of copying the raw Authorization header. Create and Update read
+//   the body through a 64 KiB cap (413 over it).
+// Author review: PENDING — <reviewer to complete>
+
 package httpapi
 
 import (
 	"encoding/json"
 	"errors"
+	"io"
+	// AI-generated (edited by James Teo).
+	"log"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
 
+	"foc/supplier-service/internal/auth"
+	// AI-generated (edited by James Teo).
+	"foc/supplier-service/internal/orderclient"
 	"foc/supplier-service/internal/supplier"
 )
+
+// maxBodyBytes caps a create or update body. A valid supplier is well under
+// 2 KiB, so 64 KiB bounds the memory one write can take without refusing any.
+const maxBodyBytes = 64 << 10
 
 type Handler struct {
 	svc *supplier.Service
@@ -55,8 +72,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 // Create handles POST /suppliers (FR F2.2, admin-only).
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	var req supplierRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 
@@ -72,8 +88,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	var req supplierRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid JSON body")
+	if !decodeBody(w, r, &req) {
 		return
 	}
 
@@ -84,15 +99,49 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, toResponse(updated))
 }
 
+// AI-generated (edited by James Teo).
 // Delete handles DELETE /suppliers/{id} (FR F2.2.3, admin-only). See the
-// comment on supplier.Service.Delete for why this is a soft delete.
+// comment on supplier.Service.Delete for the unfinished-errand check and
+// why this is a soft delete.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	err := h.svc.Delete(r.Context(), id)
+	// order-service answers the errand check only for an ADMIN's token, so the
+	// token authenticate verified goes along with it.
+	ctx := r.Context()
+	if token, ok := auth.TokenFromContext(ctx); ok {
+		ctx = orderclient.WithToken(ctx, "Bearer "+token)
+	}
+	err := h.svc.Delete(ctx, id)
 	if handleServiceError(w, err) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// decodeBody reads the whole request body, through a 64 KiB cap, and then
+// unmarshals it into dst. A body over the cap is 413 and one that is not a
+// single valid JSON value is 400; either way it writes the answer and reports
+// false.
+//
+// The body is read in full before it is parsed: json.Decoder stops after the
+// first value, so a valid supplier followed by 70 KiB of whitespace would
+// otherwise be saved without the cap ever being reached.
+func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxBodyBytes))
+	if err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	if err := json.Unmarshal(raw, dst); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid JSON body")
+		return false
+	}
+	return true
 }
 
 // Health handles GET /health for container readiness checks.
@@ -113,7 +162,14 @@ func handleServiceError(w http.ResponseWriter, err error) bool {
 		writeError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, supplier.ErrDuplicate):
 		writeError(w, http.StatusConflict, err.Error())
+	// AI-generated (edited by James Teo).
+	case errors.Is(err, supplier.ErrInUse):
+		writeError(w, http.StatusConflict, err.Error())
 	default:
+		// AI-generated (edited by James Teo).
+		// The client only gets a generic message, so this line is the one
+		// place the cause shows up (e.g. order-service refusing the token).
+		log.Printf("internal server error: %v", err)
 		writeError(w, http.StatusInternalServerError, "internal server error")
 	}
 	return true

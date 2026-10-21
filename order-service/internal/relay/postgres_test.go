@@ -1,0 +1,51 @@
+// AI Assistance Disclosure:
+// Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
+// Scope: Unit tests of how a failed publish's error text is made fit for the
+//   outbox's last_error column (D-051).
+// Author review: James Teo — reviewed and verified.
+
+package relay
+
+import (
+	"errors"
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"github.com/stretchr/testify/assert"
+)
+
+func TestLastError(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{name: "short text is kept", err: errors.New("connection refused"), want: "connection refused"},
+		{
+			name: "text at the limit is kept",
+			err:  errors.New(strings.Repeat("a", maxLastError)),
+			want: strings.Repeat("a", maxLastError),
+		},
+		{
+			name: "longer text is cut to the limit",
+			err:  errors.New(strings.Repeat("a", maxLastError+100)),
+			want: strings.Repeat("a", maxLastError),
+		},
+		{
+			name: "the limit counts characters, not bytes",
+			err:  errors.New(strings.Repeat("é", maxLastError+1)),
+			want: strings.Repeat("é", maxLastError),
+		},
+		{name: "invalid UTF-8 is replaced", err: errors.New("bad \xff byte"), want: "bad � byte"},
+		{name: "NUL bytes are dropped", err: errors.New("nul\x00 byte"), want: "nul byte"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := lastError(tc.err)
+			assert.Equal(t, tc.want, got)
+			assert.True(t, utf8.ValidString(got))
+			assert.LessOrEqual(t, utf8.RuneCountInString(got), maxLastError)
+		})
+	}
+}

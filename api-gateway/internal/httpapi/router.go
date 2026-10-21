@@ -24,8 +24,11 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	// AI-generated (edited by James Teo).
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -43,6 +46,11 @@ const userServiceAPIPrefix = "/api/v1/users"
 // supplierServiceAPIPrefix is where supplier-service mounts its routes; the
 // public /api/suppliers/* path is rewritten onto it.
 const supplierServiceAPIPrefix = "/suppliers"
+
+// AI-generated (edited by James Teo).
+// creditServiceAccountsPrefix is where credit-service mounts its account
+// routes; the public /api/credits/accounts/* path is rewritten onto it.
+const creditServiceAccountsPrefix = "/api/v1/credits/accounts"
 
 // authRoute is one of the six public /auth routes. They carry credentials,
 // not a verified identity, so they are registered outside RequireToken and
@@ -76,16 +84,24 @@ func authRoutes() []authRoute {
 	}
 }
 
+// AI-generated (edited by James Teo).
 // NewRouter builds the gateway's handler: /healthz, the six public /auth
 // routes and the /api/<service> prefixes behind RequireToken. Clients call
 // these public paths, so renaming one, or moving one out of RequireToken,
-// changes the gateway's API (D-027 and D-043 in ai/decisions.md).
-func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTokenTTL time.Duration) (http.Handler, error) {
+// changes the gateway's API (D-027, D-043 and D-056 in ai/decisions.md).
+// revocations is consulted on every token RequireToken verifies (D-054).
+func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocations RevocationChecker, refreshTokenTTL time.Duration) (http.Handler, error) {
+	if revocations == nil {
+		return nil, errors.New("httpapi: NewRouter needs a revocation checker")
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
 	// AI-generated (edited by nigeltzy).
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+	// AI-generated (edited by James Teo).
+	// Ahead of every route, and after the logger so a refused path is logged.
+	r.Use(rejectDotSegments)
 
 	// The gateway's own liveness check; not proxied.
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -120,9 +136,16 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 		// user-service verifies the bearer token itself, so its row keeps
 		// Authorization.
 		{"/api/users", downstream.User, userServiceAPIPrefix, proxy.NewRetainingToken},
-		{"/api/suppliers", downstream.Supplier, supplierServiceAPIPrefix, proxy.New},
-		{"/api/orders", downstream.Order, "", proxy.New},
-		{"/api/credits", downstream.Credit, "", proxy.New},
+		// AI-generated (edited by James Teo).
+		// D-041 has every service verify the bearer token itself, so these rows
+		// keep Authorization too.
+		// The claim headers are still stripped and injected (D-022).
+		{"/api/suppliers", downstream.Supplier, supplierServiceAPIPrefix, proxy.NewRetainingToken},
+		{"/api/orders", downstream.Order, "", proxy.NewRetainingToken},
+		// Only credit-service's account routes are public (D-056). Its
+		// reservation routes are for order-service alone, so nothing else
+		// under /api/credits is routed and it gets the JSON 404 below.
+		{"/api/credits/accounts", downstream.Credit, creditServiceAccountsPrefix, proxy.NewRetainingToken},
 	}
 
 	for _, route := range serviceRoutes {
@@ -136,7 +159,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 		}
 
 		r.Group(func(gr chi.Router) {
-			gr.Use(RequireToken(verifier))
+			gr.Use(RequireToken(verifier, revocations))
 			// Both forms: the bare prefix and everything beneath it.
 			gr.Handle(route.prefix, p)
 			gr.Handle(route.prefix+"/*", p)
@@ -155,6 +178,26 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, refreshTok
 	}
 
 	return r, nil
+}
+
+// AI-generated (edited by James Teo).
+// rejectDotSegments answers the gateway's JSON 404, before any route
+// matches, when a segment of the decoded path is "." or "..". Routes forward
+// the rest of the path without cleaning it, so without this check
+// /api/credits/accounts/../reservations, raw or percent-encoded, reaches
+// credit-service with its dot segments intact (percent-encoded ones decoded
+// to a literal ..), and a service that resolves dot segments would answer it
+// from the reservation routes D-056 keeps from the browser.
+func rejectDotSegments(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, segment := range strings.Split(r.URL.Path, "/") {
+			if segment == "." || segment == ".." {
+				writeError(w, http.StatusNotFound, "no such route")
+				return
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // writeError renders the gateway's own error shape. Downstream errors pass

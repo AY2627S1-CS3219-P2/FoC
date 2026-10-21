@@ -7,6 +7,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -61,7 +62,11 @@ const (
 				ELSE tokens_valid_after
 			END
 		WHERE uid = $3`
+	lockAccountStatusQuery   = `SELECT account_status, account_role FROM users WHERE uid = $1 FOR UPDATE`
 	activateUserByEmailQuery = `UPDATE users SET account_status = 'ACTIVE' WHERE LOWER(email) = LOWER($1) AND account_status = 'UNVERIFIED'`
+	// AI-generated (edited by James Teo).
+	lockUserForActivationQuery = `SELECT uid, account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`
+	insertOutboxEventQuery     = `INSERT INTO outbox_events (event_id, routing_key, payload) VALUES ($1, $2, $3)`
 )
 
 // AI-generated (edited by ZI YANG): documents the exported repository adapter
@@ -197,27 +202,67 @@ func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.U
 // UpdateAccountStatusByID sets the account status. Suspending also sets
 // tokens_valid_after, so refresh tokens issued before it are rejected;
 // reactivating leaves it unchanged. The caller passes the timestamp so it
-// matches the suspension key written to Redis.
+// matches the suspension key written to Redis. Reactivating a SUSPENDED
+// student also queues user.registered in the same transaction, unless the
+// student already has one.
 func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
-	result, err := r.pool.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid)
+	tx, err := r.pool.Begin(ctx)
 	if err != nil {
+		return fmt.Errorf("begin account status transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var currentStatus user.AccountStatus
+	var role user.AccountRole
+	if err := tx.QueryRow(ctx, lockAccountStatusQuery, uid).Scan(&currentStatus, &role); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return user.ErrNotFound
+		}
+		return fmt.Errorf("lock account status: %w", mapDatabaseError(err))
+	}
+	if _, err := tx.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid); err != nil {
 		return fmt.Errorf("update account status: %w", mapDatabaseError(err))
 	}
-	if result.RowsAffected() == 0 {
-		return user.ErrNotFound
+	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — applies D-078's
+	// exactly-once reactivation event guard inside the status transaction.
+	if currentStatus == user.AccountStatusSuspended && status == user.AccountStatusActive && role == user.AccountRoleStudent {
+		event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())
+		const queueMissingRegistrationEventQuery = `
+			INSERT INTO outbox_events (event_id, routing_key, payload)
+			SELECT $1, $2, $3
+			WHERE NOT EXISTS (
+				SELECT 1 FROM outbox_events
+				WHERE routing_key = $2 AND payload->>'userId' = $4
+			)`
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return fmt.Errorf("marshal registration event: %w", err)
+		}
+		if _, err := tx.Exec(ctx, queueMissingRegistrationEventQuery, event.EventID, user.RoutingUserRegistered, payload, uid.String()); err != nil {
+			return fmt.Errorf("queue registration event: %w", err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit account status transaction: %w", err)
 	}
 	return nil
 }
 
-// ActivateUser locks and activates a pending account in one transaction.
+// AI-generated (edited by James Teo): the user.registered outbox row is written
+// in the activation transaction, so the event exists exactly when the account
+// became ACTIVE.
+// ActivateUser locks and activates a pending account, and queues its
+// user.registered event in the outbox_events table, in one transaction. Only
+// an UNVERIFIED account is changed; any other status leaves the row and the
+// outbox untouched.
 func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin activation transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
+	var uid uuid.UUID
 	var status user.AccountStatus
-	if err := tx.QueryRow(ctx, `SELECT account_status FROM users WHERE LOWER(email) = LOWER($1) FOR UPDATE`, email).Scan(&status); err != nil {
+	if err := tx.QueryRow(ctx, lockUserForActivationQuery, email).Scan(&uid, &status); err != nil {
 		return fmt.Errorf("lock account for activation: %w", mapDatabaseError(err))
 	}
 	// AI-generated (edited by James Teo): only an UNVERIFIED account activates;
@@ -228,8 +273,27 @@ func (r *PostgresRepository) ActivateUser(ctx context.Context, email string) err
 	if _, err := tx.Exec(ctx, activateUserByEmailQuery, email); err != nil {
 		return fmt.Errorf("activate user: %w", err)
 	}
+	event := user.NewUserRegisteredEvent(uuid.New(), uid, time.Now())
+	if err := insertOutboxEvent(ctx, tx, event.EventID, user.RoutingUserRegistered, event); err != nil {
+		return err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit activation transaction: %w", err)
+	}
+	return nil
+}
+
+// AI-generated (edited by James Teo).
+// insertOutboxEvent queues payload, encoded as JSON, for the relay to publish
+// under routingKey. It runs on the caller's transaction so the event commits
+// or rolls back with the change it reports.
+func insertOutboxEvent(ctx context.Context, executor userInserter, eventID uuid.UUID, routingKey string, payload any) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("encode %s event %s: %w", routingKey, eventID, err)
+	}
+	if _, err := executor.Exec(ctx, insertOutboxEventQuery, eventID, routingKey, string(body)); err != nil {
+		return fmt.Errorf("queue %s event %s: %w", routingKey, eventID, err)
 	}
 	return nil
 }

@@ -73,8 +73,8 @@ func TestLogoutServiceBlocksAccessBeforeRevokingRefreshSession(t *testing.T) {
 	if got, want := order, []string{"postgres-read", "redis", "postgres"}; !equalStrings(got, want) {
 		t.Fatalf("call order = %#v, want %#v", got, want)
 	}
-	if blocklist.jti != jti || blocklist.ttl != 15*time.Minute {
-		t.Fatalf("blocklist request = %#v, want exact remaining TTL", blocklist)
+	if blocklist.jti != jti || blocklist.ttl != 15*time.Minute+minimumLogoutTTL {
+		t.Fatalf("blocklist request = %#v, want remaining TTL plus clock skew", blocklist)
 	}
 }
 
