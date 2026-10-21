@@ -43,8 +43,7 @@ services:
 # own admin writes (D-041, D-054), but it holds no ports: key all the same
 # (D-010 in ai/decisions.md).
 #
-# credit-service is not in this file yet.
-# The frontend is not in this file either: `npm run dev` in frontend/ serves
+# The frontend is not in this file: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
   # ---- Redis ------------------------------------------------------------
@@ -155,6 +154,39 @@ services:
       REDIS_URL: redis://redis:6379
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
 
+  # ---- Credit service and its database ---------------------------------
+  credit-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CREDIT_DB_USER:-credit}
+      POSTGRES_PASSWORD: ${CREDIT_DB_PASSWORD:-credit}
+      POSTGRES_DB: credit
+    volumes:
+      - credit-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CREDIT_DB_USER:-credit} -d credit"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  credit-service:
+    build:
+      context: ./credit-service
+      dockerfile: Dockerfile
+    depends_on:
+      credit-db:
+        condition: service_healthy
+    environment:
+      PORT: 8084
+      CREDIT_DB_URL: postgres://${CREDIT_DB_USER:-credit}:${CREDIT_DB_PASSWORD:-credit}@credit-db:5432/credit?sslmode=disable
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+      # Must match the foc user in rabbitmq/definitions.json.
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+    restart: on-failure
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/credits.
+
   rabbitmq:
     image: rabbitmq:3.13-management
     environment:
@@ -225,6 +257,4 @@ volumes:
   supplier-db-data:
   rabbitmq-data:
   order-db-data:
-
-
-
+  credit-db-data:

@@ -1,0 +1,10 @@
+# AI Assistance Disclosure:
+# Tool: Codex (model: GPT-5), date: 2026-10-19
+# Scope: Configured deterministic Credit Service model and chi server generation.
+# Author review: PENDING - reviewer to complete
+
+package: gen
+output: credit.gen.go
+generate:
+  chi-server: true
+  models: true
