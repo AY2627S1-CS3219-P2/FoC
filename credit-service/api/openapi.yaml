@@ -266,6 +266,13 @@ paths:
     patch:
       summary: Adjust the reward secured by a reservation.
       operationId: adjustReservationReward
+      # AI-generated (edited by choppyback).
+      description: >-
+        Retry idempotency is guaranteed only when the caller supplies a valid
+        UUID in X-Request-Id and reuses that same value for retries of the same
+        logical adjustment. If the header is omitted, Credit Service generates
+        a new ID for each call, so retries without a caller-supplied ID are not
+        idempotent. A new logical adjustment must use a new UUID.
       parameters:
         - in: path
           name: errandId
@@ -276,7 +283,7 @@ paths:
         - in: header
           name: X-Request-Id
           required: false
-          description: UUID identifying this logical adjustment; reuse it only for retries of that adjustment.
+          description: Optional UUID. Retry idempotency requires the caller to supply it and reuse it for retries of the same logical adjustment. If omitted, each call gets a new generated ID and retries are not idempotent.
           schema:
             type: string
             format: uuid
