@@ -970,6 +970,12 @@ textarea {
   color: var(--success-text);
 }
 
+/* A change to held credits only, so it isn't read as a second charge. */
+.ledger-amount.held {
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
 .ledger-running {
   font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
   font-size: 12px;

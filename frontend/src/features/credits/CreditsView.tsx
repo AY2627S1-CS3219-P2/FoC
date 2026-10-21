@@ -10,7 +10,7 @@ import { useEffect, useState } from "react";
 import type { CreditAccountsApi } from "./creditAccountsApi";
 import type {
   AccountResponse,
-  TransactionItem,
+  TransactionOperation,
   TransactionListResponse,
   TransactionReason,
 } from "./creditTypes";
@@ -52,17 +52,24 @@ export function accountShown(
   return balance.status === "unavailable" ? lastKnown : null;
 }
 
-/**
- * Appends a page of transactions, skipping any already shown. A transaction
- * that lands between two pages shifts every offset by one, so without this a
- * row could appear twice.
- */
+/** Appends a page of transactions, skipping any already shown. */
 export function mergeTransactions(
-  shown: readonly TransactionItem[],
-  page: readonly TransactionItem[],
-): TransactionItem[] {
-  const seen = new Set(shown.map((item) => item.id));
-  return [...shown, ...page.filter((item) => !seen.has(item.id))];
+  shown: readonly TransactionOperation[],
+  page: readonly TransactionOperation[],
+): TransactionOperation[] {
+  const seen = new Set(shown.map((item) => item.operationId));
+  return [...shown, ...page.filter((item) => !seen.has(item.operationId))];
+}
+
+/**
+ * The figure a row shows (D-080): its change to available credits, or, when
+ * only held credits moved, that change marked as held. The unmarked figures
+ * add up to the available balance.
+ */
+export function rowFigure(op: TransactionOperation): { amount: number; held: boolean } {
+  return op.availableDelta === 0 && op.reservedDelta !== 0
+    ? { amount: op.reservedDelta, held: true }
+    : { amount: op.availableDelta, held: false };
 }
 
 /**
@@ -89,7 +96,7 @@ interface CreditsViewProps {
 const REASON_LABEL: Record<TransactionReason, string> = {
   REGISTRATION_ALLOCATION: "Starting credits",
   ERRAND_RESERVATION: "Held for an errand",
-  ERRAND_CREATION_FAILED: "Returned: errand could not be posted",
+  ERRAND_FAILED: "Returned: errand could not be posted",
   ERRAND_COMPLETED_PAYOUT: "Earned for a delivery",
   ERRAND_COMPLETED_DEDUCTION: "Paid to courier",
   ERRAND_CANCELLED: "Returned: errand cancelled",
@@ -104,54 +111,43 @@ const PAGE_SIZE = 20;
 // AI-generated (edited by James Teo): the ledger as loaded so far, and where
 // Load more asks from next.
 export interface Ledger {
+  /** The rows shown, newest first, with no row missing in between. */
+  items: TransactionOperation[];
   /**
-   * The rows shown, newest first. Each merge below keeps them a run of
-   * credit-service's list with no row missing in between, which is what lets
-   * the row count serve as the next page's offset.
+   * The cursor for the rows after the last one shown, or null when none are
+   * left. It marks a row, not a position, so new rows landing in front don't
+   * move it.
    */
-  items: TransactionItem[];
-  /** The largest total credit-service has reported; the ledger only grows. */
-  total: number;
+  nextCursor: string | null;
 }
 
-/** A Load more fetch: where it starts, and the row shown last when it was asked for. */
+/** A Load more fetch: its cursor, and the row shown last when it was asked for. */
 export interface PageRequest {
-  offset: number;
+  cursor: string;
   after: string | undefined;
 }
 
-/**
- * What Load more asks for next, or null once every row is shown. The offset
- * is the number of rows shown rather than a running count of offsets asked
- * for: a new transaction lands at the newest end and pushes every row down
- * one, so asking from the row count can fetch a row again, which
- * mergeTransactions drops, but never steps over one.
- */
+/** What Load more asks for next, or null once every row is shown. */
 export function nextPageRequest(ledger: Ledger): PageRequest | null {
-  const shown = ledger.items.length;
-  if (shown >= ledger.total) return null;
-  return { offset: shown, after: ledger.items[shown - 1]?.id };
+  if (ledger.nextCursor === null) return null;
+  return { cursor: ledger.nextCursor, after: ledger.items.at(-1)?.operationId };
 }
 
 /**
  * The ledger after Load more's page arrives, whenever it arrives relative to
- * a refetch of the first page. The page is dropped when the row it was asked
- * to follow is no longer shown: the ledger started again from a newer first
- * page while it was on its way, and appending it would leave a gap.
+ * a refetch of the first page. The page follows the row it was asked after,
+ * so it is dropped unless that row is still the last one shown: otherwise the
+ * ledger started again while it was on its way, and appending would leave a gap.
  */
 export function withNextPage(
   current: Ledger,
   request: PageRequest,
   page: TransactionListResponse,
 ): Ledger {
-  if (request.after !== undefined && !current.items.some((item) => item.id === request.after)) {
-    return current;
-  }
+  if (current.items.at(-1)?.operationId !== request.after) return current;
   return {
     items: mergeTransactions(current.items, page.items),
-    // A page answered before a newer one can arrive after it, so its total
-    // may be behind; the larger one is the newer.
-    total: Math.max(current.total, page.pagination.total),
+    nextCursor: page.nextCursor ?? null,
   };
 }
 
@@ -183,14 +179,14 @@ export function ledgerFailureMessage(failed: LedgerFailure, rowsShown: boolean):
 export function withLatestPage(current: Ledger | null, page: TransactionListResponse): Ledger {
   const fresh: Ledger = {
     items: mergeTransactions([], page.items),
-    total: page.pagination.total,
+    nextCursor: page.nextCursor ?? null,
   };
   if (!current || current.items.length === 0) return fresh;
-  const shown = new Set(current.items.map((item) => item.id));
-  if (!page.items.some((item) => shown.has(item.id))) return fresh;
+  const shown = new Set(current.items.map((item) => item.operationId));
+  if (!page.items.some((item) => shown.has(item.operationId))) return fresh;
   return {
     items: mergeTransactions(page.items, current.items),
-    total: Math.max(current.total, page.pagination.total),
+    nextCursor: current.nextCursor,
   };
 }
 
@@ -219,7 +215,7 @@ export function CreditsView({ api, balance, onRetryBalance }: CreditsViewProps) 
     if (accountVersion === null) return;
     let cancelled = false;
     setLedgerFailed(null);
-    api.listTransactions(PAGE_SIZE, 0).then(
+    api.listTransactions(PAGE_SIZE).then(
       (page) => {
         if (!cancelled) setLedger((current) => withLatestPage(current, page));
       },
@@ -238,7 +234,7 @@ export function CreditsView({ api, balance, onRetryBalance }: CreditsViewProps) 
     setLoadingMore(true);
     setLedgerFailed(null);
     try {
-      const page = await api.listTransactions(PAGE_SIZE, request.offset);
+      const page = await api.listTransactions(PAGE_SIZE, request.cursor);
       setLedger((current) => (current ? withNextPage(current, request, page) : current));
     } catch {
       setLedgerFailed("more");
@@ -345,25 +341,29 @@ export function CreditsView({ api, balance, onRetryBalance }: CreditsViewProps) 
 
           {ledger !== null && ledger.items.length > 0 && (
             <div className="ledger">
-              {ledger.items.map((entry) => (
-                <div className="ledger-row" key={entry.id}>
-                  <div>
-                    <div className="ledger-label">
-                      {REASON_LABEL[entry.reason] ?? entry.reason}
+              {ledger.items.map((entry) => {
+                const figure = rowFigure(entry);
+                return (
+                  <div className="ledger-row" key={entry.operationId}>
+                    <div>
+                      <div className="ledger-label">
+                        {REASON_LABEL[entry.reason] ?? entry.reason}
+                      </div>
+                      <div className="ledger-time">{formatWhen(entry.createdAt)}</div>
                     </div>
-                    <div className="ledger-time">{formatWhen(entry.createdAt)}</div>
-                  </div>
-                  <div>
-                    <div
-                      className={`ledger-amount ${
-                        entry.amount > 0 ? "positive" : ""
-                      }`}
-                    >
-                      {formatAmount(entry.amount)}
+                    <div>
+                      <div
+                        className={`ledger-amount ${
+                          figure.held ? "held" : figure.amount > 0 ? "positive" : ""
+                        }`}
+                      >
+                        {formatAmount(figure.amount)}
+                        {figure.held && " held"}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

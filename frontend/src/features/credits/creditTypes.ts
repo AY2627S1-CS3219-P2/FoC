@@ -1,8 +1,9 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-18
 // Scope: Types for credit-service's account routes, hand-written by
-//   transcribing credit-service/api/openapi.yaml on main (commit 27da39b):
-//   AccountResponse, TransactionReason, TransactionItem, Pagination and
+//   transcribing credit-service/api/openapi.yaml: first from main at 27da39b,
+//   then on 2026-10-21 from main at c914fe5 (#44): AccountResponse,
+//   TransactionReason, TransactionOperation and the cursor-paged
 //   TransactionListResponse. Replaces the mock's types.ts.
 // Author review: James Teo — reviewed and verified.
 
@@ -13,9 +14,10 @@
  * their shapes are not here.
  */
 
-/** `GET /api/credits/accounts/me`. */
+/** `GET /api/credits/accounts/me`, as the client returns it: only a READY account. */
 export interface AccountResponse {
   userId: string;
+  creditStatus: "READY";
   /** Spendable now. */
   availableCredits: number;
   /** Held on errands that are not final yet. */
@@ -28,7 +30,7 @@ export interface AccountResponse {
 export const TRANSACTION_REASONS = [
   "REGISTRATION_ALLOCATION",
   "ERRAND_RESERVATION",
-  "ERRAND_CREATION_FAILED",
+  "ERRAND_FAILED",
   "ERRAND_COMPLETED_PAYOUT",
   "ERRAND_COMPLETED_DEDUCTION",
   "ERRAND_CANCELLED",
@@ -39,31 +41,23 @@ export const TRANSACTION_REASONS = [
 
 export type TransactionReason = (typeof TRANSACTION_REASONS)[number];
 
-export interface TransactionItem {
-  id: string;
-  userId: string;
-  /** Null for a transaction no errand caused, such as the starting credits. */
-  errandId: string | null;
-  /**
-   * Signed as credit-service sends it. The client shows it as it comes and
-   * does no sign arithmetic of its own.
-   */
-  amount: number;
+/** One operation on the account: its change to each balance, signed as sent. */
+export interface TransactionOperation {
+  operationId: string;
+  /** Absent or null for an operation no errand caused, such as the starting credits. */
+  errandId?: string | null;
   reason: TransactionReason;
+  availableDelta: number;
+  reservedDelta: number;
+  /** RFC 3339; absent or null when no event caused it. */
+  occurredAt?: string | null;
   /** RFC 3339. */
   createdAt: string;
 }
 
-export interface Pagination {
-  /** 1–100; credit-service's default is 20. */
-  limit: number;
-  offset: number;
-  /** Every transaction the account has, across all pages. */
-  total: number;
-}
-
-/** `GET /api/credits/accounts/me/transactions`. */
+/** `GET /api/credits/accounts/me/transactions`: newest first. */
 export interface TransactionListResponse {
-  items: TransactionItem[];
-  pagination: Pagination;
+  items: TransactionOperation[];
+  /** Asks for the page after this one; null or absent on the last page. */
+  nextCursor?: string | null;
 }
