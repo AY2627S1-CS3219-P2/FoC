@@ -5,6 +5,7 @@
 
 package repository
 
+// AI-generated (edited by choppyback).
 import (
 	"context"
 	"encoding/binary"
@@ -15,6 +16,7 @@ import (
 	"foc/credit-service/internal/credit"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 )
 
 var _ credit.ReservationRepository = (*PostgresRepository)(nil)

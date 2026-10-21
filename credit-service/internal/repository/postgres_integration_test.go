@@ -8,6 +8,7 @@
 
 package repository_test
 
+// AI-generated (edited by choppyback).
 import (
 	"context"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
