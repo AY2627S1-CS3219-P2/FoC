@@ -25,8 +25,13 @@ transform, so there is no second build pipeline to keep in step. Tests live
 beside the code as `*.test.ts`. Only logic is covered today: validation rules,
 the OTP fixture's timing, the authorized transport's refresh and retry, the
 gateway login, refresh, restore and logout calls, the suppliers fixture, the
-remembered view, and the user-service profile client (`usersApi.ts`) with the
-contact and new-password checks. There is no component testing
+remembered view and acting mode, the nav's role and mode rule (`views.ts`),
+the user-service profile client (`usersApi.ts`) with the contact and
+new-password checks, the order-service and credit-service clients
+(`ordersApi.ts`, `creditAccountsApi.ts`), the poller (`lib/polling.ts`), the
+errand countdowns, labels and error messages (`time.ts`, `format.ts`), the
+errand form's checks and amend changes, the detail's parties and buttons, and
+the Credits screen's paging. There is no component testing
 library, so rendering is still unverified; adding one is a separate stack
 decision and still needs asking.
 
@@ -74,26 +79,33 @@ src/
 │   ├── home/          landing view
 │   ├── suppliers/     view + components + suppliersApi.ts + types.ts,
 │   │                  suppliersFixture.ts (fixture builds only)
-│   ├── errands/       NewErrandView, MyErrandsView    [MOCK]
-│   ├── credits/       CreditsView                     [MOCK]
+│   ├── errands/       NewErrandView, MyErrandsView, FindErrandsView,
+│   │                  AllErrandsView, ErrandForm, ErrandCard, ErrandDetail,
+│   │                  ordersApi.ts + orderTypes.ts (order-service),
+│   │                  time.ts (countdowns), format.ts (labels, messages)
+│   ├── credits/       CreditsView, creditAccountsApi.ts + creditTypes.ts
+│   │                  (credit-service)
 │   ├── profile/       ProfileView, ProfileEditForms (one modal per
 │   │                  field), usersApi.ts (user-service /api/users/{uid})
 │   └── admin/         AdminView (ADMIN sessions only; uses profile's usersApi)
-├── components/        shared only — AppShell, Modal, Toast, MockBadge, icons
+├── components/        shared only — AppShell, Modal, Toast, MockBadge,
+│                      NeedsService, icons
 ├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
-│                      tokens.ts (AT store), jwt.ts, lastView.ts
+│                      tokens.ts (AT store), jwt.ts, lastView.ts, polling.ts
 ├── App.tsx            session gate, view switching, acting mode, balance
 ├── views.ts           view names + the nav model, until a router is chosen
 └── main.tsx
 ```
 
 Every feature folder maps to one backend service; `auth/`, `profile/` and
-`admin/` all map to user-service. `suppliers/`, `auth/`, `profile/` and
-`admin/` are backed by real services through the gateway; `errands/` and
-`credits/` still use fixtures. A fixture build (`VITE_USE_FIXTURES=true`)
-puts `auth/` and `suppliers/` on fixtures too, so it makes no gateway call;
-the suppliers fixture is supplier-service's seed CSV, loaded the way its
-`seed.go` loads it.
+`admin/` all map to user-service. `suppliers/`, `auth/`, `profile/`,
+`admin/`, `errands/` and `credits/` are all backed by real services through
+the gateway. A fixture build (`VITE_USE_FIXTURES=true`) puts
+`auth/` and `suppliers/` on fixtures, so it makes no gateway call; the
+suppliers fixture is supplier-service's seed CSV, loaded the way its
+`seed.go` loads it. `errands/` and `credits/` have no fixture: in a fixture
+build their screens show a "Needs order-service" or "Needs credit-service"
+notice (`NeedsService`) instead.
 
 `index.html` is the Vite entry document; the D1 prototype it replaced
 (`app.js` plus hand-written markup) is in this branch's history. There is no
@@ -108,6 +120,13 @@ forwards `/auth` and `/api` to the gateway (D-033). These rules apply:
 - Until a spec is committed, keep each service's calls in a single
   hand-written module with the same surface, so swapping in the generated
   client is a one-file change.
+- **The exception:** the user-service, order-service and credit-service
+  clients (`usersApi.ts`, `ordersApi.ts`, `creditAccountsApi.ts`, with
+  `orderTypes.ts` and `creditTypes.ts`) are hand-written from their services'
+  committed specs rather than generated. The order-service and
+  credit-service files' headers name the spec and the commit they
+  transcribe; when a spec changes, the files written from it are checked
+  against it again.
 - Components take data and callbacks, not transport (root §5: data
   coupling is the goal). Shared UI primitives stay inside `frontend/`;
   nothing is shared with a backend service.
@@ -137,9 +156,13 @@ users). Same thing with the admin resetting user's password".
 
 ## Mock services — read before touching them
 
-`order-service` and `credit-service` do not exist. So the frontend can be
-built and demoed, `errands/` and `credits/` talk to fixture modules in their
-own folders instead (`src/lib/mock.ts` has the full note).
+Every screen backed by a service now calls the real one. Fixtures remain
+only for a fixture build (`VITE_USE_FIXTURES=true`), which runs sign-in, the
+profile and the suppliers on in-browser fixtures (`src/lib/mock.ts` has the
+full note). The errand and credit screens have no fixture: their mock
+modules were replaced by the order-service and credit-service clients, and a
+fixture build shows a "needs service" notice on those screens rather than
+calling a gateway it does not have.
 
 `authApi.ts` holds **two** clients — the fixtures, and a gateway-backed one
 implementing D-010..D-015 — and `App.tsx` picks between them once: the
@@ -164,17 +187,17 @@ change reaching into another service needs that owner (root §3). So:
   and state transitions belong to the services that own them; the fixtures
   store and return, nothing more.
 
-**One exception, which is not a mock.** `ErrandStatus` in
-`features/errands/types.ts` transcribes the order-state set the team has
-already recorded in the milestone report glossary — OPEN, ACCEPTED, PICKED_UP, DELIVERED,
-COMPLETED, CANCELLED, EXPIRED, with CANCELLED and EXPIRED terminal. That is a
-recorded decision under root §1, so it is implemented rather than invented.
-Which transitions are permitted (F3.8) stays with order-service and is never
-enforced in this folder. Only the wire casing is still open.
+**Errand states.** `ErrandStatus` in `features/errands/orderTypes.ts`
+transcribes order-service's seven states, cased as its spec sends them:
+OPEN, ACCEPTED, PICKED_UP, DELIVERED, and the three final ones, COMPLETED,
+CANCELLED and EXPIRED. Which transitions are permitted stays with
+order-service and is never worked out in this folder: each errand arrives
+with the `actions` its viewer may take, and the screens draw one button per
+action and nothing else.
 
-Two hard-coded lists are placeholders nobody owns yet, flagged for the team:
-campus delivery locations (`NewErrandView`) and the 100-credit initial
-allocation quoted on the login screen.
+The campus delivery locations come from order-service
+(`GET /api/orders/locations`). The 100-credit starting allocation quoted on
+the login screen is credit-service's figure, copied by hand.
 
 ## Local development
 

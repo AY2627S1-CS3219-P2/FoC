@@ -14,10 +14,11 @@
 //   dead tab-bar JSX.
 // Author review: nigeltzy — Checked that the component was updated according to the new format and requirements. All seems valid when checked.
 
+// AI-generated (edited by James Teo): the mock badge is gone now that the
+// balance is credit-service's, and the nav follows isViewAvailable.
 import { useState, type ReactNode } from "react";
-import { MockBadge } from "./MockBadge";
 import type { ActingMode, Session } from "../features/auth/types";
-import { NAV_ITEMS, type ViewName } from "../views";
+import { isViewAvailable, NAV_ITEMS, type ViewName } from "../views";
 import {
   BellIcon,
   HomeIcon,
@@ -25,21 +26,26 @@ import {
   LogoutIcon,
   MenuIcon,
   PlusIcon,
+  SearchIcon,
   ShieldIcon,
   StoreIcon,
   UserIcon,
   WalletIcon,
 } from "./icons";
 
+// AI-generated (edited by James Teo): Find errands and All errands reuse the
+// search and list icons.
 const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
   home: HomeIcon,
   "new-errand": PlusIcon,
+  "find-errands": SearchIcon,
   "my-errands": ListIcon,
   suppliers: StoreIcon,
   credits: WalletIcon,
   profile: UserIcon,
   notifications: BellIcon,
   admin: ShieldIcon,
+  "all-errands": ListIcon,
 };
 
 interface AppShellProps {
@@ -48,7 +54,8 @@ interface AppShellProps {
   onNavigate: (view: ViewName) => void;
   mode: ActingMode;
   onModeChange: (mode: ActingMode) => void;
-  /** Null while the (mock) credit balance is still loading. */
+  // AI-generated (edited by James Teo).
+  /** Null whenever credit-service's balance is not known; shows "—". */
   available: number | null;
   held: number | null;
   onLogOut: () => void;
@@ -67,6 +74,9 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  // AI-generated (edited by James Teo): an admin never posts or carries an
+  // errand and has no credit account, so gets no mode toggle and no balance.
+  const isStudent = session.role === "STUDENT";
 
   const navigateAndClose = (next: ViewName) => {
     onNavigate(next);
@@ -92,12 +102,16 @@ export function AppShell({
         <nav className="sidebar-nav">
           {/* AI-generated (edited by nigeltzy): admin-only items are left out
               of a non-admin session's nav. */}
-          {NAV_ITEMS.filter((item) => !item.adminOnly || session.role === "ADMIN").map((item) => {
+          {/* AI-generated (edited by James Teo): and each role and mode gets
+              only its own items; the current one is marked for screen
+              readers too. */}
+          {NAV_ITEMS.filter((item) => isViewAvailable(item.view, session.role, mode)).map((item) => {
             const Icon = ICONS[item.view];
             return (
               <button
                 key={item.view}
                 className={`sidebar-link ${view === item.view ? "active" : ""}`}
+                aria-current={view === item.view ? "page" : undefined}
                 onClick={() => navigateAndClose(item.view)}
                 disabled={!item.enabled}
                 title={item.enabled ? undefined : "Coming soon"}
@@ -110,20 +124,21 @@ export function AppShell({
         </nav>
 
         <div className="sidebar-foot">
-          <div className="sidebar-balance">
-            {/* AI-generated (edited by nigeltzy). The balance is the
-                credit-service fixture on every screen. */}
-            <MockBadge service="credit-service" />
-            <div className="sidebar-balance-value">
-              {available === null ? "—" : available}
-            </div>
-            <div className="sidebar-balance-label">credits available</div>
-            {held !== null && held > 0 && (
-              <div className="sidebar-balance-held">
-                {held} held on open errands
+          {/* AI-generated (edited by James Teo): credit-service's balance, for a
+              student only, with no mock badge. */}
+          {isStudent && (
+            <div className="sidebar-balance">
+              <div className="sidebar-balance-value">
+                {available === null ? "—" : available}
               </div>
-            )}
-          </div>
+              <div className="sidebar-balance-label">credits available</div>
+              {held !== null && held > 0 && (
+                <div className="sidebar-balance-held">
+                  {held} held on errands in progress
+                </div>
+              )}
+            </div>
+          )}
           <button className="sidebar-link" onClick={onLogOut}>
             <LogoutIcon />
             <span>Log out</span>
@@ -148,30 +163,38 @@ export function AppShell({
 
           <span className="topbar-spacer" />
 
-          <div className="mode-toggle">
-            <button
-              className={mode === "requesting" ? "active" : ""}
-              onClick={() => onModeChange("requesting")}
-            >
-              Requesting
-            </button>
-            <button
-              className={mode === "delivering" ? "active" : ""}
-              onClick={() => onModeChange("delivering")}
-            >
-              Delivering
-            </button>
-          </div>
+          {/* AI-generated (edited by James Teo): a student's mode toggle, with
+              the chosen mode announced. */}
+          {isStudent && (
+            <div className="mode-toggle" role="group" aria-label="Acting as">
+              <button
+                className={mode === "requesting" ? "active" : ""}
+                aria-pressed={mode === "requesting"}
+                onClick={() => onModeChange("requesting")}
+              >
+                Requesting
+              </button>
+              <button
+                className={mode === "delivering" ? "active" : ""}
+                aria-pressed={mode === "delivering"}
+                onClick={() => onModeChange("delivering")}
+              >
+                Delivering
+              </button>
+            </div>
+          )}
 
           {/* AI-generated (edited by nigeltzy). */}
-          <span
-            className="credit-pill"
-            title="Mock data · credit-service is not implemented yet"
-          >
-            <strong>{available === null ? "—" : available}</strong>
-            <span>cr</span>
-            <span className="credit-pill-mock">mock</span>
-          </span>
+          {/* AI-generated (edited by James Teo): a student's balance with no
+              mock label, read out as "N credits available" rather than with
+              the short "cr" shown. */}
+          {isStudent && (
+            <span className="credit-pill" title="Credits available">
+              <strong>{available === null ? "—" : available}</strong>
+              <span aria-hidden="true">cr</span>
+              <span className="visually-hidden"> credits available</span>
+            </span>
+          )}
         </header>
 
         <main className="content">{children}</main>

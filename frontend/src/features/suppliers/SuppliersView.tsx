@@ -127,9 +127,10 @@ export function SuppliersView({
     <section>
       <div className="page-head">
         <h1>Suppliers</h1>
+        {/* AI-generated (edited by James Teo): no longer the only screen backed
+            by a real service, so that sentence is gone. */}
         <p className="page-sub">
           Campus stores, facilities and pickup points an errand can point at.
-          This is the one screen backed by a real service.
         </p>
       </div>
 
