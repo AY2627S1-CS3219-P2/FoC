@@ -355,12 +355,10 @@ const STATUS_ACTIONS: Partial<Record<StatusControl, StatusAction>> = {
     buttonClass: "btn-danger",
     confirmBoxClass: "confirm-box",
     verb: "Suspend",
-    // What user-service does today: login and refresh are refused, but an
-    // access token already issued works until it expires. That lifetime is
-    // user-service's JWT_ACCESS_TOKEN_TTL setting, so the wording names no
-    // time that could stop matching it.
+    // The gateway refuses a suspended account's token on its next request, so
+    // the student is signed out then, not when the token expires.
     consequence:
-      "They can't sign in again until you reactivate them, and their current session ends when it next refreshes. Their errands don't change.",
+      "They can't sign in again until you reactivate them, and they're signed out at their next action. Their errands don't change.",
     confirmLabel: "Yes, suspend",
     busyLabel: "Suspending…",
     run: (api, uid) => api.suspendUser(uid),
