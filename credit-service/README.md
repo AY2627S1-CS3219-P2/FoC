@@ -32,8 +32,7 @@ Credit Service manages the financial credit ledger for Friend on Campus (FoC). I
 
 ### Private Inter-Service Routes (Private Network Only)
 - `POST /api/v1/credits/reservations`: Atomically reserve requester credits for an errand. Accepts `requesterId` in body or extracts it from caller's JWT Bearer token context if omitted. (Alias: `/internal/v1/credit-reservations`).
-<!-- AI-generated (reviewed by PENDING): Codex (GPT-5), 2026-10-20 — corrected the PATCH idempotency description to match the implementation. -->
-- `PATCH /api/v1/credits/reservations/{errandId}`: Atomically adjust an errand's reserved reward to target `newReward`. Derives its idempotency key deterministically from `errandId` and `newReward`; `X-Request-Id` is not used for idempotency (no caller CAS needed). (Alias: `/internal/v1/credit-reservations/{errandId}`).
+- `PATCH /api/v1/credits/reservations/{errandId}`: Atomically adjust an errand's reserved reward to target `newReward`. **Retry idempotency is guaranteed only when the caller supplies a valid UUID in `X-Request-Id` and reuses that same ID for retries of the same logical adjustment.** If omitted, Credit Service generates a new ID for each call, so retries without a caller-supplied ID are not idempotent. Use a new ID for each new logical adjustment. (Alias: `/internal/v1/credit-reservations/{errandId}`).
 
 ### Health Endpoints
 - `GET /api/v1/health`: Dependency health check verifying PostgreSQL ping, schema migration version, and RabbitMQ supervisor status.

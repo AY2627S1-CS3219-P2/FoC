@@ -4,10 +4,11 @@
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Integration tests for credit PostgresRepository covering migrations, initial allocation,
 //   reservations, adjustments, D-057 errand.reward_set versioning, and idempotency over PostgreSQL 16.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package repository_test
 
+// AI-generated (edited by choppyback).
 import (
 	"context"
 	"net"
@@ -177,11 +178,46 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(75), acc2.AvailableCredits)
 		require.Equal(t, int64(25), acc2.ReservedCredits)
 
+		// A later amendment may legitimately reuse an earlier target, but must use a new operation ID.
+		op3 := uuid.New()
+		resOp3, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, op3)
+		require.NoError(t, err)
+		require.Equal(t, credit.OutcomeSuccess, resOp3.OutcomeCode)
+		require.Equal(t, int64(60), res3.Amount)
+		acc3, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), acc3.AvailableCredits)
+		require.Equal(t, int64(60), acc3.ReservedCredits)
+
 		// 3. Unowned reservation returns ErrReservationNotFound
 		otherUser := uuid.New()
-		op3 := uuid.New()
-		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, op3)
+		op4 := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, op4)
 		require.ErrorIs(t, err, credit.ErrReservationNotFound)
+	})
+
+	t.Run("AdjustReservationReward commits a deterministic failure for retries", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, time.Now().UTC()))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 90)
+		require.NoError(t, err)
+
+		opID := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 110, opID)
+		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
+
+		// Refund the reservation, which changes the wallet state. The same
+		// operation ID must still replay its original outcome, not re-evaluate it.
+		err = env.repo.RefundReservation(ctx, errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
+		require.NoError(t, err)
+		stored, _, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 110, opID)
+		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
+		require.NotNil(t, stored)
+		require.Equal(t, credit.OutcomeInsufficientCredits, stored.OutcomeCode)
+		var amount int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&amount))
+		require.Equal(t, int64(90), amount)
 	})
 
 	t.Run("ApplyRewardSet (D-057) reconciles holds and enforces versioning", func(t *testing.T) {
@@ -194,15 +230,23 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(1), res.Version)
 
-		// 1. Stale version (1 <= 1) is ignored as a no-op
-		eventOld := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventOld, 50, 1, now)
+		// AI-generated (edited by choppyback).
+		// 1. The same version reconciles a PATCH whose response was lost without incrementing the version.
+		eventRecovery := uuid.New()
+		err = env.repo.ApplyRewardSet(ctx, errandID, eventRecovery, 50, 1, now)
 		require.NoError(t, err)
 
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
-		require.Equal(t, int64(80), acc.AvailableCredits)
-		require.Equal(t, int64(20), acc.ReservedCredits)
+		require.Equal(t, int64(50), acc.AvailableCredits)
+		require.Equal(t, int64(50), acc.ReservedCredits)
+		var reservationAmount, reservationVersion int64
+		require.NoError(t, env.pool.QueryRow(ctx, `
+			SELECT amount, version
+			FROM credit_reservations
+			WHERE errand_id = $1`, errandID).Scan(&reservationAmount, &reservationVersion))
+		require.Equal(t, int64(50), reservationAmount)
+		require.Equal(t, int64(1), reservationVersion)
 
 		// 2. Higher version (version: 2) updates hold to 35
 		eventNew := uuid.New()
@@ -214,9 +258,12 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(65), acc.AvailableCredits)
 		require.Equal(t, int64(35), acc.ReservedCredits)
 
-		// 3. Re-delivery of version 2 or older version is discarded
+		// 3. Exact re-delivery is harmless, while an older version is discarded.
 		eventDuplicate := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventDuplicate, 50, 2, now)
+		err = env.repo.ApplyRewardSet(ctx, errandID, eventDuplicate, 35, 2, now)
+		require.NoError(t, err)
+		eventOld := uuid.New()
+		err = env.repo.ApplyRewardSet(ctx, errandID, eventOld, 50, 1, now)
 		require.NoError(t, err)
 
 		acc, err = env.repo.GetAccount(ctx, userID)

@@ -5,6 +5,7 @@
 
 package repository
 
+// AI-generated (edited by choppyback).
 import (
 	"context"
 	"encoding/binary"
@@ -199,8 +200,13 @@ func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUI
 func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	var resOp *credit.OperationResult
 	var resRev *credit.Reservation
+	var businessErr error
 
 	err := r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
+		// The transaction runner may retry this callback, so discard values from
+		// any attempt that did not commit.
+		resOp, resRev, businessErr = nil, nil, nil
+
 		// 1. Transaction-scoped PostgreSQL advisory lock derived from operationId.
 		if _, err := tx.Exec(txCtx, "SELECT pg_advisory_xact_lock($1)", advisoryLockKey(operationID)); err != nil {
 			return fmt.Errorf("acquire advisory lock: %w", err)
@@ -220,7 +226,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		)
 		if err == nil {
 			// Row exists. Compare stored fields directly.
-			if op.ErrandID != errandID || op.NewAmount != newReward {
+			if op.OperationType != credit.OperationTypeRewardAdjustment || op.ErrandID != errandID || op.NewAmount != newReward {
 				return credit.ErrIdempotencyConflict
 			}
 			existing, err := findReservationByErrandID(txCtx, tx, errandID)
@@ -235,7 +241,8 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 				resRev = existing
 				return nil
 			}
-			return mapOutcomeToError(op.OutcomeCode, op.AuthoritativeAmount)
+			businessErr = mapOutcomeToError(op.OutcomeCode, op.AuthoritativeAmount)
+			return nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
 			return fmt.Errorf("lookup operation result: %w", err)
 		}
@@ -264,15 +271,19 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			return credit.ErrReservationNotFound
 		}
 		currentAmount := reservation.Amount
+		persistFailure := func(outcome credit.CreditOperationOutcome) error {
+			opRecord, persistErr := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, outcome, nil, nil)
+			if persistErr != nil {
+				return persistErr
+			}
+			resOp = opRecord
+			businessErr = mapOutcomeToError(outcome, nil)
+			return nil
+		}
 
 		// 4. Require reservation status RESERVED.
 		if reservation.Status != credit.ReservationStatusReserved {
-			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeReservationStateConflict, nil, nil)
-			if err != nil {
-				return err
-			}
-			resOp = opRecord
-			return credit.ErrReservationStateConflict
+			return persistFailure(credit.OutcomeReservationStateConflict)
 		}
 
 		// 5. If currentAmount == newAmount, persist successful result and return unchanged reservation (validated idempotent no-op).
@@ -303,23 +314,13 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		).Scan(&availableCredits, &reservedCredits, &version, &integrityStatus)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeWalletNotReady, nil, nil)
-				if err != nil {
-					return err
-				}
-				resOp = opRecord
-				return credit.ErrWalletNotReady
+				return persistFailure(credit.OutcomeWalletNotReady)
 			}
 			return fmt.Errorf("lock requester account for adjust: %w", err)
 		}
 
 		if integrityStatus == credit.IntegrityFlagged {
-			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeAccountIntegrityFailure, nil, nil)
-			if err != nil {
-				return err
-			}
-			resOp = opRecord
-			return credit.ErrAccountIntegrityFlagged
+			return persistFailure(credit.OutcomeAccountIntegrityFailure)
 		}
 
 		diff := newAmount - currentAmount
@@ -328,20 +329,10 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		if diff > 0 {
 			// Increase: move positive diff from available to reserved
 			if availableCredits < diff {
-				opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeInsufficientCredits, nil, nil)
-				if err != nil {
-					return err
-				}
-				resOp = opRecord
-				return credit.ErrInsufficientCredits
+				return persistFailure(credit.OutcomeInsufficientCredits)
 			}
 			if reservedCredits+diff > credit.MaxBalanceCredits {
-				opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeCreditLimitExceeded, nil, nil)
-				if err != nil {
-					return err
-				}
-				resOp = opRecord
-				return credit.ErrCreditLimitExceeded
+				return persistFailure(credit.OutcomeCreditLimitExceeded)
 			}
 
 			cmdTag, err := tx.Exec(txCtx, `
@@ -361,12 +352,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			// Decrease: move positive difference from reserved to available
 			absDiff := -diff
 			if availableCredits+absDiff > credit.MaxBalanceCredits {
-				opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeCreditLimitExceeded, nil, nil)
-				if err != nil {
-					return err
-				}
-				resOp = opRecord
-				return credit.ErrCreditLimitExceeded
+				return persistFailure(credit.OutcomeCreditLimitExceeded)
 			}
 
 			cmdTag, err := tx.Exec(txCtx, `
@@ -438,6 +424,9 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 	if err != nil {
 		return resOp, nil, err
 	}
+	if businessErr != nil {
+		return resOp, nil, businessErr
+	}
 	return resOp, resRev, nil
 }
 
@@ -507,8 +496,10 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return nil
 		}
 
-		// D-057: Ignore if the event version is older than or equal to what has already been applied
-		if version <= reservation.Version {
+		// AI-generated (edited by choppyback).
+		// D-057: Ignore only events older than the saved Order Service version.
+		// An equal-version event may be recovery for a PATCH whose response was lost.
+		if version < reservation.Version {
 			return nil
 		}
 

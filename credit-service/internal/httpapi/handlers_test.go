@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Added comprehensive unit tests for HTTP API handlers (reads, reservations, adjustments, health) per sourceOfTruth.md Phase 9.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package httpapi_test
 
@@ -561,6 +561,9 @@ func TestAdjustReservationReward(t *testing.T) {
 	t.Run("returns 200 OK on successful reward adjustment via /api/v1/credits/reservations/{errandId}", func(t *testing.T) {
 		repo := &mockReservationRepo{
 			adjustRewardFn: func(ctx context.Context, eID, rID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+				if opID != operationID {
+					t.Errorf("operationID = %s, want caller X-Request-Id %s", opID, operationID)
+				}
 				return &credit.OperationResult{
 					OperationID: opID,
 					ErrandID:    eID,
@@ -599,6 +602,55 @@ func TestAdjustReservationReward(t *testing.T) {
 		}
 		if resp.Amount != 35 {
 			t.Errorf("Amount = %d, want 35", resp.Amount)
+		}
+	})
+
+	t.Run("rejects a malformed X-Request-Id", func(t *testing.T) {
+		called := false
+		repo := &mockReservationRepo{adjustRewardFn: func(context.Context, uuid.UUID, uuid.UUID, int64, uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+			called = true
+			return nil, nil, nil
+		}}
+		router, _, iss := setupTestRouter(t, nil, repo, nil)
+		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
+		payload, _ := json.Marshal(map[string]any{"newReward": 35})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-Request-Id", "not-a-uuid")
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+		}
+		if called {
+			t.Fatal("repository was called for an invalid operation ID")
+		}
+	})
+
+	// AI-generated (edited by choppyback).
+	t.Run("generates an operation ID when X-Request-Id is absent", func(t *testing.T) {
+		var gotOperationID uuid.UUID
+		repo := &mockReservationRepo{adjustRewardFn: func(_ context.Context, eID, rID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+			gotOperationID = opID
+			return &credit.OperationResult{OperationID: opID}, &credit.Reservation{
+				ID: resID, ErrandID: eID, RequesterID: rID, Amount: next,
+				Status: credit.ReservationStatusReserved, CreatedAt: time.Now().UTC(), UpdatedAt: time.Now().UTC(),
+			}, nil
+		}}
+		router, _, iss := setupTestRouter(t, nil, repo, nil)
+		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
+		payload, _ := json.Marshal(map[string]any{"newReward": 35})
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(payload))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+		}
+		if gotOperationID == uuid.Nil {
+			t.Fatal("repository received a nil generated operation ID")
 		}
 	})
 
