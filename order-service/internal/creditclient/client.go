@@ -153,12 +153,20 @@ func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 // when the outcome is not known. It is never retried here: when the outcome
 // is unknown, the order service queues errand.reward_set for the errand as
 // saved instead (D-057).
+//
+// Each call is one reward change, so it sends a new UUID as X-Request-Id,
+// which credit-service keys the change on, never the caller's correlation id:
+// a caller could reuse that and get an earlier change's answer replayed
+// (D-081). The log line pairs the two ids.
 func (c *Client) Adjust(ctx context.Context, errandID, _ uuid.UUID, newReward int, correlationID string) error {
+	operationID := uuid.New()
 	body, err := json.Marshal(adjustRequest{NewReward: newReward})
 	if err != nil {
 		return fmt.Errorf("adjust credits for errand %s: encode request: %w", errandID, err)
 	}
-	status, err := c.send(ctx, http.MethodPatch, c.baseURL+reservationsPath+"/"+errandID.String(), body, correlationID)
+	status, err := c.send(ctx, http.MethodPatch, c.baseURL+reservationsPath+"/"+errandID.String(), body, operationID.String())
+	c.log.InfoContext(ctx, "credit reward change sent",
+		"errand_id", errandID, "request_id", correlationID, "operation_id", operationID, "status", status)
 	if err != nil {
 		return fmt.Errorf("adjust credits for errand %s: %w", errandID, err)
 	}
@@ -175,8 +183,9 @@ func (c *Client) Adjust(ctx context.Context, errandID, _ uuid.UUID, newReward in
 }
 
 // send makes one attempt, bounded by attemptTimeout, and returns the status
-// credit-service answered, or an error when no answer came back.
-func (c *Client) send(ctx context.Context, method, url string, body []byte, correlationID string) (int, error) {
+// credit-service answered, or an error when no answer came back. requestID is
+// sent as X-Request-Id unless it is empty.
+func (c *Client) send(ctx context.Context, method, url string, body []byte, requestID string) (int, error) {
 	ctx, cancel := context.WithTimeout(ctx, c.attemptTimeout)
 	defer cancel()
 
@@ -189,8 +198,8 @@ func (c *Client) send(ctx context.Context, method, url string, body []byte, corr
 	if token, ok := auth.TokenFromContext(ctx); ok {
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
-	if correlationID != "" {
-		req.Header.Set("X-Request-Id", correlationID)
+	if requestID != "" {
+		req.Header.Set("X-Request-Id", requestID)
 	}
 
 	resp, err := c.http.Do(req)

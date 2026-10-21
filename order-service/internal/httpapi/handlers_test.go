@@ -96,6 +96,8 @@ func TestRequestValidation(t *testing.T) {
 		{name: "item of only Hangul fillers", method: http.MethodPost, target: "/", body: createWith("itemDescription", "\u3164\u3164"), msg: "describe the item to pick up"},
 		{name: "amended note with a direction isolate", method: http.MethodPatch, target: errand, body: map[string]any{"version": 3, "deliveryNote": "Room \u206621\u2069"}, msg: "the note cannot contain text-direction control characters"},
 		{name: "reward of zero", method: http.MethodPost, target: "/", body: createWith("reward", 0), msg: "the reward must be at least 1 credit"},
+		{name: "reward past credit-service's limit", method: http.MethodPost, target: "/", body: createWith("reward", 1000001), msg: "the reward can be at most 1000000 credits"},
+		{name: "amended reward past credit-service's limit", method: http.MethodPatch, target: errand, body: map[string]any{"version": 3, "reward": 1000001}, msg: "the reward can be at most 1000000 credits"},
 		{name: "reward not a number", method: http.MethodPost, target: "/", body: createWith("reward", "five"), msg: "reward has the wrong type"},
 		{name: "supplier id in the body not a UUID", method: http.MethodPost, target: "/", body: createWith("supplierId", "spinelli"), substr: "invalid value"},
 		{name: "no body", method: http.MethodPost, target: "/", msg: "a JSON request body is required"},
@@ -555,7 +557,8 @@ func TestEachActionRouteRunsItsAction(t *testing.T) {
 		rec := h.do(t, http.MethodPatch, "/"+o.ID.String(), map[string]any{"version": 3, "reward": 6}, as(requester), withRequestID("req-amend"))
 
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-		// The credit call and the history row carry the request's id (D-047, NFR7.1).
+		// The history row carries the request's id, and the credit client gets it to
+		// log beside the change's own id (D-047, D-081, NFR7.1).
 		adjusts := h.credit.Adjusts()
 		require.Len(t, adjusts, 1)
 		assert.Equal(t, "req-amend", adjusts[0].CorrelationID)

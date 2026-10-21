@@ -53,7 +53,8 @@ type requestInfo struct {
 
 // requestID keeps the client's X-Request-Id as the correlation id when
 // validRequestID accepts it and otherwise makes one, so every log line, credit
-// call and event of the request carries the same id (D-047, NFR7.1). The id is
+// reservation and event of the request carries the same id (D-047, NFR7.1). A
+// reward change sends credit-service its own id instead (D-081). The id is
 // echoed in the response.
 func requestID(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

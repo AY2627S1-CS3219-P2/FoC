@@ -181,8 +181,8 @@ func TestCreateValidatesTheErrand(t *testing.T) {
 		{"reward 0", func(in *order.CreateInput) { in.Reward = 0 }, false},
 		{"negative reward", func(in *order.CreateInput) { in.Reward = -1 }, false},
 		{"reward 1", func(in *order.CreateInput) { in.Reward = 1 }, true},
-		{"the largest reward the INTEGER column holds", func(in *order.CreateInput) { in.Reward = order.MaxReward }, true},
-		{"a reward past the INTEGER column", func(in *order.CreateInput) { in.Reward = order.MaxReward + 1 }, false},
+		{"the largest reward credit-service holds", func(in *order.CreateInput) { in.Reward = 1_000_000 }, true},
+		{"a reward past credit-service's limit", func(in *order.CreateInput) { in.Reward = order.MaxReward + 1 }, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
