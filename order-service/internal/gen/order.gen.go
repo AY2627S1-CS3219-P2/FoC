@@ -310,6 +310,15 @@ type AssignmentRecord struct {
 // AssignmentRecordOutcome defines model for AssignmentRecord.Outcome.
 type AssignmentRecordOutcome string
 
+// CampusLocation defines model for CampusLocation.
+type CampusLocation struct {
+	// Area The group the form lists it under.
+	Area string `json:"area"`
+
+	// Name What an errand stores and sends as `deliveryLocation`.
+	Name string `json:"name"`
+}
+
 // CreateErrandRequest defines model for CreateErrandRequest.
 type CreateErrandRequest struct {
 	// DeliveryLocation One of `GET /locations`.
@@ -422,7 +431,8 @@ type HistoryEntry struct {
 
 // LocationList defines model for LocationList.
 type LocationList struct {
-	Items []string `json:"items"`
+	// Items In the order the form shows them, each area's locations together.
+	Items []CampusLocation `json:"items"`
 }
 
 // SupplierActiveErrands defines model for SupplierActiveErrands.

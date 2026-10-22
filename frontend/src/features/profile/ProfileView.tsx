@@ -191,8 +191,8 @@ export function ProfileView({
               </button>
             </div>
             <p className="balance-label" style={{ marginTop: 8 }}>
-              Requesters post errands; couriers fulfil them. Which switches are
-              allowed, and when, is decided by user-service and order-service.
+              Switch to Delivering to find errands to run; switch back to Requesting to
+              post your own.
             </p>
           </>
         )}

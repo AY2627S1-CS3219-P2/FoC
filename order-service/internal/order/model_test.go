@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"foc/order-service/internal/order"
 )
@@ -67,20 +68,33 @@ func TestRelationshipOf(t *testing.T) {
 	}
 }
 
-func TestDeliveryLocationsAreTheCampusList(t *testing.T) {
-	want := []string{
-		"COM1 Level 1 study benches",
+func TestDeliveryLocationsAreAGroupedCampusList(t *testing.T) {
+	got := order.DeliveryLocations()
+	require.NotEmpty(t, got)
+	names, areas := map[string]bool{}, map[string]bool{}
+	prevArea := ""
+	for _, l := range got {
+		assert.NotEmpty(t, l.Name)
+		assert.NotEmpty(t, l.Area, "%q has no area", l.Name)
+		assert.False(t, names[l.Name], "%q is listed twice", l.Name)
+		names[l.Name] = true
+		if l.Area != prevArea {
+			assert.False(t, areas[l.Area], "%q's places are not listed together", l.Area)
+			areas[l.Area] = true
+			prevArea = l.Area
+		}
+	}
+	// The order-service, e2e and browser tests post errands to these.
+	for _, kept := range []string{
 		"COM3 Lobby",
 		"Central Library entrance",
-		"UTown Residences lobby",
-		"The Deck, AS8",
-		"Science Frontier Food Court",
+		"UTown Residence lobby",
+	} {
+		assert.True(t, names[kept], "%q is no longer on the list", kept)
 	}
-	got := order.DeliveryLocations()
-	assert.Equal(t, want, got)
 
-	got[0] = "Somewhere else"
-	assert.Equal(t, want, order.DeliveryLocations(), "a caller cannot change the list")
+	got[0].Name = "Somewhere else"
+	assert.NotEqual(t, "Somewhere else", order.DeliveryLocations()[0].Name, "a caller cannot change the list")
 }
 
 func TestErrorKinds(t *testing.T) {

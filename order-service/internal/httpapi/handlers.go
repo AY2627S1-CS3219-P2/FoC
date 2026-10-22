@@ -176,7 +176,12 @@ func (s *server) ListDeliveryLocations(w http.ResponseWriter, r *http.Request) {
 	if _, ok := callerOf(w, r); !ok {
 		return
 	}
-	writeJSON(w, http.StatusOK, gen.LocationList{Items: order.DeliveryLocations()})
+	locations := order.DeliveryLocations()
+	items := make([]gen.CampusLocation, len(locations))
+	for i, l := range locations {
+		items[i] = gen.CampusLocation{Name: l.Name, Area: l.Area}
+	}
+	writeJSON(w, http.StatusOK, gen.LocationList{Items: items})
 }
 
 // CountSupplierActiveErrands handles GET /suppliers/{supplierId}/active-errands,

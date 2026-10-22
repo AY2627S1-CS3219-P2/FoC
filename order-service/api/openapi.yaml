@@ -730,8 +730,20 @@ components:
       properties:
         items:
           type: array
+          description: In the order the form shows them, each area's locations together.
           items:
-            type: string
+            $ref: "#/components/schemas/CampusLocation"
+
+    CampusLocation:
+      type: object
+      required: [name, area]
+      properties:
+        name:
+          type: string
+          description: What an errand stores and sends as `deliveryLocation`.
+        area:
+          type: string
+          description: The group the form lists it under.
 
     SupplierActiveErrands:
       type: object

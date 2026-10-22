@@ -179,6 +179,12 @@ export interface AssignedList {
 }
 
 /** The body of `POST /api/orders`. */
+/** One entry of `GET /locations`: what an errand stores, and the group the form lists it under. */
+export interface CampusLocation {
+  name: string;
+  area: string;
+}
+
 export interface CreateErrandRequest {
   supplierId: string;
   /** 1–280 characters, at least one visible; no line breaks. */
