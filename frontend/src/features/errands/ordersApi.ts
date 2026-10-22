@@ -12,6 +12,7 @@ import { config } from "../../lib/config";
 import { NetworkError, queryString, type HttpResponse } from "../../lib/http";
 import type {
   AssignedList,
+  CampusLocation,
   CreateErrandRequest,
   Errand,
   ErrandChanges,
@@ -58,8 +59,8 @@ export class OrdersApiError extends Error {
  * so no caller passes a value that picks the branch.
  */
 export interface OrdersApi {
-  /** The campus delivery locations an errand may name. */
-  listLocations(): Promise<string[]>;
+  /** The campus delivery locations an errand may name, each area's together. */
+  listLocations(): Promise<CampusLocation[]>;
   /** OPEN errands before their deadline, newest first (F3.2). */
   listOpen(): Promise<ErrandList>;
   /** The caller's own errands (F3.4). */
@@ -155,7 +156,7 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
   return {
     async listLocations() {
       const body = await call(`${PREFIX}/locations`);
-      if (!isRecord(body) || !isStringArray(body["items"])) throw unusableResponse();
+      if (!isRecord(body) || !isCampusLocations(body["items"])) throw unusableResponse();
       return body["items"];
     },
 
@@ -316,8 +317,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((v) => typeof v === "string");
+function isCampusLocations(value: unknown): value is CampusLocation[] {
+  return (
+    Array.isArray(value) &&
+    value.every((v) => isRecord(v) && typeof v["name"] === "string" && typeof v["area"] === "string")
+  );
 }
 
 /**

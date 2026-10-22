@@ -6,11 +6,16 @@
 //   edits kept when the errand changed under them, and the balance hint.
 // Author review: James Teo — reviewed and verified.
 
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import {
   balanceHint,
   emptyErrandForm,
   errandChanges,
+  groupByArea,
+  LocationOptions,
+  locationChoices,
   formChanged,
   formValuesFrom,
   keepEdits,
@@ -277,5 +282,100 @@ describe("balanceHint", () => {
   it("is left out when the balance or the reward is unknown", () => {
     expect(balanceHint(null, 10, 0)).toBeNull();
     expect(balanceHint(100, null, 0)).toBeNull();
+  });
+});
+
+describe("groupByArea", () => {
+  it("groups the locations by area, in the order they are listed", () => {
+    expect(
+      groupByArea([
+        { name: "COM1 Level 1 study benches", area: "Computing" },
+        { name: "COM3 Lobby", area: "Computing" },
+        { name: "The Deck, AS8", area: "Arts & Social Sciences" },
+        { name: "Central Library entrance", area: "Libraries" },
+      ]),
+    ).toEqual([
+      { area: "Computing", names: ["COM1 Level 1 study benches", "COM3 Lobby"] },
+      { area: "Arts & Social Sciences", names: ["The Deck, AS8"] },
+      { area: "Libraries", names: ["Central Library entrance"] },
+    ]);
+  });
+
+  it("keeps one group per area even if its places are not next to each other", () => {
+    expect(
+      groupByArea([
+        { name: "A", area: "One" },
+        { name: "B", area: "Two" },
+        { name: "C", area: "One" },
+      ]),
+    ).toEqual([
+      { area: "One", names: ["A", "C"] },
+      { area: "Two", names: ["B"] },
+    ]);
+  });
+
+  it("gives no groups for no locations", () => {
+    expect(groupByArea([])).toEqual([]);
+  });
+});
+
+const LISTED = [
+  { name: "COM3 Lobby", area: "Business & Computing" },
+  { name: "BIZ1 Atrium", area: "Business & Computing" },
+  { name: "The Deck, FASS", area: "Arts & Social Sciences" },
+];
+
+describe("locationChoices", () => {
+  it("accepts only listed places on a new errand, with nothing outside the groups", () => {
+    expect(locationChoices(LISTED, "", "")).toEqual({
+      accepted: ["COM3 Lobby", "BIZ1 Atrium", "The Deck, FASS"],
+      extra: [],
+    });
+  });
+
+  it("keeps an errand's saved place that the list no longer has, so other edits still save", () => {
+    const { accepted, extra } = locationChoices(LISTED, "The Deck, AS8", "The Deck, AS8");
+    expect(extra).toEqual(["The Deck, AS8"]);
+    expect(accepted).toContain("The Deck, AS8");
+    const values = { ...filled({ deliveryLocation: "The Deck, AS8" }), reward: "15" };
+    expect(validateErrandForm(values, accepted)).toEqual({});
+  });
+
+  it("still offers the saved place after another one is picked", () => {
+    expect(locationChoices(LISTED, "The Deck, AS8", "BIZ1 Atrium").extra).toEqual(["The Deck, AS8"]);
+  });
+
+  it("does not repeat a saved place that is still listed", () => {
+    expect(locationChoices(LISTED, "COM3 Lobby", "BIZ1 Atrium")).toEqual({
+      accepted: ["COM3 Lobby", "BIZ1 Atrium", "The Deck, FASS"],
+      extra: [],
+    });
+  });
+
+  it("shows the box's value while the list loads", () => {
+    expect(locationChoices([], "COM3 Lobby", "COM3 Lobby").extra).toEqual(["COM3 Lobby"]);
+  });
+
+  it("refuses a different unlisted place", () => {
+    const { accepted } = locationChoices(LISTED, "The Deck, AS8", "The Deck, AS8");
+    expect(validateErrandForm(filled({ deliveryLocation: "My room" }), accepted).deliveryLocation).toBeDefined();
+  });
+});
+
+describe("LocationOptions", () => {
+  it("lists each area's places under its own heading, in order", () => {
+    const html = renderToStaticMarkup(createElement(LocationOptions, { locations: LISTED, extra: [] }));
+    expect(html).toBe(
+      '<optgroup label="Business &amp; Computing"><option value="COM3 Lobby">COM3 Lobby</option>' +
+        '<option value="BIZ1 Atrium">BIZ1 Atrium</option></optgroup>' +
+        '<optgroup label="Arts &amp; Social Sciences"><option value="The Deck, FASS">The Deck, FASS</option></optgroup>',
+    );
+  });
+
+  it("puts an extra place first, outside the groups", () => {
+    const html = renderToStaticMarkup(
+      createElement(LocationOptions, { locations: LISTED.slice(0, 1), extra: ["The Deck, AS8"] }),
+    );
+    expect(html.startsWith('<option value="The Deck, AS8">The Deck, AS8</option><optgroup')).toBe(true);
   });
 });

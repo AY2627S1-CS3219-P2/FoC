@@ -15,7 +15,7 @@ import type { SuppliersApi } from "../suppliers/suppliersApi";
 import type { Supplier } from "../suppliers/types";
 import { creditsText } from "./format";
 import type { OrdersApi } from "./ordersApi";
-import type { CreateErrandRequest, Errand, ErrandChanges } from "./orderTypes";
+import type { CampusLocation, CreateErrandRequest, Errand, ErrandChanges } from "./orderTypes";
 
 /**
  * order-service's limits, from its spec's CreateErrandRequest. The checks
@@ -94,6 +94,68 @@ export function parseReward(text: string): number | null {
   if (!/^\d+$/.test(trimmed)) return null;
   const reward = Number(trimmed);
   return Number.isSafeInteger(reward) ? reward : null;
+}
+
+/**
+ * The locations grouped by area, in the order order-service lists them, for
+ * the form's grouped dropdown. A phone shows the groups in its own picker.
+ */
+export function groupByArea(locations: readonly CampusLocation[]): { area: string; names: string[] }[] {
+  const groups: { area: string; names: string[] }[] = [];
+  for (const { name, area } of locations) {
+    const group = groups.find((g) => g.area === area);
+    if (group) group.names.push(name);
+    else groups.push({ area, names: [name] });
+  }
+  return groups;
+}
+
+/**
+ * The Deliver to names the form accepts, and those it shows outside the area
+ * groups. An errand saved at a place the list no longer has keeps it: it is
+ * accepted while unchanged, since an unchanged location is never sent, and
+ * stays pickable after another place is chosen. While the list loads, the
+ * box's own value is shown so it never opens blank.
+ */
+export function locationChoices(
+  locations: readonly CampusLocation[],
+  saved: string,
+  current: string,
+): { accepted: string[]; extra: string[] } {
+  const listed = locations.map((location) => location.name);
+  const savedUnlisted = saved && !listed.includes(saved) ? saved : "";
+  const extra = [savedUnlisted, current].filter(
+    (name, i, all) => name !== "" && !listed.includes(name) && all.indexOf(name) === i,
+  );
+  return { accepted: savedUnlisted ? [...listed, savedUnlisted] : listed, extra };
+}
+
+/** The Deliver to options: any `extra` names first, then each area's places under its heading. */
+export function LocationOptions({
+  locations,
+  extra,
+}: {
+  locations: readonly CampusLocation[];
+  extra: readonly string[];
+}) {
+  return (
+    <>
+      {extra.map((name) => (
+        <option key={`extra:${name}`} value={name}>
+          {name}
+        </option>
+      ))}
+      {groupByArea(locations).map((group) => (
+        <optgroup key={group.area} label={group.area}>
+          {group.names.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </optgroup>
+      ))}
+    </>
+  );
 }
 
 /**
@@ -313,7 +375,7 @@ export function ErrandForm({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [changed]);
 
-  const [locations, setLocations] = useState<string[]>([]);
+  const [locations, setLocations] = useState<CampusLocation[]>([]);
   const [locationsState, setLocationsState] = useState<"loading" | "ready" | "failed">("loading");
   const [locationsAttempt, setLocationsAttempt] = useState(0);
 
@@ -359,7 +421,8 @@ export function ErrandForm({
     };
   }, [ordersApi, locationsAttempt]);
 
-  const problems = validateErrandForm(values, locations);
+  const choices = locationChoices(locations, initial.deliveryLocation, values.deliveryLocation);
+  const problems = validateErrandForm(values, choices.accepted);
   const shown = (field: ErrandFormField) => (showProblems ? problems[field] : undefined);
   const reward = parseReward(values.reward);
   const hint = balanceHint(available, reward, alreadyHeld);
@@ -511,18 +574,7 @@ export function ErrandForm({
               <option value="" disabled>
                 {locationsState === "loading" ? "Loading locations…" : "Choose a campus location"}
               </option>
-              {/* Until the list is in, the errand's own location stands in
-                  for it, so an edit does not open on a blank box. */}
-              {locationsState !== "ready" &&
-                values.deliveryLocation &&
-                !locations.includes(values.deliveryLocation) && (
-                  <option value={values.deliveryLocation}>{values.deliveryLocation}</option>
-                )}
-              {locations.map((location) => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
+              <LocationOptions locations={locations} extra={choices.extra} />
             </select>
             {locationsState === "failed" && (
               <p className="field-error" role="alert">

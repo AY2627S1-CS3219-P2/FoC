@@ -209,13 +209,13 @@ func TestCreateValidatesTheErrand(t *testing.T) {
 
 func TestCreateAcceptsEveryCampusLocation(t *testing.T) {
 	for _, loc := range order.DeliveryLocations() {
-		t.Run(loc, func(t *testing.T) {
+		t.Run(loc.Name, func(t *testing.T) {
 			f := newFixture(t)
 			in := f.createInput()
-			in.DeliveryLocation = loc
+			in.DeliveryLocation = loc.Name
 			o, _, err := f.svc.Create(f.ctx, f.requester, in)
 			require.NoError(t, err)
-			assert.Equal(t, loc, o.DeliveryLocation, "stored as the list's text")
+			assert.Equal(t, loc.Name, o.DeliveryLocation, "stored as the list's text")
 		})
 	}
 }

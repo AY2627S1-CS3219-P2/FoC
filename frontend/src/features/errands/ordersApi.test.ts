@@ -78,7 +78,7 @@ afterEach(() => {
 
 describe("ordersApi reads", () => {
   const reads: [string, (api: OrdersApi) => Promise<unknown>, string, unknown][] = [
-    ["listLocations", (api) => api.listLocations(), "/api/orders/locations", { items: ["COM3 Lobby"] }],
+    ["listLocations", (api) => api.listLocations(), "/api/orders/locations", { items: [{ name: "COM3 Lobby", area: "Computing" }] }],
     ["listOpen", (api) => api.listOpen(), "/api/orders/open", LIST],
     [
       "listRequested active",
@@ -125,8 +125,12 @@ describe("ordersApi reads", () => {
   });
 
   it("returns the delivery locations as order-service lists them", async () => {
-    const { api } = stubSend(ok({ items: ["COM3 Lobby", "The Deck, AS8"] }));
-    await expect(api.listLocations()).resolves.toEqual(["COM3 Lobby", "The Deck, AS8"]);
+    const items = [
+      { name: "COM3 Lobby", area: "Computing" },
+      { name: "The Deck, AS8", area: "Arts & Social Sciences" },
+    ];
+    const { api } = stubSend(ok({ items }));
+    await expect(api.listLocations()).resolves.toEqual(items);
   });
 
   it("returns a list with its serverTime", async () => {
@@ -301,6 +305,8 @@ describe("ordersApi responses that are not what the spec promises", () => {
       { items: [], serverTime: SERVER_TIME },
     ],
     ["locations that are not text", (api) => api.listLocations(), { items: [1, 2] }],
+    ["locations in the old list-of-names shape", (api) => api.listLocations(), { items: ["COM3 Lobby"] }],
+    ["a location without its area", (api) => api.listLocations(), { items: [{ name: "COM3 Lobby" }] }],
     ["an empty body", (api) => api.createErrand(INPUT, "key-1"), null],
   ];
 

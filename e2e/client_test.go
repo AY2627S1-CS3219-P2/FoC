@@ -480,7 +480,10 @@ type assignedList struct {
 }
 
 type locationList struct {
-	Items []string `json:"items"`
+	Items []struct {
+		Name string `json:"name"`
+		Area string `json:"area"`
+	} `json:"items"`
 }
 
 type createErrandRequest struct {
@@ -549,7 +552,7 @@ func (s *stack) deliveryLocation(t *testing.T, u user) string {
 	var list locationList
 	require.NoError(t, r.decode(&list))
 	require.NotEmpty(t, list.Items, "order-service lists no delivery locations")
-	return list.Items[0]
+	return list.Items[0].Name
 }
 
 // createErrand posts an errand as u and expects 201. Each create carries a

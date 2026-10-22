@@ -102,7 +102,7 @@ loaded or Redis answers the revocation lookup with an error. Errors are
 | `GET` | `/open` | `/api/orders/open` | anyone signed in | `OPEN` errands before their deadline, newest first |
 | `GET` | `/requested?scope=active\|history` | `/api/orders/requested?scope=…` | anyone signed in | The caller's own errands |
 | `GET` | `/assigned?scope=active\|history` | `/api/orders/assigned?scope=…` | anyone signed in | The caller's assignments; `history` includes releases by withdrawal |
-| `GET` | `/locations` | `/api/orders/locations` | anyone signed in | The campus delivery locations |
+| `GET` | `/locations` | `/api/orders/locations` | anyone signed in | The campus delivery locations, each with the area the form groups it under |
 | `GET` | `/suppliers/{supplierId}/active-errands` | not for the browser | ADMIN, through supplier-service's delete check | How many errands that are not final name a supplier |
 | `GET` | `/{errandId}` | `/api/orders/{errandId}` | its requester, its courier, ADMIN; anyone while `OPEN` | One errand with its history |
 | `PATCH` | `/{errandId}` | `/api/orders/{errandId}` | its requester | Amend an `OPEN` errand; send `version` and the fields to change |

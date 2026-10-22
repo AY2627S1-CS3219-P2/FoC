@@ -890,8 +890,13 @@ func TestLocations(t *testing.T) {
 
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	list := decodeAs[gen.LocationList](t, rec)
-	assert.Equal(t, order.DeliveryLocations(), list.Items)
-	assert.Contains(t, list.Items, "The Deck, AS8")
+	want := order.DeliveryLocations()
+	require.Len(t, list.Items, len(want))
+	for i, l := range want {
+		assert.Equal(t, gen.CampusLocation{Name: l.Name, Area: l.Area}, list.Items[i], "in the list's order")
+	}
+	assert.Contains(t, list.Items, gen.CampusLocation{Name: "COM3 Lobby", Area: "Business & Computing"})
+	assert.Contains(t, rec.Body.String(), `"name":"COM3 Lobby"`, "the contract's field names")
 }
 
 func TestCountSupplierActiveErrands(t *testing.T) {

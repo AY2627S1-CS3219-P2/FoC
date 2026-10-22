@@ -97,11 +97,11 @@ func TestAmendWithoutARewardChangeLeavesCreditAlone(t *testing.T) {
 	o := f.post()
 
 	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
-		Version: o.Version, DeliveryLocation: ptr("UTown Residences lobby"),
+		Version: o.Version, DeliveryLocation: ptr("UTown Residence lobby"),
 	})
 
 	require.NoError(t, err)
-	assert.Equal(t, "UTown Residences lobby", got.DeliveryLocation)
+	assert.Equal(t, "UTown Residence lobby", got.DeliveryLocation)
 	assert.Empty(t, f.credit.Adjusts())
 }
 
