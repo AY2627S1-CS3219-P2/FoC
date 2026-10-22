@@ -169,6 +169,7 @@ CREATE TABLE pending_payouts (
     errand_id UUID NOT NULL UNIQUE REFERENCES credit_reservations(errand_id) ON DELETE RESTRICT,
     event_id UUID NOT NULL UNIQUE,
     courier_id UUID NOT NULL,
+    payout_amount BIGINT NOT NULL,
     occurred_at TIMESTAMPTZ NOT NULL,
     first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -179,6 +180,7 @@ CREATE TABLE pending_payouts (
     overdue_alerted_at TIMESTAMPTZ NULL,
 
     CONSTRAINT chk_pending_payouts_blocked_reason CHECK (blocked_reason IN ('MISSING_WALLET', 'ACCOUNT_FLAGGED', 'AVAILABLE_LIMIT_EXCEEDED')),
+    CONSTRAINT chk_pending_payouts_payout_amount CHECK (payout_amount >= 1 AND payout_amount <= 1000000),
     CONSTRAINT chk_pending_payouts_attempt_count CHECK (attempt_count >= 0)
 );
 

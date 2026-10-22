@@ -56,7 +56,7 @@ The service consumes events on durable queues bound to the `foc.events` topic ex
 
 ## Background Workers
 
-- **Pending Payout Worker**: Claims and retries payouts that were delayed due to missing courier accounts or lock contention (`FOR UPDATE SKIP LOCKED`).
+- **Pending Payout Worker**: Claims and retries payouts delayed by a missing courier account, flagged account, or courier balance limit (`FOR UPDATE SKIP LOCKED`). It retains the completion amount and returns any surplus hold to the requester.
 - **Pending Refund Worker**: Claims and retries delayed refunds until committed.
 - **Reconciliation Worker**: Acquires PostgreSQL session advisory lock (`0x435245445F524543`), performs repeatable-read batch snapshot audits, and flags discrepancies.
 

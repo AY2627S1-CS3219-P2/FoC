@@ -25,7 +25,7 @@ func (r *PostgresRepository) ClaimDuePendingPayouts(ctx context.Context, limit i
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, errand_id, event_id, courier_id, occurred_at, first_seen_at, next_attempt_at,
+		SELECT id, errand_id, event_id, courier_id, payout_amount, occurred_at, first_seen_at, next_attempt_at,
 		       attempt_count, last_attempt_at, blocked_reason, last_error, overdue_alerted_at
 		FROM pending_payouts
 		WHERE next_attempt_at <= NOW()
@@ -42,7 +42,7 @@ func (r *PostgresRepository) ClaimDuePendingPayouts(ctx context.Context, limit i
 	for rows.Next() {
 		var p credit.PendingPayout
 		if err := rows.Scan(
-			&p.ID, &p.ErrandID, &p.EventID, &p.CourierID, &p.OccurredAt, &p.FirstSeenAt, &p.NextAttemptAt,
+			&p.ID, &p.ErrandID, &p.EventID, &p.CourierID, &p.PayoutAmount, &p.OccurredAt, &p.FirstSeenAt, &p.NextAttemptAt,
 			&p.AttemptCount, &p.LastAttemptAt, &p.BlockedReason, &p.LastError, &p.OverdueAlertedAt,
 		); err != nil {
 			return nil, fmt.Errorf("scan pending payout: %w", err)
@@ -81,17 +81,18 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 			errandID      uuid.UUID
 			eventID       uuid.UUID
 			courierID     uuid.UUID
+			payoutAmount  int64
 			occurredAt    time.Time
 			attemptCount  int64
 			blockedReason credit.PendingPayoutBlockedReason
 		)
 		err := tx.QueryRow(txCtx, `
-			SELECT errand_id, event_id, courier_id, occurred_at, attempt_count, blocked_reason
+			SELECT errand_id, event_id, courier_id, payout_amount, occurred_at, attempt_count, blocked_reason
 			FROM pending_payouts
 			WHERE id = $1 AND next_attempt_at <= NOW()
 			FOR UPDATE SKIP LOCKED`,
 			id,
-		).Scan(&errandID, &eventID, &courierID, &occurredAt, &attemptCount, &blockedReason)
+		).Scan(&errandID, &eventID, &courierID, &payoutAmount, &occurredAt, &attemptCount, &blockedReason)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				// Already processed or locked by another worker replica.
@@ -127,6 +128,11 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 		if res.Status != credit.ReservationStatusReserved {
 			return credit.ErrLifecycleViolation
 		}
+		// AI-generated (edited by choppyback): a changed hold cannot silently alter a delayed payout.
+		if payoutAmount < 1 || payoutAmount > res.Amount {
+			return credit.ErrLifecycleViolation
+		}
+		leftover := res.Amount - payoutAmount
 
 		// 3. Reject if pending refund exists.
 		var pendingRefundExists int
@@ -230,7 +236,7 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 				return fmt.Errorf("flag requester on projection mismatch: %w", err)
 			}
 			currentBlocker = "ACCOUNT_FLAGGED"
-		} else if courierAvail+res.Amount > credit.MaxBalanceCredits {
+		} else if courierAvail+payoutAmount > credit.MaxBalanceCredits {
 			currentBlocker = "AVAILABLE_LIMIT_EXCEEDED"
 		}
 
@@ -259,10 +265,11 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 		cmdTag, err := tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET reserved_credits = reserved_credits - $1,
+			    available_credits = available_credits + $2,
 			    version = version + 1,
 			    updated_at = NOW()
-			WHERE user_id = $2 AND reserved_credits >= $1`,
-			res.Amount, res.RequesterID,
+			WHERE user_id = $3 AND reserved_credits >= $1`,
+			res.Amount, leftover, res.RequesterID,
 		)
 		if err != nil || cmdTag.RowsAffected() != 1 {
 			return fmt.Errorf("debit requester reserved credits: %w", err)
@@ -274,21 +281,35 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 			    version = version + 1,
 			    updated_at = NOW()
 			WHERE user_id = $2 AND available_credits + $1 <= $3`,
-			res.Amount, courierID, credit.MaxBalanceCredits,
+			payoutAmount, courierID, credit.MaxBalanceCredits,
 		)
 		if err != nil || cmdTag.RowsAffected() != 1 {
 			return fmt.Errorf("credit courier available credits: %w", err)
 		}
 
-		_, err = tx.Exec(txCtx, `
+		// AI-generated (edited by choppyback): mirror immediate settlement's surplus ledger entry.
+		if leftover > 0 {
+			_, err = tx.Exec(txCtx, `
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				VALUES
+					($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
+					($1, $2, $3, 'AVAILABLE', $6, 'REWARD_DECREASED', $5, NOW()),
+					($7, $2, $3, 'AVAILABLE', $8, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
+				res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), leftover, courierID, payoutAmount,
+			)
+		} else {
+			_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
 				($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
 				($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
-			res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
-		)
+				res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
+			)
+		}
 		if err != nil {
 			return fmt.Errorf("insert payout ledger entries: %w", err)
 		}
