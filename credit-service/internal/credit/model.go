@@ -182,6 +182,7 @@ type PendingPayout struct {
 	ErrandID         uuid.UUID
 	EventID          uuid.UUID
 	CourierID        uuid.UUID
+	PayoutAmount     int64
 	OccurredAt       time.Time
 	FirstSeenAt      time.Time
 	NextAttemptAt    time.Time

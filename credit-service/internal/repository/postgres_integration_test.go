@@ -312,4 +312,138 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(130), courierAcc.AvailableCredits)
 		require.Equal(t, int64(0), courierAcc.ReservedCredits)
 	})
+
+	t.Run("pending payout retains completion amount through retry", func(t *testing.T) {
+		requesterID, courierID, errandID, eventID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 10)
+		require.NoError(t, err)
+
+		amount := int64(8)
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		var pendingID uuid.UUID
+		var storedAmount int64
+		require.NoError(t, env.pool.QueryRow(ctx, `
+			SELECT id, payout_amount FROM pending_payouts WHERE errand_id = $1`, errandID,
+		).Scan(&pendingID, &storedAmount))
+		require.Equal(t, amount, storedAmount)
+
+		// The same event is harmless, but a changed amount cannot replace its durable intent.
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		conflictingAmount := int64(9)
+		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &conflictingAmount, now), credit.ErrLifecycleViolation)
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
+		// A redelivery after the blocker clears must still be compared with pending work.
+		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &conflictingAmount, now), credit.ErrLifecycleViolation)
+		require.NoError(t, env.repo.ProcessPendingPayout(ctx, pendingID, time.Second))
+		require.NoError(t, env.repo.ProcessPendingPayout(ctx, pendingID, time.Second))
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+
+		requester, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(92), requester.AvailableCredits)
+		require.Zero(t, requester.ReservedCredits)
+		courier, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(108), courier.AvailableCredits)
+
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusPaidOut, status)
+		var pendingCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM pending_payouts WHERE errand_id = $1`, errandID).Scan(&pendingCount))
+		require.Zero(t, pendingCount)
+
+		rows, err := env.pool.Query(ctx, `
+			SELECT user_id, balance_bucket, amount, reason FROM credit_transactions
+			WHERE operation_id = $1 ORDER BY balance_bucket, amount`, eventID)
+		require.NoError(t, err)
+		defer rows.Close()
+		var ledger []struct {
+			userID uuid.UUID
+			bucket string
+			amount int64
+			reason credit.TransactionReason
+		}
+		for rows.Next() {
+			var entry struct {
+				userID uuid.UUID
+				bucket string
+				amount int64
+				reason credit.TransactionReason
+			}
+			require.NoError(t, rows.Scan(&entry.userID, &entry.bucket, &entry.amount, &entry.reason))
+			ledger = append(ledger, entry)
+		}
+		require.NoError(t, rows.Err())
+		require.Len(t, ledger, 3)
+		require.Equal(t, requesterID, ledger[0].userID)
+		require.Equal(t, int64(2), ledger[0].amount)
+		require.Equal(t, credit.TransactionReasonRewardDecreased, ledger[0].reason)
+		require.Equal(t, courierID, ledger[1].userID)
+		require.Equal(t, int64(8), ledger[1].amount)
+		require.Equal(t, requesterID, ledger[2].userID)
+		require.Equal(t, int64(-10), ledger[2].amount)
+	})
+
+	t.Run("pending payout uses completion amount for courier limit", func(t *testing.T) {
+		requesterID, courierID, errandID, eventID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 10)
+		require.NoError(t, err)
+		amount := int64(8)
+		// Force the limit blocker, then make room for 8 credits but not the full hold of 10.
+		_, err = env.pool.Exec(ctx, `UPDATE credit_accounts SET available_credits = $1 WHERE user_id = $2`, credit.MaxBalanceCredits-7, courierID)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		var pendingID uuid.UUID
+		var blockedReason string
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT id, blocked_reason FROM pending_payouts WHERE errand_id = $1`, errandID).Scan(&pendingID, &blockedReason))
+		require.Equal(t, "AVAILABLE_LIMIT_EXCEEDED", blockedReason)
+		_, err = env.pool.Exec(ctx, `UPDATE credit_accounts SET available_credits = $1 WHERE user_id = $2`, credit.MaxBalanceCredits-8, courierID)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.ProcessPendingPayout(ctx, pendingID, time.Second))
+		courier, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, credit.MaxBalanceCredits, courier.AvailableCredits)
+		requester, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(92), requester.AvailableCredits)
+	})
+
+	t.Run("pending payout survives flagged account", func(t *testing.T) {
+		requesterID, courierID, errandID, eventID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 10)
+		require.NoError(t, err)
+		_, err = env.pool.Exec(ctx, `
+			UPDATE credit_accounts
+			SET integrity_status = 'FLAGGED', integrity_flagged_at = NOW(), integrity_reason_code = 'TEST_FLAG'
+			WHERE user_id = $1`, courierID)
+		require.NoError(t, err)
+		amount := int64(8)
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		var pendingID uuid.UUID
+		var blockedReason string
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT id, blocked_reason FROM pending_payouts WHERE errand_id = $1`, errandID).Scan(&pendingID, &blockedReason))
+		require.Equal(t, "ACCOUNT_FLAGGED", blockedReason)
+		_, err = env.pool.Exec(ctx, `
+			UPDATE credit_accounts
+			SET integrity_status = 'CONSISTENT', integrity_flagged_at = NULL, integrity_reason_code = NULL
+			WHERE user_id = $1`, courierID)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.ProcessPendingPayout(ctx, pendingID, time.Second))
+		requester, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(92), requester.AvailableCredits)
+		courier, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(108), courier.AvailableCredits)
+	})
 }

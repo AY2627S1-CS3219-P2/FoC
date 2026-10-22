@@ -374,38 +374,39 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			blockedReason = "AVAILABLE_LIMIT_EXCEEDED"
 		}
 
-		if blockedReason != "" {
-			// Check existing pending payout
-			var (
-				existingEventID   uuid.UUID
-				existingCourierID uuid.UUID
-				existingOccurred  time.Time
-			)
-			err = tx.QueryRow(txCtx, `
-				SELECT event_id, courier_id, occurred_at
-				FROM pending_payouts
-				WHERE errand_id = $1
-				FOR UPDATE`,
-				errandID,
-			).Scan(&existingEventID, &existingCourierID, &existingOccurred)
-			if err == nil {
-				// While payout is pending, an incoming completion is a valid redelivery only when its
-				// eventId, errandId, courierId, and occurredAt all exactly match the stored row.
-				if existingEventID == eventID && existingCourierID == courierID && existingOccurred.Equal(occurredAt.UTC()) {
-					return nil
-				}
+		// The reservation lock serializes settlement; a row lock here can deadlock with the worker.
+		var (
+			existingEventID      uuid.UUID
+			existingCourierID    uuid.UUID
+			existingPayoutAmount int64
+			existingOccurred     time.Time
+		)
+		err = tx.QueryRow(txCtx, `
+			SELECT event_id, courier_id, payout_amount, occurred_at
+			FROM pending_payouts
+			WHERE errand_id = $1`,
+			errandID,
+		).Scan(&existingEventID, &existingCourierID, &existingPayoutAmount, &existingOccurred)
+		if err == nil {
+			if existingEventID != eventID || existingCourierID != courierID || existingPayoutAmount != payoutAmount || !existingOccurred.Equal(occurredAt.UTC()) {
 				return credit.ErrLifecycleViolation
-			} else if !errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("lookup existing pending payout: %w", err)
 			}
+			if blockedReason != "" {
+				return nil
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("lookup existing pending payout: %w", err)
+		}
+
+		if blockedReason != "" {
 
 			// Insert pending payout row.
 			_, err = tx.Exec(txCtx, `
 				INSERT INTO pending_payouts (
-					errand_id, event_id, courier_id, occurred_at, first_seen_at, next_attempt_at, attempt_count, blocked_reason
+					errand_id, event_id, courier_id, payout_amount, occurred_at, first_seen_at, next_attempt_at, attempt_count, blocked_reason
 				)
-				VALUES ($1, $2, $3, $4, NOW(), NOW(), 0, $5)`,
-				errandID, eventID, courierID, occurredAt.UTC(), blockedReason,
+				VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), 0, $6)`,
+				errandID, eventID, courierID, payoutAmount, occurredAt.UTC(), blockedReason,
 			)
 			if err != nil {
 				var pgErr *pgconn.PgError
