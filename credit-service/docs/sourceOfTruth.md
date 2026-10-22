@@ -1076,6 +1076,7 @@ eventually completes the payout.
 | `errand_id` | `UUID NOT NULL UNIQUE REFERENCES credit_reservations(errand_id) ON DELETE RESTRICT` | Ensures at most one pending payout for a reservation. |
 | `event_id` | `UUID NOT NULL UNIQUE` | Original completion-event identifier for tracing and duplicate detection while the payout is pending. |
 | `courier_id` | `UUID NOT NULL` | Intended recipient. It is not a foreign key because the wallet is expected to be missing in this workflow. |
+| `payout_amount` | `BIGINT NOT NULL`, 1–1,000,000 | Completion amount retained for a delayed payout; any surplus hold returns to the requester. |
 | `occurred_at` | `TIMESTAMPTZ NOT NULL` | Completion time supplied by Order Service. |
 | `first_seen_at` | `TIMESTAMPTZ NOT NULL DEFAULT NOW()` | Time Credit Service first persisted the pending payout. |
 | `next_attempt_at` | `TIMESTAMPTZ NOT NULL DEFAULT NOW()` | Earliest time the worker may retry it. |
@@ -1092,8 +1093,8 @@ twice. This row is not the permanent idempotency record after payout;
 `credit_reservations.errand_id` and terminal status provide that guard.
 
 While payout is pending, an incoming completion is a valid redelivery only when
-its `eventId`, `errandId`, `courierId`, and `occurredAt` all exactly match the
-stored row. Credit Service compares those typed fields directly rather than
+its `eventId`, `errandId`, `courierId`, effective payout amount, and `occurredAt`
+all match the stored row. Credit Service compares those typed fields directly rather than
 introducing a payload hash. Every other reuse is a non-retryable lifecycle
 conflict and causes no financial change:
 
@@ -1416,16 +1417,17 @@ For a ready courier wallet, settlement executes this transaction:
    changing balances, changing reservation state, or creating pending work.
 6. Lock requester and courier accounts in ascending UUID order.
 7. If either account is `FLAGGED`, the requester reserved projection is smaller
-   than the reservation amount, or adding the amount would exceed the courier's
+   than the reservation amount, or adding the completion payout amount would exceed the courier's
    available-bucket limit, preserve or create pending payout work and return a
    delayed outcome. Projection mismatch flags the affected account, increments
    its version, and records a finding. Available-limit overflow records
    `AVAILABLE_LIMIT_EXCEEDED`; normal courier spending can make room for a
    later retry.
-8. Subtract the stored amount from requester reserved credits.
-9. Add the same amount to courier available credits.
+8. Subtract the stored hold from requester reserved credits and return any
+   surplus above the completion payout amount to requester available credits.
+9. Add the completion payout amount to courier available credits.
 10. Use the completion `eventId` as `operationId` and append the requester
-   deduction and courier payout under it.
+   deduction, any surplus return, and courier payout under it.
 11. Mark the reservation `PAID_OUT`.
 12. Delete any pending payout row for the errand.
 13. Commit before acknowledging the completion message.
@@ -1459,8 +1461,8 @@ ensure that an errand has only one valid courier and does not produce
 contradictory completion events.
 
 This rule applies only after payout. While the reservation is still `RESERVED`
-and a payout is pending, the stored event identity and courier remain
-financially significant. The handler applies the exact four-field comparison
+and a payout is pending, the stored event identity, courier, and payout amount remain
+financially significant. The handler applies the exact comparison
 defined with the `pending_payouts` schema. A conflict is rejected to the
 lifecycle DLQ and must not replace the pending work.
 
@@ -1479,7 +1481,8 @@ is open.
 
 A continuing missing-wallet, integrity, or available-limit blocker updates the
 attempt count and `next_attempt_at` before that transaction commits. Success
-transfers credits, appends ledger entries, marks
+transfers the stored payout amount to the courier, returns any surplus hold to
+the requester, appends ledger entries, marks
 the reservation, and deletes the pending row before the same commit. A database
 error, cancellation, process crash, or replica termination rolls back the whole
 transaction and releases the row lock so another cycle or replica can retry.
