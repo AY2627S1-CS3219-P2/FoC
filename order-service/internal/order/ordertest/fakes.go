@@ -425,6 +425,18 @@ func (r *Repository) countOpen(requesterID uuid.UUID, now time.Time) int {
 }
 
 // DueForExpiry implements order.Repository.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — fake due-scheduled query.
+func (r *Repository) DueForScheduled(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	due := r.filter(func(o order.Order) bool {
+		return o.State == order.StateScheduled && o.ScheduledAt != nil && !o.ScheduledAt.After(now)
+	})
+	slices.SortFunc(due, func(a, b order.Order) int { return a.ScheduledAt.Compare(*b.ScheduledAt) })
+	return ids(limited(due, limit)), nil
+}
+
+// DueForExpiry implements order.Repository.
 func (r *Repository) DueForExpiry(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -484,7 +496,9 @@ func (r *Repository) Create(_ context.Context, o order.Order, h order.HistoryEnt
 		}
 	}
 	// AI-generated (edited by James Teo).
-	if r.countOpen(o.RequesterID, o.CreatedAt) >= order.MaxOpenErrands {
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — only OPEN creates
+	// consume the requester's open-errand allowance.
+	if o.State == order.StateOpen && r.countOpen(o.RequesterID, o.CreatedAt) >= order.MaxOpenErrands {
 		return order.ErrTooManyOpen
 	}
 	delete(r.outbox, guardEventID)
@@ -608,6 +622,37 @@ func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current orde
 		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
 	}
 	// AI-generated (edited by James Teo).
+	return r.withHistory(res.Order), nil
+}
+
+// AmendScheduled runs the callback with the fake locked and includes its
+// requester's current OPEN count, mirroring the PostgreSQL transaction.
+func (r *Repository) AmendScheduled(_ context.Context, id uuid.UUID, now time.Time, fn func(current order.Order, openCount int) (*order.AmendResult, error)) (order.Order, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cur, ok := r.orders[id]
+	if !ok {
+		return order.Order{}, order.ErrNotFound
+	}
+	cur = r.withHistory(cur)
+	count := r.countOpen(cur.RequesterID, now)
+	res, err := fn(cur, count)
+	if err != nil {
+		return order.Order{}, err
+	}
+	if res == nil {
+		return cur, nil
+	}
+	if r.AfterAmendFn != nil {
+		err := r.AfterAmendFn
+		r.AfterAmendFn = nil
+		return order.Order{}, err
+	}
+	r.orders[id] = res.Order
+	r.appendHistory(res.History)
+	if res.Event != nil {
+		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
+	}
 	return r.withHistory(res.Order), nil
 }
 

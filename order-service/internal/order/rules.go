@@ -15,10 +15,13 @@ import (
 // Action is a lifecycle action; history entries record it (D-045).
 type Action string
 
-// Every action in D-045's table, plus CREATE.
+// Every action in the errand lifecycle, plus CREATE and system OPEN.
 const (
-	ActionCreate        Action = "CREATE"
-	ActionAmend         Action = "AMEND"
+	ActionCreate Action = "CREATE"
+	ActionAmend  Action = "AMEND"
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — approved system opening history action.
+	// ActionOpen records the system making a scheduled errand available.
+	ActionOpen          Action = "OPEN"
 	ActionAccept        Action = "ACCEPT"
 	ActionWithdraw      Action = "WITHDRAW"
 	ActionPickUp        Action = "PICK_UP"
@@ -45,7 +48,7 @@ type rule struct {
 func ruleFor(a Action) (rule, bool) {
 	switch a {
 	case ActionAmend:
-		return rule{from: []State{StateOpen}, to: StateOpen, who: RelRequester}, true
+		return rule{from: []State{StateScheduled, StateOpen}, to: StateOpen, who: RelRequester}, true
 	case ActionAccept:
 		// Any STUDENT who is not the requester: an ADMIN is RelAdmin and the
 		// requester is RelRequester, so RelNone plus the role check covers it.
@@ -61,11 +64,13 @@ func ruleFor(a Action) (rule, bool) {
 	case ActionAutoConfirm:
 		return rule{from: []State{StateDelivered}, to: StateCompleted, who: RelSystem}, true
 	case ActionCancel:
-		return rule{from: []State{StateOpen}, to: StateCancelled, who: RelRequester}, true
+		return rule{from: []State{StateScheduled, StateOpen}, to: StateCancelled, who: RelRequester}, true
 	case ActionExpire:
 		return rule{from: []State{StateOpen}, to: StateExpired, who: RelSystem}, true
 	case ActionAdminCancel:
-		return rule{from: ActiveStates(), to: StateCancelled, who: RelAdmin}, true
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — D-045 permits
+		// admin cancellation of every non-final state, including SCHEDULED.
+		return rule{from: append([]State{StateScheduled}, ActiveStates()...), to: StateCancelled, who: RelAdmin}, true
 	case ActionAdminComplete:
 		return rule{from: []State{StatePickedUp, StateDelivered}, to: StateCompleted, who: RelAdmin}, true
 	default:

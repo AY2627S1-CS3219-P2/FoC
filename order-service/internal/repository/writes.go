@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -45,8 +46,10 @@ const (
 )
 
 const (
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — includes scheduled_time
+	// in the persisted order row.
 	insertOrderSQL = `INSERT INTO orders (` + orderColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 
 	insertHistorySQL = `INSERT INTO order_history (order_id, action, from_state, to_state,
 			actor_id, actor_kind, courier_id, changes, occurred_at, correlation_id)
@@ -104,13 +107,20 @@ const (
 
 	lockOrderSQL = getOrderSQL + ` FOR UPDATE`
 
-	// amendSQL writes the columns an amend may change (F3.7.1, D-052); the
-	// state, people and deadlines are not among them (F3.7.6).
+	// amendSQL writes only the fields amend may change for an ordinary OPEN errand.
 	// AI-generated (edited by James Teo): it returns orderSelect (D-060).
 	amendSQL = `UPDATE orders
 		SET supplier_id = $2, supplier_name = $3, supplier_location = $4,
 			item_description = $5, delivery_location = $6, delivery_note = $7,
 			reward = $8, version = $9, updated_at = $10
+		WHERE id = $1
+		RETURNING ` + orderSelect
+
+	amendScheduledSQL = `UPDATE orders
+		SET supplier_id = $2, supplier_name = $3, supplier_location = $4,
+			item_description = $5, delivery_location = $6, delivery_note = $7,
+			reward = $8, state = $9, scheduled_time = $10, expires_at = $11,
+			state_changed_at = $12, version = $13, updated_at = $14
 		WHERE id = $1
 		RETURNING ` + orderSelect
 )
@@ -155,7 +165,7 @@ func (p *Postgres) Create(ctx context.Context, o order.Order, h order.HistoryEnt
 		if err := tx.QueryRow(ctx, countOpenByRequesterSQL, o.RequesterID, o.CreatedAt).Scan(&open); err != nil {
 			return fmt.Errorf("count open errands of requester %s: %w", o.RequesterID, err)
 		}
-		if open > order.MaxOpenErrands {
+		if o.State == order.StateOpen && open > order.MaxOpenErrands {
 			return order.ErrTooManyOpen
 		}
 		return insertHistory(ctx, tx, o.ID, h)
@@ -283,6 +293,57 @@ func (p *Postgres) Amend(ctx context.Context, id uuid.UUID, fn func(current orde
 	return out, nil
 }
 
+// AmendScheduled holds both the row lock and the requester's create lock so
+// converting SCHEDULED to OPEN observes the same serialized limit as Create.
+func (p *Postgres) AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current order.Order, openCount int) (*order.AmendResult, error)) (order.Order, error) {
+	var out order.Order
+	err := p.inTx(ctx, func(tx pgx.Tx) error {
+		cur, err := lockOrder(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, lockRequesterSQL, requesterLockClass, cur.RequesterID); err != nil {
+			return fmt.Errorf("lock requester %s: %w", cur.RequesterID, err)
+		}
+		var openCount int
+		if err := tx.QueryRow(ctx, countOpenByRequesterSQL, cur.RequesterID, now).Scan(&openCount); err != nil {
+			return fmt.Errorf("count open errands for requester %s: %w", cur.RequesterID, err)
+		}
+		res, err := fn(cur, openCount)
+		if err != nil {
+			return err
+		}
+		if res == nil {
+			out = cur
+			return nil
+		}
+		next := res.Order
+		o, err := scanOrder(tx.QueryRow(ctx, amendScheduledSQL, id, next.Supplier.ID, next.Supplier.Name, next.Supplier.Location,
+			next.ItemDescription, next.DeliveryLocation, next.DeliveryNote, next.Reward, next.State, next.ScheduledAt,
+			next.ExpiresAt, next.StateChangedAt, next.Version, next.UpdatedAt))
+		if errors.Is(err, pgx.ErrNoRows) {
+			return order.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("amend scheduled errand %s: %w", id, err)
+		}
+		if err := insertHistory(ctx, tx, id, res.History); err != nil {
+			return err
+		}
+		if res.Event != nil {
+			if err := insertEvent(ctx, tx, *res.Event); err != nil {
+				return err
+			}
+		}
+		out = o
+		return nil
+	})
+	if err != nil {
+		return order.Order{}, err
+	}
+	return out, nil
+}
+
 // AI-generated (edited by James Teo).
 // QueueLocked implements order.Repository. The row lock is held until the
 // event is inserted, so a concurrent amend's reward_set is ordered after this
@@ -358,6 +419,9 @@ func orderArgs(o order.Order) []any {
 		o.Supplier.Location, o.ItemDescription, o.DeliveryLocation, o.DeliveryNote, o.Reward,
 		string(o.State), o.Version, nullableText(o.RequestKey), o.CreatedAt, o.UpdatedAt, o.StateChangedAt,
 		o.ExpiresAt, o.ConfirmBy,
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — nullable
+		// SCHEDULED_TIME value follows confirm_by in orderColumns.
+		o.ScheduledAt,
 	}
 }
 

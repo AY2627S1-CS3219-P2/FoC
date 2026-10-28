@@ -64,6 +64,46 @@ func TestAcceptAssignsTheCourier(t *testing.T) {
 	assert.Equal(t, maxActive, sent[0].MaxActive)
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies duplicate
+// scheduled-opening attempts produce one state change and one history entry.
+func TestConcurrentScheduledOpeningHasOneWinner(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	f.clock.Advance(2 * time.Hour)
+	start := make(chan struct{})
+	results := make(chan struct {
+		applied bool
+		err     error
+	}, 2)
+	var wg sync.WaitGroup
+	for range 2 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			applied, err := f.svc.OpenScheduled(f.ctx, o.ID, "corr-open")
+			results <- struct {
+				applied bool
+				err     error
+			}{applied, err}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+	opened := 0
+	for result := range results {
+		require.NoError(t, result.err)
+		if result.applied {
+			opened++
+		}
+	}
+	assert.Equal(t, 1, opened)
+	assert.Equal(t, order.StateOpen, f.stored(o.ID).order.State)
+	assert.Len(t, f.history(o.ID), 1)
+	assert.Equal(t, order.ActionOpen, f.history(o.ID)[0].Action)
+}
+
 func TestTransitionsCarryTheirConditions(t *testing.T) {
 	// D-046: the conditional write re-checks the state, the version and the
 	// people the Go check relied on, and D-049's deadlines; the repository

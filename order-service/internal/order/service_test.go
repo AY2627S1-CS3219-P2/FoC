@@ -89,7 +89,7 @@ func TestListRequestedSplitsActiveFromHistory(t *testing.T) {
 	// F3.4.1 and F3.4.3: the caller's own errands, active or final.
 	f := newFixture(t)
 	var active, final []uuid.UUID
-	for _, s := range order.ActiveStates() {
+	for _, s := range append([]order.State{order.StateScheduled}, order.ActiveStates()...) {
 		active = append(active, f.seed(s).ID)
 	}
 	for _, s := range order.FinalStates() {

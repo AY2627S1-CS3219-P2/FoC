@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"github.com/google/uuid"
@@ -31,14 +32,16 @@ type CreateInput struct {
 	DeliveryLocation string
 	DeliveryNote     string
 	Reward           int
+	// ScheduledAt is nil for an ordinary errand.
+	ScheduledAt *time.Time
 	// RequestKey is the request's X-Request-Id; empty when it had none (D-047).
 	RequestKey    string
 	CorrelationID string
 }
 
-// Create posts an errand in OPEN (F3.1.7). replayed is true when the requester
-// already created an errand with in.RequestKey: that errand is returned and no
-// credits are touched (D-047).
+// Create posts an errand in OPEN or SCHEDULED (F3.1.7). replayed is true when
+// the requester already created an errand with in.RequestKey: that errand is
+// returned and no credits are touched (D-047).
 func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order, replayed bool, err error) {
 	if c.Role != RoleStudent {
 		return Order{}, false, forbidden("only students can post errands")
@@ -68,38 +71,52 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 		}
 	}
 
-	// AI-generated (edited by James Teo).
 	// D-058: a requester at the limit is told so here, before credit is
 	// touched. Two creates can both pass this count; the one repo.Create makes
 	// under the requester's lock is what stops the second.
-	open, err := s.repo.CountOpenByRequester(ctx, c.UserID, s.clock.Now())
-	if err != nil {
-		return Order{}, false, unavailable("could not post the errand; please try again", err)
-	}
-	if open >= MaxOpenErrands {
-		// AI-generated (edited by James Teo).
-		// The errand that filled the last place may be this submission's own,
-		// saved after the lookup above by a twin on another replica, where the
-		// per-key lock does not reach. That twin is replayed, not refused
-		// (D-047).
-		if in.RequestKey != "" {
-			existing, found, err := s.findReplay(ctx, c.UserID, in.RequestKey)
-			if err != nil {
-				return Order{}, false, err
-			}
-			if found {
-				return existing, true, nil
-			}
+	if in.ScheduledAt == nil {
+		open, err := s.repo.CountOpenByRequester(ctx, c.UserID, s.clock.Now())
+		if err != nil {
+			return Order{}, false, unavailable("could not post the errand; please try again", err)
 		}
-		return Order{}, false, tooManyOpen()
+		if open >= MaxOpenErrands {
+			// AI-generated (edited by James Teo).
+			// The errand that filled the last place may be this submission's own,
+			// saved after the lookup above by a twin on another replica, where the
+			// per-key lock does not reach. That twin is replayed, not refused
+			// (D-047).
+			if in.RequestKey != "" {
+				existing, found, err := s.findReplay(ctx, c.UserID, in.RequestKey)
+				if err != nil {
+					return Order{}, false, err
+				}
+				if found {
+					return existing, true, nil
+				}
+			}
+			return Order{}, false, tooManyOpen()
+		}
 	}
 
+	// Validate against the time after supplier-service has answered so a
+	// schedule cannot pass validation and become due during that call.
 	snapshot, err := s.supplierSnapshot(ctx, in.SupplierID)
 	if err != nil {
 		return Order{}, false, err
 	}
-
 	now := s.clock.Now()
+	if err := validateScheduledTime(in.ScheduledAt, now); err != nil {
+		return Order{}, false, err
+	}
+	state := StateOpen
+	var expiresAt *time.Time
+	scheduledAt := in.ScheduledAt
+	if in.ScheduledAt == nil {
+		expiresAt = timePtr(now.Add(s.cfg.ExpiryPeriod))
+	} else {
+		state = StateScheduled
+		scheduledAt = timePtr(in.ScheduledAt.UTC())
+	}
 	o = Order{
 		ID:               uuid.New(),
 		RequesterID:      c.UserID,
@@ -108,13 +125,14 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 		DeliveryLocation: in.DeliveryLocation,
 		DeliveryNote:     in.DeliveryNote,
 		Reward:           in.Reward,
-		State:            StateOpen,
+		State:            state,
+		ScheduledAt:      scheduledAt,
 		Version:          1,
 		RequestKey:       in.RequestKey,
 		CreatedAt:        now,
 		UpdatedAt:        now,
 		StateChangedAt:   now,
-		ExpiresAt:        timePtr(now.Add(s.cfg.ExpiryPeriod)),
+		ExpiresAt:        expiresAt,
 	}
 
 	// D-047: queue the refund first, so every way this request can end leaves
@@ -151,7 +169,7 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 	history := HistoryEntry{
 		OrderID:       o.ID,
 		Action:        ActionCreate,
-		ToState:       StateOpen,
+		ToState:       state,
 		ActorID:       uuidPtr(c.UserID),
 		ActorKind:     ActorRequester,
 		OccurredAt:    now,
@@ -180,6 +198,23 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 	default:
 		return Order{}, false, unavailable("could not post the errand; please try again", err)
 	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — enforces the owner's
+// recorded future-time and previous-calendar-day scheduling boundary.
+func validateScheduledTime(scheduledAt *time.Time, now time.Time) error {
+	if scheduledAt == nil {
+		return nil
+	}
+	scheduledUTC := scheduledAt.UTC()
+	if !scheduledUTC.After(now.UTC()) {
+		return invalid("scheduled time must be in the future")
+	}
+	earliest := time.Date(scheduledUTC.Year(), scheduledUTC.Month(), scheduledUTC.Day()-1, 0, 0, 0, 0, time.UTC)
+	if now.UTC().Before(earliest) {
+		return invalid("scheduled time can be set starting at 00:00 UTC on the previous calendar day")
+	}
+	return nil
 }
 
 func validateCreate(in CreateInput) error {
