@@ -19,6 +19,9 @@ type Dependencies struct {
 	System            handlers.SystemDependencies
 	TokenVerifier     handlers.TokenVerifier
 	RevocationChecker handlers.RevocationChecker
+
+	// AI-generated (edited by PENDING): the ranking-model store (D-095, D-099).
+	Ranking handlers.RankingDependencies
 }
 
 // GetRoutes constructs grouped handlers and returns their route-registration function.
@@ -26,6 +29,7 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 	authHandler := handlers.NewAuthHandler(deps.Auth)
 	profileHandler := handlers.NewProfileHandler(deps.Profile)
 	systemHandler := handlers.NewSystemHandler(deps.System)
+	rankingHandler := handlers.NewRankingHandler(deps.Ranking)
 
 	return func(router chi.Router) {
 		router.Get("/.well-known/jwks.json", systemHandler.JWKS)
@@ -40,6 +44,9 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
+			// AI-generated (edited by PENDING): each user's own ranking model (D-095, D-099).
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}/ranking-model", rankingHandler.Get)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}/ranking-model", rankingHandler.Put)
 		})
 	}
 }

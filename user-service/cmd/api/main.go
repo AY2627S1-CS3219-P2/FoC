@@ -20,6 +20,7 @@ import (
 	"foc/user-service/internal/httpapi/router"
 	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/jwt"
+	"foc/user-service/internal/ranking"
 	"foc/user-service/internal/relay"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
@@ -64,6 +65,21 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	if err := pool.Ping(ctx); err != nil {
 		return fmt.Errorf("ping database: %w", err)
 	}
+
+	// AI-generated (edited by PENDING): the ranking-model database, separate
+	// from the users database (D-095), with its own migrations.
+	if cfg.RankingDBURL == "" {
+		return errors.New("USER_RANKING_DB_URL must be set")
+	}
+	if err := repository.Apply(cfg.RankingDBURL, "file://migrations_ranking"); err != nil {
+		return fmt.Errorf("apply ranking migrations: %w", err)
+	}
+	rankingPool, err := pgxpool.New(ctx, cfg.RankingDBURL)
+	if err != nil {
+		return fmt.Errorf("create ranking database pool: %w", err)
+	}
+	defer rankingPool.Close()
+	rankingService := ranking.NewService(repository.NewRankingModelRepository(rankingPool), time.Now)
 
 	redisOptions, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
@@ -158,6 +174,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			AdminProfileUpdater: accountService,
 			Logger:              logger,
 		},
+		// AI-generated (edited by PENDING): each user's ranking model (D-095, D-099).
+		Ranking: handlers.RankingDependencies{Models: rankingService, Logger: logger},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,
 			HealthCheck: newHealthCheck(

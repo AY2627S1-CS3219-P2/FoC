@@ -26,6 +26,8 @@ WORKDIR /app
 
 COPY --from=builder /out/user-service ./user-service
 COPY migrations ./migrations
+# AI-generated (edited by PENDING): the ranking database's migrations (D-095).
+COPY migrations_ranking ./migrations_ranking
 
 USER appuser
 

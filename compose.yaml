@@ -46,6 +46,22 @@ services:
 # The frontend is not in this file: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
+  # AI-generated (edited by PENDING): user-service's separate database for
+  # errand-ranking models (D-095), with the same credentials as user-db.
+  user-ranking-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: user_ranking
+      POSTGRES_USER: ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}
+      POSTGRES_PASSWORD: ${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}
+    volumes:
+      - user-ranking-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set} -d user_ranking"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # ---- Redis ------------------------------------------------------------
   # AI-generated (edited by nigeltzy) — rewritten for D-024.
   # user-service's store, including the access-token revocation keys that
@@ -70,6 +86,8 @@ services:
     environment:
       PORT: 8081
       USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
+      # AI-generated (edited by PENDING): ranking models (D-095).
+      USER_RANKING_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-ranking-db:5432/user_ranking?sslmode=disable
       REDIS_URL: redis://redis:6379
       # AI-generated (edited by ZI YANG).
       JWT_KEYSET_PATH: /run/secrets/keys.json
@@ -88,6 +106,8 @@ services:
       RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
     depends_on:
       user-db:
+        condition: service_healthy
+      user-ranking-db:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -253,6 +273,7 @@ services:
 
 volumes:
   user-db-data:
+  user-ranking-db-data:
   redis-data:
   supplier-db-data:
   rabbitmq-data:
