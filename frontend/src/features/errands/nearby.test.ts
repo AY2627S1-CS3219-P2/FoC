@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { withDistance } from "./FindErrandsView";
-import { distanceMetres, formatDistance, rankByDistance, type LatLon } from "./nearby";
+import { distanceMetres, formatDistance, rankByDistance, withFirst, type LatLon, type Placed } from "./nearby";
 import type { Errand } from "./orderTypes";
 
 function errand(id: string, supplierId: string): Errand {
@@ -87,5 +87,21 @@ describe("withDistance", () => {
     expect(withDistance(null, 1_500)).toBe("Pickup 1.5 km away");
     expect(withDistance("Expires in 40 min", null)).toBe("Expires in 40 min");
     expect(withDistance(null, null)).toBeNull();
+  });
+});
+
+// AI-generated (edited by PENDING): D-094's suggested errand on top.
+describe("withFirst", () => {
+  const placed: Placed[] = ["a", "b", "c"].map((id) => ({ errand: errand(id, "s"), metres: null }));
+  const ids = (list: Placed[]) => list.map((p) => p.errand.id);
+
+  it("moves the suggested errand to the top, keeping the others' order", () => {
+    expect(ids(withFirst(placed, "c"))).toEqual(["c", "a", "b"]);
+    expect(ids(withFirst(placed, "a"))).toEqual(["a", "b", "c"]);
+  });
+
+  it("leaves the list alone without a suggestion, or when it is not on the list", () => {
+    expect(withFirst(placed, undefined)).toBe(placed);
+    expect(withFirst(placed, "gone")).toBe(placed);
   });
 });

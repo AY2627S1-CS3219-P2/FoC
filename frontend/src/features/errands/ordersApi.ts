@@ -23,6 +23,7 @@ import type {
   PendingRating,
   Rating,
   RecordedFilters,
+  Recommendation,
   ShownItem,
   UserRating,
 } from "./orderTypes";
@@ -67,7 +68,12 @@ export interface OrdersApi {
   /** The campus delivery locations an errand may name, each area's together. */
   listLocations(): Promise<CampusLocation[]>;
   /** OPEN errands before their deadline, newest first (F3.2). */
-  listOpen(): Promise<ErrandList>;
+  /**
+   * OPEN errands before their deadline, newest first (F3.2). AI-generated
+   * (edited by PENDING): with the model's recommendation unless `recommend`
+   * is false (D-094).
+   */
+  listOpen(options?: { recommend?: boolean }): Promise<ErrandList>;
   /** The caller's own errands (F3.4). */
   listRequested(scope: ListScope): Promise<ErrandList>;
   /** The caller's assignments as courier: `items` for active, `history` for history (F3.5). */
@@ -176,8 +182,10 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
       return body["items"];
     },
 
-    async listOpen() {
-      return toErrandList(await call(`${PREFIX}/open`));
+    async listOpen(options) {
+      // AI-generated (edited by PENDING): D-094's switch, sent only when off.
+      const query = options?.recommend === false ? queryString({ recommend: "false" }) : "";
+      return toErrandList(await call(`${PREFIX}/open${query}`));
     },
 
     async listRequested(scope) {
@@ -382,7 +390,20 @@ function toErrandList(body: unknown): ErrandList {
   if (!isRecord(body) || !isErrandArray(body["items"]) || typeof body["serverTime"] !== "string") {
     throw unusableResponse();
   }
-  return { items: body["items"], serverTime: body["serverTime"] };
+  const list: ErrandList = { items: body["items"], serverTime: body["serverTime"] };
+  // AI-generated (edited by PENDING): a recommendation that is not what the
+  // spec promises is dropped, not fatal: the list still works without it.
+  if (isRecommendation(body["recommendation"])) list.recommendation = body["recommendation"];
+  return list;
+}
+
+function isRecommendation(value: unknown): value is Recommendation {
+  return (
+    isRecord(value) &&
+    typeof value["errandId"] === "string" &&
+    typeof value["confidence"] === "number" &&
+    typeof value["reason"] === "string"
+  );
 }
 
 function toAssignedList(body: unknown): AssignedList {

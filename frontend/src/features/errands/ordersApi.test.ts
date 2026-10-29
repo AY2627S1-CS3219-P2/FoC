@@ -459,3 +459,28 @@ describe("ordersApi ratings and records", () => {
     });
   });
 });
+
+// AI-generated (edited by PENDING): D-094's suggestion on the open list.
+describe("ordersApi listOpen suggestion", () => {
+  const REC = { errandId: ID, confidence: 0.72, reason: "Suggested because it pays 10 credits." };
+
+  it("keeps a recommendation the list carries", async () => {
+    const { api } = stubSend(ok({ ...LIST, recommendation: REC }));
+    await expect(api.listOpen()).resolves.toEqual({ ...LIST, recommendation: REC });
+  });
+
+  it("drops a recommendation the spec does not promise, keeping the list", async () => {
+    const { api } = stubSend(ok({ ...LIST, recommendation: { errandId: ID, confidence: "high" } }));
+    await expect(api.listOpen()).resolves.toEqual(LIST);
+  });
+
+  it("asks for none with recommend=false, and sends nothing extra otherwise", async () => {
+    const off = stubSend(ok(LIST));
+    await off.api.listOpen({ recommend: false });
+    expect(sent(off.send).path).toBe("/api/orders/open?recommend=false");
+
+    const on = stubSend(ok(LIST));
+    await on.api.listOpen({ recommend: true });
+    expect(sent(on.send).path).toBe("/api/orders/open");
+  });
+});

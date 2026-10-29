@@ -146,6 +146,20 @@ export interface ErrandDetail {
 export interface ErrandList {
   items: Errand[];
   serverTime: string;
+  // AI-generated (edited by PENDING): D-094, on GET /open only (commit ad0653d).
+  /** The errand the courier's model suggests, when it has one. */
+  recommendation?: Recommendation;
+}
+
+// AI-generated (edited by PENDING): transcribed from order-service's
+// Recommendation schema (commit ad0653d).
+/** The errand the courier's model suggests (D-094): advice, which they can ignore. */
+export interface Recommendation {
+  errandId: string;
+  /** The model's score for the errand, 0 to 1. */
+  confidence: number;
+  /** One or two sentences on why. */
+  reason: string;
 }
 
 /** The `scope` of the requester's and courier's lists. */

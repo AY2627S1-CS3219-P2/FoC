@@ -47,6 +47,9 @@ interface ErrandCardProps {
   // AI-generated (edited by PENDING): D-093 names the requester on Find errands.
   /** Who posted it, such as the requester's name and rating. */
   poster?: ReactNode;
+  // AI-generated (edited by PENDING): D-094's suggestion.
+  /** A strip across the top of the card, such as why it is suggested. */
+  flair?: ReactNode;
 }
 
 /**
@@ -65,9 +68,14 @@ export function ErrandCard({
   note,
   cardRef,
   poster,
+  flair,
 }: ErrandCardProps) {
   return (
-    <article ref={cardRef} className={`errand-card has-open ${needsYou ? "needs-you" : ""}`}>
+    <article
+      ref={cardRef}
+      className={`errand-card has-open ${needsYou ? "needs-you" : ""} ${flair ? "suggested" : ""}`}
+    >
+      {flair}
       <button type="button" className="errand-card-open" onClick={onOpen}>
         <span className="errand-card-body">
           <span className="errand-title">{errand.itemDescription}</span>

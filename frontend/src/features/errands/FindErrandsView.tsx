@@ -33,8 +33,8 @@ import {
   type TimeLeft,
 } from "./findFilters";
 import type { OrdersApi } from "./ordersApi";
-import type { CampusLocation, Errand } from "./orderTypes";
-import { formatDistance, rankByDistance, type LatLon, type SortOrder } from "./nearby";
+import type { CampusLocation, Errand, Recommendation } from "./orderTypes";
+import { formatDistance, rankByDistance, withFirst, type LatLon, type SortOrder } from "./nearby";
 import { Stars } from "./ratings";
 import { usePeople, type Person } from "./usePeople";
 import { useShownTracking, type ShownErrand } from "./shownTracking";
@@ -70,6 +70,8 @@ interface FindErrandsViewProps {
 interface OpenList {
   items: Errand[];
   offset: number;
+  // AI-generated (edited by PENDING): D-094's suggestion, when there is one.
+  recommendation?: Recommendation;
 }
 
 /** The errand whose detail is open, and what the action that opened it did. */
@@ -133,12 +135,19 @@ export function FindErrandsView({
   // Set when an Accept is refused, cleared once focus is back on that card.
   const refocusAccept = useRef(false);
 
+  // AI-generated (edited by PENDING): D-094's suggestion can be turned off for
+  // this visit, which stops order-service working one out.
+  const [suggest, setSuggest] = useState(true);
   const refresh = usePolling(
     async (isActive) => {
       try {
-        const result = await ordersApi.listOpen();
+        const result = await ordersApi.listOpen({ recommend: suggest });
         if (!isActive()) return;
-        setList({ items: result.items, offset: clockOffset(result.serverTime) });
+        setList({
+          items: result.items,
+          offset: clockOffset(result.serverTime),
+          recommendation: result.recommendation,
+        });
         setError(null);
       } catch (err) {
         if (isActive()) setError(orderErrorMessage(err));
@@ -146,7 +155,7 @@ export function FindErrandsView({
       }
     },
     5_000,
-    [ordersApi],
+    [ordersApi, suggest],
   );
 
   async function accept(errand: Errand) {
@@ -220,7 +229,9 @@ export function FindErrandsView({
   const visible = filterErrands(takeable, filters, at, locations);
   // AI-generated (edited by PENDING): nearest pickup first once located (D-098).
   const from = sortOrder === "nearest" && courier.kind === "located" ? courier.at : null;
-  const placed = rankByDistance(visible, from, pickups);
+  // AI-generated (edited by PENDING): the suggested errand goes on top (D-094).
+  const recommendation = suggest ? list?.recommendation : undefined;
+  const placed = withFirst(rankByDistance(visible, from, pickups), recommendation?.errandId);
   // AI-generated (edited by PENDING): each requester's name and rating for the
   // cards (D-093).
   const people = usePeople(
@@ -362,6 +373,11 @@ export function FindErrandsView({
               </optgroup>
             ))}
           </select>
+          {!suggest && (
+            <button type="button" className="link-btn" onClick={() => setSuggest(true)}>
+              Show suggestions
+            </button>
+          )}
           {isFiltered(filters) && (
             <button type="button" className="link-btn" onClick={() => setFilter(NO_FILTERS)}>
               Clear filters
@@ -403,6 +419,11 @@ export function FindErrandsView({
           key={errand.id}
           cardRef={track(errand.id, position)}
           poster={errand.requesterId && <Poster person={people.get(errand.requesterId)} />}
+          flair={
+            recommendation?.errandId === errand.id && (
+              <SuggestionFlair recommendation={recommendation} onHide={() => setSuggest(false)} />
+            )
+          }
           errand={errand}
           line={withDistance(progressText(errand, at), metres)}
           showState={false}
@@ -468,6 +489,34 @@ export function FindErrandsView({
         </Modal>
       )}
     </section>
+  );
+}
+
+// AI-generated (edited by PENDING): D-094's flair on the suggested errand.
+/**
+ * A shining star, the model's reason and how sure it is, and a way to turn
+ * suggestions off. The star is decoration; the words say it all.
+ */
+function SuggestionFlair({
+  recommendation,
+  onHide,
+}: {
+  recommendation: Recommendation;
+  onHide: () => void;
+}) {
+  return (
+    <div className="suggestion-flair">
+      <span className="suggestion-star" aria-hidden="true">
+        ★
+      </span>
+      <span className="suggestion-text">
+        <strong>Suggested for you</strong> · {Math.round(recommendation.confidence * 100)}% match.{" "}
+        {recommendation.reason}
+      </span>
+      <button type="button" className="link-btn" onClick={onHide}>
+        Hide suggestions
+      </button>
+    </div>
   );
 }
 

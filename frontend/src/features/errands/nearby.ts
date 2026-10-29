@@ -65,3 +65,11 @@ export function formatDistance(metres: number): string {
   const km = metres / 1000;
   return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
 }
+
+// AI-generated (edited by PENDING): D-094's suggested errand first.
+/** The list with the errand `id` moved to the top, the rest in order; unchanged when `id` is absent or not on it. */
+export function withFirst(placed: Placed[], id: string | undefined): Placed[] {
+  const i = id === undefined ? -1 : placed.findIndex((p) => p.errand.id === id);
+  if (i <= 0) return placed;
+  return [placed[i]!, ...placed.slice(0, i), ...placed.slice(i + 1)];
+}

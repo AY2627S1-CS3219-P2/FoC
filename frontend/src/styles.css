@@ -2065,3 +2065,53 @@ button.service-card:hover {
 .party .avatar {
   align-self: flex-end;
 }
+
+/* AI-generated (edited by PENDING): D-094's suggested errand: a strip across
+   the top of its card, like the refusal note across the foot, with a star
+   that shines unless the reader has asked for less motion. */
+.errand-card.suggested {
+  border-color: var(--credit);
+}
+
+.suggestion-flair {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: flex-start;
+  padding: 8px 12px;
+  margin: 15px 16px 0;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--credit-soft);
+  border-radius: var(--radius-sm);
+}
+
+.suggestion-text {
+  flex: 1 1 200px;
+}
+
+.suggestion-star {
+  font-size: 18px;
+  line-height: 1;
+  color: var(--credit);
+  animation: suggestion-shine 2.4s ease-in-out infinite;
+}
+
+@keyframes suggestion-shine {
+  0%,
+  100% {
+    text-shadow: none;
+    transform: scale(1);
+  }
+  50% {
+    text-shadow: 0 0 8px var(--credit);
+    transform: scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggestion-star {
+    animation: none;
+  }
+}
