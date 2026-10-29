@@ -22,9 +22,28 @@ import {
   orderErrorMessage,
   progressText,
 } from "./format";
+import {
+  destinationGroups,
+  filterErrands,
+  isFiltered,
+  NO_FILTERS,
+  pickupOptions,
+  TIME_LEFT_OPTIONS,
+  type FindFilters,
+  type TimeLeft,
+} from "./findFilters";
 import type { OrdersApi } from "./ordersApi";
-import type { Errand } from "./orderTypes";
+import type { CampusLocation, Errand } from "./orderTypes";
+import { useShownTracking, type ShownErrand } from "./shownTracking";
 import { clockOffset, serverNow, useNow } from "./time";
+
+// AI-generated (edited by PENDING): what Find errands reports for errand
+// ranking (D-092). App passes these once order-service has somewhere to send
+// them; until then nothing is recorded.
+/** An errand whose whole card came into view, with the filters set at the time. */
+export interface ShownRecord extends ShownErrand {
+  filters: FindFilters;
+}
 
 interface FindErrandsViewProps {
   ordersApi: OrdersApi;
@@ -36,6 +55,11 @@ interface FindErrandsViewProps {
   onNotify: (message: ToastMessage) => void;
   /** After an action in the detail, so App refreshes the balance. */
   onCreditsChanged: () => void;
+  // AI-generated (edited by PENDING): D-092's two records.
+  /** Called once per visit for each errand whose whole card comes into view. */
+  onShown?: (shown: ShownRecord) => void;
+  /** Called each time the courier changes a filter, with all the filters as set. */
+  onSearch?: (filters: FindFilters) => void;
 }
 
 /** The open list as last fetched, with the server clock's offset at that moment. */
@@ -75,8 +99,19 @@ export function FindErrandsView({
   available,
   onNotify,
   onCreditsChanged,
+  onShown,
+  onSearch,
 }: FindErrandsViewProps) {
   const [list, setList] = useState<OpenList | null>(null);
+  // AI-generated (edited by PENDING): the filters (D-092) and the locations their
+  // destination choice is grouped by.
+  const [filters, setFilters] = useState<FindFilters>(NO_FILTERS);
+  const [locations, setLocations] = useState<CampusLocation[]>([]);
+  const filtersRef = useRef(filters);
+  filtersRef.current = filters;
+  const track = useShownTracking(
+    onShown && ((shown) => onShown({ ...shown, filters: filtersRef.current })),
+  );
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -131,12 +166,34 @@ export function FindErrandsView({
     }
   }
 
+  // AI-generated (edited by PENDING): the destination filter groups places by
+  // area. If the list cannot be fetched, that filter offers no choices and
+  // the rest of the screen works as before.
+  useEffect(() => {
+    let active = true;
+    ordersApi.listLocations().then(
+      (items) => active && setLocations(items),
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [ordersApi]);
+
+  function setFilter(change: Partial<FindFilters>) {
+    const next = { ...filters, ...change };
+    setFilters(next);
+    onSearch?.(next);
+  }
+
   const others = list ? list.items.filter((errand) => errand.requesterId !== userId) : [];
   const ownHidden = list ? list.items.length - others.length : 0;
   // Decided by the server's actions alone, never by a rule worked out here.
   const takeable = others.filter((errand) => buttonsFor(errand).includes("accept"));
   const at = list ? serverNow(list.offset, now) : now;
-  const refusedCardShown = refusal !== null && takeable.some((e) => e.id === refusal.errandId);
+  // AI-generated (edited by PENDING): what passes the courier's filters (D-092).
+  const visible = filterErrands(takeable, filters, at, locations);
+  const refusedCardShown = refusal !== null && visible.some((e) => e.id === refusal.errandId);
   // The visible text, which the button's name starts with.
   const acceptLabel = (id: string) =>
     accepting === id ? ACTION_BUSY_LABEL.accept : ACTION_LABEL.accept;
@@ -185,9 +242,73 @@ export function FindErrandsView({
         </p>
       )}
 
+      {/* AI-generated (edited by PENDING): D-092's filters, laid out like the
+          Suppliers screen's controls. */}
+      {list && takeable.length > 0 && (
+        <div className="controls" role="group" aria-label="Filter errands">
+          <select
+            className="category-select"
+            value={filters.timeLeft}
+            onChange={(e) => setFilter({ timeLeft: e.target.value as TimeLeft })}
+            aria-label="Filter by time left"
+          >
+            {TIME_LEFT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+          <select
+            className="category-select"
+            value={filters.from}
+            onChange={(e) => setFilter({ from: e.target.value })}
+            aria-label="Filter by where the errand is collected from"
+          >
+            <option value="">Collect from anywhere</option>
+            {pickupOptions(takeable).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          <select
+            className="category-select"
+            value={filters.to}
+            onChange={(e) => setFilter({ to: e.target.value })}
+            aria-label="Filter by where the errand is delivered to"
+          >
+            <option value="">Deliver anywhere</option>
+            {destinationGroups(locations).map((g) => (
+              <optgroup key={g.area} label={g.area}>
+                <option value={`area:${g.area}`}>All of {g.area}</option>
+                {g.places.map((place) => (
+                  <option key={place} value={`place:${place}`}>
+                    {place}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          {isFiltered(filters) && (
+            <button type="button" className="link-btn" onClick={() => setFilter(NO_FILTERS)}>
+              Clear filters
+            </button>
+          )}
+        </div>
+      )}
+
       {list && takeable.length === 0 && (
         <p className="status" role="status">
           No open errands right now. New ones show up here on their own.
+        </p>
+      )}
+
+      {list && takeable.length > 0 && visible.length === 0 && (
+        <p className="status" role="status">
+          No open errands match these filters.{" "}
+          <button type="button" className="link-btn" onClick={() => setFilter(NO_FILTERS)}>
+            Clear filters
+          </button>
         </p>
       )}
 
@@ -197,16 +318,17 @@ export function FindErrandsView({
         </p>
       )}
 
-      {list && ownHidden > 0 && takeable.length > 0 && (
+      {list && ownHidden > 0 && visible.length > 0 && (
         <p className="list-note">
           Your own open errands aren&rsquo;t listed here; they&rsquo;re in My errands under
           Requesting.
         </p>
       )}
 
-      {takeable.map((errand) => (
+      {visible.map((errand, position) => (
         <ErrandCard
           key={errand.id}
+          cardRef={track(errand.id, position)}
           errand={errand}
           line={progressText(errand, at)}
           showState={false}

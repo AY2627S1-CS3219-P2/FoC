@@ -41,6 +41,9 @@ interface ErrandCardProps {
   children?: ReactNode;
   /** A line across the foot of the card, such as why Accept was refused. */
   note?: ReactNode;
+  // AI-generated (edited by PENDING): lets Find errands notice when the whole card is in view (D-092).
+  /** Given the card's element, such as for noticing when it is in view. */
+  cardRef?: (node: HTMLElement | null) => void;
 }
 
 /**
@@ -56,9 +59,10 @@ export function ErrandCard({
   onOpen,
   children,
   note,
+  cardRef,
 }: ErrandCardProps) {
   return (
-    <article className={`errand-card has-open ${needsYou ? "needs-you" : ""}`}>
+    <article ref={cardRef} className={`errand-card has-open ${needsYou ? "needs-you" : ""}`}>
       <button type="button" className="errand-card-open" onClick={onOpen}>
         <span className="errand-card-body">
           <span className="errand-title">{errand.itemDescription}</span>
