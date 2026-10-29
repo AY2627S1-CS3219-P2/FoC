@@ -34,8 +34,10 @@ import {
 } from "./findFilters";
 import type { OrdersApi } from "./ordersApi";
 import type { CampusLocation, Errand } from "./orderTypes";
+import { formatDistance, rankByDistance, type LatLon, type SortOrder } from "./nearby";
 import { useShownTracking, type ShownErrand } from "./shownTracking";
 import { clockOffset, serverNow, useNow } from "./time";
+import { useCourierLocation } from "./useCourierLocation";
 
 // AI-generated (edited by PENDING): what Find errands reports for errand
 // ranking (D-092). App passes these once order-service has somewhere to send
@@ -112,6 +114,11 @@ export function FindErrandsView({
   const track = useShownTracking(
     onShown && ((shown) => onShown({ ...shown, filters: filtersRef.current })),
   );
+  // AI-generated (edited by PENDING): D-098's default ranking, nearest pickup
+  // first, worked out here so the courier's location never leaves the page.
+  const { location: courier, request: requestLocation } = useCourierLocation();
+  const [sortOrder, setSortOrder] = useState<SortOrder>("nearest");
+  const [pickups, setPickups] = useState<ReadonlyMap<string, LatLon>>(new Map());
   const [error, setError] = useState<string | null>(null);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
@@ -180,6 +187,22 @@ export function FindErrandsView({
     };
   }, [ordersApi]);
 
+  // AI-generated (edited by PENDING): where each supplier is, from
+  // supplier-service. Without it every errand's distance is unknown and the
+  // list stays newest first.
+  useEffect(() => {
+    let active = true;
+    suppliersApi.listSuppliers().then(
+      (suppliers) =>
+        active &&
+        setPickups(new Map(suppliers.map((s) => [s.id, { lat: s.latitude, lon: s.longitude }]))),
+      () => undefined,
+    );
+    return () => {
+      active = false;
+    };
+  }, [suppliersApi]);
+
   function setFilter(change: Partial<FindFilters>) {
     const next = { ...filters, ...change };
     setFilters(next);
@@ -193,6 +216,9 @@ export function FindErrandsView({
   const at = list ? serverNow(list.offset, now) : now;
   // AI-generated (edited by PENDING): what passes the courier's filters (D-092).
   const visible = filterErrands(takeable, filters, at, locations);
+  // AI-generated (edited by PENDING): nearest pickup first once located (D-098).
+  const from = sortOrder === "nearest" && courier.kind === "located" ? courier.at : null;
+  const placed = rankByDistance(visible, from, pickups);
   const refusedCardShown = refusal !== null && visible.some((e) => e.id === refusal.errandId);
   // The visible text, which the button's name starts with.
   const acceptLabel = (id: string) =>
@@ -220,11 +246,38 @@ export function FindErrandsView({
           Find errands
         </h1>
         <p className="page-sub">
-          Errands other students have posted, newest first. Accept one you can collect on a
+          {/* AI-generated (edited by PENDING): the order now depends on D-098. */}
+          Errands other students have posted,{" "}
+          {from ? "nearest pickup first" : "newest first"}. Accept one you can collect on a
           walk you&rsquo;re making anyway; its reward is yours once the requester confirms
           delivery.
         </p>
       </div>
+
+      {/* AI-generated (edited by PENDING): asking for the courier's location
+          (D-098) only when they tap, and saying why the order is what it is. */}
+      {courier.kind === "ask" && (
+        <p className="list-note">
+          See the errands whose pickup is nearest you first.{" "}
+          <button type="button" className="link-btn" onClick={requestLocation}>
+            Use my location
+          </button>
+        </p>
+      )}
+      {courier.kind === "locating" && (
+        <p className="list-note" role="status">
+          Finding your location…
+        </p>
+      )}
+      {courier.kind === "refused" && (
+        <p className="list-note">
+          Location access is off, so errands are newest first. You can allow it in your
+          browser&rsquo;s settings for this site.
+        </p>
+      )}
+      {courier.kind === "unavailable" && (
+        <p className="list-note">Your location isn&rsquo;t available, so errands are newest first.</p>
+      )}
 
       {error && (
         <p className="status error" role="alert">
@@ -245,7 +298,18 @@ export function FindErrandsView({
       {/* AI-generated (edited by PENDING): D-092's filters, laid out like the
           Suppliers screen's controls. */}
       {list && takeable.length > 0 && (
-        <div className="controls" role="group" aria-label="Filter errands">
+        <div className="controls" role="group" aria-label="Order and filter errands">
+          {courier.kind === "located" && (
+            <select
+              className="category-select"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value as SortOrder)}
+              aria-label="Order errands by"
+            >
+              <option value="nearest">Nearest pickup first</option>
+              <option value="newest">Newest first</option>
+            </select>
+          )}
           <select
             className="category-select"
             value={filters.timeLeft}
@@ -325,12 +389,12 @@ export function FindErrandsView({
         </p>
       )}
 
-      {visible.map((errand, position) => (
+      {placed.map(({ errand, metres }, position) => (
         <ErrandCard
           key={errand.id}
           cardRef={track(errand.id, position)}
           errand={errand}
-          line={progressText(errand, at)}
+          line={withDistance(progressText(errand, at), metres)}
           showState={false}
           onOpen={() =>
             setOpen({
@@ -395,4 +459,12 @@ export function FindErrandsView({
       )}
     </section>
   );
+}
+
+// AI-generated (edited by PENDING): the card's line with the pickup's distance (D-098).
+/** The card's status line, with how far the pickup is when that is known. */
+export function withDistance(line: string | null, metres: number | null): string | null {
+  if (metres === null) return line;
+  const away = `Pickup ${formatDistance(metres)} away`;
+  return line ? `${line} · ${away}` : away;
 }
