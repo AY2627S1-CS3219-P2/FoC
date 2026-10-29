@@ -316,9 +316,12 @@ func TestVisibility(t *testing.T) {
 				require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 				errand := errandJSON(t, rec)
 				if !tc.private {
-					assert.NotContains(t, errand, "requesterId")
+					// AI-generated (edited by PENDING): D-093 names the
+					// requester of an OPEN errand to anyone who may see it,
+					// for the cards on Find errands; the note stays private.
+					assert.Equal(t, requester.UserID.String(), errand["requesterId"])
 					assert.NotContains(t, errand, "deliveryNote")
-					assert.NotContains(t, rec.Body.String(), requester.UserID.String())
+					assert.NotContains(t, rec.Body.String(), "by the vending machine")
 					return
 				}
 				assert.Equal(t, requester.UserID.String(), errand["requesterId"])
@@ -359,7 +362,8 @@ func TestVisibility(t *testing.T) {
 		list := decodeAs[gen.ErrandList](t, rec)
 		require.Len(t, list.Items, 1)
 		assert.Equal(t, open.ID, list.Items[0].Id)
-		assert.Nil(t, list.Items[0].RequesterId)
+		// AI-generated (edited by PENDING): named on the card (D-093).
+		assert.Equal(t, &requester.UserID, list.Items[0].RequesterId)
 		assert.Nil(t, list.Items[0].DeliveryNote)
 		assert.Equal(t, []gen.ErrandAction{gen.Accept}, list.Items[0].Actions)
 
@@ -759,6 +763,12 @@ func TestAssignedLists(t *testing.T) {
 	h.clock.Advance(time.Minute)
 	act(requester, completed, "confirm", nil)
 	completedAt := h.clock.Now()
+	// AI-generated (edited by PENDING): D-093, both sides rate the completed
+	// errand, or neither could post or accept another.
+	for _, rater := range []order.Caller{requester, courier} {
+		rec := h.do(t, http.MethodPost, "/"+completed.String()+"/rating", map[string]any{"stars": 5}, as(rater))
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	}
 
 	t.Run("history", func(t *testing.T) {
 		rec := h.do(t, http.MethodGet, "/assigned?scope=history", nil, as(courier))

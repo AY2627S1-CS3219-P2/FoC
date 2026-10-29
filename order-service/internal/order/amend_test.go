@@ -496,7 +496,7 @@ func TestAmendLogsWhenTheRewardSetCannotBeQueued(t *testing.T) {
 	o := f.post()
 	before := f.stored(o.ID)
 	logs := &logRecorder{}
-	svc := order.NewService(f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
+	svc := order.NewService(f.repo, f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
 	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
 	f.repo.FailNext("QueueLocked", ordertest.ErrInjected)
 

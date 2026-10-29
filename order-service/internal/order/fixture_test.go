@@ -137,7 +137,7 @@ func newFixtureWith(t *testing.T, cfg order.Config) *fixture {
 	f.suppliers = &countingSuppliers{
 		Suppliers: ordertest.NewSuppliers(f.supplier, f.otherSupplier, f.closedSupplier),
 	}
-	f.svc = order.NewService(f.repo, f.credit, f.suppliers, f.clock, cfg, slog.New(slog.DiscardHandler))
+	f.svc = order.NewService(f.repo, f.repo, f.credit, f.suppliers, f.clock, cfg, slog.New(slog.DiscardHandler))
 	return f
 }
 
@@ -188,7 +188,41 @@ func (f *fixture) seed(s order.State) order.Order {
 		o.CourierID = ptr(f.courier.UserID)
 	}
 	f.repo.Put(o)
+	// AI-generated (edited by PENDING): a seeded COMPLETED errand stands for one
+	// finished earlier, which under D-093 both sides have rated, or neither
+	// could post or accept again. seedUnrated leaves it unrated.
+	if s == order.StateCompleted {
+		f.rateAsBoth(o)
+	}
 	return o
+}
+
+// AI-generated (edited by PENDING): D-093's fixtures.
+// seedUnrated is seed for a COMPLETED errand that neither side has rated.
+func (f *fixture) seedUnrated() order.Order {
+	f.t.Helper()
+	o := f.seed(order.StateOpen)
+	o.State, o.ExpiresAt, o.CourierID = order.StateCompleted, nil, ptr(f.courier.UserID)
+	f.repo.Put(o)
+	return o
+}
+
+// rateAsBoth stores the requester's and the courier's rating of o, as if each
+// had rated it.
+func (f *fixture) rateAsBoth(o order.Order) {
+	f.t.Helper()
+	f.rateAsCourier(o)
+	require.NoError(f.t, f.repo.SaveRating(f.ctx, order.Rating{
+		OrderID: o.ID, RaterID: o.RequesterID, RateeID: *o.CourierID, RaterRole: order.RaterRequester, Stars: 5, RatedAt: f.clock.Now(),
+	}))
+}
+
+// rateAsCourier stores o's courier's rating of its requester.
+func (f *fixture) rateAsCourier(o order.Order) {
+	f.t.Helper()
+	require.NoError(f.t, f.repo.SaveRating(f.ctx, order.Rating{
+		OrderID: o.ID, RaterID: *o.CourierID, RateeID: o.RequesterID, RaterRole: order.RaterCourier, Stars: 5, RatedAt: f.clock.Now(),
+	}))
 }
 
 // createInput is a valid errand from f.supplier (F3.1.1), with no X-Request-Id.

@@ -70,6 +70,10 @@ func TestPostgres(t *testing.T) {
 	t.Run("ConcurrentCreatesRespectTheOpenLimit", e.testConcurrentCreatesRespectTheOpenLimit)
 	t.Run("AcceptIsJudgedAtArrival", e.testAcceptIsJudgedAtArrival)
 	t.Run("NoRewardSetBehindASettlement", e.testNoRewardSetBehindASettlement)
+
+	// AI-generated (edited by PENDING): ratings and Find errands' records (D-092, D-093).
+	t.Run("Ratings", e.testRatings)
+	t.Run("Activity", e.testActivity)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.
@@ -140,7 +144,7 @@ func startPostgres(t *testing.T) string {
 // reset empties every table.
 func (e *env) reset(t *testing.T) {
 	t.Helper()
-	_, err := e.pool.Exec(context.Background(), `TRUNCATE order_history, outbox, orders RESTART IDENTITY`)
+	_, err := e.pool.Exec(context.Background(), `TRUNCATE errand_ratings, errand_views, errand_searches, order_history, outbox, orders RESTART IDENTITY`)
 	require.NoError(t, err, "empty the tables")
 }
 
@@ -436,7 +440,8 @@ func (e *env) testMigrate(t *testing.T) {
 			dirty   bool
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
-		require.Equal(t, 1, version)
+		// AI-generated (edited by PENDING): 000004 adds ratings and Find errands' records.
+		require.Equal(t, 4, version)
 		require.False(t, dirty)
 	})
 	t.Run("a missing directory is an error", func(t *testing.T) {

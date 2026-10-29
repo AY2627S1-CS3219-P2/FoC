@@ -795,7 +795,7 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		LocationDescription: "next to the lift", Available: true,
 	}
 	credit := ordertest.NewCredit()
-	svc := order.NewService(e.repo, credit, ordertest.NewSuppliers(supplier), clock,
+	svc := order.NewService(e.repo, e.repo, credit, ordertest.NewSuppliers(supplier), clock,
 		order.Config{ExpiryPeriod: 2 * time.Hour, MaxActive: 2, ConfirmWindow: 24 * time.Hour},
 		slog.New(slog.DiscardHandler))
 	requester := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}

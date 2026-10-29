@@ -62,8 +62,9 @@ func createInput(b gen.CreateErrandRequest, requestKey, correlationID string) or
 	return in
 }
 
-// toErrand shows o to c at now. The requester and the note are only for a
-// party to the errand or an ADMIN; each deadline only in the state it runs in
+// toErrand shows o to c at now. The note is only for a party to the errand or
+// an ADMIN, and so is the requester once the errand is no longer OPEN
+// (D-093); each deadline only in the state it runs in
 // (D-050); actions are exactly what c may do now (D-053).
 func toErrand(o order.Order, c order.Caller, now time.Time) gen.Errand {
 	e := gen.Errand{
@@ -82,6 +83,12 @@ func toErrand(o order.Order, c order.Caller, now time.Time) gen.Errand {
 	if order.CanSeePrivate(o, c) {
 		e.RequesterId = ptr(o.RequesterID)
 		e.DeliveryNote = ptr(o.DeliveryNote)
+	}
+	// AI-generated (edited by PENDING): D-093 shows the requester's name and
+	// rating on Find errands cards, so an OPEN errand names its requester to
+	// anyone who may see it. The note stays private.
+	if o.State == order.StateOpen {
+		e.RequesterId = ptr(o.RequesterID)
 	}
 	if o.CourierID != nil {
 		e.CourierId = ptr(*o.CourierID)

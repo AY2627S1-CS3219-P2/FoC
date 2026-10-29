@@ -538,7 +538,7 @@ func newEnv(t *testing.T) *env {
 	repo := &hookedRepo{Repository: ordertest.NewRepository()}
 	clock := ordertest.NewClock(startTime())
 	cfg := order.Config{ExpiryPeriod: expiryPeriod, MaxActive: maxActive, ConfirmWindow: confirmWindow}
-	svc := order.NewService(repo, ordertest.NewCredit(), ordertest.NewSuppliers(sup), clock, cfg, slog.New(slog.DiscardHandler))
+	svc := order.NewService(repo, repo, ordertest.NewCredit(), ordertest.NewSuppliers(sup), clock, cfg, slog.New(slog.DiscardHandler))
 	return &env{repo: repo, clock: clock, svc: svc, supplier: sup.ID}
 }
 

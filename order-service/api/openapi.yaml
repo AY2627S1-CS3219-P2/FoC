@@ -60,11 +60,15 @@ paths:
     post:
       operationId: createErrand
       summary: Post an errand (F3.1)
+      # AI-generated (edited by PENDING): the last paragraph, D-093's rating gate.
       description: |
         Validates the reward, supplier and delivery location, reserves the reward
         through credit-service, then saves the errand in `OPEN`. A requester who
         already has 5 errands `OPEN` before their deadlines cannot post another:
         the create is refused with 409.
+
+        A student with a `COMPLETED` errand they have not yet rated cannot post
+        either: 409, until they rate it (D-093). `GET /ratings/pending` lists them.
       parameters:
         - $ref: "#/components/parameters/RequestId"
       requestBody:
@@ -93,7 +97,7 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "409":
-          description: The requester already has 5 errands `OPEN` before their deadlines, so cannot post another
+          description: The requester already has 5 errands `OPEN` before their deadlines, or has a completed errand to rate first (D-093), so cannot post another
           content:
             application/json:
               schema:
@@ -297,6 +301,8 @@ paths:
         Send the `version` you were shown; if the errand changed since, the answer
         is 409. A courier who withdrew from an errand cannot accept it again: the
         answer is 409, and the errand's `actions` never offer them `accept`.
+        A courier with a `COMPLETED` errand they have not yet rated is refused
+        with 409 until they rate it (D-093).
       requestBody:
         required: true
         content:
@@ -439,6 +445,135 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  # AI-generated (edited by PENDING): D-093's ratings and D-092's shown and
+  # search records. Paths and field names were left to the implementation;
+  # for Nigeltzy and James Teo to confirm in review.
+  /{errandId}/rating:
+    parameters:
+      - $ref: "#/components/parameters/ErrandId"
+    post:
+      operationId: rateErrand
+      summary: The requester rates the courier, or the courier the requester, after a `COMPLETED` errand (D-093)
+      description: |
+        Each side rates the other once, 1 to 5 stars, and cannot change it. Only
+        a student who was the errand's requester or courier may rate it, and only
+        once it is `COMPLETED`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RateRequest"
+      responses:
+        "201":
+          description: The rating as saved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Rating"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: The errand is not `COMPLETED`, or the caller has already rated it
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+
+  /ratings/pending:
+    get:
+      operationId: listPendingRatings
+      summary: The caller's `COMPLETED` errands they have not rated yet, most recent first (D-093)
+      description: While this list is not empty, the caller can neither post nor accept an errand.
+      responses:
+        "200":
+          description: Errands to rate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingRatingList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /users/{userId}/rating:
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      operationId: getUserRating
+      summary: The ratings a user has received, as requester and as courier together (D-093)
+      description: Public to any signed-in user. A user nobody has rated has a `count` of 0 and no `average`.
+      responses:
+        "200":
+          description: The user's rating
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserRating"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /activity/shown:
+    post:
+      operationId: recordShownErrands
+      summary: Records the errands whose whole card came into a courier's view on Find errands (D-092)
+      description: |
+        The caller is the courier. An errand id order-service does not know is
+        skipped. Recorded for errand ranking (D-088); nothing is sent back.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ShownRequest"
+      responses:
+        "204":
+          description: Recorded
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+
+  /activity/searches:
+    post:
+      operationId: recordSearch
+      summary: Records the filters a courier set on Find errands (D-092)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SearchRequest"
+      responses:
+        "204":
+          description: Recorded
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
 
 components:
   securitySchemes:
@@ -596,7 +731,8 @@ components:
         requesterId:
           type: string
           format: uuid
-          description: Present only for the requester, the assigned courier and ADMIN.
+          # AI-generated (edited by PENDING): D-093 puts the requester's name on Find errands cards.
+          description: Present for the requester, the assigned courier and ADMIN, and to any student while the errand is `OPEN` (D-093).
         courierId:
           type: string
           format: uuid
@@ -823,3 +959,136 @@ components:
       properties:
         version:
           type: integer
+
+    # AI-generated (edited by PENDING): the schemas for D-092 and D-093.
+    RateRequest:
+      type: object
+      required: [stars]
+      properties:
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+
+    RaterRole:
+      type: string
+      description: Which side of the errand the rater was. A requester rates the courier; a courier rates the requester.
+      enum: [requester, courier]
+
+    Rating:
+      type: object
+      required: [errandId, raterId, rateeId, raterRole, stars, ratedAt]
+      properties:
+        errandId:
+          type: string
+          format: uuid
+        raterId:
+          type: string
+          format: uuid
+        rateeId:
+          type: string
+          format: uuid
+        raterRole:
+          $ref: "#/components/schemas/RaterRole"
+        stars:
+          type: integer
+          minimum: 1
+          maximum: 5
+        ratedAt:
+          type: string
+          format: date-time
+
+    PendingRating:
+      type: object
+      required: [errandId, rateeId, raterRole, itemDescription, completedAt]
+      properties:
+        errandId:
+          type: string
+          format: uuid
+        rateeId:
+          type: string
+          format: uuid
+          description: The person the caller is to rate.
+        raterRole:
+          $ref: "#/components/schemas/RaterRole"
+        itemDescription:
+          type: string
+        completedAt:
+          type: string
+          format: date-time
+
+    PendingRatingList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/PendingRating"
+
+    UserRating:
+      type: object
+      required: [userId, count]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        count:
+          type: integer
+          minimum: 0
+          description: How many ratings the user has received.
+        average:
+          type: number
+          format: double
+          minimum: 1
+          maximum: 5
+          description: The mean of those ratings. Absent when `count` is 0.
+
+    FindFilters:
+      type: object
+      description: The filters set on Find errands (D-092), as the screen names them.
+      required: [timeLeft, from, to]
+      properties:
+        timeLeft:
+          type: string
+          enum: [any, under30m, under1h, over1h]
+        from:
+          type: string
+          maxLength: 64
+          description: The supplier id collected from, or empty for any.
+        to:
+          type: string
+          maxLength: 200
+          description: Empty for any, `area:<area>` for every place in an area, or `place:<name>` for one delivery location.
+
+    ShownItem:
+      type: object
+      required: [errandId, position]
+      properties:
+        errandId:
+          type: string
+          format: uuid
+        position:
+          type: integer
+          minimum: 0
+          description: The errand's place on the list as shown, 0 for the top.
+
+    ShownRequest:
+      type: object
+      required: [items, filters]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            $ref: "#/components/schemas/ShownItem"
+        filters:
+          $ref: "#/components/schemas/FindFilters"
+
+    SearchRequest:
+      type: object
+      required: [filters]
+      properties:
+        filters:
+          $ref: "#/components/schemas/FindFilters"

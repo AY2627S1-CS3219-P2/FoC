@@ -30,8 +30,10 @@ const (
 // transport only (root AGENTS.md §6).
 type server struct {
 	svc *order.Service
-	db  Pinger
-	log *slog.Logger
+	// AI-generated (edited by PENDING): Find errands' records (D-092).
+	activity *order.Activity
+	db       Pinger
+	log      *slog.Logger
 }
 
 // GetHealth handles GET /health: 200 while the database answers, else 503.

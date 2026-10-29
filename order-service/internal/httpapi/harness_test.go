@@ -122,12 +122,12 @@ func (h *harness) routerWith(p ports) http.Handler {
 	if p.revocations == nil {
 		p.revocations = h.revoked
 	}
-	svc := order.NewService(p.repo, p.credit, p.dir, h.clock, order.Config{
+	svc := order.NewService(p.repo, h.repo, p.credit, p.dir, h.clock, order.Config{
 		ExpiryPeriod:  expiryPeriod,
 		MaxActive:     maxActive,
 		ConfirmWindow: confirmWindow,
 	}, h.log)
-	return httpapi.NewRouter(svc, p.db, h.tokens, p.revocations, h.log)
+	return httpapi.NewRouter(svc, order.NewActivity(h.repo, h.clock), p.db, h.tokens, p.revocations, h.log)
 }
 
 type reqOption func(*http.Request)
