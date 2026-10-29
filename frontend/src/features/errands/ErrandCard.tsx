@@ -44,12 +44,16 @@ interface ErrandCardProps {
   // AI-generated (edited by PENDING): lets Find errands notice when the whole card is in view (D-092).
   /** Given the card's element, such as for noticing when it is in view. */
   cardRef?: (node: HTMLElement | null) => void;
+  // AI-generated (edited by PENDING): D-093 names the requester on Find errands.
+  /** Who posted it, such as the requester's name and rating. */
+  poster?: ReactNode;
 }
 
 /**
  * The whole card body is one button that opens the detail, so it is reached
- * and used by keyboard like any other. Names, contact numbers and IDs are
- * never on a card; they are in the detail only.
+ * and used by keyboard like any other. Contact numbers and IDs are never on a
+ * card; they are in the detail only. The one name a card carries is the
+ * requester's on Find errands, with their rating (D-093, amending D-075).
  */
 export function ErrandCard({
   errand,
@@ -60,6 +64,7 @@ export function ErrandCard({
   children,
   note,
   cardRef,
+  poster,
 }: ErrandCardProps) {
   return (
     <article ref={cardRef} className={`errand-card has-open ${needsYou ? "needs-you" : ""}`}>
@@ -70,6 +75,7 @@ export function ErrandCard({
             {errand.supplier.name} → {errand.deliveryLocation}
           </span>
           {line && <span className="errand-line">{line}</span>}
+          {poster && <span className="errand-poster">{poster}</span>}
         </span>
         <span className="errand-card-side">
           {showState && (

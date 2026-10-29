@@ -35,6 +35,8 @@ import {
 import type { OrdersApi } from "./ordersApi";
 import type { CampusLocation, Errand } from "./orderTypes";
 import { formatDistance, rankByDistance, type LatLon, type SortOrder } from "./nearby";
+import { Stars } from "./ratings";
+import { usePeople, type Person } from "./usePeople";
 import { useShownTracking, type ShownErrand } from "./shownTracking";
 import { clockOffset, serverNow, useNow } from "./time";
 import { useCourierLocation } from "./useCourierLocation";
@@ -219,6 +221,13 @@ export function FindErrandsView({
   // AI-generated (edited by PENDING): nearest pickup first once located (D-098).
   const from = sortOrder === "nearest" && courier.kind === "located" ? courier.at : null;
   const placed = rankByDistance(visible, from, pickups);
+  // AI-generated (edited by PENDING): each requester's name and rating for the
+  // cards (D-093).
+  const people = usePeople(
+    visible.flatMap((e) => (e.requesterId ? [e.requesterId] : [])),
+    usersApi,
+    ordersApi,
+  );
   const refusedCardShown = refusal !== null && visible.some((e) => e.id === refusal.errandId);
   // The visible text, which the button's name starts with.
   const acceptLabel = (id: string) =>
@@ -393,6 +402,7 @@ export function FindErrandsView({
         <ErrandCard
           key={errand.id}
           cardRef={track(errand.id, position)}
+          poster={errand.requesterId && <Poster person={people.get(errand.requesterId)} />}
           errand={errand}
           line={withDistance(progressText(errand, at), metres)}
           showState={false}
@@ -458,6 +468,23 @@ export function FindErrandsView({
         </Modal>
       )}
     </section>
+  );
+}
+
+// AI-generated (edited by PENDING): D-093's requester line on a card.
+/** "Posted by alice · ★ 4.5 (3 ratings)", while what is known loads in. */
+function Poster({ person }: { person: Person | undefined }) {
+  const name = person?.username;
+  return (
+    <>
+      Posted by {name === undefined ? "…" : (name ?? "a student")}
+      {person?.rating !== undefined && (
+        <>
+          {" · "}
+          <Stars rating={person.rating} />
+        </>
+      )}
+    </>
   );
 }
 

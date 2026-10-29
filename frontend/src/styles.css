@@ -1983,3 +1983,85 @@ button.service-card:hover {
     border-radius: var(--radius-sm);
   }
 }
+
+/* AI-generated (edited by PENDING): ratings (D-093) and the requester line on
+   Find errands cards. The star takes the credit orange the app already uses
+   for rewards; the words beside it carry the rating, so the colour adds no
+   meaning of its own. */
+
+.stars {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.stars .star {
+  color: var(--credit);
+}
+
+.errand-poster {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.pending-ratings {
+  margin-bottom: 18px;
+  padding: 16px;
+  background: var(--surface);
+  border: 1px solid var(--credit);
+  border-radius: var(--radius-sm);
+}
+
+.pending-ratings h2 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.pending-rating + .pending-rating {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.pending-rating p {
+  margin: 0 0 8px;
+}
+
+.pending-rating-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.star-input {
+  display: inline-flex;
+  gap: 2px;
+}
+
+/* Each star is a 36px target, the size the phone layout gives small buttons. */
+.star-option {
+  display: grid;
+  place-items: center;
+  min-width: 36px;
+  min-height: 36px;
+  font-size: 24px;
+  color: var(--border-strong);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.star-option.lit {
+  color: var(--credit);
+}
+
+.star-option:focus-within {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.party .avatar {
+  align-self: flex-end;
+}

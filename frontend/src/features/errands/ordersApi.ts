@@ -20,6 +20,11 @@ import type {
   ErrandList,
   HistoryEntry,
   ListScope,
+  PendingRating,
+  Rating,
+  RecordedFilters,
+  ShownItem,
+  UserRating,
 } from "./orderTypes";
 
 /**
@@ -91,6 +96,17 @@ export interface OrdersApi {
   confirm(id: string): Promise<ErrandDetail>;
   cancel(id: string): Promise<ErrandDetail>;
   complete(id: string): Promise<ErrandDetail>;
+  // AI-generated (edited by PENDING): D-093's ratings and D-092's records.
+  /** Rates the other side of a COMPLETED errand, 1 to 5 stars, once. */
+  rate(id: string, stars: number): Promise<Rating>;
+  /** The caller's COMPLETED errands still to rate; while any remain they can neither post nor accept. */
+  listPendingRatings(): Promise<PendingRating[]>;
+  /** The ratings a user has received. Public. */
+  getUserRating(userId: string): Promise<UserRating>;
+  /** Records errands whose whole card came into view on Find errands. */
+  recordShown(items: ShownItem[], filters: RecordedFilters): Promise<void>;
+  /** Records the filters set on Find errands. */
+  recordSearch(filters: RecordedFilters): Promise<void>;
 }
 
 /** The fields of CreateErrandRequest, the only ones a create body carries. */
@@ -226,7 +242,79 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
     complete(id) {
       return act(id, "complete");
     },
+
+    // AI-generated (edited by PENDING): D-093's ratings and D-092's records.
+    async rate(id, stars) {
+      const body = await call(`${errandPath(id)}/rating`, { method: "POST", body: { stars } });
+      if (!isRating(body)) throw unusableResponse();
+      return body;
+    },
+
+    async listPendingRatings() {
+      const body = await call(`${PREFIX}/ratings/pending`);
+      if (!isRecord(body) || !Array.isArray(body["items"]) || !body["items"].every(isPendingRating)) {
+        throw unusableResponse();
+      }
+      return body["items"];
+    },
+
+    async getUserRating(userId) {
+      const body = await call(`${PREFIX}/users/${encodeURIComponent(userId)}/rating`);
+      if (
+        !isRecord(body) ||
+        typeof body["userId"] !== "string" ||
+        typeof body["count"] !== "number" ||
+        (body["average"] !== undefined && typeof body["average"] !== "number")
+      ) {
+        throw unusableResponse();
+      }
+      return body as unknown as UserRating;
+    },
+
+    async recordShown(items, filters) {
+      await call(`${PREFIX}/activity/shown`, {
+        method: "POST",
+        body: { items: items.map(({ errandId, position }) => ({ errandId, position })), filters: recorded(filters) },
+      });
+    },
+
+    async recordSearch(filters) {
+      await call(`${PREFIX}/activity/searches`, { method: "POST", body: { filters: recorded(filters) } });
+    },
   };
+}
+
+// AI-generated (edited by PENDING): checks for D-092's and D-093's bodies.
+/** The filters with only the contract's fields, since order-service refuses others. */
+function recorded({ timeLeft, from, to }: RecordedFilters): RecordedFilters {
+  return { timeLeft, from, to };
+}
+
+function isRaterRole(value: unknown): boolean {
+  return value === "requester" || value === "courier";
+}
+
+function isRating(value: unknown): value is Rating {
+  return (
+    isRecord(value) &&
+    typeof value["errandId"] === "string" &&
+    typeof value["raterId"] === "string" &&
+    typeof value["rateeId"] === "string" &&
+    isRaterRole(value["raterRole"]) &&
+    typeof value["stars"] === "number" &&
+    typeof value["ratedAt"] === "string"
+  );
+}
+
+function isPendingRating(value: unknown): value is PendingRating {
+  return (
+    isRecord(value) &&
+    typeof value["errandId"] === "string" &&
+    typeof value["rateeId"] === "string" &&
+    isRaterRole(value["raterRole"]) &&
+    typeof value["itemDescription"] === "string" &&
+    typeof value["completedAt"] === "string"
+  );
 }
 
 /**
