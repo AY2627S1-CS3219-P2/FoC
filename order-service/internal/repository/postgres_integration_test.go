@@ -74,6 +74,7 @@ func TestPostgres(t *testing.T) {
 	// AI-generated (edited by PENDING): ratings and Find errands' records (D-092, D-093).
 	t.Run("Ratings", e.testRatings)
 	t.Run("Activity", e.testActivity)
+	t.Run("SupplierCopy", e.testSupplierCopy)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.
@@ -440,8 +441,8 @@ func (e *env) testMigrate(t *testing.T) {
 			dirty   bool
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
-		// AI-generated (edited by PENDING): 000004 adds ratings and Find errands' records.
-		require.Equal(t, 4, version)
+		// AI-generated (edited by PENDING): 000004 adds ratings and Find errands' records; 000005 the supplier's type and position.
+		require.Equal(t, 5, version)
 		require.False(t, dirty)
 	})
 	t.Run("a missing directory is an error", func(t *testing.T) {

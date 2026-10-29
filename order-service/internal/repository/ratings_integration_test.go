@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/shuttle"
 )
 
 func (e *env) testRatings(t *testing.T) {
@@ -179,5 +180,50 @@ func (e *env) testActivity(t *testing.T) {
 		var got filtersJSON
 		require.NoError(t, json.Unmarshal(raw, &got))
 		assert.Equal(t, filtersJSON(filters), got)
+	})
+}
+
+// testSupplierCopy checks that the supplier's type and position, which the
+// copy D-052 takes also keeps (D-089), survive a create and an amend, and that
+// an errand saved without them reads back with none.
+func (e *env) testSupplierCopy(t *testing.T) {
+	t.Run("type and position round-trip through create and amend", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(uuid.New(), at(0))
+		o.Supplier.Type = "Food/Coffee"
+		o.Supplier.Point = &shuttle.Point{Lat: 1.2949, Lon: 103.7737}
+		guard := e.queueGuard(t, o)
+		require.NoError(t, e.repo.Create(t.Context(), o, createdEntry(o), guard.EventID))
+		require.Equal(t, o, e.get(t, o.ID))
+
+		next := o
+		next.Supplier = order.SupplierSnapshot{ID: uuid.New(), Name: "Print Hub", Location: "AS7", Type: "Printing"}
+		next.Version = 2
+		next.UpdatedAt = at(time.Minute)
+		got, err := e.repo.Amend(t.Context(), o.ID, func(order.Order) (*order.AmendResult, error) {
+			return &order.AmendResult{Order: next, History: amendEntry(o, at(time.Minute), []order.FieldChange{
+				{Field: order.FieldSupplier, From: o.Supplier.Name, To: "Print Hub"},
+			})}, nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, next, got)
+		assert.Nil(t, got.Supplier.Point, "no position: both columns NULL")
+	})
+
+	t.Run("an errand saved without them has an empty type and no position", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(uuid.New(), at(0))
+		e.insert(t, o) // the test insert names the original columns only
+		got := e.get(t, o.ID)
+		assert.Empty(t, got.Supplier.Type)
+		assert.Nil(t, got.Supplier.Point)
+	})
+
+	t.Run("half a position is refused", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(uuid.New(), at(0))
+		e.insert(t, o)
+		_, err := e.pool.Exec(t.Context(), `UPDATE orders SET supplier_lat = 1.3 WHERE id = $1`, o.ID)
+		require.Error(t, err)
 	})
 }

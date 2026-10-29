@@ -219,7 +219,8 @@ func (s *Service) supplierSnapshot(ctx context.Context, id uuid.UUID) (SupplierS
 	case !sup.Available:
 		return SupplierSnapshot{}, invalid("that supplier is not taking errands right now")
 	}
-	return SupplierSnapshot{ID: sup.ID, Name: sup.Name, Location: supplierLocation(sup)}, nil
+	// AI-generated (edited by PENDING): with the type and position (D-089).
+	return SupplierSnapshot{ID: sup.ID, Name: sup.Name, Location: supplierLocation(sup), Type: sup.Type, Point: sup.Point}, nil
 }
 
 // supplierLocation renders where a supplier is, e.g.

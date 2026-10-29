@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"foc/order-service/internal/shuttle"
 )
 
 // State is an errand's lifecycle state (D-045).
@@ -94,6 +96,10 @@ type SupplierSnapshot struct {
 	ID       uuid.UUID
 	Name     string
 	Location string
+	// AI-generated (edited by PENDING): the supplier's type and position, for
+	// errand ranking (D-089). Empty and nil on errands posted before they were kept.
+	Type  string
+	Point *shuttle.Point
 }
 
 // Order is the row order-service stores for an errand (D-053).

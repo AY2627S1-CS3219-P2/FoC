@@ -21,6 +21,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/shuttle"
 )
 
 // Postgres implements order.Repository. It is safe for concurrent use.
@@ -43,7 +44,7 @@ const (
 	orderColumns = `id, requester_id, courier_id, supplier_id, supplier_name,
 		supplier_location, item_description, delivery_location, delivery_note, reward,
 		state, version, request_key, created_at, updated_at, state_changed_at,
-		expires_at, confirm_by`
+		expires_at, confirm_by, supplier_type, supplier_lat, supplier_lon`
 
 	// AI-generated (edited by James Teo).
 	// withdrawnCouriersColumn lists the couriers who withdrew from the errand,
@@ -298,15 +299,20 @@ func scanOrder(row pgx.Row) (order.Order, error) {
 		o          order.Order
 		state      string
 		requestKey *string
+		// AI-generated (edited by PENDING): the supplier's position (D-089).
+		lat, lon *float64
 	)
 	err := row.Scan(
 		&o.ID, &o.RequesterID, &o.CourierID, &o.Supplier.ID, &o.Supplier.Name,
 		&o.Supplier.Location, &o.ItemDescription, &o.DeliveryLocation, &o.DeliveryNote, &o.Reward,
 		&state, &o.Version, &requestKey, &o.CreatedAt, &o.UpdatedAt, &o.StateChangedAt,
-		&o.ExpiresAt, &o.ConfirmBy, &o.WithdrawnCouriers,
+		&o.ExpiresAt, &o.ConfirmBy, &o.Supplier.Type, &lat, &lon, &o.WithdrawnCouriers,
 	)
 	if err != nil {
 		return order.Order{}, err
+	}
+	if lat != nil && lon != nil {
+		o.Supplier.Point = &shuttle.Point{Lat: *lat, Lon: *lon}
 	}
 	if len(o.WithdrawnCouriers) == 0 {
 		o.WithdrawnCouriers = nil
