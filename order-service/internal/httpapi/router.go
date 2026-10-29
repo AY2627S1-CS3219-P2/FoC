@@ -35,13 +35,14 @@ type Pinger interface {
 // and revocations, and every request logged to log (a nil log falls back to
 // slog.Default()).
 //
-// AI-generated (edited by PENDING): the activity parameter.
+// AI-generated (edited by PENDING): the activity parameter, and recommender
+// for D-094's recommendation on GET /open (nil for none).
 //
 // Each request passes, in order: the request id (D-047), the access log
 // (NFR7.1), panic recovery, the body limit and write deadline for POST and
 // PATCH, and token authentication (D-056), which every route except GET
 // /health requires.
-func NewRouter(svc *order.Service, activity *order.Activity, db Pinger, tokens TokenVerifier, revocations RevocationChecker, log *slog.Logger) http.Handler {
+func NewRouter(svc *order.Service, activity *order.Activity, recommender Recommender, db Pinger, tokens TokenVerifier, revocations RevocationChecker, log *slog.Logger) http.Handler {
 	if log == nil {
 		log = slog.Default()
 	}
@@ -66,7 +67,7 @@ func NewRouter(svc *order.Service, activity *order.Activity, db Pinger, tokens T
 		w.Header().Set("Allow", allowedMethods(r, req))
 		writeError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
-	return gen.HandlerWithOptions(&server{svc: svc, activity: activity, db: db, log: log}, gen.ChiServerOptions{
+	return gen.HandlerWithOptions(&server{svc: svc, activity: activity, recommender: recommender, db: db, log: log}, gen.ChiServerOptions{
 		BaseRouter:       r,
 		ErrorHandlerFunc: writeParamError,
 	})

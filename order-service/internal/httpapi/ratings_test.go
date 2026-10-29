@@ -7,6 +7,8 @@
 package httpapi_test
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"testing"
 
@@ -16,6 +18,7 @@ import (
 
 	"foc/order-service/internal/gen"
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/ranking"
 )
 
 // completedErrand takes a new errand from post to COMPLETED.
@@ -161,4 +164,49 @@ func TestTheNewRoutesNeedAToken(t *testing.T) {
 		rec := h.do(t, r.method, r.target, map[string]any{})
 		assert.Equal(t, http.StatusUnauthorized, rec.Code, "%s %s", r.method, r.target)
 	}
+}
+
+// fakeRecommender answers every courier with rec or err, and counts calls.
+type fakeRecommender struct {
+	rec   *ranking.Recommendation
+	err   error
+	calls int
+}
+
+func (f *fakeRecommender) Recommend(context.Context, order.Caller, []order.Order) (*ranking.Recommendation, error) {
+	f.calls++
+	return f.rec, f.err
+}
+
+func TestOpenListCarriesTheRecommendation(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	open := h.create(t, student()).Errand.Id
+	rec := &fakeRecommender{rec: &ranking.Recommendation{OrderID: open, Confidence: 0.8, Reason: "Suggested because it pays 5 credits."}}
+	router := h.routerWith(ports{recommender: rec})
+
+	got := serve(t, router, http.MethodGet, "/open", nil, as(student()))
+	require.Equal(t, http.StatusOK, got.Code, got.Body.String())
+	list := decodeAs[gen.ErrandList](t, got)
+	require.NotNil(t, list.Recommendation)
+	assert.Equal(t, gen.Recommendation{ErrandId: open, Confidence: 0.8, Reason: "Suggested because it pays 5 credits."}, *list.Recommendation)
+
+	off := serve(t, router, http.MethodGet, "/open?recommend=false", nil, as(student()))
+	require.Equal(t, http.StatusOK, off.Code, off.Body.String())
+	assert.NotContains(t, decodeAs[map[string]any](t, off), "recommendation")
+	assert.Equal(t, 1, rec.calls, "recommend=false does not ask")
+}
+
+func TestARecommenderFailureStillSendsTheList(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	h.create(t, student())
+	router := h.routerWith(ports{recommender: &fakeRecommender{err: errors.New("user-service down")}})
+
+	got := serve(t, router, http.MethodGet, "/open", nil, as(student()))
+
+	require.Equal(t, http.StatusOK, got.Code, got.Body.String())
+	list := decodeAs[gen.ErrandList](t, got)
+	assert.Len(t, list.Items, 1)
+	assert.Nil(t, list.Recommendation)
 }

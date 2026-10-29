@@ -17,6 +17,7 @@ import (
 
 	"foc/order-service/internal/gen"
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/ranking"
 )
 
 const (
@@ -28,12 +29,22 @@ const (
 
 // server implements gen.ServerInterface on top of order.Service. Handlers do
 // transport only (root AGENTS.md §6).
+// Recommender suggests one open errand to a courier (D-094);
+// *ranking.Recommender satisfies it.
+//
+// AI-generated (edited by PENDING).
+type Recommender interface {
+	Recommend(ctx context.Context, c order.Caller, open []order.Order) (*ranking.Recommendation, error)
+}
+
 type server struct {
 	svc *order.Service
 	// AI-generated (edited by PENDING): Find errands' records (D-092).
 	activity *order.Activity
-	db       Pinger
-	log      *slog.Logger
+	// AI-generated (edited by PENDING): D-094's recommendation; nil for none.
+	recommender Recommender
+	db          Pinger
+	log         *slog.Logger
 }
 
 // GetHealth handles GET /health: 200 while the database answers, else 503.
@@ -106,7 +117,11 @@ func (s *server) ListActiveErrands(w http.ResponseWriter, r *http.Request, param
 }
 
 // ListOpenErrands handles GET /open: the errands couriers can accept (F3.2).
-func (s *server) ListOpenErrands(w http.ResponseWriter, r *http.Request) {
+//
+// AI-generated (edited by PENDING): with D-094's recommendation unless
+// recommend=false. A recommender failure is logged and the list sent without
+// one: advice must never cost the courier the list.
+func (s *server) ListOpenErrands(w http.ResponseWriter, r *http.Request, params gen.ListOpenErrandsParams) {
 	c, ok := callerOf(w, r)
 	if !ok {
 		return
@@ -116,7 +131,19 @@ func (s *server) ListOpenErrands(w http.ResponseWriter, r *http.Request) {
 		s.writeServiceError(w, r, err)
 		return
 	}
-	s.writeList(w, c, orders)
+	now := s.svc.Now()
+	list := gen.ErrandList{Items: toErrands(orders, c, now), ServerTime: now.UTC()}
+	if s.recommender != nil && (params.Recommend == nil || *params.Recommend) {
+		rec, err := s.recommender.Recommend(r.Context(), c, orders)
+		switch {
+		case err != nil:
+			s.log.WarnContext(r.Context(), "ranking: no recommendation",
+				"request_id", order.CorrelationID(r.Context()), "err", err)
+		case rec != nil:
+			list.Recommendation = &gen.Recommendation{ErrandId: rec.OrderID, Confidence: rec.Confidence, Reason: rec.Reason}
+		}
+	}
+	writeJSON(w, http.StatusOK, list)
 }
 
 // ListRequestedErrands handles GET /requested: the caller's own errands (F3.4).

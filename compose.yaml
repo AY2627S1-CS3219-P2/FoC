@@ -257,6 +257,9 @@ services:
       ORDER_DB_URL: postgres://postgres:postgres@order-db:5432/orders?sslmode=disable
       SUPPLIER_BASE_URL: http://supplier-service:8082
       CREDIT_BASE_URL: http://credit-service:8084
+      # AI-generated (edited by PENDING): where each courier's ranking model is
+      # kept (D-095, D-099).
+      USER_BASE_URL: http://user-service:8081
       # Must match the foc user in rabbitmq/definitions.json.
       RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
       JWKS_URL: http://user-service:8081/.well-known/jwks.json

@@ -425,8 +425,11 @@ type ErrandDetail struct {
 
 // ErrandList defines model for ErrandList.
 type ErrandList struct {
-	Items      []Errand  `json:"items"`
-	ServerTime time.Time `json:"serverTime"`
+	Items []Errand `json:"items"`
+
+	// Recommendation The errand the courier's model suggests (D-094). Advice the courier can ignore.
+	Recommendation *Recommendation `json:"recommendation,omitempty"`
+	ServerTime     time.Time       `json:"serverTime"`
 }
 
 // ErrandState defines model for ErrandState.
@@ -526,6 +529,16 @@ type Rating struct {
 	// RaterRole Which side of the errand the rater was. A requester rates the courier; a courier rates the requester.
 	RaterRole RaterRole `json:"raterRole"`
 	Stars     int       `json:"stars"`
+}
+
+// Recommendation The errand the courier's model suggests (D-094). Advice the courier can ignore.
+type Recommendation struct {
+	// Confidence The model's score for the errand.
+	Confidence float64            `json:"confidence"`
+	ErrandId   openapi_types.UUID `json:"errandId"`
+
+	// Reason One or two sentences on why.
+	Reason string `json:"reason"`
 }
 
 // SearchRequest defines model for SearchRequest.
@@ -635,6 +648,11 @@ type ListAssignedErrandsParams struct {
 // ListAssignedErrandsParamsScope defines parameters for ListAssignedErrands.
 type ListAssignedErrandsParamsScope string
 
+// ListOpenErrandsParams defines parameters for ListOpenErrands.
+type ListOpenErrandsParams struct {
+	Recommend *bool `form:"recommend,omitempty" json:"recommend,omitempty"`
+}
+
 // ListRequestedErrandsParams defines parameters for ListRequestedErrands.
 type ListRequestedErrandsParams struct {
 	Scope ListRequestedErrandsParamsScope `form:"scope" json:"scope"`
@@ -686,7 +704,7 @@ type ServerInterface interface {
 	ListDeliveryLocations(w http.ResponseWriter, r *http.Request)
 	// ListOpenErrands Errands couriers can accept (F3.2)
 	// (GET /open)
-	ListOpenErrands(w http.ResponseWriter, r *http.Request)
+	ListOpenErrands(w http.ResponseWriter, r *http.Request, params ListOpenErrandsParams)
 	// ListPendingRatings The caller's `COMPLETED` errands they have not rated yet, most recent first (D-093)
 	// (GET /ratings/pending)
 	ListPendingRatings(w http.ResponseWriter, r *http.Request)
@@ -779,7 +797,7 @@ func (_ Unimplemented) ListDeliveryLocations(w http.ResponseWriter, r *http.Requ
 
 // ListOpenErrands Errands couriers can accept (F3.2)
 // (GET /open)
-func (_ Unimplemented) ListOpenErrands(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) ListOpenErrands(w http.ResponseWriter, r *http.Request, params ListOpenErrandsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1042,8 +1060,27 @@ func (siw *ServerInterfaceWrapper) ListDeliveryLocations(w http.ResponseWriter, 
 // ListOpenErrands operation middleware
 func (siw *ServerInterfaceWrapper) ListOpenErrands(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOpenErrandsParams
+
+	// ------------- Optional query parameter "recommend" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "recommend", r.URL.Query(), &params.Recommend, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "recommend"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recommend", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListOpenErrands(w, r)
+		siw.Handler.ListOpenErrands(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

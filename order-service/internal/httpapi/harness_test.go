@@ -101,6 +101,8 @@ type ports struct {
 	credit order.CreditClient
 	// AI-generated (edited by James Teo).
 	revocations httpapi.RevocationChecker
+	// AI-generated (edited by PENDING): D-094's recommender; nil for none.
+	recommender httpapi.Recommender
 }
 
 // routerWith builds another router over the harness's fakes, for a test that
@@ -127,7 +129,7 @@ func (h *harness) routerWith(p ports) http.Handler {
 		MaxActive:     maxActive,
 		ConfirmWindow: confirmWindow,
 	}, h.log)
-	return httpapi.NewRouter(svc, order.NewActivity(h.repo, h.clock), p.db, h.tokens, p.revocations, h.log)
+	return httpapi.NewRouter(svc, order.NewActivity(h.repo, h.clock), p.recommender, p.db, h.tokens, p.revocations, h.log)
 }
 
 type reqOption func(*http.Request)

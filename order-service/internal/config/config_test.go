@@ -20,7 +20,7 @@ import (
 // keys are every variable Load reads.
 func keys() []string {
 	return []string{
-		"PORT", "ORDER_DB_URL", "SUPPLIER_BASE_URL", "CREDIT_BASE_URL", "RABBITMQ_URL",
+		"PORT", "ORDER_DB_URL", "SUPPLIER_BASE_URL", "CREDIT_BASE_URL", "USER_BASE_URL", "RABBITMQ_URL",
 		"JWKS_URL", "REDIS_URL", "ORDER_EXPIRY_PERIOD", "ORDER_MAX_ACTIVE_ASSIGNMENTS", "ORDER_CONFIRMATION_WINDOW",
 	}
 }
@@ -46,6 +46,7 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, 2, cfg.MaxActive, "K")
 	assert.Equal(t, 24*time.Hour, cfg.ConfirmWindow, "C")
 	assert.Equal(t, "http://localhost:8082", cfg.SupplierBaseURL, "supplier-service's port (root AGENTS.md §3)")
+	assert.Equal(t, "http://localhost:8081", cfg.UserBaseURL, "user-service's port (root AGENTS.md §3)") // AI-generated (edited by PENDING).
 	assert.Equal(t, "http://localhost:8084", cfg.CreditBaseURL, "credit-service's port (root AGENTS.md §3)")
 	assert.NotEmpty(t, cfg.DatabaseURL)
 	assert.NotEmpty(t, cfg.RabbitMQURL)
@@ -60,6 +61,7 @@ func TestLoadOverrides(t *testing.T) {
 		"ORDER_DB_URL":                 "postgres://order-db:5432/orders",
 		"SUPPLIER_BASE_URL":            "http://supplier-service:8082",
 		"CREDIT_BASE_URL":              "http://credit-service:8084",
+		"USER_BASE_URL":                "http://user-service:8081",
 		"RABBITMQ_URL":                 "amqp://rabbitmq:5672/foc",
 		"JWKS_URL":                     "http://user-service:8081/.well-known/jwks.json",
 		"REDIS_URL":                    "redis://redis:6379",
@@ -76,6 +78,7 @@ func TestLoadOverrides(t *testing.T) {
 		DatabaseURL:     "postgres://order-db:5432/orders",
 		SupplierBaseURL: "http://supplier-service:8082",
 		CreditBaseURL:   "http://credit-service:8084",
+		UserBaseURL:     "http://user-service:8081",
 		RabbitMQURL:     "amqp://rabbitmq:5672/foc",
 		JWKSURL:         "http://user-service:8081/.well-known/jwks.json",
 		RedisURL:        "redis://redis:6379",

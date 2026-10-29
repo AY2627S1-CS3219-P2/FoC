@@ -75,6 +75,7 @@ func TestPostgres(t *testing.T) {
 	t.Run("Ratings", e.testRatings)
 	t.Run("Activity", e.testActivity)
 	t.Run("SupplierCopy", e.testSupplierCopy)
+	t.Run("RankingSource", e.testRankingSource)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.

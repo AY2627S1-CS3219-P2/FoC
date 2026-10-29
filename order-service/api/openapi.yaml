@@ -137,7 +137,26 @@ paths:
     get:
       operationId: listOpenErrands
       summary: Errands couriers can accept (F3.2)
-      description: Only `OPEN` errands that have not passed their deadline, most recent first. At most 100.
+      # AI-generated (edited by PENDING): D-094's recommendation and its
+      # parameter; trained while the courier opens Find errands (D-099).
+      description: |
+        Only `OPEN` errands that have not passed their deadline, most recent
+        first. At most 100.
+
+        For a student who has completed at least 2 errands, the list also
+        carries `recommendation`: the errand their own model, trained on what
+        they were shown and took, scores highest, with its confidence and
+        reason (D-094). Asking for it may train and save the model, in
+        user-service, with the caller's token (D-099). A failure there leaves
+        the list as it is, without a recommendation. `recommend=false` turns it
+        off.
+      parameters:
+        - name: recommend
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
       responses:
         "200":
           description: Errands
@@ -145,6 +164,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrandList"
+        "400":
+          $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -818,6 +839,27 @@ components:
         serverTime:
           type: string
           format: date-time
+        # AI-generated (edited by PENDING): D-094, on GET /open only.
+        recommendation:
+          $ref: "#/components/schemas/Recommendation"
+
+    Recommendation:
+      description: The errand the courier's model suggests (D-094). Advice the courier can ignore.
+      type: object
+      required: [errandId, confidence, reason]
+      properties:
+        errandId:
+          type: string
+          format: uuid
+        confidence:
+          type: number
+          format: double
+          minimum: 0
+          maximum: 1
+          description: The model's score for the errand.
+        reason:
+          type: string
+          description: One or two sentences on why.
 
     AssignmentRecord:
       description: "One ended assignment: how and when it ended, with the errand's current supplier, item, location and reward."
