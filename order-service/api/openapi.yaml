@@ -139,6 +139,7 @@ paths:
       summary: Errands couriers can accept (F3.2)
       # AI-generated (edited by PENDING): D-094's recommendation and its
       # parameter; trained while the courier opens Find errands (D-099).
+      # AI-generated (edited by PENDING): D-101's 0.4 floor.
       description: |
         Only `OPEN` errands that have not passed their deadline, most recent
         first. At most 100.
@@ -146,10 +147,10 @@ paths:
         For a student who has completed at least 2 errands, the list also
         carries `recommendation`: the errand their own model, trained on what
         they were shown and took, scores highest, with its confidence and
-        reason (D-094). Asking for it may train and save the model, in
-        user-service, with the caller's token (D-099). A failure there leaves
-        the list as it is, without a recommendation. `recommend=false` turns it
-        off.
+        reason (D-094), unless that confidence is under 0.4 (D-101). Asking
+        for it may train and save the model, in user-service, with the
+        caller's token (D-099). A failure there leaves the list as it is,
+        without a recommendation. `recommend=false` turns it off.
       parameters:
         - name: recommend
           in: query
@@ -856,7 +857,7 @@ components:
           format: double
           minimum: 0
           maximum: 1
-          description: The model's score for the errand.
+          description: The model's score for the errand, never under 0.4 (D-101).
         reason:
           type: string
           description: One or two sentences on why.

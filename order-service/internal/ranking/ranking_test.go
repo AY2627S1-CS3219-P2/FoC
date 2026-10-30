@@ -214,7 +214,7 @@ var courier = order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
 
 func TestItRecommendsTheKindOfErrandTheCourierTakes(t *testing.T) {
 	models := &fakeModels{saved: map[uuid.UUID]Saved{}}
-	r := newRecommender(foodLover(40), models)
+	r := newRecommender(foodLover(20), models)
 	food, printing := openErrand("Food"), openErrand("Printing")
 
 	rec, err := r.Recommend(context.Background(), courier, []order.Order{printing, food})
@@ -222,10 +222,7 @@ func TestItRecommendsTheKindOfErrandTheCourierTakes(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rec)
 	assert.Equal(t, food.ID, rec.OrderID)
-	alone, err := r.Recommend(context.Background(), courier, []order.Order{printing})
-	require.NoError(t, err)
-	require.NotNil(t, alone)
-	assert.Greater(t, rec.Confidence, alone.Confidence, "Food scores above Printing")
+	assert.GreaterOrEqual(t, rec.Confidence, MinConfidence)
 	assert.LessOrEqual(t, rec.Confidence, 1.0)
 	assert.True(t, strings.HasPrefix(rec.Reason, "Suggested"), rec.Reason)
 	assert.LessOrEqual(t, len(rec.Reason), 200, "1 to 3 lines")
@@ -276,6 +273,8 @@ func TestNoRecommendation(t *testing.T) {
 		"with too few shown errands to learn from": {courier, foodLover(3), []order.Order{openErrand("Food")}},
 		"when the courier took everything shown":   {courier, onlyTook, []order.Order{openErrand("Food")}},
 		"when the list is empty":                   {courier, foodLover(20), nil},
+		// AI-generated (edited by PENDING): D-101.
+		"when the best errand scores under 40% (D-101)": {courier, foodLover(20), []order.Order{openErrand("Printing")}},
 		"when every errand is the courier's own or withdrawn from": {courier, foodLover(20), func() []order.Order {
 			own, withdrawn := openErrand("Food"), openErrand("Food")
 			own.RequesterID = courier.UserID

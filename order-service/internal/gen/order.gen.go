@@ -533,7 +533,7 @@ type Rating struct {
 
 // Recommendation The errand the courier's model suggests (D-094). Advice the courier can ignore.
 type Recommendation struct {
-	// Confidence The model's score for the errand.
+	// Confidence The model's score for the errand, never under 0.4 (D-101).
 	Confidence float64            `json:"confidence"`
 	ErrandId   openapi_types.UUID `json:"errandId"`
 

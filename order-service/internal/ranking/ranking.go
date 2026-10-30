@@ -32,6 +32,11 @@ import (
 // a recommendation (D-094).
 const MinCompleted = 2
 
+// AI-generated (edited by PENDING): D-101's threshold.
+// MinConfidence is the lowest score a recommendation is shown at; below it
+// the courier gets none (D-101).
+const MinConfidence = 0.4
+
 // MaxExamples is the most shown errands one training uses, newest first.
 const MaxExamples = 300
 
@@ -170,6 +175,9 @@ func (r *Recommender) Recommend(ctx context.Context, c order.Caller, open []orde
 		if best == nil || e.Score > best.Confidence {
 			best = &Recommendation{OrderID: cand.OrderID, Confidence: e.Score, Reason: reasonFor(cand, row, e)}
 		}
+	}
+	if best.Confidence < MinConfidence {
+		return nil, nil
 	}
 	return best, nil
 }
