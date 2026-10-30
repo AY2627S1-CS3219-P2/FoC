@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	"foc/order-service/internal/shuttle"
 )
 
 // Clock is injected so deadlines are testable without waiting
@@ -33,6 +35,9 @@ type Supplier struct {
 	Floor               string
 	LocationDescription string
 	Available           bool
+	// AI-generated (edited by PENDING): kept on the errand for ranking (D-089).
+	Type  string
+	Point *shuttle.Point // nil when supplier-service gave no position
 }
 
 // SupplierDirectory looks a supplier up in supplier-service (D-052).

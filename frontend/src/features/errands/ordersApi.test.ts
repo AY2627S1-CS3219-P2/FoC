@@ -375,3 +375,112 @@ describe("newRequestId", () => {
     expect(newRequestId()).not.toBe(first);
   });
 });
+
+// AI-generated (edited by PENDING): the ratings (D-093) and Find errands'
+// records (D-092).
+describe("ordersApi ratings and records", () => {
+  const RATING = {
+    errandId: ID,
+    raterId: "3f2b8c1e-1d2a-4b5c-8d9e-0a1b2c3d4e5f",
+    rateeId: "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d",
+    raterRole: "requester",
+    stars: 4,
+    ratedAt: SERVER_TIME,
+  };
+  const FILTERS = { timeLeft: "under1h", from: "", to: "area:UTown" } as const;
+
+  it("rate posts the stars to the errand's rating", async () => {
+    const { send, api } = stubSend(ok(RATING, 201));
+    await expect(api.rate(ID, 4)).resolves.toEqual(RATING);
+    const options = sent(send);
+    expect(options.method).toBe("POST");
+    expect(options.path).toBe(`/api/orders/${ID}/rating`);
+    expect(options.body).toEqual({ stars: 4 });
+  });
+
+  it("listPendingRatings reads the caller's errands still to rate", async () => {
+    const pending = {
+      errandId: ID,
+      rateeId: RATING.rateeId,
+      raterRole: "courier",
+      itemDescription: "1 × Iced latte",
+      completedAt: SERVER_TIME,
+    };
+    const { send, api } = stubSend(ok({ items: [pending] }));
+    await expect(api.listPendingRatings()).resolves.toEqual([pending]);
+    expect(sent(send).path).toBe("/api/orders/ratings/pending");
+  });
+
+  it("getUserRating reads a user's rating, with or without an average", async () => {
+    const { send, api } = stubSend(ok({ userId: RATING.rateeId, count: 2, average: 4.5 }));
+    await expect(api.getUserRating(RATING.rateeId)).resolves.toEqual({
+      userId: RATING.rateeId,
+      count: 2,
+      average: 4.5,
+    });
+    expect(sent(send).path).toBe(`/api/orders/users/${RATING.rateeId}/rating`);
+
+    const none = stubSend(ok({ userId: RATING.rateeId, count: 0 }));
+    await expect(none.api.getUserRating(RATING.rateeId)).resolves.toEqual({ userId: RATING.rateeId, count: 0 });
+  });
+
+  it("recordShown and recordSearch post only the contract's fields", async () => {
+    const shown = stubSend(ok(null, 204));
+    await shown.api.recordShown(
+      [{ errandId: ID, position: 2, extra: true } as never],
+      { ...FILTERS, sort: "nearest" } as never,
+    );
+    const shownOptions = sent(shown.send);
+    expect(shownOptions.method).toBe("POST");
+    expect(shownOptions.path).toBe("/api/orders/activity/shown");
+    expect(shownOptions.body).toEqual({ items: [{ errandId: ID, position: 2 }], filters: FILTERS });
+
+    const search = stubSend(ok(null, 204));
+    await search.api.recordSearch(FILTERS);
+    const searchOptions = sent(search.send);
+    expect(searchOptions.path).toBe("/api/orders/activity/searches");
+    expect(searchOptions.body).toEqual({ filters: FILTERS });
+  });
+
+  it.each([
+    ["rate", (api: OrdersApi) => api.rate(ID, 4), { ...RATING, stars: "4" }],
+    ["listPendingRatings", (api: OrdersApi) => api.listPendingRatings(), { items: [{ errandId: ID }] }],
+    ["getUserRating", (api: OrdersApi) => api.getUserRating(ID), { userId: ID, count: "2" }],
+  ])("%s refuses a body the spec does not promise", async (_name, call, body) => {
+    const { api } = stubSend(ok(body));
+    await expect(call(api)).rejects.toMatchObject({ status: 0 });
+  });
+
+  it("passes order-service's refusal through", async () => {
+    const { api } = stubSend(fail(409, { error: "you have already rated this errand" }));
+    await expect(api.rate(ID, 4)).rejects.toMatchObject({
+      status: 409,
+      message: "you have already rated this errand",
+    });
+  });
+});
+
+// AI-generated (edited by PENDING): D-094's suggestion on the open list.
+describe("ordersApi listOpen suggestion", () => {
+  const REC = { errandId: ID, confidence: 0.72, reason: "Suggested because it pays 10 credits." };
+
+  it("keeps a recommendation the list carries", async () => {
+    const { api } = stubSend(ok({ ...LIST, recommendation: REC }));
+    await expect(api.listOpen()).resolves.toEqual({ ...LIST, recommendation: REC });
+  });
+
+  it("drops a recommendation the spec does not promise, keeping the list", async () => {
+    const { api } = stubSend(ok({ ...LIST, recommendation: { errandId: ID, confidence: "high" } }));
+    await expect(api.listOpen()).resolves.toEqual(LIST);
+  });
+
+  it("asks for none with recommend=false, and sends nothing extra otherwise", async () => {
+    const off = stubSend(ok(LIST));
+    await off.api.listOpen({ recommend: false });
+    expect(sent(off.send).path).toBe("/api/orders/open?recommend=false");
+
+    const on = stubSend(ok(LIST));
+    await on.api.listOpen({ recommend: true });
+    expect(sent(on.send).path).toBe("/api/orders/open");
+  });
+});

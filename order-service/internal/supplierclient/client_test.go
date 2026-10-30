@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/shuttle"
 )
 
 // shortTimeout stands in for the 2s per-attempt timeout where a test waits it
@@ -58,6 +60,9 @@ func TestSupplierMapsSupplierServicesAnswer(t *testing.T) {
 				Floor:               "1",
 				LocationDescription: "Opp UHC bus stop",
 				Available:           tc.available,
+				// AI-generated (edited by PENDING): kept for ranking (D-089).
+				Type:  "Food",
+				Point: &shuttle.Point{Lat: 1.2988, Lon: 103.7756},
 			}, got)
 			reqs := s.requests()
 			require.Len(t, reqs, 1)
@@ -350,3 +355,19 @@ func countingClient(srv *httptest.Server) (*http.Client, *atomic.Int32) {
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// AI-generated (edited by PENDING): D-089 keeps a position only when both
+// halves of it came.
+func TestSupplierWithoutAPositionHasNone(t *testing.T) {
+	for _, drop := range []string{`"latitude":1.2988,`, `"longitude":103.7756,`} {
+		id := uuid.New()
+		body := strings.Replace(supplierJSON(id, true), drop, "", 1)
+		srv, _ := serve(t, respond(http.StatusOK, body))
+
+		got, err := New(srv.URL, srv.Client(), nil).Supplier(context.Background(), id)
+
+		require.NoError(t, err)
+		assert.Nil(t, got.Point, "without %s", drop)
+		assert.Equal(t, "Food", got.Type)
+	}
+}

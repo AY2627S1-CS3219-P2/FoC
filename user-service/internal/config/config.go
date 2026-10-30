@@ -29,6 +29,9 @@ type Config struct {
 	// RabbitMQURL is the broker the outbox relay publishes to, as set. An
 	// empty value takes cmd/api's local-development default.
 	RabbitMQURL string
+	// AI-generated (edited by PENDING): USER_RANKING_DB_URL, the separate
+	// database that holds ranking models (D-095).
+	RankingDBURL string
 }
 
 // Load reads the service configuration once from the process environment.
@@ -52,5 +55,7 @@ func Load() Config {
 		OTPDelivery:        os.Getenv("OTP_DELIVERY"), // AI-generated (edited by James Teo).
 		// AI-generated (edited by James Teo).
 		RabbitMQURL: os.Getenv("RABBITMQ_URL"),
+		// AI-generated (edited by PENDING).
+		RankingDBURL: os.Getenv("USER_RANKING_DB_URL"),
 	}
 }

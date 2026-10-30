@@ -146,6 +146,20 @@ export interface ErrandDetail {
 export interface ErrandList {
   items: Errand[];
   serverTime: string;
+  // AI-generated (edited by PENDING): D-094, on GET /open only (commit ad0653d).
+  /** The errand the courier's model suggests, when it has one. */
+  recommendation?: Recommendation;
+}
+
+// AI-generated (edited by PENDING): transcribed from order-service's
+// Recommendation schema (commit ad0653d).
+/** The errand the courier's model suggests (D-094): advice, which they can ignore. */
+export interface Recommendation {
+  errandId: string;
+  /** The model's score for the errand, 0 to 1. */
+  confidence: number;
+  /** One or two sentences on why. */
+  reason: string;
 }
 
 /** The `scope` of the requester's and courier's lists. */
@@ -212,3 +226,50 @@ export interface AmendErrandRequest {
 
 /** The fields an amendment may change, without the version it is sent with. */
 export type ErrandChanges = Omit<AmendErrandRequest, "version">;
+
+// AI-generated (edited by PENDING): transcribed from order-service's
+// api/openapi.yaml as changed for D-092 and D-093 (commit 8adab04).
+
+/** Which side of the errand the rater was: a requester rates the courier, a courier the requester. */
+export type RaterRole = "requester" | "courier";
+
+/** A rating as saved, `POST /{errandId}/rating`'s answer. */
+export interface Rating {
+  errandId: string;
+  raterId: string;
+  rateeId: string;
+  raterRole: RaterRole;
+  /** 1 to 5. */
+  stars: number;
+  ratedAt: string;
+}
+
+/** A COMPLETED errand the caller has still to rate. */
+export interface PendingRating {
+  errandId: string;
+  /** The person the caller is to rate. */
+  rateeId: string;
+  raterRole: RaterRole;
+  itemDescription: string;
+  completedAt: string;
+}
+
+/** The ratings a user has received. `average` is absent when `count` is 0. */
+export interface UserRating {
+  userId: string;
+  count: number;
+  average?: number;
+}
+
+/** One errand whose whole card came into view, and its place on the list. */
+export interface ShownItem {
+  errandId: string;
+  position: number;
+}
+
+/** Find errands' filters as order-service records them. */
+export interface RecordedFilters {
+  timeLeft: "any" | "under30m" | "under1h" | "over1h";
+  from: string;
+  to: string;
+}

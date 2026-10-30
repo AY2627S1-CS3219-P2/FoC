@@ -160,6 +160,32 @@ components:
           type: string
           enum: [ACTIVE, SUSPENDED]
 
+    # AI-generated (edited by PENDING): the ranking-model bodies (D-095, D-099).
+    RankingModelRequest:
+      type: object
+      required: [model, trained_at]
+      properties:
+        model:
+          type: object
+          description: The model as order-service builds it; user-service keeps it without reading it.
+        trained_at:
+          type: string
+          format: date-time
+    RankingModelResponse:
+      type: object
+      required: [user_id, model, trained_at, updated_at]
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        model:
+          type: object
+        trained_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     ErrorResponse:
       type: object
       # AI-generated (edited by ZI YANG): the recorded error contract always includes an error string.
@@ -696,6 +722,111 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '413':
           description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # AI-generated (edited by PENDING): each user's errand-ranking model, which
+  # order-service saves and loads with the courier's own token (D-095, D-099, D-100).
+  /api/v1/users/{uid}/ranking-model:
+    parameters:
+      - in: path
+        name: uid
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      summary: The caller's own errand-ranking model
+      description: |
+        Kept for order-service as an opaque JSON object in a database separate
+        from the users database. A user may read only their own.
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: The saved model
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingModelResponse'
+        '400':
+          description: The user ID is malformed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller asked for another user's model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: The user has no saved model yet.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+    put:
+      summary: Save the caller's own errand-ranking model, replacing the last one
+      description: |
+        The body is held to the recorded 10 KiB limit; order-service keeps each
+        model under it (D-100). A user may save only their own.
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RankingModelRequest'
+      responses:
+        '200':
+          description: The model as saved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RankingModelResponse'
+        '400':
+          description: Malformed user ID, a missing model or trained_at, or a model that is not a JSON object.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: The caller tried to save another user's model.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error, including unreadable Redis revocation keys.
           content:
             application/json:
               schema:

@@ -186,6 +186,11 @@ type Repository struct {
 	// AfterAmendFn, when set, is returned by Amend after fn has run and
 	// before anything is written: a commit that fails after credit was called.
 	AfterAmendFn error
+	// AI-generated (edited by PENDING): ratings and Find errands' records
+	// (D-092, D-093); their methods are in ratings.go.
+	ratings  []order.Rating
+	shown    []ShownRow
+	searches []SearchRow
 }
 
 // NewRepository returns an empty Repository.

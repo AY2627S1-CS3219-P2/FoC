@@ -36,21 +36,25 @@ type Service struct {
 	repo      Repository
 	credit    CreditClient
 	suppliers SupplierDirectory
-	clock     Clock
-	cfg       Config
-	log       *slog.Logger
+	// AI-generated (edited by PENDING): ratings and their gate on post and accept (D-093).
+	ratings RatingStore
+	clock   Clock
+	cfg     Config
+	log     *slog.Logger
 	// createKeys serializes creates that share a requester and X-Request-Id
 	// within this process (D-047).
 	createKeys *keyLocks
 }
 
 // NewService returns a ready-to-use Service.
-func NewService(repo Repository, credit CreditClient, suppliers SupplierDirectory, clock Clock, cfg Config, log *slog.Logger) *Service {
+//
+// AI-generated (edited by PENDING): takes the RatingStore (D-093).
+func NewService(repo Repository, ratings RatingStore, credit CreditClient, suppliers SupplierDirectory, clock Clock, cfg Config, log *slog.Logger) *Service {
 	if cfg.RefundDelay <= 0 {
 		cfg.RefundDelay = DefaultRefundDelay
 	}
 	return &Service{
-		repo: repo, credit: credit, suppliers: suppliers, clock: clock, cfg: cfg, log: log,
+		repo: repo, ratings: ratings, credit: credit, suppliers: suppliers, clock: clock, cfg: cfg, log: log,
 		createKeys: newKeyLocks(),
 	}
 }
@@ -215,7 +219,8 @@ func (s *Service) supplierSnapshot(ctx context.Context, id uuid.UUID) (SupplierS
 	case !sup.Available:
 		return SupplierSnapshot{}, invalid("that supplier is not taking errands right now")
 	}
-	return SupplierSnapshot{ID: sup.ID, Name: sup.Name, Location: supplierLocation(sup)}, nil
+	// AI-generated (edited by PENDING): with the type and position (D-089).
+	return SupplierSnapshot{ID: sup.ID, Name: sup.Name, Location: supplierLocation(sup), Type: sup.Type, Point: sup.Point}, nil
 }
 
 // supplierLocation renders where a supplier is, e.g.

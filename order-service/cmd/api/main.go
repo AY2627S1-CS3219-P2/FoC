@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"net/http"
 	"os"
 	"os/signal"
@@ -27,10 +28,12 @@ import (
 	"foc/order-service/internal/creditclient"
 	"foc/order-service/internal/httpapi"
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/ranking"
 	"foc/order-service/internal/relay"
 	"foc/order-service/internal/repository"
 	"foc/order-service/internal/supplierclient"
 	"foc/order-service/internal/sweeper"
+	"foc/order-service/internal/userclient"
 )
 
 // The exchange rabbitmq/definitions.json declares; D-051 publishes only to it.
@@ -91,6 +94,7 @@ func run(log *slog.Logger) error {
 	repo := repository.NewPostgres(pool)
 	svc := order.NewService(
 		repo,
+		repo, // AI-generated (edited by PENDING): the rating store (D-093).
 		creditclient.New(cfg.CreditBaseURL, httpClient, log),
 		supplierclient.New(cfg.SupplierBaseURL, httpClient, log),
 		order.SystemClock{},
@@ -135,10 +139,15 @@ func run(log *slog.Logger) error {
 	// AI-generated (edited by James Teo).
 	pingRedis(ctx, rdb, log)
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
+	// AI-generated (edited by PENDING): Find errands' records (D-092), and
+	// D-094's recommendation, trained here and saved in user-service (D-099).
+	activity := order.NewActivity(repo, order.SystemClock{})
+	recommender := ranking.NewRecommender(repo, userclient.New(cfg.UserBaseURL, httpClient), order.SystemClock{},
+		func() *rand.Rand { return rand.New(rand.NewPCG(rand.Uint64(), rand.Uint64())) }, log)
 
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
-		Handler:           httpapi.NewRouter(svc, pool, verifier, auth.NewRevocations(rdb), log),
+		Handler:           httpapi.NewRouter(svc, activity, recommender, pool, verifier, auth.NewRevocations(rdb), log),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,

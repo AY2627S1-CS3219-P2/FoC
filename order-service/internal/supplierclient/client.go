@@ -23,6 +23,7 @@ import (
 	"github.com/google/uuid"
 
 	"foc/order-service/internal/order"
+	"foc/order-service/internal/shuttle"
 )
 
 const (
@@ -134,6 +135,11 @@ type supplierResponse struct {
 	Floor               string `json:"floor"`
 	LocationDescription string `json:"location_description"`
 	IsAvailable         *bool  `json:"is_available"`
+	// AI-generated (edited by PENDING): kept on the errand for ranking (D-089).
+	// Pointers, so a supplier without a position is told from one at 0, 0.
+	Type      string   `json:"type"`
+	Latitude  *float64 `json:"latitude"`
+	Longitude *float64 `json:"longitude"`
 }
 
 // decodeSupplier parses a 200 answer. An answer for another supplier is an
@@ -149,14 +155,20 @@ func decodeSupplier(body []byte, want uuid.UUID) (order.Supplier, error) {
 	if dto.IsAvailable == nil {
 		return order.Supplier{}, errors.New("supplier-service's answer has no is_available")
 	}
-	return order.Supplier{
+	s := order.Supplier{
 		ID:                  want,
 		Name:                dto.Name,
 		Building:            dto.Building,
 		Floor:               dto.Floor,
 		LocationDescription: dto.LocationDescription,
 		Available:           *dto.IsAvailable,
-	}, nil
+		Type:                dto.Type,
+	}
+	// AI-generated (edited by PENDING): a position only when both halves came (D-089).
+	if dto.Latitude != nil && dto.Longitude != nil {
+		s.Point = &shuttle.Point{Lat: *dto.Latitude, Lon: *dto.Longitude}
+	}
+	return s, nil
 }
 
 // retryable marks a failure after which supplier-service may still answer: a

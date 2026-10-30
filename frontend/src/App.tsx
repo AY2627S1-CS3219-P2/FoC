@@ -51,6 +51,8 @@ import { createOrdersApi } from "./features/errands/ordersApi";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
 import { AllErrandsView } from "./features/errands/AllErrandsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
+import { createActivityReporter } from "./features/errands/activityReporter";
+import { PendingRatings } from "./features/errands/PendingRatings";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
 import { HomeView } from "./features/home/HomeView";
@@ -157,6 +159,20 @@ export function App() {
       creditAccounts: createCreditAccountsApi(authorizedSend),
     };
   }, [tokens]);
+
+  // AI-generated (edited by PENDING): sends Find errands' shown and search
+  // records to order-service (D-092), the shown ones in batches; whatever is
+  // queued goes out when the page is hidden or closed.
+  const activity = useMemo(() => (orders ? createActivityReporter(orders) : null), [orders]);
+  useEffect(() => {
+    if (!activity) return;
+    const flush = () => activity.flush();
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [activity]);
 
   // Restored from sessionStorage so a reload lands where the tab was, not on
   // Home. Read once, at initial state: doing it in an effect would render Home
@@ -387,6 +403,13 @@ export function App() {
         held={held}
         onLogOut={handleLogOut}
       >
+        {/* AI-generated (edited by PENDING): D-093, a student rates their
+            completed errands before posting or accepting another. Above every
+            screen, so it is in view wherever that refusal would come from. */}
+        {role === "STUDENT" && orders && (
+          <PendingRatings ordersApi={orders} usersApi={usersApi} onNotify={setToast} />
+        )}
+
         {/* AI-generated (edited by James Teo): Home's shortcuts follow the role. */}
         {shownView === "home" && <HomeView mode={mode} role={role} onNavigate={navigate} />}
 
@@ -419,6 +442,8 @@ export function App() {
               available={available}
               onNotify={setToast}
               onCreditsChanged={refreshBalance}
+              onShown={activity?.shown}
+              onSearch={activity?.search}
             />
           ) : (
             <NeedsService title="Find errands" service="order-service" />

@@ -46,7 +46,8 @@ const (
 
 const (
 	insertOrderSQL = `INSERT INTO orders (` + orderColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+			$19, $20, $21)`
 
 	insertHistorySQL = `INSERT INTO order_history (order_id, action, from_state, to_state,
 			actor_id, actor_kind, courier_id, changes, occurred_at, correlation_id)
@@ -110,7 +111,8 @@ const (
 	amendSQL = `UPDATE orders
 		SET supplier_id = $2, supplier_name = $3, supplier_location = $4,
 			item_description = $5, delivery_location = $6, delivery_note = $7,
-			reward = $8, version = $9, updated_at = $10
+			reward = $8, version = $9, updated_at = $10,
+			supplier_type = $11, supplier_lat = $12, supplier_lon = $13
 		WHERE id = $1
 		RETURNING ` + orderSelect
 )
@@ -258,6 +260,7 @@ func (p *Postgres) Amend(ctx context.Context, id uuid.UUID, fn func(current orde
 			next.Supplier.ID, next.Supplier.Name, next.Supplier.Location,
 			next.ItemDescription, next.DeliveryLocation, next.DeliveryNote,
 			next.Reward, next.Version, next.UpdatedAt,
+			next.Supplier.Type, supplierLat(next.Supplier), supplierLon(next.Supplier),
 		))
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Unreachable while the row lock is held; mapped so pgx's error never escapes.
@@ -357,8 +360,24 @@ func orderArgs(o order.Order) []any {
 		o.ID, o.RequesterID, o.CourierID, o.Supplier.ID, o.Supplier.Name,
 		o.Supplier.Location, o.ItemDescription, o.DeliveryLocation, o.DeliveryNote, o.Reward,
 		string(o.State), o.Version, nullableText(o.RequestKey), o.CreatedAt, o.UpdatedAt, o.StateChangedAt,
-		o.ExpiresAt, o.ConfirmBy,
+		o.ExpiresAt, o.ConfirmBy, o.Supplier.Type, supplierLat(o.Supplier), supplierLon(o.Supplier),
 	}
+}
+
+// AI-generated (edited by PENDING): the supplier position's halves, NULL when
+// there is none (D-089).
+func supplierLat(s order.SupplierSnapshot) *float64 {
+	if s.Point == nil {
+		return nil
+	}
+	return &s.Point.Lat
+}
+
+func supplierLon(s order.SupplierSnapshot) *float64 {
+	if s.Point == nil {
+		return nil
+	}
+	return &s.Point.Lon
 }
 
 // isUniqueViolation reports whether err is PostgreSQL rejecting a duplicate

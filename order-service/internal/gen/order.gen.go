@@ -131,6 +131,30 @@ func (e FieldChangeField) Valid() bool {
 	}
 }
 
+// Defines values for FindFiltersTimeLeft.
+const (
+	Any      FindFiltersTimeLeft = "any"
+	Over1h   FindFiltersTimeLeft = "over1h"
+	Under1h  FindFiltersTimeLeft = "under1h"
+	Under30m FindFiltersTimeLeft = "under30m"
+)
+
+// Valid indicates whether the value is a known member of the FindFiltersTimeLeft enum.
+func (e FindFiltersTimeLeft) Valid() bool {
+	switch e {
+	case Any:
+		return true
+	case Over1h:
+		return true
+	case Under1h:
+		return true
+	case Under30m:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for HealthStatus.
 const (
 	Ok        HealthStatus = "ok"
@@ -191,6 +215,24 @@ func (e HistoryAction) Valid() bool {
 	case PICKUP:
 		return true
 	case WITHDRAW:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RaterRole.
+const (
+	Courier   RaterRole = "courier"
+	Requester RaterRole = "requester"
+)
+
+// Valid indicates whether the value is a known member of the RaterRole enum.
+func (e RaterRole) Valid() bool {
+	switch e {
+	case Courier:
+		return true
+	case Requester:
 		return true
 	default:
 		return false
@@ -357,7 +399,7 @@ type Errand struct {
 	Id              openapi_types.UUID `json:"id"`
 	ItemDescription string             `json:"itemDescription"`
 
-	// RequesterId Present only for the requester, the assigned courier and ADMIN.
+	// RequesterId Present for the requester, the assigned courier and ADMIN, and to any student while the errand is `OPEN` (D-093).
 	RequesterId    *openapi_types.UUID `json:"requesterId,omitempty"`
 	Reward         int                 `json:"reward"`
 	State          ErrandState         `json:"state"`
@@ -383,8 +425,11 @@ type ErrandDetail struct {
 
 // ErrandList defines model for ErrandList.
 type ErrandList struct {
-	Items      []Errand  `json:"items"`
-	ServerTime time.Time `json:"serverTime"`
+	Items []Errand `json:"items"`
+
+	// Recommendation The errand the courier's model suggests (D-094). Advice the courier can ignore.
+	Recommendation *Recommendation `json:"recommendation,omitempty"`
+	ServerTime     time.Time       `json:"serverTime"`
 }
 
 // ErrandState defines model for ErrandState.
@@ -404,6 +449,19 @@ type FieldChange struct {
 
 // FieldChangeField defines model for FieldChange.Field.
 type FieldChangeField string
+
+// FindFilters The filters set on Find errands (D-092), as the screen names them.
+type FindFilters struct {
+	// From The supplier id collected from, or empty for any.
+	From     string              `json:"from"`
+	TimeLeft FindFiltersTimeLeft `json:"timeLeft"`
+
+	// To Empty for any, `area:<area>` for every place in an area, or `place:<name>` for one delivery location.
+	To string `json:"to"`
+}
+
+// FindFiltersTimeLeft defines model for FindFilters.TimeLeft.
+type FindFiltersTimeLeft string
 
 // Health defines model for Health.
 type Health struct {
@@ -435,6 +493,75 @@ type LocationList struct {
 	Items []CampusLocation `json:"items"`
 }
 
+// PendingRating defines model for PendingRating.
+type PendingRating struct {
+	CompletedAt     time.Time          `json:"completedAt"`
+	ErrandId        openapi_types.UUID `json:"errandId"`
+	ItemDescription string             `json:"itemDescription"`
+
+	// RateeId The person the caller is to rate.
+	RateeId openapi_types.UUID `json:"rateeId"`
+
+	// RaterRole Which side of the errand the rater was. A requester rates the courier; a courier rates the requester.
+	RaterRole RaterRole `json:"raterRole"`
+}
+
+// PendingRatingList defines model for PendingRatingList.
+type PendingRatingList struct {
+	Items []PendingRating `json:"items"`
+}
+
+// RateRequest defines model for RateRequest.
+type RateRequest struct {
+	Stars int `json:"stars"`
+}
+
+// RaterRole Which side of the errand the rater was. A requester rates the courier; a courier rates the requester.
+type RaterRole string
+
+// Rating defines model for Rating.
+type Rating struct {
+	ErrandId openapi_types.UUID `json:"errandId"`
+	RatedAt  time.Time          `json:"ratedAt"`
+	RateeId  openapi_types.UUID `json:"rateeId"`
+	RaterId  openapi_types.UUID `json:"raterId"`
+
+	// RaterRole Which side of the errand the rater was. A requester rates the courier; a courier rates the requester.
+	RaterRole RaterRole `json:"raterRole"`
+	Stars     int       `json:"stars"`
+}
+
+// Recommendation The errand the courier's model suggests (D-094). Advice the courier can ignore.
+type Recommendation struct {
+	// Confidence The model's score for the errand, never under 0.4 (D-101).
+	Confidence float64            `json:"confidence"`
+	ErrandId   openapi_types.UUID `json:"errandId"`
+
+	// Reason One or two sentences on why.
+	Reason string `json:"reason"`
+}
+
+// SearchRequest defines model for SearchRequest.
+type SearchRequest struct {
+	// Filters The filters set on Find errands (D-092), as the screen names them.
+	Filters FindFilters `json:"filters"`
+}
+
+// ShownItem defines model for ShownItem.
+type ShownItem struct {
+	ErrandId openapi_types.UUID `json:"errandId"`
+
+	// Position The errand's place on the list as shown, 0 for the top.
+	Position int `json:"position"`
+}
+
+// ShownRequest defines model for ShownRequest.
+type ShownRequest struct {
+	// Filters The filters set on Find errands (D-092), as the screen names them.
+	Filters FindFilters `json:"filters"`
+	Items   []ShownItem `json:"items"`
+}
+
 // SupplierActiveErrands defines model for SupplierActiveErrands.
 type SupplierActiveErrands struct {
 	ActiveErrands int                `json:"activeErrands"`
@@ -446,6 +573,16 @@ type SupplierSnapshot struct {
 	Id       openapi_types.UUID `json:"id"`
 	Location string             `json:"location"`
 	Name     string             `json:"name"`
+}
+
+// UserRating defines model for UserRating.
+type UserRating struct {
+	// Average The mean of those ratings. Absent when `count` is 0.
+	Average *float64 `json:"average,omitempty"`
+
+	// Count How many ratings the user has received.
+	Count  int                `json:"count"`
+	UserId openapi_types.UUID `json:"userId"`
 }
 
 // VersionRequest defines model for VersionRequest.
@@ -511,6 +648,11 @@ type ListAssignedErrandsParams struct {
 // ListAssignedErrandsParamsScope defines parameters for ListAssignedErrands.
 type ListAssignedErrandsParamsScope string
 
+// ListOpenErrandsParams defines parameters for ListOpenErrands.
+type ListOpenErrandsParams struct {
+	Recommend *bool `form:"recommend,omitempty" json:"recommend,omitempty"`
+}
+
 // ListRequestedErrandsParams defines parameters for ListRequestedErrands.
 type ListRequestedErrandsParams struct {
 	Scope ListRequestedErrandsParamsScope `form:"scope" json:"scope"`
@@ -522,11 +664,20 @@ type ListRequestedErrandsParamsScope string
 // CreateErrandJSONRequestBody defines body for CreateErrand for application/json ContentType.
 type CreateErrandJSONRequestBody = CreateErrandRequest
 
+// RecordSearchJSONRequestBody defines body for RecordSearch for application/json ContentType.
+type RecordSearchJSONRequestBody = SearchRequest
+
+// RecordShownErrandsJSONRequestBody defines body for RecordShownErrands for application/json ContentType.
+type RecordShownErrandsJSONRequestBody = ShownRequest
+
 // AmendErrandJSONRequestBody defines body for AmendErrand for application/json ContentType.
 type AmendErrandJSONRequestBody = AmendErrandRequest
 
 // AcceptErrandJSONRequestBody defines body for AcceptErrand for application/json ContentType.
 type AcceptErrandJSONRequestBody = VersionRequest
+
+// RateErrandJSONRequestBody defines body for RateErrand for application/json ContentType.
+type RateErrandJSONRequestBody = RateRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -536,6 +687,12 @@ type ServerInterface interface {
 	// CreateErrand Post an errand (F3.1)
 	// (POST /)
 	CreateErrand(w http.ResponseWriter, r *http.Request, params CreateErrandParams)
+	// RecordSearch Records the filters a courier set on Find errands (D-092)
+	// (POST /activity/searches)
+	RecordSearch(w http.ResponseWriter, r *http.Request)
+	// RecordShownErrands Records the errands whose whole card came into a courier's view on Find errands (D-092)
+	// (POST /activity/shown)
+	RecordShownErrands(w http.ResponseWriter, r *http.Request)
 	// ListAssignedErrands Errands the caller accepted as courier (F3.5)
 	// (GET /assigned)
 	ListAssignedErrands(w http.ResponseWriter, r *http.Request, params ListAssignedErrandsParams)
@@ -547,13 +704,19 @@ type ServerInterface interface {
 	ListDeliveryLocations(w http.ResponseWriter, r *http.Request)
 	// ListOpenErrands Errands couriers can accept (F3.2)
 	// (GET /open)
-	ListOpenErrands(w http.ResponseWriter, r *http.Request)
+	ListOpenErrands(w http.ResponseWriter, r *http.Request, params ListOpenErrandsParams)
+	// ListPendingRatings The caller's `COMPLETED` errands they have not rated yet, most recent first (D-093)
+	// (GET /ratings/pending)
+	ListPendingRatings(w http.ResponseWriter, r *http.Request)
 	// ListRequestedErrands The caller's own errands (F3.4)
 	// (GET /requested)
 	ListRequestedErrands(w http.ResponseWriter, r *http.Request, params ListRequestedErrandsParams)
 	// CountSupplierActiveErrands How many errands that are not final reference a supplier (F2.2.3)
 	// (GET /suppliers/{supplierId}/active-errands)
 	CountSupplierActiveErrands(w http.ResponseWriter, r *http.Request, supplierId openapi_types.UUID)
+	// GetUserRating The ratings a user has received, as requester and as courier together (D-093)
+	// (GET /users/{userId}/rating)
+	GetUserRating(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID)
 	// GetErrand One errand with its history (F3.6)
 	// (GET /{errandId})
 	GetErrand(w http.ResponseWriter, r *http.Request, errandId ErrandId)
@@ -578,6 +741,9 @@ type ServerInterface interface {
 	// PickUpErrand The assigned courier marks the item picked up (F3.8)
 	// (POST /{errandId}/pickup)
 	PickUpErrand(w http.ResponseWriter, r *http.Request, errandId ErrandId)
+	// RateErrand The requester rates the courier, or the courier the requester, after a `COMPLETED` errand (D-093)
+	// (POST /{errandId}/rating)
+	RateErrand(w http.ResponseWriter, r *http.Request, errandId ErrandId)
 	// WithdrawErrand The assigned courier gives an `ACCEPTED` errand back (F3.12)
 	// (POST /{errandId}/withdraw)
 	WithdrawErrand(w http.ResponseWriter, r *http.Request, errandId ErrandId)
@@ -596,6 +762,18 @@ func (_ Unimplemented) ListActiveErrands(w http.ResponseWriter, r *http.Request,
 // CreateErrand Post an errand (F3.1)
 // (POST /)
 func (_ Unimplemented) CreateErrand(w http.ResponseWriter, r *http.Request, params CreateErrandParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RecordSearch Records the filters a courier set on Find errands (D-092)
+// (POST /activity/searches)
+func (_ Unimplemented) RecordSearch(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RecordShownErrands Records the errands whose whole card came into a courier's view on Find errands (D-092)
+// (POST /activity/shown)
+func (_ Unimplemented) RecordShownErrands(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -619,7 +797,13 @@ func (_ Unimplemented) ListDeliveryLocations(w http.ResponseWriter, r *http.Requ
 
 // ListOpenErrands Errands couriers can accept (F3.2)
 // (GET /open)
-func (_ Unimplemented) ListOpenErrands(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) ListOpenErrands(w http.ResponseWriter, r *http.Request, params ListOpenErrandsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListPendingRatings The caller's `COMPLETED` errands they have not rated yet, most recent first (D-093)
+// (GET /ratings/pending)
+func (_ Unimplemented) ListPendingRatings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -632,6 +816,12 @@ func (_ Unimplemented) ListRequestedErrands(w http.ResponseWriter, r *http.Reque
 // CountSupplierActiveErrands How many errands that are not final reference a supplier (F2.2.3)
 // (GET /suppliers/{supplierId}/active-errands)
 func (_ Unimplemented) CountSupplierActiveErrands(w http.ResponseWriter, r *http.Request, supplierId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetUserRating The ratings a user has received, as requester and as courier together (D-093)
+// (GET /users/{userId}/rating)
+func (_ Unimplemented) GetUserRating(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -680,6 +870,12 @@ func (_ Unimplemented) DeliverErrand(w http.ResponseWriter, r *http.Request, err
 // PickUpErrand The assigned courier marks the item picked up (F3.8)
 // (POST /{errandId}/pickup)
 func (_ Unimplemented) PickUpErrand(w http.ResponseWriter, r *http.Request, errandId ErrandId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// RateErrand The requester rates the courier, or the courier the requester, after a `COMPLETED` errand (D-093)
+// (POST /{errandId}/rating)
+func (_ Unimplemented) RateErrand(w http.ResponseWriter, r *http.Request, errandId ErrandId) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -772,6 +968,34 @@ func (siw *ServerInterfaceWrapper) CreateErrand(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// RecordSearch operation middleware
+func (siw *ServerInterfaceWrapper) RecordSearch(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecordSearch(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RecordShownErrands operation middleware
+func (siw *ServerInterfaceWrapper) RecordShownErrands(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RecordShownErrands(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListAssignedErrands operation middleware
 func (siw *ServerInterfaceWrapper) ListAssignedErrands(w http.ResponseWriter, r *http.Request) {
 
@@ -836,8 +1060,41 @@ func (siw *ServerInterfaceWrapper) ListDeliveryLocations(w http.ResponseWriter, 
 // ListOpenErrands operation middleware
 func (siw *ServerInterfaceWrapper) ListOpenErrands(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListOpenErrandsParams
+
+	// ------------- Optional query parameter "recommend" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "recommend", r.URL.Query(), &params.Recommend, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "recommend"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "recommend", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListOpenErrands(w, r)
+		siw.Handler.ListOpenErrands(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPendingRatings operation middleware
+func (siw *ServerInterfaceWrapper) ListPendingRatings(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPendingRatings(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -897,6 +1154,32 @@ func (siw *ServerInterfaceWrapper) CountSupplierActiveErrands(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CountSupplierActiveErrands(w, r, supplierId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserRating operation middleware
+func (siw *ServerInterfaceWrapper) GetUserRating(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserRating(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1114,6 +1397,32 @@ func (siw *ServerInterfaceWrapper) PickUpErrand(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// RateErrand operation middleware
+func (siw *ServerInterfaceWrapper) RateErrand(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "errandId" -------------
+	var errandId ErrandId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "errandId", chi.URLParam(r, "errandId"), &errandId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "errandId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RateErrand(w, r, errandId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // WithdrawErrand operation middleware
 func (siw *ServerInterfaceWrapper) WithdrawErrand(w http.ResponseWriter, r *http.Request) {
 
@@ -1303,6 +1612,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/{errandId}/complete", wrapper.CompleteErrand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/{errandId}/rating", wrapper.RateErrand)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/ratings/pending", wrapper.ListPendingRatings)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/users/{userId}/rating", wrapper.GetUserRating)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/activity/shown", wrapper.RecordShownErrands)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/activity/searches", wrapper.RecordSearch)
 	})
 
 	return r

@@ -359,14 +359,19 @@ func (e *env) testConcurrentCreatesRespectTheOpenLimit(t *testing.T) {
 // AI-generated (edited by James Teo).
 // serviceOn runs the domain service on repo, with ordertest's clock, credit
 // and supplier fakes, T = 2h, K = 2 and C = 24h.
-func serviceOn(repo order.Repository) (*order.Service, *ordertest.Clock, *ordertest.Credit, order.Supplier) {
+//
+// AI-generated (edited by PENDING): repo is also the RatingStore (D-093).
+func serviceOn(repo interface {
+	order.Repository
+	order.RatingStore
+}) (*order.Service, *ordertest.Clock, *ordertest.Credit, order.Supplier) {
 	clock := ordertest.NewClock(at(0))
 	credit := ordertest.NewCredit()
 	supplier := order.Supplier{
 		ID: uuid.New(), Name: "Spinelli Coffee", Building: "COM3", Floor: "1",
 		LocationDescription: "next to the lift", Available: true,
 	}
-	svc := order.NewService(repo, credit, ordertest.NewSuppliers(supplier), clock,
+	svc := order.NewService(repo, repo, credit, ordertest.NewSuppliers(supplier), clock,
 		order.Config{ExpiryPeriod: 2 * time.Hour, MaxActive: 2, ConfirmWindow: 24 * time.Hour},
 		slog.New(slog.DiscardHandler))
 	return svc, clock, credit, supplier
