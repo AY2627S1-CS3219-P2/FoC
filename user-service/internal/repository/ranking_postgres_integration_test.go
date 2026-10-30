@@ -30,7 +30,8 @@ func TestRankingModelRepository(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve migrations path: %v", err)
 	}
-	if err := Apply(databaseURL, (&url.URL{Scheme: "file", Path: migrationsPath}).String()); err != nil {
+	// ToSlash, so a Windows path becomes a file URL golang-migrate can read.
+	if err := Apply(databaseURL, (&url.URL{Scheme: "file", Path: filepath.ToSlash(migrationsPath)}).String()); err != nil {
 		t.Fatalf("apply ranking migrations: %v", err)
 	}
 	pool, err := pgxpool.New(ctx, databaseURL)

@@ -865,6 +865,11 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		order.ActionPickUp, order.ActionDeliver, order.ActionConfirm,
 	}, actions)
 
+	// AI-generated (edited by PENDING): D-093, the requester rates the completed
+	// errand before posting another, here against PostgreSQL.
+	_, err = svc.Rate(ctx, requester, first.ID, 5)
+	require.NoError(t, err)
+
 	// Expiry once T has passed (D-049).
 	second, _ := post("second")
 	clock.Advance(2 * time.Hour)
@@ -887,6 +892,12 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, confirmed)
 	require.Equal(t, order.StateCompleted, e.get(t, third.ID).State)
+	// AI-generated (edited by PENDING): D-093, both sides rate the auto-confirmed
+	// errand before the requester posts and the courier accepts again.
+	for _, rater := range []order.Caller{requester, courier} {
+		_, err = svc.Rate(ctx, rater, third.ID, 4)
+		require.NoError(t, err)
+	}
 
 	// An amended reward with its reward_set (D-057), then an admin
 	// cancel while the courier holds it (D-045).
