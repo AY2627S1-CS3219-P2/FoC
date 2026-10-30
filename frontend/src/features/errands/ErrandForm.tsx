@@ -16,6 +16,18 @@ import type { Supplier } from "../suppliers/types";
 import { creditsText } from "./format";
 import type { OrdersApi } from "./ordersApi";
 import type { CampusLocation, CreateErrandRequest, Errand, ErrandChanges } from "./orderTypes";
+// AI-generated (edited by PENDING): scheduling, from order-service's recorded
+// scheduled-errand rules (PR #67).
+import {
+  fromLocalInput,
+  sameMinute,
+  scheduleHint,
+  scheduleLimit,
+  scheduleProblem,
+  toLocalInput,
+  toScheduled,
+} from "./schedule";
+import { formatDateTime, useNow } from "./time";
 
 /**
  * order-service's limits, from its spec's CreateErrandRequest. The checks
@@ -40,6 +52,11 @@ export interface ErrandFormValues {
   deliveryNote: string;
   /** As typed, so a half-typed number can sit in the box. */
   reward: string;
+  // AI-generated (edited by PENDING): scheduling (PR #67).
+  /** "later" opens the errand at `scheduledAt`; "now" opens it straight away. */
+  schedule: "now" | "later";
+  /** As the date-and-time box holds it (device time); kept while "now" is chosen. */
+  scheduledAt: string;
 }
 
 export type ErrandFormField =
@@ -47,7 +64,8 @@ export type ErrandFormField =
   | "itemDescription"
   | "deliveryLocation"
   | "deliveryNote"
-  | "reward";
+  | "reward"
+  | "scheduledAt";
 
 /** One message per field that needs fixing; an empty object means none. */
 export type ErrandFormProblems = Partial<Record<ErrandFormField, string>>;
@@ -59,6 +77,7 @@ const FIELD_ORDER: ErrandFormField[] = [
   "deliveryLocation",
   "deliveryNote",
   "reward",
+  "scheduledAt",
 ];
 
 /** Characters as order-service counts them: code points, so an emoji is one. */
@@ -74,17 +93,24 @@ export function emptyErrandForm(): ErrandFormValues {
     deliveryLocation: "",
     deliveryNote: "",
     reward: "10",
+    schedule: "now",
+    scheduledAt: "",
   };
 }
 
 /** The form filled from an errand, for editing it. */
 export function formValuesFrom(errand: Errand): ErrandFormValues {
+  // AI-generated (edited by PENDING): only a SCHEDULED errand's time can be
+  // changed, so only it opens with "later" (PR #67).
+  const at = errand.state === "SCHEDULED" && errand.scheduled ? Date.parse(errand.scheduled) : NaN;
   return {
     supplier: { id: errand.supplier.id, name: errand.supplier.name },
     itemDescription: errand.itemDescription,
     deliveryLocation: errand.deliveryLocation,
     deliveryNote: errand.deliveryNote ?? "",
     reward: String(errand.reward),
+    schedule: Number.isNaN(at) ? "now" : "later",
+    scheduledAt: Number.isNaN(at) ? "" : toLocalInput(at),
   };
 }
 
@@ -160,13 +186,15 @@ export function LocationOptions({
 
 /**
  * The fields that need fixing before a submit is worth sending. Only the
- * shape is checked (required, lengths, a whole reward, a listed location);
- * whether the supplier takes errands now, and whether the reward is
- * affordable, is order-service's to answer.
+ * shape is checked (required, lengths, a whole reward, a listed location, a
+ * scheduled time inside the window at `now`); whether the supplier takes
+ * errands now, and whether the reward is affordable, is order-service's to
+ * answer.
  */
 export function validateErrandForm(
   values: ErrandFormValues,
   locations: readonly string[],
+  now: number = Date.now(),
 ): ErrandFormProblems {
   const problems: ErrandFormProblems = {};
   if (!values.supplier) problems.supplier = "Choose a supplier to collect from.";
@@ -190,21 +218,31 @@ export function validateErrandForm(
   if (reward === null || reward < 1) {
     problems.reward = "The reward must be a whole number of credits, at least 1.";
   }
+
+  // AI-generated (edited by PENDING): PR #67's scheduling window.
+  if (values.schedule === "later") {
+    const problem = scheduleProblem(values.scheduledAt, now);
+    if (problem) problems.scheduledAt = problem;
+  }
   return problems;
 }
 
 /**
- * The body of `POST /api/orders`: the item and note trimmed, and the note
- * left out when blank. Meant for values validateErrandForm passed.
+ * The body of `POST /api/orders`: the item and note trimmed, the note left
+ * out when blank, and `scheduled` only for an errand that opens later. Meant
+ * for values validateErrandForm passed.
  */
 export function toCreateRequest(values: ErrandFormValues): CreateErrandRequest {
   const note = values.deliveryNote.trim();
+  // AI-generated (edited by PENDING): PR #67's optional `scheduled`.
+  const scheduled = values.schedule === "later" ? toScheduled(values.scheduledAt) : null;
   return {
     supplierId: values.supplier?.id ?? "",
     itemDescription: values.itemDescription.trim(),
     deliveryLocation: values.deliveryLocation,
     deliveryNote: note || undefined,
     reward: parseReward(values.reward) ?? 0,
+    scheduled: scheduled ?? undefined,
   };
 }
 
@@ -227,17 +265,36 @@ export function errandChanges(errand: Errand, values: ErrandFormValues): ErrandC
   if (note !== (errand.deliveryNote ?? "")) changes.deliveryNote = note;
   const reward = parseReward(values.reward);
   if (reward !== null && reward !== errand.reward) changes.reward = reward;
+
+  // AI-generated (edited by PENDING): PR #67. Only a SCHEDULED errand's time
+  // may change; "now" sends "", which removes the schedule and opens it.
+  if (errand.state === "SCHEDULED") {
+    if (values.schedule === "now") changes.scheduled = "";
+    else {
+      const at = fromLocalInput(values.scheduledAt);
+      const saved = Date.parse(errand.scheduled);
+      if (at !== null && (Number.isNaN(saved) || !sameMinute(at, saved))) {
+        changes.scheduled = new Date(at).toISOString();
+      }
+    }
+  }
   return changes;
 }
 
-/** Whether anything in the boxes differs from what the form opened with. */
+/**
+ * Whether anything in the boxes differs from what the form opened with. The
+ * date-and-time box counts only while "later" is chosen.
+ */
 export function formChanged(initial: ErrandFormValues, values: ErrandFormValues): boolean {
   return (
     initial.supplier?.id !== values.supplier?.id ||
     initial.itemDescription !== values.itemDescription ||
     initial.deliveryLocation !== values.deliveryLocation ||
     initial.deliveryNote !== values.deliveryNote ||
-    initial.reward !== values.reward
+    initial.reward !== values.reward ||
+    // AI-generated (edited by PENDING): scheduling (PR #67).
+    initial.schedule !== values.schedule ||
+    (values.schedule === "later" && initial.scheduledAt !== values.scheduledAt)
   );
 }
 
@@ -260,6 +317,8 @@ export function keepEdits(
     deliveryLocation: keep("deliveryLocation"),
     deliveryNote: keep("deliveryNote"),
     reward: keep("reward"),
+    schedule: keep("schedule"),
+    scheduledAt: keep("scheduledAt"),
   };
 }
 
@@ -301,10 +360,19 @@ interface ErrandFormProps {
   available: number | null;
   /** A quiet note above the fields. */
   notice?: string;
+  // AI-generated (edited by PENDING): scheduling (PR #67).
+  /**
+   * Shows "When it opens": on a new errand, and on a SCHEDULED one, the only
+   * kind whose time order-service lets the requester change.
+   */
+  canSchedule?: boolean;
   /** True while the submit is in flight: every field and button is disabled. */
   submitting: boolean;
-  /** The submit button's text for the reward in the box (null when not a number). */
-  submitLabel: (reward: number | null) => string;
+  /**
+   * The submit button's text for the reward in the box (null when not a
+   * number), and whether the errand is set to open later.
+   */
+  submitLabel: (reward: number | null, later: boolean) => string;
   busyLabel: string;
   cancelLabel: string;
   /** Called with values that passed validateErrandForm. */
@@ -323,6 +391,7 @@ export function ErrandForm({
   alreadyHeld,
   available,
   notice,
+  canSchedule = false,
   submitting,
   submitLabel,
   busyLabel,
@@ -332,6 +401,9 @@ export function ErrandForm({
   feedback,
 }: ErrandFormProps) {
   const id = useId();
+  // AI-generated (edited by PENDING): the device clock, for the scheduling
+  // window's hint and check. UX only: order-service checks against its own.
+  const now = useNow(30_000);
   const fieldId = (field: string) => `${id}-${field}`;
 
   const [values, setValues] = useState<ErrandFormValues>(startWith ?? initial);
@@ -422,7 +494,11 @@ export function ErrandForm({
   }, [ordersApi, locationsAttempt]);
 
   const choices = locationChoices(locations, initial.deliveryLocation, values.deliveryLocation);
-  const problems = validateErrandForm(values, choices.accepted);
+  const problems = validateErrandForm(canSchedule ? values : { ...values, schedule: "now" }, choices.accepted, now);
+  // AI-generated (edited by PENDING): what the schedule controls show (PR #67).
+  const later = canSchedule && values.schedule === "later";
+  const laterAt = later ? fromLocalInput(values.scheduledAt) : null;
+  const opensNowFromSchedule = canSchedule && initial.schedule === "later" && values.schedule === "now";
   const shown = (field: ErrandFormField) => (showProblems ? problems[field] : undefined);
   const reward = parseReward(values.reward);
   const hint = balanceHint(available, reward, alreadyHeld);
@@ -645,6 +721,66 @@ export function ErrandForm({
           )}
           {problemText("reward")}
 
+          {/* AI-generated (edited by PENDING): "When it opens", from
+              order-service's recorded scheduling rules (PR #67), in the
+              Active / History toggle's style. */}
+          {canSchedule && (
+            <div className="field field-spaced">
+              <span className="field-label" id={fieldId("when")}>
+                When it opens
+              </span>
+              <div
+                className="mode-toggle schedule-choice"
+                role="group"
+                aria-labelledby={fieldId("when")}
+              >
+                <button
+                  type="button"
+                  className={values.schedule === "now" ? "active" : ""}
+                  aria-pressed={values.schedule === "now"}
+                  onClick={() => set("schedule", "now")}
+                >
+                  Now
+                </button>
+                <button
+                  type="button"
+                  className={values.schedule === "later" ? "active" : ""}
+                  aria-pressed={values.schedule === "later"}
+                  onClick={() => set("schedule", "later")}
+                >
+                  Later
+                </button>
+              </div>
+              {later && (
+                <>
+                  <label className="field-label" htmlFor={fieldId("scheduledAt")}>
+                    Opens at
+                  </label>
+                  <input
+                    id={fieldId("scheduledAt")}
+                    type="datetime-local"
+                    value={values.scheduledAt}
+                    min={toLocalInput(now)}
+                    max={toLocalInput(scheduleLimit(now) - 60_000)}
+                    onChange={(e) => set("scheduledAt", e.target.value)}
+                    aria-invalid={shown("scheduledAt") ? true : undefined}
+                    aria-describedby={describedBy("scheduledAt", fieldId("schedule-hint"))}
+                  />
+                  <p className="field-hint" id={fieldId("schedule-hint")}>
+                    {scheduleHint(now)}
+                  </p>
+                  {problemText("scheduledAt")}
+                </>
+              )}
+              {opensNowFromSchedule && (
+                <p className="field-hint">
+                  Saving opens it to couriers straight away. If you already have five open
+                  errands, it&rsquo;s cancelled instead and the credits come back to you.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="card form-summary">
             <dl className="summary-list">
               <div className="summary-row">
@@ -659,6 +795,19 @@ export function ErrandForm({
                 <dt>Reward</dt>
                 <dd>{reward === null ? "—" : creditsText(reward)}</dd>
               </div>
+              {/* AI-generated (edited by PENDING): scheduling (PR #67). */}
+              {canSchedule && (
+                <div className="summary-row">
+                  <dt>Opens</dt>
+                  <dd>
+                    {!later
+                      ? "Straight away"
+                      : laterAt === null
+                        ? "Not chosen"
+                        : formatDateTime(new Date(laterAt).toISOString())}
+                  </dd>
+                </div>
+              )}
             </dl>
 
             {feedback}
@@ -678,7 +827,7 @@ export function ErrandForm({
                 disabled={locationsState !== "ready"}
                 ref={submitRef}
               >
-                {submitting ? busyLabel : submitLabel(reward)}
+                {submitting ? busyLabel : submitLabel(reward, later)}
               </button>
             </div>
           </div>

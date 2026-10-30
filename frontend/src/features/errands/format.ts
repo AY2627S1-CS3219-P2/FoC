@@ -90,7 +90,23 @@ const FIELD_LABEL: Record<ChangedField, string> = {
 export function describeChange(change: FieldChange): string {
   const label = FIELD_LABEL[change.field] ?? change.field;
   if (change.from === "" && change.to === "") return `${label} changed`;
-  return `${label}: ${change.from || "none"} → ${change.to || "none"}`;
+  // AI-generated (edited by PENDING): a scheduled time arrives as an RFC 3339
+  // timestamp, shown as the other dates are; "" means it was removed (PR #67).
+  const show = (value: string) =>
+    change.field === "scheduled" ? formatDateTime(value) || value : value;
+  return `${label}: ${show(change.from) || "none"} → ${show(change.to) || "none"}`;
+}
+
+// AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+/**
+ * The line for a SCHEDULED errand at `now` (server time): "Opens in 3 h 20 min",
+ * then "Opening…" once its time is reached, until order-service's sweeper
+ * opens it. "Scheduled" when the time cannot be read.
+ */
+export function opensText(errand: Pick<Errand, "scheduled">, now: number): string {
+  const left = countdown(errand.scheduled || undefined, now);
+  if (!left) return STATE_LABEL.SCHEDULED;
+  return left.due ? "Opening…" : `Opens in ${left.text}`;
 }
 
 /**
@@ -118,12 +134,16 @@ export function deadlineText(
  * or for a final errand, when it ended ("Completed 18 Oct, 17:06").
  */
 export function progressText(
-  errand: Pick<Errand, "state" | "expiresAt" | "confirmBy" | "stateChangedAt">,
+  errand: Pick<Errand, "state" | "expiresAt" | "confirmBy" | "stateChangedAt"> &
+    Partial<Pick<Errand, "scheduled">>,
   now: number,
 ): string {
   const deadline = deadlineText(errand, now);
   if (deadline) return deadline;
   switch (errand.state) {
+    // AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+    case "SCHEDULED":
+      return opensText({ scheduled: errand.scheduled ?? "" }, now);
     case "OPEN":
       return "Waiting for a courier";
     case "ACCEPTED":
@@ -153,6 +173,7 @@ const FINAL_STATES: readonly ErrandStatus[] = ["COMPLETED", "CANCELLED", "EXPIRE
  * The line beside the state badge in an errand's detail, worded for the
  * viewer, so one with no button to press still reads what happens next:
  * - a final errand, to anyone: when it ended (endedText);
+ * - a SCHEDULED errand: when it opens to couriers (PR #67);
  * - an OPEN errand: its countdown (deadlineText);
  * - the requester: who has it, where it is going, and when to confirm by;
  * - the courier: the next step, and once delivered, when they are paid;
@@ -165,11 +186,14 @@ export function detailLine(
   errand: Pick<
     Errand,
     "state" | "expiresAt" | "confirmBy" | "stateChangedAt" | "reward" | "supplier" | "deliveryLocation"
-  >,
+  > &
+    Partial<Pick<Errand, "scheduled">>,
   viewer: "requester" | "courier" | "admin" | "none",
   now: number,
 ): string | null {
   if (FINAL_STATES.includes(errand.state)) return endedText(errand);
+  // AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+  if (errand.state === "SCHEDULED") return opensDetailText(errand.scheduled ?? "", now);
   const deadline = deadlineText(errand, now);
   if (errand.state === "OPEN") {
     return deadline ?? (viewer === "admin" ? timeInStateText(errand, now) : null);
@@ -192,6 +216,18 @@ export function detailLine(
     default:
       return deadline;
   }
+}
+
+// AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+/**
+ * "Opens to couriers 31 Oct, 14:00 · in 3 h", or "Opening to couriers…" once
+ * the time is reached.
+ */
+function opensDetailText(scheduled: string, now: number): string {
+  const left = countdown(scheduled || undefined, now);
+  if (!left) return "Scheduled to open later.";
+  if (left.due) return "Opening to couriers…";
+  return `Opens to couriers ${formatDateTime(scheduled)} · in ${left.text}`;
 }
 
 /**

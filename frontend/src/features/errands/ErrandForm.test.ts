@@ -26,6 +26,7 @@ import {
   type ErrandFormValues,
 } from "./ErrandForm";
 import type { Errand } from "./orderTypes";
+import { toLocalInput } from "./schedule";
 
 const LOCATIONS = ["COM3 Lobby", "The Deck, AS8"];
 
@@ -36,6 +37,8 @@ function filled(overrides: Partial<ErrandFormValues> = {}): ErrandFormValues {
     deliveryLocation: "COM3 Lobby",
     deliveryNote: "",
     reward: "10",
+    schedule: "now",
+    scheduledAt: "",
     ...overrides,
   };
 }
@@ -161,11 +164,84 @@ describe("formValuesFrom", () => {
       deliveryLocation: "COM3 Lobby",
       deliveryNote: "Grey backpack",
       reward: "10",
+      schedule: "now",
+      scheduledAt: "",
     });
   });
 
   it("gives an empty note for an errand without one", () => {
     expect(formValuesFrom({ ...ERRAND, deliveryNote: undefined }).deliveryNote).toBe("");
+  });
+});
+
+// AI-generated (edited by PENDING): scheduling, from order-service's recorded
+// scheduled-errand rules (PR #67).
+describe("scheduling", () => {
+  const NOW = Date.parse("2026-10-30T10:00:00Z");
+  const OPENS = Date.parse("2026-10-31T06:00:00Z");
+  const SCHEDULED: Errand = {
+    ...ERRAND,
+    state: "SCHEDULED",
+    scheduled: "2026-10-31T06:00:00Z",
+    expiresAt: undefined,
+  };
+
+  it("checks the time only when the errand opens later", () => {
+    expect(validateErrandForm(filled({ schedule: "later" }), LOCATIONS, NOW).scheduledAt).toBe(
+      "Choose the date and time it opens.",
+    );
+    expect(validateErrandForm(filled({ scheduledAt: "nonsense" }), LOCATIONS, NOW)).toEqual({});
+    expect(
+      validateErrandForm(filled({ schedule: "later", scheduledAt: toLocalInput(OPENS) }), LOCATIONS, NOW),
+    ).toEqual({});
+  });
+
+  it("sends `scheduled` in UTC for an errand that opens later, and leaves it out otherwise", () => {
+    expect(
+      toCreateRequest(filled({ schedule: "later", scheduledAt: toLocalInput(OPENS) })).scheduled,
+    ).toBe("2026-10-31T06:00:00.000Z");
+    expect(toCreateRequest(filled({ scheduledAt: toLocalInput(OPENS) })).scheduled).toBeUndefined();
+  });
+
+  it("opens a SCHEDULED errand's form on Later at its time", () => {
+    expect(formValuesFrom(SCHEDULED)).toMatchObject({ schedule: "later", scheduledAt: toLocalInput(OPENS) });
+  });
+
+  it("opens an errand that was scheduled and has opened on Now", () => {
+    expect(formValuesFrom({ ...ERRAND, scheduled: "2026-10-31T06:00:00Z" }).schedule).toBe("now");
+  });
+
+  it("sends no time when it is unchanged", () => {
+    expect(errandChanges(SCHEDULED, formValuesFrom(SCHEDULED))).toEqual({});
+  });
+
+  it("sends a new time in UTC", () => {
+    const values = { ...formValuesFrom(SCHEDULED), scheduledAt: toLocalInput(OPENS + 30 * 60_000) };
+    expect(errandChanges(SCHEDULED, values)).toEqual({ scheduled: "2026-10-31T06:30:00.000Z" });
+  });
+
+  it("sends an empty time to open it now", () => {
+    expect(errandChanges(SCHEDULED, { ...formValuesFrom(SCHEDULED), schedule: "now" })).toEqual({
+      scheduled: "",
+    });
+  });
+
+  it("never sends a time for an errand that is not SCHEDULED", () => {
+    const values = { ...formValuesFrom(ERRAND), schedule: "later" as const, scheduledAt: toLocalInput(OPENS) };
+    expect(errandChanges(ERRAND, values)).toEqual({});
+  });
+
+  it("counts the time box as a change only while Later is chosen", () => {
+    const initial = filled();
+    expect(formChanged(initial, filled({ scheduledAt: toLocalInput(OPENS) }))).toBe(false);
+    expect(formChanged(initial, filled({ schedule: "later" }))).toBe(true);
+  });
+
+  it("keeps a changed time when the errand changed underneath", () => {
+    const before = filled({ schedule: "later", scheduledAt: toLocalInput(OPENS) });
+    const typed = filled({ schedule: "later", scheduledAt: toLocalInput(OPENS + 60 * 60_000) });
+    const latest = filled({ schedule: "later", scheduledAt: toLocalInput(OPENS), reward: "9" });
+    expect(keepEdits(before, typed, latest)).toEqual({ ...typed, reward: "9" });
   });
 });
 

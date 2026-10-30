@@ -30,10 +30,12 @@ the user-service profile client (`usersApi.ts`) with the contact and
 new-password checks, the order-service and credit-service clients
 (`ordersApi.ts`, `creditAccountsApi.ts`), the poller (`lib/polling.ts`), the
 errand countdowns, labels and error messages (`time.ts`, `format.ts`), the
-errand form's checks and amend changes, the detail's parties and buttons, and
-the Credits screen's paging. There is no component testing
+errand form's checks and amend changes, the scheduling window and date box
+(`schedule.ts`), the detail's parties and buttons, and the Credits screen's
+paging. There is no component testing
 library, so rendering is still unverified; adding one is a separate stack
 decision and still needs asking.
+<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5, 2026-10-31) added `schedule.ts` to this list. -->
 
 ## Owner
 

@@ -36,8 +36,10 @@ import {
   progressText,
   STATE_LABEL,
   timeInStateText,
+  opensText,
 } from "./format";
 import { OrdersApiError } from "./ordersApi";
+import { formatDateTime } from "./time";
 import { ERRAND_ACTIONS, ERRAND_STATUSES, HISTORY_ACTIONS, type ErrandStatus } from "./orderTypes";
 
 const SERVER = Date.parse("2026-10-18T09:00:00Z");
@@ -467,5 +469,43 @@ describe("the newer 409s", () => {
       "You withdrew from this errand, so you cannot accept it again.",
     );
     expect(needsRefetch(again)).toBe(true);
+  });
+});
+
+// AI-generated (edited by PENDING): PR #67's SCHEDULED state and schedule changes.
+describe("scheduled errands", () => {
+  it("writes a schedule change as dates, and a removed one as none", () => {
+    const from = "2026-10-31T06:00:00Z";
+    const to = "2026-10-31T07:30:00Z";
+    expect(describeChange({ field: "scheduled", from, to })).toBe(
+      `Scheduled time: ${formatDateTime(from)} → ${formatDateTime(to)}`,
+    );
+    expect(describeChange({ field: "scheduled", from, to: "" })).toBe(
+      `Scheduled time: ${formatDateTime(from)} → none`,
+    );
+  });
+
+  it("counts down to opening on the lists, then reads Opening…", () => {
+    const scheduled = { state: "SCHEDULED" as const, stateChangedAt: at(-5 * MINUTE) };
+    expect(progressText({ ...scheduled, scheduled: at(200 * MINUTE) }, SERVER)).toBe("Opens in 3 h 20 min");
+    expect(progressText({ ...scheduled, scheduled: at(-1 * MINUTE) }, SERVER)).toBe("Opening…");
+    expect(opensText({ scheduled: "" }, SERVER)).toBe("Scheduled");
+  });
+
+  it("says in the detail when it opens to couriers", () => {
+    const errand = {
+      state: "SCHEDULED" as const,
+      stateChangedAt: at(-5 * MINUTE),
+      reward: 10,
+      supplier: { id: "s-1", name: "The Coffee Roaster", location: "Blk AS8, level 1" },
+      deliveryLocation: "COM3 Lobby",
+      scheduled: at(200 * MINUTE),
+    };
+    for (const viewer of ["requester", "admin"] as const) {
+      expect(detailLine(errand, viewer, SERVER)).toBe(
+        `Opens to couriers ${formatDateTime(at(200 * MINUTE))} · in 3 h 20 min`,
+      );
+    }
+    expect(detailLine({ ...errand, scheduled: at(-MINUTE) }, "requester", SERVER)).toBe("Opening to couriers…");
   });
 });
