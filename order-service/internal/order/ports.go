@@ -170,9 +170,11 @@ type Repository interface {
 	// CountOpenByRequester counts the requester's errands that are OPEN with a
 	// deadline after now (D-058).
 	CountOpenByRequester(ctx context.Context, requesterID uuid.UUID, now time.Time) (int, error)
-	// DueForExpiry and DueForAutoConfirm return ids whose deadline is at or
-	// before now, oldest deadline first. They take no locks: each id is
-	// re-checked under the write (F3.14.1).
+	// DueForScheduled returns ids whose scheduled time is at or before now,
+	// oldest schedule first. DueForExpiry and DueForAutoConfirm return ids whose
+	// deadlines have passed, oldest first. Each id is re-checked under its write.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — lists scheduled opening deadlines.
+	DueForScheduled(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	DueForExpiry(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	DueForAutoConfirm(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 
@@ -205,6 +207,9 @@ type Repository interface {
 	// rolls back and is returned unchanged. It returns ErrNotFound for an
 	// unknown id, and the unchanged row when fn returns a nil result.
 	Amend(ctx context.Context, id uuid.UUID, fn func(current Order) (*AmendResult, error)) (Order, error)
+	// AmendScheduled also serializes changes that open an errand against creates
+	// for the same requester, passing the transactional OPEN count to fn.
+	AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current Order, openCount int) (*AmendResult, error)) (Order, error)
 	// QueueLocked locks the row, calls fn with it as committed, and inserts
 	// the outbox event fn returns in the same transaction, so the event reflects
 	// the row no later write has yet changed (D-057). It returns ErrNotFound for

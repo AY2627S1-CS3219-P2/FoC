@@ -118,6 +118,56 @@ func (s *Service) AutoConfirm(ctx context.Context, id uuid.UUID, correlationID s
 	return s.systemTransition(ctx, id, ActionAutoConfirm, correlationID)
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — implements the recorded scheduled-to-open lifecycle.
+// OpenScheduled makes a due scheduled errand OPEN, starting its expiry window.
+// If the requester is at the OPEN limit, it cancels through the established
+// cancellation event instead. Repository locking serializes this with creates.
+func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID string) (bool, error) {
+	now := s.clock.Now()
+	applied := false
+	_, err := s.repo.AmendScheduled(ctx, id, now, func(cur Order, openCount int) (*AmendResult, error) {
+		openedAt := s.clock.Now()
+		if cur.State != StateScheduled || cur.ScheduledAt == nil || cur.ScheduledAt.After(openedAt) {
+			return nil, nil
+		}
+		next := cur
+		next.Version++
+		next.UpdatedAt = openedAt
+		next.StateChangedAt = openedAt
+		h := HistoryEntry{
+			OrderID: cur.ID, FromState: StateScheduled, OccurredAt: openedAt,
+			ActorKind: ActorSystem, CorrelationID: correlationID,
+		}
+		res := &AmendResult{Order: next, History: h}
+		if openCount >= MaxOpenErrands {
+			next.State = StateCancelled
+			next.ExpiresAt = nil
+			h.Action = ActionCancel
+			h.ToState = StateCancelled
+			res.Order = next
+			res.History = h
+			res.Event = newEvent(uuid.New(), RoutingCancelled, next, nil, openedAt, correlationID)
+		} else {
+			next.State = StateOpen
+			next.ScheduledAt = nil
+			next.ExpiresAt = timePtr(openedAt.Add(s.cfg.ExpiryPeriod))
+			h.Action = ActionOpen
+			h.ToState = StateOpen
+			res.Order = next
+			res.History = h
+		}
+		applied = true
+		return res, nil
+	})
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("open scheduled errand %s: %w", id, err)
+	}
+	return applied, nil
+}
+
 func (s *Service) userTransition(ctx context.Context, c Caller, id uuid.UUID, pick func(Order) Action, correlationID string) (Order, error) {
 	now := s.clock.Now()
 	by := userActor(c)

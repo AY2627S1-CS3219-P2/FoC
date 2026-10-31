@@ -57,7 +57,8 @@ func TestRouterOverPostgres(t *testing.T) {
 		require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 		detail := decodeAs[gen.ErrandDetail](t, rec)
 		require.Len(t, detail.History, 1)
-		assert.Equal(t, gen.CREATE, detail.History[0].Action)
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — use regenerated HistoryAction constant names.
+		assert.Equal(t, gen.HistoryActionCREATE, detail.History[0].Action)
 
 		accept := map[string]any{"version": created.Errand.Version}
 		rec = serve(t, router, http.MethodPost, id+"/accept", accept, as(courier))

@@ -92,6 +92,64 @@ func TestAmendRecordsEveryChangedField(t *testing.T) {
 	assert.Equal(t, order.RoutingRewardSet, events[0].RoutingKey)
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — covers the approved
+// scheduled edit, opening, and open-limit cancellation behavior.
+func TestScheduledErrandCanBeRescheduledThenOpened(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	replacement := f.clock.Now().Add(3 * time.Hour)
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: o.Version, Scheduled: &order.ScheduledChange{At: &replacement},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, order.StateScheduled, got.State)
+	assert.Equal(t, &replacement, got.ScheduledAt)
+	h := f.history(o.ID)
+	assert.Equal(t, []order.FieldChange{{Field: order.FieldScheduled, From: o.ScheduledAt.Format(time.RFC3339Nano), To: replacement.Format(time.RFC3339Nano)}}, h[0].Changes)
+
+	got, err = f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: got.Version, Scheduled: &order.ScheduledChange{}, CorrelationID: "corr-open",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, order.StateOpen, got.State)
+	assert.Nil(t, got.ScheduledAt)
+	assert.Equal(t, f.clock.Now().Add(expiryPeriod), *got.ExpiresAt)
+	h = f.history(o.ID)
+	assert.Equal(t, order.StateScheduled, h[1].FromState)
+	assert.Equal(t, order.StateOpen, h[1].ToState)
+	assert.Equal(t, "", h[1].Changes[0].To)
+}
+
+func TestScheduledErrandClearedAtOpenLimitIsCancelled(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	for i := 0; i < order.MaxOpenErrands; i++ {
+		f.seed(order.StateOpen)
+	}
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: o.Version, Scheduled: &order.ScheduledChange{}, CorrelationID: "corr-limit",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, order.StateCancelled, got.State)
+	assert.Nil(t, got.ExpiresAt)
+	h := f.history(o.ID)
+	require.Len(t, h, 1)
+	assert.Equal(t, order.ActionCancel, h[0].Action)
+	events := f.repo.Events()
+	require.Len(t, events, 1)
+	assert.Equal(t, order.RoutingCancelled, events[0].RoutingKey)
+}
+
+func TestRequesterCanCancelScheduledErrand(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	assert.ElementsMatch(t, []order.APIAction{order.APIAmend, order.APICancel}, order.AllowedActions(o, f.requester, f.clock.Now()))
+	got, err := f.svc.Cancel(f.ctx, f.requester, o.ID, "corr-cancel-scheduled")
+	require.NoError(t, err)
+	assert.Equal(t, order.StateCancelled, got.State)
+	assert.Equal(t, order.RoutingCancelled, f.repo.Events()[0].RoutingKey)
+}
+
 func TestAmendWithoutARewardChangeLeavesCreditAlone(t *testing.T) {
 	f := newFixture(t)
 	o := f.post()

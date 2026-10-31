@@ -179,6 +179,8 @@ func (f *fixture) seed(s order.State) order.Order {
 		StateChangedAt:   posted,
 	}
 	switch s {
+	case order.StateScheduled:
+		o.ScheduledAt = ptr(now.Add(2 * time.Hour))
 	case order.StateOpen:
 		o.ExpiresAt = ptr(now.Add(time.Hour))
 	case order.StateDelivered:

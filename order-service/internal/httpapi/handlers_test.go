@@ -8,6 +8,8 @@
 package httpapi_test
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +27,7 @@ import (
 	"foc/order-service/internal/order/ordertest"
 )
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — updates assertions to regenerated HistoryAction names.
 func TestCreateAnswers201ThenReplaysTheSameRequestIDWith200(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -38,13 +41,20 @@ func TestCreateAnswers201ThenReplaysTheSameRequestIDWith200(t *testing.T) {
 	assert.Equal(t, 1, created.Errand.Version)
 	assert.Equal(t, 5, created.Errand.Reward)
 	assert.Equal(t, "COM3 Lobby", created.Errand.DeliveryLocation)
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies the recorded
+	// normal-errand response representation for the optional scheduled field.
+	var payload struct {
+		Errand map[string]json.RawMessage `json:"errand"`
+	}
+	require.NoError(t, json.Unmarshal(first.Body.Bytes(), &payload))
+	assert.JSONEq(t, `""`, string(payload.Errand["scheduled"]))
 	assert.Equal(t, gen.SupplierSnapshot{Id: h.supplier.ID, Name: "Spinelli Coffee", Location: supplierLocation}, created.Errand.Supplier)
 	assert.Equal(t, []gen.ErrandAction{gen.Amend, gen.Cancel}, created.Errand.Actions)
 	require.NotNil(t, created.Errand.ExpiresAt)
 	assert.WithinDuration(t, h.clock.Now().Add(expiryPeriod), *created.Errand.ExpiresAt, 0)
 	assert.WithinDuration(t, h.clock.Now(), created.ServerTime, 0)
 	require.Len(t, created.History, 1)
-	assert.Equal(t, gen.CREATE, created.History[0].Action)
+	assert.Equal(t, gen.HistoryActionCREATE, created.History[0].Action)
 
 	again := h.do(t, http.MethodPost, "/", h.createBody(), as(requester), withRequestID("create-once"))
 
@@ -52,6 +62,151 @@ func TestCreateAnswers201ThenReplaysTheSameRequestIDWith200(t *testing.T) {
 	replayed := decodeAs[gen.ErrandDetail](t, again)
 	assert.Equal(t, created.Errand.Id, replayed.Errand.Id)
 	assert.Len(t, h.credit.Reserves(), 1, "a replay must not reserve credits again")
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies scheduled
+// creation through the public HTTP handler and its response timestamp.
+func TestCreateScheduledErrand(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	requester := student()
+	scheduled := h.clock.Now().Add(24 * time.Hour).Format(time.RFC3339)
+	body := h.createBody()
+	body["scheduled"] = scheduled
+
+	rec := h.do(t, http.MethodPost, "/", body, as(requester))
+
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	created := decodeAs[gen.ErrandDetail](t, rec)
+	assert.Equal(t, gen.ErrandStateSCHEDULED, created.Errand.State)
+	assert.Equal(t, scheduled, created.Errand.Scheduled)
+	assert.Nil(t, created.Errand.ExpiresAt)
+	assert.Len(t, h.credit.Reserves(), 1)
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — covers the scheduled
+// PATCH field, response, history, and schedule removal through HTTP.
+func TestAmendScheduledErrandAndRemoveSchedule(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	requester := student()
+	body := h.createBody()
+	body["scheduled"] = h.clock.Now().Add(24 * time.Hour).Format(time.RFC3339)
+	createdRec := h.do(t, http.MethodPost, "/", body, as(requester))
+	require.Equal(t, http.StatusCreated, createdRec.Code, createdRec.Body.String())
+	created := decodeAs[gen.ErrandDetail](t, createdRec)
+	id := "/" + created.Errand.Id.String()
+	replacement := h.clock.Now().Add(36 * time.Hour).Format(time.RFC3339)
+	amendedRec := h.do(t, http.MethodPatch, id, map[string]any{"version": 1, "scheduled": replacement}, as(requester))
+	require.Equal(t, http.StatusOK, amendedRec.Code, amendedRec.Body.String())
+	amended := decodeAs[gen.ErrandDetail](t, amendedRec)
+	assert.Equal(t, replacement, amended.Errand.Scheduled)
+	require.Len(t, amended.History, 2)
+	require.NotNil(t, amended.History[1].Changes)
+	require.Len(t, *amended.History[1].Changes, 1)
+	assert.Equal(t, "scheduled", string((*amended.History[1].Changes)[0].Field))
+	assert.Equal(t, replacement, (*amended.History[1].Changes)[0].To)
+
+	openedRec := h.do(t, http.MethodPatch, id, map[string]any{"version": 2, "scheduled": ""}, as(requester))
+	require.Equal(t, http.StatusOK, openedRec.Code, openedRec.Body.String())
+	opened := decodeAs[gen.ErrandDetail](t, openedRec)
+	assert.Equal(t, gen.ErrandStateOPEN, opened.Errand.State)
+	assert.Empty(t, opened.Errand.Scheduled)
+	require.NotNil(t, opened.Errand.ExpiresAt)
+	assert.WithinDuration(t, h.clock.Now().Add(expiryPeriod), *opened.Errand.ExpiresAt, 0)
+}
+
+func TestAmendRejectsInvalidScheduledTimestamp(t *testing.T) {
+	for _, scheduled := range []string{"later", "2026-10-15T14:00:00+08:00"} {
+		t.Run(scheduled, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			requester := student()
+			body := h.createBody()
+			body["scheduled"] = h.clock.Now().Add(24 * time.Hour).Format(time.RFC3339)
+			createdRec := h.do(t, http.MethodPost, "/", body, as(requester))
+			require.Equal(t, http.StatusCreated, createdRec.Code, createdRec.Body.String())
+			created := decodeAs[gen.ErrandDetail](t, createdRec)
+			rec := h.do(t, http.MethodPatch, "/"+created.Errand.Id.String(), map[string]any{"version": 1, "scheduled": scheduled}, as(requester))
+			requireError(t, rec, http.StatusBadRequest, "scheduled must be an RFC 3339 UTC timestamp")
+		})
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies the new
+// OPEN history action is emitted through the HTTP history response.
+func TestHistoryReturnsOpenActionForScheduledOpening(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	requester := student()
+	scheduledAt := h.clock.Now().Add(time.Hour)
+	body := h.createBody()
+	body["scheduled"] = scheduledAt.Format(time.RFC3339)
+	createdRec := h.do(t, http.MethodPost, "/", body, as(requester))
+	require.Equal(t, http.StatusCreated, createdRec.Code, createdRec.Body.String())
+	created := decodeAs[gen.ErrandDetail](t, createdRec)
+	now := scheduledAt
+	_, err := h.repo.AmendScheduled(context.Background(), created.Errand.Id, now, func(cur order.Order, _ int) (*order.AmendResult, error) {
+		next := cur
+		next.State, next.ScheduledAt = order.StateOpen, nil
+		expiresAt := now.Add(expiryPeriod)
+		next.ExpiresAt = &expiresAt
+		next.StateChangedAt, next.UpdatedAt = now, now
+		next.Version++
+		return &order.AmendResult{Order: next, History: order.HistoryEntry{
+			OrderID: cur.ID, Action: order.ActionOpen, FromState: order.StateScheduled,
+			ToState: order.StateOpen, ActorKind: order.ActorSystem, OccurredAt: now,
+		}}, nil
+	})
+	require.NoError(t, err)
+
+	detailRec := h.do(t, http.MethodGet, "/"+created.Errand.Id.String(), nil, as(requester))
+	require.Equal(t, http.StatusOK, detailRec.Code, detailRec.Body.String())
+	detail := decodeAs[gen.ErrandDetail](t, detailRec)
+	require.Len(t, detail.History, 2)
+	assert.Equal(t, gen.HistoryActionOPEN, detail.History[1].Action)
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies D-045 admin
+// cancellation of SCHEDULED through the HTTP route, including its normal event.
+func TestAdminCanCancelScheduledErrand(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	requester := student()
+	scheduled := h.newOrder(order.StateScheduled, requester, nil)
+	scheduledAt := h.clock.Now().Add(24 * time.Hour)
+	scheduled.ScheduledAt = &scheduledAt
+	h.repo.Put(scheduled)
+
+	before := h.do(t, http.MethodGet, "/"+scheduled.ID.String(), nil, as(admin()))
+	require.Equal(t, http.StatusOK, before.Code, before.Body.String())
+	assert.Contains(t, decodeAs[gen.ErrandDetail](t, before).Errand.Actions, gen.Cancel)
+
+	rec := h.do(t, http.MethodPost, "/"+scheduled.ID.String()+"/cancel", map[string]any{"version": scheduled.Version}, as(admin()))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	detail := decodeAs[gen.ErrandDetail](t, rec)
+	assert.Equal(t, gen.ErrandStateCANCELLED, detail.Errand.State)
+	assert.Len(t, h.repo.EventsFor(scheduled.ID), 1)
+	assert.Equal(t, order.RoutingCancelled, h.repo.EventsFor(scheduled.ID)[0].RoutingKey)
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — rejects malformed or
+// non-UTC scheduled timestamps at the HTTP boundary.
+func TestCreateRejectsInvalidScheduledTimestamp(t *testing.T) {
+	for _, scheduled := range []string{"tomorrow", "2026-10-15T14:00:00+08:00"} {
+		t.Run(scheduled, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t)
+			body := h.createBody()
+			body["scheduled"] = scheduled
+
+			rec := h.do(t, http.MethodPost, "/", body, as(student()))
+
+			requireError(t, rec, http.StatusBadRequest, "scheduled must be an RFC 3339 UTC timestamp")
+			assert.Empty(t, h.credit.Reserves())
+		})
+	}
 }
 
 func TestRequestValidation(t *testing.T) {
@@ -485,27 +640,27 @@ func TestEachActionRouteRunsItsAction(t *testing.T) {
 		event bool
 		check func(t *testing.T, h *harness, d gen.ErrandDetail)
 	}{
-		{name: "accept", from: order.StateOpen, actor: "stranger", route: "accept", body: map[string]any{"version": 3}, to: gen.ErrandStateACCEPTED, history: gen.ACCEPT},
+		{name: "accept", from: order.StateOpen, actor: "stranger", route: "accept", body: map[string]any{"version": 3}, to: gen.ErrandStateACCEPTED, history: gen.HistoryActionACCEPT},
 		{
-			name: "withdraw", from: order.StateAccepted, actor: "courier", route: "withdraw", to: gen.ErrandStateOPEN, history: gen.WITHDRAW,
+			name: "withdraw", from: order.StateAccepted, actor: "courier", route: "withdraw", to: gen.ErrandStateOPEN, history: gen.HistoryActionWITHDRAW,
 			check: func(t *testing.T, h *harness, d gen.ErrandDetail) {
 				assert.Nil(t, d.Errand.CourierId)
 				require.NotNil(t, d.Errand.ExpiresAt)
 				assert.WithinDuration(t, h.clock.Now().Add(expiryPeriod), *d.Errand.ExpiresAt, 0)
 			},
 		},
-		{name: "pickup", from: order.StateAccepted, actor: "courier", route: "pickup", to: gen.ErrandStatePICKEDUP, history: gen.PICKUP},
+		{name: "pickup", from: order.StateAccepted, actor: "courier", route: "pickup", to: gen.ErrandStatePICKEDUP, history: gen.HistoryActionPICKUP},
 		{
-			name: "deliver", from: order.StatePickedUp, actor: "courier", route: "deliver", to: gen.ErrandStateDELIVERED, history: gen.DELIVER,
+			name: "deliver", from: order.StatePickedUp, actor: "courier", route: "deliver", to: gen.ErrandStateDELIVERED, history: gen.HistoryActionDELIVER,
 			check: func(t *testing.T, h *harness, d gen.ErrandDetail) {
 				require.NotNil(t, d.Errand.ConfirmBy)
 				assert.WithinDuration(t, h.clock.Now().Add(confirmWindow), *d.Errand.ConfirmBy, 0)
 			},
 		},
-		{name: "confirm", from: order.StateDelivered, actor: "requester", route: "confirm", to: gen.ErrandStateCOMPLETED, history: gen.CONFIRM, event: true},
-		{name: "cancel by the requester", from: order.StateOpen, actor: "requester", route: "cancel", to: gen.ErrandStateCANCELLED, history: gen.CANCEL, event: true},
-		{name: "cancel by an admin", from: order.StateAccepted, actor: "admin", route: "cancel", to: gen.ErrandStateCANCELLED, history: gen.ADMINCANCEL, event: true},
-		{name: "complete by an admin", from: order.StatePickedUp, actor: "admin", route: "complete", to: gen.ErrandStateCOMPLETED, history: gen.ADMINCOMPLETE, event: true},
+		{name: "confirm", from: order.StateDelivered, actor: "requester", route: "confirm", to: gen.ErrandStateCOMPLETED, history: gen.HistoryActionCONFIRM, event: true},
+		{name: "cancel by the requester", from: order.StateOpen, actor: "requester", route: "cancel", to: gen.ErrandStateCANCELLED, history: gen.HistoryActionCANCEL, event: true},
+		{name: "cancel by an admin", from: order.StateAccepted, actor: "admin", route: "cancel", to: gen.ErrandStateCANCELLED, history: gen.HistoryActionADMINCANCEL, event: true},
+		{name: "complete by an admin", from: order.StatePickedUp, actor: "admin", route: "complete", to: gen.ErrandStateCOMPLETED, history: gen.HistoryActionADMINCOMPLETE, event: true},
 	}
 	for i, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -605,11 +760,11 @@ func TestLifecycleThroughTheAPI(t *testing.T) {
 	for _, e := range d.History {
 		actions = append(actions, e.Action)
 	}
-	assert.Equal(t, []gen.HistoryAction{gen.CREATE, gen.AMEND, gen.ACCEPT, gen.PICKUP, gen.DELIVER, gen.CONFIRM}, actions)
+	assert.Equal(t, []gen.HistoryAction{gen.HistoryActionCREATE, gen.HistoryActionAMEND, gen.HistoryActionACCEPT, gen.HistoryActionPICKUP, gen.HistoryActionDELIVER, gen.HistoryActionCONFIRM}, actions)
 	assert.Nil(t, d.History[0].FromState, "CREATE has no from-state")
 	for i, e := range d.History[1:] {
 		assert.NotNil(t, e.FromState, "entry %d", i+1)
-		if e.Action != gen.AMEND {
+		if e.Action != gen.HistoryActionAMEND {
 			assert.Nil(t, e.Changes, "only AMEND carries changes, not %s", e.Action)
 		}
 	}
@@ -860,15 +1015,19 @@ func TestRequestedLists(t *testing.T) {
 	h := newHarness(t)
 	requester, courier := student(), student()
 	active := h.put(order.StateDelivered, requester, &courier)
+	scheduled := h.newOrder(order.StateScheduled, requester, nil)
+	scheduledAt := h.clock.Now().Add(24 * time.Hour)
+	scheduled.ScheduledAt = &scheduledAt
+	h.repo.Put(scheduled)
 	done := h.put(order.StateCompleted, requester, &courier)
 	h.put(order.StateOpen, student(), nil) // someone else's
 
 	cases := []struct {
 		scope string
-		want  uuid.UUID
+		want  []uuid.UUID
 	}{
-		{scope: "active", want: active.ID},
-		{scope: "history", want: done.ID},
+		{scope: "active", want: []uuid.UUID{scheduled.ID, active.ID}},
+		{scope: "history", want: []uuid.UUID{done.ID}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.scope, func(t *testing.T) {
@@ -876,10 +1035,45 @@ func TestRequestedLists(t *testing.T) {
 
 			require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 			list := decodeAs[gen.ErrandList](t, rec)
-			require.Len(t, list.Items, 1)
-			assert.Equal(t, tc.want, list.Items[0].Id)
+			require.Len(t, list.Items, len(tc.want))
+			got := make([]uuid.UUID, 0, len(list.Items))
+			for _, item := range list.Items {
+				got = append(got, item.Id)
+			}
+			assert.ElementsMatch(t, tc.want, got)
+			if tc.scope == "active" {
+				var scheduledResponse *gen.Errand
+				for i := range list.Items {
+					if list.Items[i].Id == scheduled.ID {
+						scheduledResponse = &list.Items[i]
+					}
+				}
+				require.NotNil(t, scheduledResponse)
+				assert.Equal(t, gen.ErrandStateSCHEDULED, scheduledResponse.State)
+				assert.Equal(t, scheduledAt.Format(time.RFC3339), scheduledResponse.Scheduled)
+			}
 		})
 	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — scheduled errands
+// stay absent from courier discovery until their state changes to OPEN.
+func TestOpenErrandListExcludesScheduledErrands(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	requester := student()
+	scheduled := h.newOrder(order.StateScheduled, requester, nil)
+	scheduledAt := h.clock.Now().Add(24 * time.Hour)
+	scheduled.ScheduledAt = &scheduledAt
+	h.repo.Put(scheduled)
+	open := h.put(order.StateOpen, student(), nil)
+
+	rec := h.do(t, http.MethodGet, "/open", nil, as(student()))
+
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	list := decodeAs[gen.ErrandList](t, rec)
+	require.Len(t, list.Items, 1)
+	assert.Equal(t, open.ID, list.Items[0].Id)
 }
 
 func TestLocations(t *testing.T) {
