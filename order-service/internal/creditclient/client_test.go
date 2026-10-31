@@ -1,8 +1,8 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: httptest tests for the credit-service client: every status branch of
-//   reserve and adjust, the same-errandId retry, timeouts and headers (D-047,
-//   D-056, D-057).
+//   reserve, adjust and release, the same-errandId retry, timeouts and headers
+//   (D-047, D-056, D-057, D-102).
 // Author review: James Teo — reviewed and verified.
 
 package creditclient
@@ -263,11 +263,11 @@ func TestReserveNeverOutlivesTheCallersContext(t *testing.T) {
 	assert.Equal(t, int32(1), attempts.Load(), "no retry once the caller has given up")
 }
 
-func TestAdjustSendsTheRequestersNewReward(t *testing.T) {
+func TestAdjustSendsTheNewRewardAndTheErrandsVersion(t *testing.T) {
 	errandID, requesterID := uuid.New(), uuid.New()
 	srv, s := serve(t, respond(http.StatusOK, `{}`))
 
-	err := New(srv.URL+"/", srv.Client(), nil).Adjust(tokenCtx(), errandID, requesterID, 12, "req-amend-1")
+	err := New(srv.URL+"/", srv.Client(), nil).Adjust(tokenCtx(), errandID, requesterID, 12, 3, "req-amend-1")
 
 	require.NoError(t, err)
 	reqs := s.requests()
@@ -281,7 +281,7 @@ func TestAdjustSendsTheRequestersNewReward(t *testing.T) {
 	opID, err := uuid.Parse(got.header.Get("X-Request-Id"))
 	require.NoError(t, err, "X-Request-Id is the change's own UUID")
 	assert.NotEqual(t, uuid.Nil, opID)
-	assert.JSONEq(t, `{"newReward":12}`, string(got.body))
+	assert.JSONEq(t, `{"newReward":12,"currVersion":3}`, string(got.body))
 }
 
 // credit-service keys each reward change on X-Request-Id, so every change,
@@ -294,8 +294,8 @@ func TestAdjustSendsANewOperationIDForEachRewardChange(t *testing.T) {
 			c := New(srv.URL, srv.Client(), nil)
 			errandID, requesterID := uuid.New(), uuid.New()
 
-			for _, reward := range []int{20, 10, 20} {
-				require.NoError(t, c.Adjust(tokenCtx(), errandID, requesterID, reward, corr))
+			for i, reward := range []int{20, 10, 20} {
+				require.NoError(t, c.Adjust(tokenCtx(), errandID, requesterID, reward, i+1, corr))
 			}
 
 			reqs := s.requests()
@@ -319,7 +319,7 @@ func TestAdjustLogsTheOperationIDWithTheCorrelationID(t *testing.T) {
 	var buf bytes.Buffer
 	log := slog.New(slog.NewJSONHandler(&buf, nil))
 
-	require.NoError(t, New(srv.URL, srv.Client(), log).Adjust(tokenCtx(), uuid.New(), uuid.New(), 12, "req-amend-1"))
+	require.NoError(t, New(srv.URL, srv.Client(), log).Adjust(tokenCtx(), uuid.New(), uuid.New(), 12, 3, "req-amend-1"))
 
 	var line map[string]any
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &line))
@@ -354,7 +354,7 @@ func TestAdjustOutcomes(t *testing.T) {
 			srv, _ := serve(t, tc.steps(t)...)
 			client, attempts := countingClient(srv)
 
-			err := New(srv.URL, client, nil).Adjust(context.Background(), uuid.New(), uuid.New(), 12, "req-amend-1")
+			err := New(srv.URL, client, nil).Adjust(context.Background(), uuid.New(), uuid.New(), 12, 3, "req-amend-1")
 
 			assertOutcome(t, tc.want, err)
 			assert.Equal(t, int32(1), attempts.Load(), "adjust is never retried here")
@@ -370,7 +370,7 @@ func TestAdjustBoundsTheAttempt(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), callerLimit)
 	defer cancel()
 
-	err := c.Adjust(ctx, uuid.New(), uuid.New(), 12, "req-amend-1")
+	err := c.Adjust(ctx, uuid.New(), uuid.New(), 12, 3, "req-amend-1")
 
 	assertOutcome(t, unknown, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
@@ -390,10 +390,50 @@ func TestReserveLeavesOutAnEmptyRequestID(t *testing.T) {
 	assert.Equal(t, "Bearer "+testToken, reqs[0].header.Get("Authorization"))
 }
 
+func TestReleaseIsKeyedOnTheEventID(t *testing.T) {
+	// D-102: the release after a saved decrease carries the reward_set's
+	// eventId as X-Request-Id, so credit-service treats the event as a repeat.
+	errandID, eventID := uuid.New(), uuid.New()
+	srv, s := serve(t, respond(http.StatusOK, `{}`))
+
+	err := New(srv.URL, srv.Client(), nil).Release(tokenCtx(), errandID, uuid.New(), 3, 2, eventID, "req-amend-1")
+
+	require.NoError(t, err)
+	reqs := s.requests()
+	require.Len(t, reqs, 1)
+	assert.Equal(t, http.MethodPatch, reqs[0].method)
+	assert.Equal(t, "/api/v1/credits/reservations/"+errandID.String(), reqs[0].path)
+	assert.Equal(t, eventID.String(), reqs[0].header.Get("X-Request-Id"))
+	assert.JSONEq(t, `{"newReward":3,"currVersion":2}`, string(reqs[0].body))
+}
+
+func TestReleaseOutcomesAreNotRetried(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		steps func(t *testing.T) []step
+		want  outcome
+	}{
+		{name: "200 applies", steps: answers(http.StatusOK), want: applied},
+		{name: "409 is a refusal", steps: answers(http.StatusConflict), want: rejected},
+		{name: "503 is unknown, and not retried", steps: answers(http.StatusServiceUnavailable), want: unknown},
+		{name: "a dropped connection is unknown, and not retried", steps: func(t *testing.T) []step { return []step{drop(t)} }, want: unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv, _ := serve(t, tc.steps(t)...)
+			client, attempts := countingClient(srv)
+
+			err := New(srv.URL, client, nil).Release(context.Background(), uuid.New(), uuid.New(), 3, 2, uuid.New(), "req-amend-1")
+
+			assertOutcome(t, tc.want, err)
+			assert.Equal(t, int32(1), attempts.Load())
+		})
+	}
+}
+
 func TestAdjustSendsAnOperationIDWithoutACorrelationID(t *testing.T) {
 	srv, s := serve(t, respond(http.StatusOK, `{}`))
 
-	require.NoError(t, New(srv.URL, srv.Client(), nil).Adjust(tokenCtx(), uuid.New(), uuid.New(), 20, ""))
+	require.NoError(t, New(srv.URL, srv.Client(), nil).Adjust(tokenCtx(), uuid.New(), uuid.New(), 20, 1, ""))
 
 	_, err := uuid.Parse(s.requests()[0].header.Get("X-Request-Id"))
 	assert.NoError(t, err)

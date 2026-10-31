@@ -344,28 +344,6 @@ func (p *Postgres) AmendScheduled(ctx context.Context, id uuid.UUID, now time.Ti
 	return out, nil
 }
 
-// AI-generated (edited by James Teo).
-// QueueLocked implements order.Repository. The row lock is held until the
-// event is inserted, so a concurrent amend's reward_set is ordered after this
-// one (D-057).
-func (p *Postgres) QueueLocked(ctx context.Context, id uuid.UUID, fn func(current order.Order) (*order.OutboxEvent, error)) error {
-	return p.inTx(ctx, func(tx pgx.Tx) error {
-		cur, err := lockOrder(ctx, tx, id)
-		if err != nil {
-			return err
-		}
-		e, err := fn(cur)
-		if err != nil {
-			return err
-		}
-		// AI-generated (edited by James Teo).
-		if e == nil {
-			return nil
-		}
-		return insertEvent(ctx, tx, *e)
-	})
-}
-
 // lockOrder reads the errand and holds its row lock until tx ends.
 func lockOrder(ctx context.Context, tx pgx.Tx, id uuid.UUID) (order.Order, error) {
 	o, err := scanOrder(tx.QueryRow(ctx, lockOrderSQL, id))

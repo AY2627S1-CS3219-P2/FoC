@@ -256,8 +256,14 @@ paths:
       operationId: amendErrand
       summary: Amend an `OPEN` errand (requester only, F3.7)
       description: |
-        Send `version` plus only the fields to change. A reward change adjusts the
-        credit reservation. The deadline does not move (F3.7.6).
+        Send `version` plus only the fields to change. A raised reward is held by
+        credit-service before the change is saved; if the amend then fails
+        (credit-service's answer is lost, or the save fails), nothing is saved,
+        and any extra it held stays held until the next saved reward change or
+        the errand ends. A lowered reward is saved first and then released, so
+        the difference is normally back in the requester's balance before this
+        response; if credit-service doesn't answer, it returns shortly after.
+        The deadline does not move (F3.7.6).
       requestBody:
         required: true
         content:
@@ -523,7 +529,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Unavailable:
-      description: supplier-service or credit-service did not answer; nothing was changed
+      description: supplier-service or credit-service did not answer, or the change could not be saved; nothing was saved
       content:
         application/json:
           schema:

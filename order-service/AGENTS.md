@@ -15,9 +15,11 @@ implements one the owner has recorded (root §1) and stops.
 
 ## Boundaries
 
-- **Credits are not this service's state.** Reserve and adjust a reward
-  through `credit-service`'s API, and bring its hold back in line with
-  `errand.reward_set`; settle only through the lifecycle events this service
+- **Credits are not this service's state.** Reserve a reward and hold more
+  for a raise through `credit-service`'s API before saving; release a lowered
+  reward through that API right after saving, with the saved
+  `errand.reward_set` as the guarantee if that call fails (D-102); settle only
+  through the lifecycle events this service
   publishes via its outbox, whose `amount` is the errand's reward at that
   transition and is what settles (D-059). Never read or write its tables, never recompute a balance here, never persist "the
   requester could afford it" on the order. For an order's credit outcome, ask
@@ -66,9 +68,10 @@ propose answers; implement the decision the owner recorded. The rows in
   order — D-047;
 - what happens to an errand that stalls after acceptance — D-050;
 - which lifecycle events are published asynchronously, and what they carry —
-  D-048, D-051, D-057, D-059 (D-042 binds four of the keys; `errand.reward_set`'s
-  binding and a cross-service row fixing the payload are still pending with
-  credit-service's owner and the team).
+  D-048, D-051, D-057, D-059, D-102 (D-042 binds four of the keys, and
+  `rabbitmq/definitions.json` binds `errand.reward_set` too; D-102 is the
+  cross-service row, and credit-service's half of it is pending with its owner,
+  #68).
 
 The order requirements themselves are in `docs/requirements.md`.
 
@@ -116,12 +119,9 @@ using `""` for normal errands.
 
 ## Local development
 
-**Status:** every request through the gateway answers 401 until the gateway
-keeps `Authorization` on `/api/orders`. Posting an errand, or amending its
-reward, answers 503 until credit-service runs in Compose with reserve and adjust
-endpoints that accept the forwarded token. Until `rabbitmq/definitions.json`
-binds `errand.reward_set`, the outbox relay retries each of those events every
-30 seconds.
+**Status:** runs in Compose behind the gateway, with supplier-service,
+credit-service and RabbitMQ; the whole-stack suite in `e2e/` covers its
+lifecycle.
 
 Port **8083**, database URL `ORDER_DB_URL`, `SUPPLIER_BASE_URL`,
 `CREDIT_BASE_URL`, `RABBITMQ_URL`, `JWKS_URL`, `REDIS_URL`, and T, K and C as

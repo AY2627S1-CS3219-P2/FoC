@@ -222,7 +222,7 @@ func TestEventPayloadUsesCreditServiceFieldNames(t *testing.T) {
 
 func TestOnlySettlementsEmitEvents(t *testing.T) {
 	// D-048: the steps between posting and settling write no settlement event.
-	// The reward amend writes only D-057's reward_set.
+	// The reward amend writes only its reward_set (D-102).
 	f := newFixture(t)
 	settlements := func() []order.OutboxEvent {
 		return slices.DeleteFunc(f.repo.Events(), func(e order.OutboxEvent) bool { return e.RoutingKey == order.RoutingRewardSet })

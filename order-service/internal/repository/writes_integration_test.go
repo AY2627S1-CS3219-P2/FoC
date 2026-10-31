@@ -4,8 +4,8 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: Integration tests of the PostgreSQL order.Repository's writes: queued
 //   refund and create (D-047), conditional transitions with history and
-//   outbox rows (D-046, D-048, D-051), accept and K (D-046), amend and the
-//   locked re-sync (D-057), the schema's CHECKs, and the domain service's
+//   outbox rows (D-046, D-048, D-051), accept and K (D-046), amend and its
+//   reward_set (D-102), the schema's CHECKs, and the domain service's
 //   whole lifecycle on this adapter.
 // Author review: James Teo — reviewed and verified.
 
@@ -777,69 +777,6 @@ func (e *env) testAmend(t *testing.T) {
 		})
 		require.ErrorIs(t, err, order.ErrNotFound)
 		require.False(t, called)
-	})
-}
-
-func (e *env) testQueueLocked(t *testing.T) {
-	t.Run("passes the row as committed and inserts fn's event", func(t *testing.T) {
-		e.reset(t)
-		o := openErrand(uuid.New(), at(0))
-		e.insert(t, o)
-		var seen order.Order
-		var ev order.OutboxEvent
-		// AI-generated (edited by James Teo): fn returns a pointer, nil for no event.
-		require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
-			seen = cur
-			ev = rewardSetEvent(cur, at(5*time.Minute), "corr-amend")
-			return &ev, nil
-		}))
-		require.Equal(t, o, seen)
-		require.Equal(t, o, e.get(t, o.ID), "the row is unchanged")
-		require.Empty(t, e.history(t, o.ID), "no history row")
-		row := e.outbox(t, ev.EventID)
-		require.Equal(t, order.RoutingRewardSet, row.routingKey)
-		require.Equal(t, "corr-amend", row.correlationID)
-		require.False(t, row.published)
-		require.Contains(t, row.payload, `"version": 1`, "the version credit compares")
-		require.Contains(t, row.payload, `"amount": 5`)
-	})
-
-	t.Run("fn's error comes back unchanged and nothing is written", func(t *testing.T) {
-		e.reset(t)
-		o := openErrand(uuid.New(), at(0))
-		e.insert(t, o)
-		failed := &order.Error{Kind: order.KindUnavailable, Msg: "could not build the event"}
-		// AI-generated (edited by James Teo).
-		err := e.repo.QueueLocked(t.Context(), o.ID, func(order.Order) (*order.OutboxEvent, error) { return nil, failed })
-		require.Same(t, failed, err)
-		e.requireUntouched(t, o)
-	})
-
-	t.Run("an unknown errand is ErrNotFound and fn is not called", func(t *testing.T) {
-		e.reset(t)
-		called := false
-		// AI-generated (edited by James Teo).
-		err := e.repo.QueueLocked(t.Context(), uuid.New(), func(order.Order) (*order.OutboxEvent, error) {
-			called = true
-			return nil, nil
-		})
-		require.ErrorIs(t, err, order.ErrNotFound)
-		require.False(t, called)
-		require.Zero(t, e.count(t, `SELECT count(*) FROM outbox`), "no event")
-	})
-
-	// AI-generated (edited by James Teo).
-	t.Run("a nil event inserts nothing", func(t *testing.T) {
-		e.reset(t)
-		o := endedAs(openErrand(uuid.New(), at(0)), order.StateCancelled, at(time.Minute))
-		e.insert(t, o)
-		var seen order.Order
-		require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
-			seen = cur
-			return nil, nil
-		}))
-		require.Equal(t, o, seen)
-		e.requireUntouched(t, o)
 	})
 }
 
