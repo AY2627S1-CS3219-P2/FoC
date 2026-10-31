@@ -3,7 +3,7 @@
 // Scope: Amending an OPEN errand (F3.7): recorded field changes, validation, the
 //   supplier check on every amend (D-052), the raise's credit call under the
 //   row lock, the reward_set saved with every reward change and the release
-//   call after a saved decrease (D-085), and the deadline that never moves
+//   call after a saved decrease (D-102), and the deadline that never moves
 //   (D-049).
 // Author review: James Teo — reviewed and verified.
 
@@ -80,7 +80,7 @@ func TestAmendRecordsEveryChangedField(t *testing.T) {
 		{Field: order.FieldReward, From: "5", To: "8"},
 	}, a.Changes, "F3.7.7: what changed, from and to")
 
-	// F3.7.5, D-085: a raise is held before it is saved, while the row is
+	// F3.7.5, D-102: a raise is held before it is saved, while the row is
 	// locked, in the requester's name (D-056).
 	assert.Equal(t, []ordertest.AdjustCall{{
 		ErrandID: o.ID, RequesterID: f.requester.UserID, NewReward: 8, CurrVersion: o.Version, CorrelationID: "corr-amend",
@@ -92,6 +92,114 @@ func TestAmendRecordsEveryChangedField(t *testing.T) {
 	events := f.repo.EventsFor(o.ID)
 	require.Len(t, events, 1, "an amend settles nothing; it only writes the reward_set")
 	assert.Equal(t, order.RoutingRewardSet, events[0].RoutingKey)
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — covers the approved
+// scheduled edit, opening, and open-limit cancellation behavior.
+func TestScheduledErrandCanBeRescheduledThenOpened(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	replacement := f.clock.Now().Add(3 * time.Hour)
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: o.Version, Scheduled: &order.ScheduledChange{At: &replacement},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, order.StateScheduled, got.State)
+	assert.Equal(t, &replacement, got.ScheduledAt)
+	h := f.history(o.ID)
+	assert.Equal(t, []order.FieldChange{{Field: order.FieldScheduled, From: o.ScheduledAt.Format(time.RFC3339Nano), To: replacement.Format(time.RFC3339Nano)}}, h[0].Changes)
+
+	got, err = f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: got.Version, Scheduled: &order.ScheduledChange{}, CorrelationID: "corr-open",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, order.StateOpen, got.State)
+	assert.Nil(t, got.ScheduledAt)
+	assert.Equal(t, f.clock.Now().Add(expiryPeriod), *got.ExpiresAt)
+	h = f.history(o.ID)
+	assert.Equal(t, order.StateScheduled, h[1].FromState)
+	assert.Equal(t, order.StateOpen, h[1].ToState)
+	assert.Equal(t, "", h[1].Changes[0].To)
+}
+
+func TestScheduledErrandClearedAtOpenLimitIsCancelled(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	for i := 0; i < order.MaxOpenErrands; i++ {
+		f.seed(order.StateOpen)
+	}
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+		Version: o.Version, Scheduled: &order.ScheduledChange{}, CorrelationID: "corr-limit",
+	})
+	require.NoError(t, err)
+	assert.Equal(t, order.StateCancelled, got.State)
+	assert.Nil(t, got.ExpiresAt)
+	h := f.history(o.ID)
+	require.Len(t, h, 1)
+	assert.Equal(t, order.ActionCancel, h[0].Action)
+	events := f.repo.Events()
+	require.Len(t, events, 1)
+	assert.Equal(t, order.RoutingCancelled, events[0].RoutingKey)
+}
+
+func TestScheduledErrandDecreaseIsReleasedAfterTheSave(t *testing.T) {
+	// D-102 applies to a SCHEDULED errand as to an OPEN one: its reward is
+	// already held, so a decrease is saved, then released by one call keyed
+	// on the saved reward_set.
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	before := f.stored(o.ID)
+
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(o.Reward - 2), CorrelationID: "corr-amend"})
+
+	require.NoError(t, err)
+	assert.Equal(t, order.StateScheduled, got.State)
+	assert.Empty(t, f.credit.Adjusts())
+	event := newEvents(before, f.stored(o.ID))
+	require.Len(t, event, 1)
+	releases := f.credit.Releases()
+	require.Len(t, releases, 1)
+	assert.Equal(t, event[0].EventID, releases[0].OperationID)
+}
+
+func TestScheduledErrandClearedAtOpenLimitMovesNoCreditsForAReward(t *testing.T) {
+	// Clearing the schedule at the open limit cancels the errand, and the
+	// cancellation returns the whole hold, so a reward change in the same
+	// amend makes no credit call, neither the raise's nor the release.
+	for _, tc := range []struct {
+		name  string
+		delta int
+	}{{"a raise", 4}, {"a decrease", -2}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			o := f.seed(order.StateScheduled)
+			for i := 0; i < order.MaxOpenErrands; i++ {
+				f.seed(order.StateOpen)
+			}
+
+			got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+				Version: o.Version, Scheduled: &order.ScheduledChange{}, Reward: ptr(o.Reward + tc.delta), CorrelationID: "corr-limit",
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, order.StateCancelled, got.State)
+			assert.Empty(t, f.credit.Adjusts())
+			assert.Empty(t, f.credit.Releases())
+			events := f.repo.EventsFor(o.ID)
+			require.Len(t, events, 1)
+			assert.Equal(t, order.RoutingCancelled, events[0].RoutingKey)
+		})
+	}
+}
+
+func TestRequesterCanCancelScheduledErrand(t *testing.T) {
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	assert.ElementsMatch(t, []order.APIAction{order.APIAmend, order.APICancel}, order.AllowedActions(o, f.requester, f.clock.Now()))
+	got, err := f.svc.Cancel(f.ctx, f.requester, o.ID, "corr-cancel-scheduled")
+	require.NoError(t, err)
+	assert.Equal(t, order.StateCancelled, got.State)
+	assert.Equal(t, order.RoutingCancelled, f.repo.Events()[0].RoutingKey)
 }
 
 func TestAmendWithoutARewardChangeLeavesCreditAlone(t *testing.T) {
@@ -421,7 +529,7 @@ func TestAmendWhenCreditRefuses(t *testing.T) {
 }
 
 func TestAmendDecreaseIsSavedThenReleasedAtOnce(t *testing.T) {
-	// D-085: a decrease is saved with its reward_set first, then released by
+	// D-102: a decrease is saved with its reward_set first, then released by
 	// one call keyed on that event, so the requester's credits are back
 	// before the reply and the event is a repeat credit-service ignores.
 	f := newFixture(t)
@@ -451,7 +559,7 @@ func TestAmendDecreaseIsSavedThenReleasedAtOnce(t *testing.T) {
 }
 
 func TestAmendDecreaseSucceedsWhenTheReleaseFails(t *testing.T) {
-	// D-085: the release call is best effort. Whatever it answers, the
+	// D-102: the release call is best effort. Whatever it answers, the
 	// decrease is saved and the committed reward_set releases the credits
 	// later, so the amend succeeds even with credit-service down.
 	cases := []struct {
@@ -485,7 +593,7 @@ func TestAmendDecreaseSucceedsWhenTheReleaseFails(t *testing.T) {
 
 func TestAmendDecreaseThatCannotBeSavedMakesNoCall(t *testing.T) {
 	// The release call follows the commit, so a decrease whose write fails
-	// releases nothing: the hold must never drop below the saved reward (D-085).
+	// releases nothing: the hold must never drop below the saved reward (D-102).
 	f := newFixture(t)
 	o := f.post()
 	before := f.stored(o.ID)
@@ -501,7 +609,7 @@ func TestAmendDecreaseThatCannotBeSavedMakesNoCall(t *testing.T) {
 }
 
 func TestAmendRaiseSendsTheVersionItLocked(t *testing.T) {
-	// D-085: a raise carries the errand's version as locked, before the amend
+	// D-102: a raise carries the errand's version as locked, before the amend
 	// bumps it; credit-service records the next one, the version this amend saves.
 	f := newFixture(t)
 	o := f.post()
@@ -518,7 +626,7 @@ func TestAmendRaiseSendsTheVersionItLocked(t *testing.T) {
 }
 
 func TestAmendRaiseWithAnUnknownOutcomeSavesAndQueuesNothing(t *testing.T) {
-	// D-085: when the PATCH's outcome is unclear, the raise is refused and
+	// D-102: when the PATCH's outcome is unclear, the raise is refused and
 	// nothing is queued. If credit-service did hold the extra, it stays held
 	// until the next saved reward change or the errand ends. Nothing is
 	// retried over HTTP.
@@ -550,7 +658,7 @@ func TestAmendRaiseWithAnUnknownOutcomeSavesAndQueuesNothing(t *testing.T) {
 
 func TestAmendRaiseThatCannotBeSavedQueuesNothing(t *testing.T) {
 	// The PATCH held the extra, then the write failed: the errand keeps its
-	// reward, and credit-service keeps the extra until it heals (D-085).
+	// reward, and credit-service keeps the extra until it heals (D-102).
 	f := newFixture(t)
 	o := f.post()
 	before := f.stored(o.ID)
@@ -569,7 +677,7 @@ func TestAmendRetriedRaiseHealsTheExtraHold(t *testing.T) {
 	// The first raise's answer is lost, but credit held the extra. The retry
 	// carries the same version, asks for no more than credit holds, and saves
 	// with a reward_set at the version credit recorded, so the hold and the
-	// reward agree again (D-085).
+	// reward agree again (D-102).
 	f := newFixture(t)
 	o := f.post()
 	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
@@ -612,7 +720,7 @@ func TestAmendLogsARaiseWithAnUnknownOutcome(t *testing.T) {
 }
 
 func TestAmendWritesRewardSetWithTheRewardChange(t *testing.T) {
-	// D-085: a saved reward change carries its reward_set in the same write,
+	// D-102: a saved reward change carries its reward_set in the same write,
 	// at the errand's new version; a change that leaves the reward alone
 	// carries none.
 	f := newFixture(t)
@@ -692,7 +800,7 @@ func newEvents(before, after stored) []order.OutboxEvent {
 
 // requireRewardSet fails unless exactly one outbox event was added between
 // before and after, and it is an errand.reward_set for o carrying amount and
-// version (D-085).
+// version (D-102).
 func requireRewardSet(t *testing.T, before, after stored, o order.Order, amount, version int, correlationID string) {
 	t.Helper()
 	added := newEvents(before, after)

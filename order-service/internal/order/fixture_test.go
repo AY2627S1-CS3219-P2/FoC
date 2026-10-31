@@ -179,6 +179,8 @@ func (f *fixture) seed(s order.State) order.Order {
 		StateChangedAt:   posted,
 	}
 	switch s {
+	case order.StateScheduled:
+		o.ScheduledAt = ptr(now.Add(2 * time.Hour))
 	case order.StateOpen:
 		o.ExpiresAt = ptr(now.Add(time.Hour))
 	case order.StateDelivered:
@@ -348,7 +350,7 @@ func rewards(calls []ordertest.AdjustCall) []int {
 // with each Transition and AcceptCommand in full, so a test can see that a
 // refused action wrote nothing and read the conditions a write carries.
 // locked is true while Amend holds an errand's row, so a test can see credit
-// called under the row lock (D-085). And the key lookup and
+// called under the row lock (D-102). And the key lookup and
 // the reads the fake cannot fail can be made to fail. The limit each capped
 // list was asked for is recorded too, so a test can hold it to the contract
 // (D-053).

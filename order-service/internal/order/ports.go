@@ -62,7 +62,7 @@ type CreditClient interface {
 	// nothing was held, so callers rely on D-047's queued refund either way.
 	Reserve(ctx context.Context, r Reservation) error
 	// Adjust asks credit-service to hold newReward for an errand before a
-	// raise is saved (D-085). currVersion is the errand's version before the
+	// raise is saved (D-102). currVersion is the errand's version before the
 	// raise: credit-service records currVersion + 1, so an older
 	// errand.reward_set can't undo the raise. It returns nil when held,
 	// ErrInsufficientCredits on 422, ErrCreditRejected on another definite
@@ -72,7 +72,7 @@ type CreditClient interface {
 	Adjust(ctx context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, correlationID string) error
 	// Release asks credit-service to lower the hold to newReward right after
 	// a decrease is saved, so the requester's credits come back before the
-	// reply (D-085). operationID is the eventId of the errand.reward_set saved
+	// reply (D-102). operationID is the eventId of the errand.reward_set saved
 	// with the decrease: credit-service keys the change on it, so the event
 	// is then a duplicate and moves nothing. Any error means the release did
 	// not happen as far as the caller can tell; the event releases it later.
@@ -132,7 +132,7 @@ type AmendResult struct {
 	Order   Order // the full row after the amendment; Version already incremented
 	History HistoryEntry
 	// Event is the errand.reward_set when the reward changed, written in the
-	// same transaction (D-085); nil otherwise.
+	// same transaction (D-102); nil otherwise.
 	Event *OutboxEvent
 }
 
@@ -180,9 +180,11 @@ type Repository interface {
 	// CountOpenByRequester counts the requester's errands that are OPEN with a
 	// deadline after now (D-058).
 	CountOpenByRequester(ctx context.Context, requesterID uuid.UUID, now time.Time) (int, error)
-	// DueForExpiry and DueForAutoConfirm return ids whose deadline is at or
-	// before now, oldest deadline first. They take no locks: each id is
-	// re-checked under the write (F3.14.1).
+	// DueForScheduled returns ids whose scheduled time is at or before now,
+	// oldest schedule first. DueForExpiry and DueForAutoConfirm return ids whose
+	// deadlines have passed, oldest first. Each id is re-checked under its write.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — lists scheduled opening deadlines.
+	DueForScheduled(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	DueForExpiry(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	DueForAutoConfirm(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 
@@ -211,8 +213,11 @@ type Repository interface {
 	Accept(ctx context.Context, c AcceptCommand) (Order, error)
 	// Amend locks the row (SELECT ... FOR UPDATE), calls fn with it while the
 	// lock is held, then writes fn's result and history row in the same
-	// transaction, with fn's event when it has one (D-085). fn's error
+	// transaction, with fn's event when it has one (D-102). fn's error
 	// rolls back and is returned unchanged. It returns ErrNotFound for an
 	// unknown id, and the unchanged row when fn returns a nil result.
 	Amend(ctx context.Context, id uuid.UUID, fn func(current Order) (*AmendResult, error)) (Order, error)
+	// AmendScheduled also serializes changes that open an errand against creates
+	// for the same requester, passing the transactional OPEN count to fn.
+	AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current Order, openCount int) (*AmendResult, error)) (Order, error)
 }

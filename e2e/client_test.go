@@ -571,7 +571,7 @@ func (s *stack) createErrand(t *testing.T, u user, in createErrandRequest) erran
 // AI-generated (edited by James Teo).
 // amendReward changes e's reward as its requester u, sending the version u was
 // shown. A raise is held before the 200, and a decrease is normally released
-// before it too; errand.reward_set covers a release call that failed (D-085).
+// before it too; errand.reward_set covers a release call that failed (D-102).
 func (s *stack) amendReward(t *testing.T, u user, e errand, reward int) errand {
 	t.Helper()
 	r := s.send(t, http.MethodPatch, errandPath(e.ID), u.token, amendRewardRequest{Version: e.Version, Reward: reward})

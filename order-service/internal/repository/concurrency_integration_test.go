@@ -403,7 +403,7 @@ func (e *env) testAcceptIsJudgedAtArrival(t *testing.T) {
 // AI-generated (edited by James Teo).
 // testNoRewardSetAfterAFailedRaise is a raise whose answer is lost while the
 // requester's cancel waits on the row lock the amend holds across its credit
-// call. The amend saves and queues nothing (D-085), so the cancel's
+// call. The amend saves and queues nothing (D-102), so the cancel's
 // errand.cancelled is the only event, at the reward the errand kept, and
 // credit-service returns the whole hold, the lost raise's extra included.
 func (e *env) testNoRewardSetAfterAFailedRaise(t *testing.T) {

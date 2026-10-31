@@ -18,7 +18,7 @@ implements one the owner has recorded (root §1) and stops.
 - **Credits are not this service's state.** Reserve a reward and hold more
   for a raise through `credit-service`'s API before saving; release a lowered
   reward through that API right after saving, with the saved
-  `errand.reward_set` as the guarantee if that call fails (D-085); settle only
+  `errand.reward_set` as the guarantee if that call fails (D-102); settle only
   through the lifecycle events this service
   publishes via its outbox, whose `amount` is the errand's reward at that
   transition and is what settles (D-059). Never read or write its tables, never recompute a balance here, never persist "the
@@ -68,12 +68,54 @@ propose answers; implement the decision the owner recorded. The rows in
   order — D-047;
 - what happens to an errand that stalls after acceptance — D-050;
 - which lifecycle events are published asynchronously, and what they carry —
-  D-048, D-051, D-057, D-059, D-085 (D-042 binds four of the keys, and
-  `rabbitmq/definitions.json` binds `errand.reward_set` too; D-085 is the
+  D-048, D-051, D-057, D-059, D-102 (D-042 binds four of the keys, and
+  `rabbitmq/definitions.json` binds `errand.reward_set` too; D-102 is the
   cross-service row, and credit-service's half of it is pending with its owner,
   #68).
 
 The order requirements themselves are in `docs/requirements.md`.
+
+## Scheduled Errands
+
+[//]: # AI Assistance Disclosure:
+[//]: # Tool: Codex (model: GPT-6), date: 2026-10-28
+[//]: # Scope: Transcribed the owner's approved scheduled-errand behavior below.
+[//]: # Author review: ZI YANG - decided on implementation before asking Codex to note it down
+
+Support planned errands such as pre-ordered coffee runs, reusing the existing
+expiry scheduler. A scheduled errand is in `SCHEDULED` until its scheduled time,
+then becomes `OPEN`. Times use UTC, consistent with the order service's existing
+clock and RFC 3339 API timestamps. `POST /` includes a `scheduled` field:
+the field is optional, and an omitted value or `""` means a normal errand; a
+timestamp schedules it. Errand responses and listings include `scheduled`,
+using `""` for normal errands.
+
+- A scheduled time must be in the future and may be selected starting at 00:00
+  UTC on the calendar day before its scheduled date. For example, an errand
+  scheduled for 2026-10-10 at 14:00 UTC may be scheduled starting 2026-10-09 at
+  00:00 UTC. The database column is `SCHEDULED_TIME`, nullable, and its value
+  must be at or after `created_at`.
+- While `SCHEDULED`, the requester may amend or cancel the errand. It appears in
+  the requester's listings, but not in couriers' listings. The requester may
+  change the scheduled time while the errand is `SCHEDULED`; a replacement time
+  follows the scheduling rules above. Setting `scheduled` to `""` removes the
+  schedule and makes the errand `OPEN` immediately, subject to the five-`OPEN`
+  limit.
+- When a requester changes the scheduled time, record the change in
+  `history.changes` as field `scheduled`, with RFC 3339 UTC values; use `""`
+  as the `to` value when the schedule is removed.
+- Record the system transition from `SCHEDULED` to `OPEN` with history action
+  `OPEN`.
+- Reserve credits when the scheduled errand is created. Do not recheck credits
+  when it transitions from `SCHEDULED` to `OPEN`.
+- `SCHEDULED` errands do not count toward the requester's limit of five `OPEN`
+  errands. If the limit prevents an errand becoming `OPEN`, whether at its
+  scheduled time or when its schedule is removed, cancel it through the normal
+  cancellation flow. Notification delivery for this cancellation is deferred
+  until the notification service is created.
+- Start the expiry period when the errand becomes `OPEN`. If it remains
+  unaccepted until that period elapses, expire it and clean it up through the
+  normal expiry flow.
 
 ## Local development
 

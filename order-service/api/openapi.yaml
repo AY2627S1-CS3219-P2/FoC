@@ -62,7 +62,8 @@ paths:
       summary: Post an errand (F3.1)
       description: |
         Validates the reward, supplier and delivery location, reserves the reward
-        through credit-service, then saves the errand in `OPEN`. A requester who
+        through credit-service, then saves the errand in `OPEN`, or `SCHEDULED`
+        when `scheduled` is supplied. A requester who
         already has 5 errands `OPEN` before their deadlines cannot post another:
         the create is refused with 409.
       parameters:
@@ -552,7 +553,9 @@ components:
 
     ErrandState:
       type: string
-      enum: [OPEN, ACCEPTED, PICKED_UP, DELIVERED, COMPLETED, CANCELLED, EXPIRED]
+      # AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — includes the
+      # owner's recorded pre-opening state.
+      enum: [SCHEDULED, OPEN, ACCEPTED, PICKED_UP, DELIVERED, COMPLETED, CANCELLED, EXPIRED]
 
     ErrandAction:
       description: An action the viewer may take now; each maps to the route of the same name.
@@ -560,8 +563,10 @@ components:
       enum: [amend, accept, withdraw, pickup, deliver, confirm, cancel, complete]
 
     HistoryAction:
+      description: "OPEN records the system making a scheduled errand available."
       type: string
-      enum: [CREATE, AMEND, ACCEPT, WITHDRAW, PICK_UP, DELIVER, CONFIRM, AUTO_CONFIRM, CANCEL, EXPIRE, ADMIN_CANCEL, ADMIN_COMPLETE]
+      # AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — records the approved system opening action.
+      enum: [CREATE, AMEND, OPEN, ACCEPT, WITHDRAW, PICK_UP, DELIVER, CONFIRM, AUTO_CONFIRM, CANCEL, EXPIRE, ADMIN_CANCEL, ADMIN_COMPLETE]
 
     SupplierSnapshot:
       description: The supplier as it was when the errand was posted or last amended.
@@ -578,7 +583,7 @@ components:
 
     Errand:
       type: object
-      required: [id, state, version, supplier, itemDescription, deliveryLocation, reward, createdAt, updatedAt, stateChangedAt, actions]
+      required: [id, state, version, supplier, itemDescription, deliveryLocation, reward, scheduled, createdAt, updatedAt, stateChangedAt, actions]
       properties:
         id:
           type: string
@@ -599,6 +604,11 @@ components:
           description: Present only for the requester, the assigned courier and ADMIN.
         reward:
           type: integer
+        scheduled:
+          # AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — scheduled
+          # values are UTC timestamps; empty represents a normal errand.
+          description: Empty for a normal errand; otherwise the scheduled UTC time as an RFC 3339 timestamp.
+          type: string
         requesterId:
           type: string
           format: uuid
@@ -635,7 +645,7 @@ components:
       properties:
         field:
           type: string
-          enum: [supplier, itemDescription, deliveryLocation, deliveryNote, reward]
+          enum: [supplier, itemDescription, deliveryLocation, deliveryNote, reward, scheduled]
         from:
           type: string
         to:
@@ -658,7 +668,8 @@ components:
           description: |
             Present on AMEND entries (F3.7.7). A `deliveryNote` change is left out
             for a viewer who may not see the note, and shown to the assigned
-            courier with empty `from` and `to`.
+            courier with empty `from` and `to`. A `scheduled` change uses UTC
+            RFC 3339 values; `to` is empty when the schedule is cleared.
           type: array
           items:
             $ref: "#/components/schemas/FieldChange"
@@ -765,6 +776,11 @@ components:
       type: object
       required: [supplierId, itemDescription, deliveryLocation, reward]
       properties:
+        scheduled:
+          # AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — input is
+          # optional; empty represents a normal errand.
+          description: Optional. Omit or use an empty string for a normal errand; otherwise supply an RFC 3339 UTC timestamp.
+          type: string
         supplierId:
           type: string
           format: uuid
@@ -792,7 +808,7 @@ components:
           maximum: 1000000
 
     AmendErrandRequest:
-      description: "`version` plus at least one field to change. An empty `deliveryNote` clears the note."
+      description: "`version` plus at least one field to change. An empty `deliveryNote` clears the note. `scheduled` may be changed only while SCHEDULED; an empty value opens immediately, subject to the open errand limit."
       type: object
       required: [version]
       properties:
@@ -822,6 +838,9 @@ components:
           type: integer
           minimum: 1
           maximum: 1000000
+        scheduled:
+          type: string
+          description: RFC 3339 UTC timestamp to reschedule, or an empty string to remove the schedule and open now.
 
     VersionRequest:
       type: object

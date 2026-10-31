@@ -28,6 +28,8 @@ import { countdown, elapsed, formatDateTime } from "./time";
 
 /** Display text for each errand state. */
 export const STATE_LABEL: Record<ErrandStatus, string> = {
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — label for order-service's scheduled state.
+  SCHEDULED: "Scheduled",
   OPEN: "Open",
   ACCEPTED: "Accepted",
   PICKED_UP: "Picked up",
@@ -40,6 +42,8 @@ export const STATE_LABEL: Record<ErrandStatus, string> = {
 const HISTORY_LABEL: Record<HistoryAction, string> = {
   CREATE: "Posted",
   AMEND: "Edited",
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — label for the system OPEN history action.
+  OPEN: "Opened",
   ACCEPT: "Accepted",
   WITHDRAW: "Courier withdrew",
   PICK_UP: "Picked up",
@@ -73,6 +77,8 @@ const FIELD_LABEL: Record<ChangedField, string> = {
   deliveryLocation: "Delivery location",
   deliveryNote: "Note",
   reward: "Reward",
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — label for recorded schedule amendments.
+  scheduled: "Scheduled time",
 };
 
 /**
@@ -357,7 +363,7 @@ export function actionDoneText(action: ErrandAction, errand: Pick<Errand, "rewar
 
 /**
  * The message after an amend succeeds. A lowered reward's credits come back a
- * moment later, when credit-service applies the change (D-085), so the message
+ * moment later, when credit-service applies the change (D-102), so the message
  * says they are on the way rather than returned.
  */
 export function amendDoneText(before: Pick<Errand, "reward">, after: Pick<Errand, "reward">): string {

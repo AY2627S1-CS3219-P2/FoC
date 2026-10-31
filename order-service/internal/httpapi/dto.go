@@ -8,6 +8,7 @@
 package httpapi
 
 import (
+	"errors"
 	"time"
 
 	"foc/order-service/internal/gen"
@@ -19,7 +20,8 @@ import (
 // so a body without a version is a 400 instead of a stale-version 409.
 type amendBody struct {
 	gen.AmendErrandRequest
-	Version *int `json:"version"`
+	Version   *int    `json:"version"`
+	Scheduled *string `json:"scheduled"`
 }
 
 // input maps the body to the service's input. ok is false when the body has
@@ -28,7 +30,7 @@ func (b amendBody) input(correlationID string) (in order.AmendInput, ok bool) {
 	if b.Version == nil {
 		return order.AmendInput{}, false
 	}
-	return order.AmendInput{
+	in = order.AmendInput{
 		Version:          *b.Version,
 		SupplierID:       b.SupplierId,
 		ItemDescription:  b.ItemDescription,
@@ -36,7 +38,23 @@ func (b amendBody) input(correlationID string) (in order.AmendInput, ok bool) {
 		DeliveryNote:     b.DeliveryNote,
 		Reward:           b.Reward,
 		CorrelationID:    correlationID,
-	}, true
+	}
+	if b.Scheduled != nil {
+		change := &order.ScheduledChange{}
+		if *b.Scheduled != "" {
+			at, err := time.Parse(time.RFC3339Nano, *b.Scheduled)
+			if err != nil {
+				return order.AmendInput{}, false
+			}
+			_, offset := at.Zone()
+			if offset != 0 {
+				return order.AmendInput{}, false
+			}
+			change.At = &at
+		}
+		in.Scheduled = change
+	}
+	return in, true
 }
 
 // versionBody is POST /{errandId}/accept's body, with version a pointer for the
@@ -47,7 +65,7 @@ type versionBody struct {
 
 // createInput maps POST /'s body to the service's input. requestKey is the
 // client's own X-Request-Id, if any (D-047).
-func createInput(b gen.CreateErrandRequest, requestKey, correlationID string) order.CreateInput {
+func createInput(b gen.CreateErrandRequest, requestKey, correlationID string) (order.CreateInput, error) {
 	in := order.CreateInput{
 		SupplierID:       b.SupplierId,
 		ItemDescription:  b.ItemDescription,
@@ -59,7 +77,20 @@ func createInput(b gen.CreateErrandRequest, requestKey, correlationID string) or
 	if b.DeliveryNote != nil {
 		in.DeliveryNote = *b.DeliveryNote
 	}
-	return in
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — parse the optional
+	// UTC input at the HTTP boundary; the domain checks its scheduling window.
+	if b.Scheduled != nil && *b.Scheduled != "" {
+		scheduledAt, err := time.Parse(time.RFC3339Nano, *b.Scheduled)
+		if err != nil {
+			return order.CreateInput{}, errors.New("scheduled must be an RFC 3339 UTC timestamp")
+		}
+		_, offset := scheduledAt.Zone()
+		if offset != 0 {
+			return order.CreateInput{}, errors.New("scheduled must be an RFC 3339 UTC timestamp")
+		}
+		in.ScheduledAt = &scheduledAt
+	}
+	return in, nil
 }
 
 // toErrand shows o to c at now. The requester and the note are only for a
@@ -74,10 +105,16 @@ func toErrand(o order.Order, c order.Caller, now time.Time) gen.Errand {
 		ItemDescription:  o.ItemDescription,
 		DeliveryLocation: o.DeliveryLocation,
 		Reward:           o.Reward,
-		CreatedAt:        o.CreatedAt.UTC(),
-		UpdatedAt:        o.UpdatedAt.UTC(),
-		StateChangedAt:   o.StateChangedAt.UTC(),
-		Actions:          toActions(order.AllowedActions(o, c, now)),
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — normal errands
+		// serialize their scheduled value as the contract's empty string.
+		Scheduled:      "",
+		CreatedAt:      o.CreatedAt.UTC(),
+		UpdatedAt:      o.UpdatedAt.UTC(),
+		StateChangedAt: o.StateChangedAt.UTC(),
+		Actions:        toActions(order.AllowedActions(o, c, now)),
+	}
+	if o.ScheduledAt != nil {
+		e.Scheduled = o.ScheduledAt.UTC().Format(time.RFC3339Nano)
 	}
 	if order.CanSeePrivate(o, c) {
 		e.RequesterId = ptr(o.RequesterID)

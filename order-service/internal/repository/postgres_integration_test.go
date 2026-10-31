@@ -50,6 +50,7 @@ func TestPostgres(t *testing.T) {
 	t.Run("CountOpenByRequester", e.testCountOpenByRequester)
 	t.Run("WithdrawnCouriers", e.testWithdrawnCouriers)
 	t.Run("DueForExpiry", e.testDueForExpiry)
+	t.Run("DueForScheduled", e.testDueForScheduled)
 	t.Run("DueForAutoConfirm", e.testDueForAutoConfirm)
 
 	t.Run("QueueEvent", e.testQueueEvent)
@@ -177,6 +178,16 @@ func openErrand(requester uuid.UUID, created time.Time) order.Order {
 	}
 }
 
+// scheduledErrand is visible to its requester before timing, but has no
+// courier, expiry deadline or availability in the open list.
+func scheduledErrand(requester uuid.UUID, created, scheduled time.Time) order.Order {
+	o := openErrand(requester, created)
+	o.State = order.StateScheduled
+	o.ExpiresAt = nil
+	o.ScheduledAt = ptr(scheduled)
+	return o
+}
+
 // heldBy is o accepted by courier and moved to state (ACCEPTED, PICKED_UP or
 // DELIVERED) at changed, with C = 24h to confirm once DELIVERED (D-049).
 func heldBy(o order.Order, courier uuid.UUID, state order.State, changed time.Time) order.Order {
@@ -235,12 +246,12 @@ func (e *env) insert(t *testing.T, orders ...order.Order) {
 			INSERT INTO orders (id, requester_id, courier_id, supplier_id, supplier_name,
 				supplier_location, item_description, delivery_location, delivery_note,
 				reward, state, version, request_key, created_at, updated_at,
-				state_changed_at, expires_at, confirm_by)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
+				state_changed_at, expires_at, confirm_by, scheduled_time)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
 			o.ID, o.RequesterID, o.CourierID, o.Supplier.ID, o.Supplier.Name,
 			o.Supplier.Location, o.ItemDescription, o.DeliveryLocation, o.DeliveryNote,
 			o.Reward, string(o.State), o.Version, key, o.CreatedAt, o.UpdatedAt,
-			o.StateChangedAt, o.ExpiresAt, o.ConfirmBy)
+			o.StateChangedAt, o.ExpiresAt, o.ConfirmBy, o.ScheduledAt)
 		require.NoError(t, err, "insert errand %s", o.ID)
 	}
 }
@@ -434,7 +445,8 @@ func (e *env) testMigrate(t *testing.T) {
 			dirty   bool
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
-		require.Equal(t, 1, version)
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — 000003 updates active indexes for SCHEDULED.
+		require.Equal(t, 3, version)
 		require.False(t, dirty)
 	})
 	t.Run("a missing directory is an error", func(t *testing.T) {
@@ -550,7 +562,8 @@ func (e *env) testListOpen(t *testing.T) {
 	overdue.ExpiresAt = ptr(now.Add(-time.Minute)) // the sweeper has not caught up yet
 	accepted := heldBy(openErrand(requester, at(5*time.Minute)), uuid.New(), order.StateAccepted, at(6*time.Minute))
 	cancelled := endedAs(openErrand(requester, at(7*time.Minute)), order.StateCancelled, at(8*time.Minute))
-	e.insert(t, oldest, middle, newest, dueNow, overdue, accepted, cancelled)
+	scheduled := scheduledErrand(requester, at(8*time.Minute), at(24*time.Hour))
+	e.insert(t, oldest, middle, newest, dueNow, overdue, accepted, cancelled, scheduled)
 
 	for _, tc := range []struct {
 		name  string
@@ -579,8 +592,9 @@ func (e *env) testListByRequester(t *testing.T) {
 	completed := endedAs(heldBy(posted(3), courier, order.StateAccepted, at(10*time.Minute)), order.StateCompleted, at(40*time.Minute))
 	expired := endedAs(posted(4), order.StateExpired, at(20*time.Minute))
 	cancelled := endedAs(posted(5), order.StateCancelled, at(60*time.Minute))
+	scheduled := scheduledErrand(requester, at(6*time.Minute), at(24*time.Hour))
 	someoneElses := openErrand(uuid.New(), at(70*time.Minute))
-	e.insert(t, open, accepted, delivered, completed, expired, cancelled, someoneElses)
+	e.insert(t, open, accepted, delivered, completed, expired, cancelled, scheduled, someoneElses)
 
 	for _, tc := range []struct {
 		name   string
@@ -588,7 +602,7 @@ func (e *env) testListByRequester(t *testing.T) {
 		limit  int
 		want   []order.Order
 	}{
-		{"active, most recently changed first", order.ActiveStates(), 100, []order.Order{accepted, delivered, open}},
+		{"active including scheduled, most recently changed first", append([]order.State{order.StateScheduled}, order.ActiveStates()...), 100, []order.Order{accepted, delivered, scheduled, open}},
 		{"history, most recently changed first", order.FinalStates(), 50, []order.Order{cancelled, completed, expired}},
 		{"capped at the limit", order.ActiveStates(), 1, []order.Order{accepted}},
 		{"no states, no errands", nil, 100, nil},
@@ -611,9 +625,10 @@ func (e *env) testListByCourier(t *testing.T) {
 	completed := endedAs(heldBy(posted(3), courier, order.StateAccepted, at(4*time.Minute)), order.StateCompleted, at(40*time.Minute))
 	othersAccepted := heldBy(posted(5), other, order.StateAccepted, at(50*time.Minute))
 	unassigned := posted(6)
-	e.insert(t, accepted, pickedUp, delivered, completed, othersAccepted, unassigned)
+	scheduled := scheduledErrand(requester, at(7*time.Minute), at(24*time.Hour))
+	e.insert(t, accepted, pickedUp, delivered, completed, othersAccepted, unassigned, scheduled)
 
-	held := []order.State{order.StateAccepted, order.StatePickedUp, order.StateDelivered}
+	held := []order.State{order.StateScheduled, order.StateAccepted, order.StatePickedUp, order.StateDelivered}
 	for _, tc := range []struct {
 		name   string
 		states []order.State
@@ -882,6 +897,38 @@ func (e *env) testDueForExpiry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := e.repo.DueForExpiry(t.Context(), now, tc.limit)
+			require.NoError(t, err)
+			requireList(t, tc.want, got)
+		})
+	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies due-scheduled ordering and batch limits.
+func (e *env) testDueForScheduled(t *testing.T) {
+	e.reset(t)
+	now := at(3 * time.Hour)
+	requester := uuid.New()
+	scheduled := func(created, timing time.Time, state order.State) order.Order {
+		o := openErrand(requester, created)
+		o.State, o.ExpiresAt, o.ScheduledAt = state, nil, ptr(timing)
+		return o
+	}
+	early := scheduled(at(0), at(time.Hour), order.StateScheduled)
+	earliest := scheduled(at(time.Minute), at(30*time.Minute), order.StateScheduled)
+	atNow := scheduled(at(2*time.Minute), now, order.StateScheduled)
+	notYet := scheduled(at(3*time.Minute), now.Add(time.Second), order.StateScheduled)
+	open := openErrand(requester, at(4*time.Minute))
+	e.insert(t, early, earliest, atNow, notYet, open)
+	for _, tc := range []struct {
+		name  string
+		limit int
+		want  []uuid.UUID
+	}{
+		{"due scheduled errands by scheduled time", order.SweepBatchLimit, ids(earliest, early, atNow)},
+		{"capped at the limit", 2, ids(earliest, early)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := e.repo.DueForScheduled(t.Context(), now, tc.limit)
 			require.NoError(t, err)
 			requireList(t, tc.want, got)
 		})

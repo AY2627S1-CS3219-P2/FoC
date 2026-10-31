@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: httptest tests for the credit-service client: every status branch of
 //   reserve, adjust and release, the same-errandId retry, timeouts and headers
-//   (D-047, D-056, D-057, D-085).
+//   (D-047, D-056, D-057, D-102).
 // Author review: James Teo — reviewed and verified.
 
 package creditclient
@@ -391,7 +391,7 @@ func TestReserveLeavesOutAnEmptyRequestID(t *testing.T) {
 }
 
 func TestReleaseIsKeyedOnTheEventID(t *testing.T) {
-	// D-085: the release after a saved decrease carries the reward_set's
+	// D-102: the release after a saved decrease carries the reward_set's
 	// eventId as X-Request-Id, so credit-service treats the event as a repeat.
 	errandID, eventID := uuid.New(), uuid.New()
 	srv, s := serve(t, respond(http.StatusOK, `{}`))

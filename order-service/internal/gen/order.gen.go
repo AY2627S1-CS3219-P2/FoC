@@ -80,6 +80,7 @@ const (
 	ErrandStateEXPIRED   ErrandState = "EXPIRED"
 	ErrandStateOPEN      ErrandState = "OPEN"
 	ErrandStatePICKEDUP  ErrandState = "PICKED_UP"
+	ErrandStateSCHEDULED ErrandState = "SCHEDULED"
 )
 
 // Valid indicates whether the value is a known member of the ErrandState enum.
@@ -99,6 +100,8 @@ func (e ErrandState) Valid() bool {
 		return true
 	case ErrandStatePICKEDUP:
 		return true
+	case ErrandStateSCHEDULED:
+		return true
 	default:
 		return false
 	}
@@ -110,6 +113,7 @@ const (
 	DeliveryNote     FieldChangeField = "deliveryNote"
 	ItemDescription  FieldChangeField = "itemDescription"
 	Reward           FieldChangeField = "reward"
+	Scheduled        FieldChangeField = "scheduled"
 	Supplier         FieldChangeField = "supplier"
 )
 
@@ -123,6 +127,8 @@ func (e FieldChangeField) Valid() bool {
 	case ItemDescription:
 		return true
 	case Reward:
+		return true
+	case Scheduled:
 		return true
 	case Supplier:
 		return true
@@ -151,46 +157,49 @@ func (e HealthStatus) Valid() bool {
 
 // Defines values for HistoryAction.
 const (
-	ACCEPT        HistoryAction = "ACCEPT"
-	ADMINCANCEL   HistoryAction = "ADMIN_CANCEL"
-	ADMINCOMPLETE HistoryAction = "ADMIN_COMPLETE"
-	AMEND         HistoryAction = "AMEND"
-	AUTOCONFIRM   HistoryAction = "AUTO_CONFIRM"
-	CANCEL        HistoryAction = "CANCEL"
-	CONFIRM       HistoryAction = "CONFIRM"
-	CREATE        HistoryAction = "CREATE"
-	DELIVER       HistoryAction = "DELIVER"
-	EXPIRE        HistoryAction = "EXPIRE"
-	PICKUP        HistoryAction = "PICK_UP"
-	WITHDRAW      HistoryAction = "WITHDRAW"
+	HistoryActionACCEPT        HistoryAction = "ACCEPT"
+	HistoryActionADMINCANCEL   HistoryAction = "ADMIN_CANCEL"
+	HistoryActionADMINCOMPLETE HistoryAction = "ADMIN_COMPLETE"
+	HistoryActionAMEND         HistoryAction = "AMEND"
+	HistoryActionAUTOCONFIRM   HistoryAction = "AUTO_CONFIRM"
+	HistoryActionCANCEL        HistoryAction = "CANCEL"
+	HistoryActionCONFIRM       HistoryAction = "CONFIRM"
+	HistoryActionCREATE        HistoryAction = "CREATE"
+	HistoryActionDELIVER       HistoryAction = "DELIVER"
+	HistoryActionEXPIRE        HistoryAction = "EXPIRE"
+	HistoryActionOPEN          HistoryAction = "OPEN"
+	HistoryActionPICKUP        HistoryAction = "PICK_UP"
+	HistoryActionWITHDRAW      HistoryAction = "WITHDRAW"
 )
 
 // Valid indicates whether the value is a known member of the HistoryAction enum.
 func (e HistoryAction) Valid() bool {
 	switch e {
-	case ACCEPT:
+	case HistoryActionACCEPT:
 		return true
-	case ADMINCANCEL:
+	case HistoryActionADMINCANCEL:
 		return true
-	case ADMINCOMPLETE:
+	case HistoryActionADMINCOMPLETE:
 		return true
-	case AMEND:
+	case HistoryActionAMEND:
 		return true
-	case AUTOCONFIRM:
+	case HistoryActionAUTOCONFIRM:
 		return true
-	case CANCEL:
+	case HistoryActionCANCEL:
 		return true
-	case CONFIRM:
+	case HistoryActionCONFIRM:
 		return true
-	case CREATE:
+	case HistoryActionCREATE:
 		return true
-	case DELIVER:
+	case HistoryActionDELIVER:
 		return true
-	case EXPIRE:
+	case HistoryActionEXPIRE:
 		return true
-	case PICKUP:
+	case HistoryActionOPEN:
 		return true
-	case WITHDRAW:
+	case HistoryActionPICKUP:
+		return true
+	case HistoryActionWITHDRAW:
 		return true
 	default:
 		return false
@@ -266,7 +275,7 @@ func (e ListRequestedErrandsParamsScope) Valid() bool {
 	}
 }
 
-// AmendErrandRequest `version` plus at least one field to change. An empty `deliveryNote` clears the note.
+// AmendErrandRequest `version` plus at least one field to change. An empty `deliveryNote` clears the note. `scheduled` may be changed only while SCHEDULED; an empty value opens immediately, subject to the open errand limit.
 type AmendErrandRequest struct {
 	DeliveryLocation *string `json:"deliveryLocation,omitempty"`
 
@@ -278,10 +287,13 @@ type AmendErrandRequest struct {
 	// ItemDescription At least one visible character. No control characters (line breaks
 	// included), no line or paragraph separators (U+2028, U+2029) and no
 	// text-direction controls (U+202A to U+202E, U+2066 to U+2069).
-	ItemDescription *string             `json:"itemDescription,omitempty"`
-	Reward          *int                `json:"reward,omitempty"`
-	SupplierId      *openapi_types.UUID `json:"supplierId,omitempty"`
-	Version         int                 `json:"version"`
+	ItemDescription *string `json:"itemDescription,omitempty"`
+	Reward          *int    `json:"reward,omitempty"`
+
+	// Scheduled RFC 3339 UTC timestamp to reschedule, or an empty string to remove the schedule and open now.
+	Scheduled  *string             `json:"scheduled,omitempty"`
+	SupplierId *openapi_types.UUID `json:"supplierId,omitempty"`
+	Version    int                 `json:"version"`
 }
 
 // AssignedList defines model for AssignedList.
@@ -332,9 +344,12 @@ type CreateErrandRequest struct {
 	// ItemDescription At least one visible character. No control characters (line breaks
 	// included), no line or paragraph separators (U+2028, U+2029) and no
 	// text-direction controls (U+202A to U+202E, U+2066 to U+2069).
-	ItemDescription string             `json:"itemDescription"`
-	Reward          int                `json:"reward"`
-	SupplierId      openapi_types.UUID `json:"supplierId"`
+	ItemDescription string `json:"itemDescription"`
+	Reward          int    `json:"reward"`
+
+	// Scheduled Optional. Omit or use an empty string for a normal errand; otherwise supply an RFC 3339 UTC timestamp.
+	Scheduled  *string            `json:"scheduled,omitempty"`
+	SupplierId openapi_types.UUID `json:"supplierId"`
 }
 
 // Errand defines model for Errand.
@@ -358,10 +373,13 @@ type Errand struct {
 	ItemDescription string             `json:"itemDescription"`
 
 	// RequesterId Present only for the requester, the assigned courier and ADMIN.
-	RequesterId    *openapi_types.UUID `json:"requesterId,omitempty"`
-	Reward         int                 `json:"reward"`
-	State          ErrandState         `json:"state"`
-	StateChangedAt time.Time           `json:"stateChangedAt"`
+	RequesterId *openapi_types.UUID `json:"requesterId,omitempty"`
+	Reward      int                 `json:"reward"`
+
+	// Scheduled Empty for a normal errand; otherwise the scheduled UTC time as an RFC 3339 timestamp.
+	Scheduled      string      `json:"scheduled"`
+	State          ErrandState `json:"state"`
+	StateChangedAt time.Time   `json:"stateChangedAt"`
 
 	// Supplier The supplier as it was when the errand was posted or last amended.
 	Supplier  SupplierSnapshot `json:"supplier"`
@@ -413,16 +431,18 @@ type Health struct {
 // HealthStatus defines model for Health.Status.
 type HealthStatus string
 
-// HistoryAction defines model for HistoryAction.
+// HistoryAction OPEN records the system making a scheduled errand available.
 type HistoryAction string
 
 // HistoryEntry defines model for HistoryEntry.
 type HistoryEntry struct {
+	// Action OPEN records the system making a scheduled errand available.
 	Action HistoryAction `json:"action"`
 
 	// Changes Present on AMEND entries (F3.7.7). A `deliveryNote` change is left out
 	// for a viewer who may not see the note, and shown to the assigned
-	// courier with empty `from` and `to`.
+	// courier with empty `from` and `to`. A `scheduled` change uses UTC
+	// RFC 3339 values; `to` is empty when the schedule is cleared.
 	Changes    *[]FieldChange `json:"changes,omitempty"`
 	FromState  *ErrandState   `json:"fromState,omitempty"`
 	OccurredAt time.Time      `json:"occurredAt"`

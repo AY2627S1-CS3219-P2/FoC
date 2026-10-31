@@ -5,7 +5,7 @@
 // Scope: Integration tests of the PostgreSQL order.Repository's writes: queued
 //   refund and create (D-047), conditional transitions with history and
 //   outbox rows (D-046, D-048, D-051), accept and K (D-046), amend and its
-//   reward_set (D-085), the schema's CHECKs, and the domain service's
+//   reward_set (D-102), the schema's CHECKs, and the domain service's
 //   whole lifecycle on this adapter.
 // Author review: James Teo — reviewed and verified.
 
@@ -176,6 +176,41 @@ func (e *env) testCreate(t *testing.T) {
 			require.NoError(t, e.repo.Create(t.Context(), o, createdEntry(o), e.queueGuard(t, o).EventID))
 		}
 		require.Equal(t, 2, e.count(t, `SELECT count(*) FROM orders WHERE requester_id = $1 AND request_key IS NULL`, requester))
+	})
+
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies the
+	// nullable scheduled_time column round-trips on a scheduled row.
+	t.Run("stores scheduled time and no expiry deadline", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(uuid.New(), at(0))
+		o.State = order.StateScheduled
+		o.ScheduledAt = ptr(o.CreatedAt) // equality is permitted by the recorded schema rule.
+		o.ExpiresAt = nil
+		h := createdEntry(o)
+		h.ToState = order.StateScheduled
+		guard := e.queueGuard(t, o)
+
+		require.NoError(t, e.repo.Create(t.Context(), o, h, guard.EventID))
+
+		require.Equal(t, o, e.get(t, o.ID))
+		require.Equal(t, h.ToState, e.history(t, o.ID)[0].ToState)
+	})
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies the
+	// repository permits scheduled creation when five OPEN rows already exist.
+	t.Run("scheduled create does not consume the OPEN limit", func(t *testing.T) {
+		e.reset(t)
+		requester := uuid.New()
+		for i := range order.MaxOpenErrands {
+			e.insert(t, openErrand(requester, at(time.Duration(i)*time.Minute)))
+		}
+		o := openErrand(requester, at(time.Hour))
+		o.State = order.StateScheduled
+		o.ScheduledAt = ptr(at(2 * time.Hour))
+		o.ExpiresAt = nil
+		h := createdEntry(o)
+		h.ToState = order.StateScheduled
+
+		require.NoError(t, e.repo.Create(t.Context(), o, h, e.queueGuard(t, o).EventID))
 	})
 
 	t.Run("returns ErrGuardGone and writes nothing when the refund", func(t *testing.T) {
@@ -650,6 +685,63 @@ func (e *env) testAmend(t *testing.T) {
 		require.Equal(t, want, e.get(t, o.ID))
 	})
 
+	t.Run("opens a scheduled errand and records its schedule change", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(requester, at(0))
+		o.State = order.StateScheduled
+		o.ExpiresAt = nil
+		o.ScheduledAt = ptr(at(2 * time.Hour))
+		e.insert(t, o)
+		now := at(5 * time.Minute)
+		next := o
+		next.State = order.StateOpen
+		next.ScheduledAt = nil
+		next.ExpiresAt = ptr(at(2*time.Hour + 5*time.Minute))
+		next.StateChangedAt = now
+		next.Version++
+		next.UpdatedAt = now
+		h := amendEntry(o, now, []order.FieldChange{{Field: order.FieldScheduled, From: o.ScheduledAt.Format(time.RFC3339Nano), To: ""}})
+		h.FromState, h.ToState = order.StateScheduled, order.StateOpen
+		got, err := e.repo.AmendScheduled(t.Context(), o.ID, now, func(cur order.Order, openCount int) (*order.AmendResult, error) {
+			require.Equal(t, o, cur)
+			require.Zero(t, openCount)
+			return &order.AmendResult{Order: next, History: h}, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, next, got)
+		require.Equal(t, next, e.get(t, o.ID))
+		entries := e.history(t, o.ID)
+		require.Len(t, entries, 1)
+		require.Equal(t, order.StateScheduled, entries[0].FromState)
+		require.Equal(t, order.StateOpen, entries[0].ToState)
+	})
+
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — checks the real transactional open-limit count and cancellation event.
+	t.Run("observes the serialized OPEN count for scheduled cancellation", func(t *testing.T) {
+		e.reset(t)
+		now := at(5 * time.Minute)
+		open := make([]order.Order, 0, order.MaxOpenErrands)
+		for range order.MaxOpenErrands {
+			open = append(open, openErrand(requester, at(0)))
+		}
+		o := openErrand(requester, at(0))
+		o.State, o.ExpiresAt, o.ScheduledAt = order.StateScheduled, nil, ptr(at(time.Hour))
+		e.insert(t, append(open, o)...)
+		next := o
+		next.State, next.Version, next.UpdatedAt, next.StateChangedAt = order.StateCancelled, o.Version+1, now, now
+		h := order.HistoryEntry{OrderID: o.ID, Action: order.ActionCancel, FromState: order.StateScheduled,
+			ToState: order.StateCancelled, ActorKind: order.ActorSystem, OccurredAt: now, CorrelationID: "corr-limit"}
+		ev := outboxEvent(order.RoutingCancelled, next, nil, now, "corr-limit")
+		got, err := e.repo.AmendScheduled(t.Context(), o.ID, now, func(cur order.Order, openCount int) (*order.AmendResult, error) {
+			require.Equal(t, o, cur)
+			require.Equal(t, order.MaxOpenErrands, openCount)
+			return &order.AmendResult{Order: next, History: h, Event: &ev}, nil
+		})
+		require.NoError(t, err)
+		require.Equal(t, next, got)
+		require.Equal(t, order.RoutingCancelled, e.outbox(t, ev.EventID).routingKey)
+	})
+
 	t.Run("a nil result writes nothing and returns the row as it is", func(t *testing.T) {
 		e.reset(t)
 		o := openErrand(requester, at(0))
@@ -689,6 +781,22 @@ func (e *env) testAmend(t *testing.T) {
 }
 
 func (e *env) testCheckConstraints(t *testing.T) {
+	t.Run("scheduled_time cannot precede created_at", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(uuid.New(), at(0))
+		o.State = order.StateScheduled
+		o.ExpiresAt = nil
+		o.ScheduledAt = ptr(at(-time.Second))
+		guard := e.queueGuard(t, o)
+		h := createdEntry(o)
+		h.ToState = order.StateScheduled
+
+		err := e.repo.Create(t.Context(), o, h, guard.EventID)
+
+		requireCheckViolation(t, err, "orders_scheduled_time_after_creation")
+		require.Zero(t, e.count(t, `SELECT count(*) FROM orders`))
+	})
+
 	t.Run("an errand the schema forbids rolls the whole create back", func(t *testing.T) {
 		e.reset(t)
 		o := openErrand(uuid.New(), at(0))

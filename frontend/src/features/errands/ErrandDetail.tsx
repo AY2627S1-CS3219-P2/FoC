@@ -157,7 +157,7 @@ interface ErrandDetailProps {
   /**
    * After the requester lowers the reward: credit-service releases the
    * difference a moment after the save, so the balance is fetched again until
-   * it shows (D-086).
+   * it shows (D-103).
    */
   onRewardLowered?: () => void;
   /** The errand answered 404: the modal closes with this message. */

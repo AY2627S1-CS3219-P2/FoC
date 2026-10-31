@@ -25,6 +25,8 @@
  * EXPIRED are final. On the wire the field is called `state`.
  */
 export const ERRAND_STATUSES = [
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — transcribed from order-service's OpenAPI state enum.
+  "SCHEDULED",
   "OPEN",
   "ACCEPTED",
   "PICKED_UP",
@@ -58,6 +60,8 @@ export type ErrandAction = (typeof ERRAND_ACTIONS)[number];
 export const HISTORY_ACTIONS = [
   "CREATE",
   "AMEND",
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — transcribed from order-service's OPEN history action.
+  "OPEN",
   "ACCEPT",
   "WITHDRAW",
   "PICK_UP",
@@ -90,6 +94,9 @@ export interface Errand {
   /** Present only for the requester, the assigned courier and ADMIN. */
   deliveryNote?: string;
   reward: number;
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — response field from order-service OpenAPI.
+  /** Empty for normal errands; RFC 3339 UTC timestamp while SCHEDULED. */
+  scheduled: string;
   /** Present only for the requester, the assigned courier and ADMIN. */
   requesterId?: string;
   /** Present while a courier is assigned. */
@@ -110,7 +117,9 @@ export type ChangedField =
   | "itemDescription"
   | "deliveryLocation"
   | "deliveryNote"
-  | "reward";
+  | "reward"
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — amendment field from order-service OpenAPI.
+  | "scheduled";
 
 /**
  * One field an amendment changed. `from` and `to` are text: the supplier's
@@ -195,6 +204,9 @@ export interface CreateErrandRequest {
   deliveryNote?: string;
   /** A whole number, at least 1. */
   reward: number;
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — optional create field from order-service OpenAPI.
+  /** Optional RFC 3339 UTC timestamp; omit or use an empty string for a normal errand. */
+  scheduled?: string;
 }
 
 /**
@@ -208,6 +220,9 @@ export interface AmendErrandRequest {
   deliveryLocation?: string;
   deliveryNote?: string;
   reward?: number;
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — amendment field from order-service OpenAPI.
+  /** Only changeable while SCHEDULED; an empty value opens immediately. */
+  scheduled?: string;
 }
 
 /** The fields an amendment may change, without the version it is sent with. */

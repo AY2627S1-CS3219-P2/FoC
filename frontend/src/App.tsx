@@ -67,7 +67,7 @@ import { isViewAvailable, type ViewName } from "./views";
  */
 const usingGateway = !config.useFixtures;
 
-// The balance re-fetch after a lowered reward (D-086): how often, how many times.
+// The balance re-fetch after a lowered reward (D-103): how often, how many times.
 const RELEASE_REFETCH_MS = 2_000;
 const RELEASE_REFETCHES = 3;
 
@@ -242,7 +242,7 @@ export function App() {
   );
 
   // After a lowered reward, credit-service releases the difference a moment
-  // after the save, by event (D-085), so the balance is re-fetched until the
+  // after the save, by event (D-102), so the balance is re-fetched until the
   // held credits drop; the regular poll covers a slower release.
   const heldRef = useRef<number | null>(null);
   useEffect(() => {

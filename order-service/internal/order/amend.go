@@ -3,7 +3,7 @@
 // Scope: Amending an OPEN errand (F3.7): validation, supplier check on every
 //   amend (D-052), the raise's credit call under the row lock, the
 //   errand.reward_set saved with every reward change, and the release call
-//   after a saved decrease (D-085).
+//   after a saved decrease (D-102).
 // Author review: James Teo — reviewed and verified.
 
 package order
@@ -13,6 +13,7 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -26,8 +27,14 @@ type AmendInput struct {
 	DeliveryLocation *string
 	DeliveryNote     *string
 	Reward           *int
-	CorrelationID    string
+	// Scheduled is nil when omitted; a non-nil value with At nil clears it.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — requester schedule edits.
+	Scheduled     *ScheduledChange
+	CorrelationID string
 }
+
+// ScheduledChange distinguishes leaving a schedule alone from clearing it.
+type ScheduledChange struct{ At *time.Time }
 
 // Amend changes an OPEN errand for its requester (F3.7). The deadline does not
 // move (F3.7.6), and the changed fields are recorded (F3.7.7).
@@ -60,7 +67,7 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 
 	// The reward_set a decrease commits, for the release call after it.
 	var release *OutboxEvent
-	updated, err := s.repo.Amend(ctx, id, func(cur Order) (*AmendResult, error) {
+	amendFn := func(cur Order, openCount int) (*AmendResult, error) {
 		// The deadline is judged again as of now, under the lock: the supplier
 		// lookup and the lock wait may have run past it (D-049, F3.10.2).
 		lockedNow := s.clock.Now()
@@ -70,14 +77,33 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 		if cur.Version != in.Version {
 			return nil, errChanged()
 		}
+		if in.Scheduled != nil && cur.State != StateScheduled {
+			return nil, conflict("scheduled can only be changed while the errand is scheduled")
+		}
+		if in.Scheduled != nil && in.Scheduled.At != nil {
+			if err := validateScheduledTime(in.Scheduled.At, lockedNow); err != nil {
+				return nil, err
+			}
+		}
 		next, changes := applyAmend(cur, in, snapshot)
+		if in.Scheduled != nil && in.Scheduled.At == nil {
+			if openCount >= MaxOpenErrands {
+				next.State = StateCancelled
+				next.StateChangedAt = lockedNow
+			} else {
+				next.State = StateOpen
+				next.ExpiresAt = timePtr(lockedNow.Add(s.cfg.ExpiryPeriod))
+				next.StateChangedAt = lockedNow
+			}
+		}
 		if len(changes) == 0 && next.Supplier == cur.Supplier {
 			return nil, nil
 		}
-		// D-085: only a raise waits for credit-service, which must hold the
+		// D-102: only a raise waits for credit-service, which must hold the
 		// extra before it is saved. A decrease is released after the commit,
-		// below.
-		if next.Reward > cur.Reward {
+		// below. An amend that cancels the errand moves no credits here: the
+		// cancellation returns the whole hold.
+		if next.Reward > cur.Reward && !next.State.Final() {
 			err := s.credit.Adjust(ctx, cur.ID, cur.RequesterID, next.Reward, cur.Version, in.CorrelationID)
 			switch {
 			case err == nil:
@@ -102,8 +128,8 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 			History: HistoryEntry{
 				OrderID:       cur.ID,
 				Action:        ActionAmend,
-				FromState:     StateOpen,
-				ToState:       StateOpen,
+				FromState:     cur.State,
+				ToState:       next.State,
 				ActorID:       uuidPtr(c.UserID),
 				ActorKind:     ActorRequester,
 				Changes:       changes,
@@ -111,8 +137,12 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 				CorrelationID: in.CorrelationID,
 			},
 		}
-		if next.Reward != cur.Reward {
-			// D-085: credit-service lowers its hold to this reward if it holds
+		if next.State == StateCancelled {
+			res.History.Action = ActionCancel
+			res.Event = newEvent(uuid.New(), RoutingCancelled, next, nil, lockedNow, in.CorrelationID)
+		}
+		if next.Reward != cur.Reward && !next.State.Final() {
+			// D-102: credit-service lowers its hold to this reward if it holds
 			// more, so this releases a decrease, and any extra a raise that was
 			// never saved left behind.
 			res.Event = rewardSetEvent(next, lockedNow, in.CorrelationID)
@@ -121,7 +151,13 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 			}
 		}
 		return res, nil
-	})
+	}
+	var updated Order
+	if in.Scheduled != nil {
+		updated, err = s.repo.AmendScheduled(ctx, id, now, amendFn)
+	} else {
+		updated, err = s.repo.Amend(ctx, id, func(cur Order) (*AmendResult, error) { return amendFn(cur, 0) })
+	}
 	if err == nil {
 		if release != nil {
 			s.releaseNow(ctx, updated, release)
@@ -139,7 +175,7 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 
 // releaseNow asks credit-service to release a saved decrease at once, so the
 // requester's credits are back before the reply, rather than when the relay's
-// event reaches credit-service (D-085). The event, already committed, is the
+// event reaches credit-service (D-102). The event, already committed, is the
 // guarantee: it carries the same operationID, so credit-service applies one
 // of the two. A failure here only delays the release, so it is logged and
 // the amend still succeeds.
@@ -155,7 +191,7 @@ func (s *Service) releaseNow(ctx context.Context, o Order, event *OutboxEvent) {
 // as create (F3.7.2).
 func normalizeAmend(in *AmendInput) error {
 	if in.SupplierID == nil && in.ItemDescription == nil && in.DeliveryLocation == nil &&
-		in.DeliveryNote == nil && in.Reward == nil {
+		in.DeliveryNote == nil && in.Reward == nil && in.Scheduled == nil {
 		return invalid("send at least one field to change")
 	}
 	if in.SupplierID != nil && *in.SupplierID == uuid.Nil {
@@ -213,6 +249,23 @@ func applyAmend(cur Order, in AmendInput, snapshot SupplierSnapshot) (Order, []F
 	if in.Reward != nil && *in.Reward != cur.Reward {
 		changes = append(changes, FieldChange{Field: FieldReward, From: strconv.Itoa(cur.Reward), To: strconv.Itoa(*in.Reward)})
 		next.Reward = *in.Reward
+	}
+	if in.Scheduled != nil {
+		var to string
+		if in.Scheduled.At != nil {
+			v := in.Scheduled.At.UTC()
+			next.ScheduledAt = &v
+			to = v.Format(time.RFC3339Nano)
+		} else {
+			next.ScheduledAt = nil
+		}
+		from := ""
+		if cur.ScheduledAt != nil {
+			from = cur.ScheduledAt.UTC().Format(time.RFC3339Nano)
+		}
+		if from != to {
+			changes = append(changes, FieldChange{Field: FieldScheduled, From: from, To: to})
+		}
 	}
 	return next, changes
 }

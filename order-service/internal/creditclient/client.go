@@ -3,14 +3,14 @@
 // Scope: order.CreditClient over credit-service's REST API (its api/openapi.yaml):
 //   reserve with one retry on the same errandId, adjust and release with
 //   none, each forwarding the requester's access token (D-047, D-055, D-056,
-//   D-057, D-085).
+//   D-057, D-102).
 // Author review: James Teo — reviewed and verified.
 
 // Package creditclient calls credit-service's REST API (D-055) for the
 // synchronous credit operations order-service makes: reserving an errand's
 // reward before the errand is saved (D-047), holding more before a raised
 // reward is saved, and releasing a lowered one right after it is saved
-// (D-085). Settlement is by events (D-048). Every call
+// (D-102). Settlement is by events (D-048). Every call
 // forwards the access token the request arrived with (D-056): only the
 // errand's requester reserves or amends, so it is always the requester's.
 package creditclient
@@ -155,7 +155,7 @@ func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 // order.ErrCreditRejected on 400, 401, 403, 404 or 409, and any other error
 // when the outcome is not known. It is never retried: when the outcome is
 // unknown the raise is not saved, and any extra credit-service held stays held
-// until the errand's next saved reward change or its end (D-085).
+// until the errand's next saved reward change or its end (D-102).
 //
 // Each call is one reward change, so it sends a new UUID as X-Request-Id,
 // which credit-service keys the change on, never the caller's correlation id:
@@ -167,7 +167,7 @@ func (c *Client) Adjust(ctx context.Context, errandID, _ uuid.UUID, newReward, c
 
 // Release implements order.CreditClient with the same PATCH, keyed on the
 // saved errand.reward_set's eventId, so credit-service treats the event as a
-// repeat of this call (D-085). Same answers as Adjust; one attempt.
+// repeat of this call (D-102). Same answers as Adjust; one attempt.
 func (c *Client) Release(ctx context.Context, errandID, _ uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error {
 	return c.patch(ctx, "release", errandID, newReward, currVersion, operationID, correlationID)
 }

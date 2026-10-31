@@ -68,7 +68,7 @@ func TestBrowserCannotWriteCredits(t *testing.T) {
 // AI-generated (edited by James Teo).
 // TestRewardChangeMovesTheHold raises an errand's reward, lowers it, then
 // cancels it, and follows the requester's credits after each step: the hold
-// tracks the reward (D-085), and the cancel returns all of it, whatever the
+// tracks the reward (D-102), and the cancel returns all of it, whatever the
 // hold was, because errand.cancelled settles by its amount and credit-service
 // returns any hold left over (D-059).
 func TestRewardChangeMovesTheHold(t *testing.T) {

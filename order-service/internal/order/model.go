@@ -18,8 +18,11 @@ import (
 // State is an errand's lifecycle state (D-045).
 type State string
 
-// The seven states. COMPLETED, CANCELLED and EXPIRED are final.
+// The eight states. COMPLETED, CANCELLED and EXPIRED are final.
 const (
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — recorded state for
+	// errands that have a future opening time.
+	StateScheduled State = "SCHEDULED"
 	StateOpen      State = "OPEN"
 	StateAccepted  State = "ACCEPTED"
 	StatePickedUp  State = "PICKED_UP"
@@ -107,11 +110,14 @@ type Order struct {
 	DeliveryNote     string
 	Reward           int
 	State            State
-	Version          int
-	RequestKey       string
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-	StateChangedAt   time.Time
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — retains the approved
+	// SCHEDULED_TIME value for the service and response mapper.
+	ScheduledAt    *time.Time
+	Version        int
+	RequestKey     string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	StateChangedAt time.Time
 	// ExpiresAt is set only while OPEN (D-049, D-050).
 	ExpiresAt *time.Time
 	// ConfirmBy is set only while DELIVERED (D-049, D-050).
@@ -140,6 +146,8 @@ const (
 	FieldDeliveryLocation = "deliveryLocation"
 	FieldDeliveryNote     = "deliveryNote"
 	FieldReward           = "reward"
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — records requester schedule edits.
+	FieldScheduled = "scheduled"
 )
 
 // FieldChange is one field an amendment changed (F3.7.7).
