@@ -15,6 +15,7 @@ import {
   ACTION_LABEL,
   actionDoneText,
   adminCancelDoneText,
+  amendDoneText,
   adminCancelStep,
   canOpenAssignment,
   confirmByText,
@@ -403,6 +404,14 @@ describe("action buttons", () => {
     expect(adminCancelDoneText({ reward: 10 })).toBe(
       "Errand cancelled · the requester gets 10 credits back",
     );
+  });
+
+  it("says a lowered reward's credits are on the way back, and nothing else for other edits", () => {
+    expect(amendDoneText({ reward: 50 }, { reward: 20 })).toBe(
+      "Reward updated. The difference returns to your balance shortly.",
+    );
+    expect(amendDoneText({ reward: 20 }, { reward: 40 })).toBe("Errand updated");
+    expect(amendDoneText({ reward: 20 }, { reward: 20 })).toBe("Errand updated");
   });
 });
 

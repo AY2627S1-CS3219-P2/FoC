@@ -8,10 +8,11 @@ service owns three tables in its own PostgreSQL database, `orders`,
 `order_history` and `outbox`.
 
 It holds no credit balances. It reserves an errand's reward through
-credit-service before saving the errand, adjusts the hold when the reward is
-amended and publishes `errand.reward_set` so the hold always comes back in line
-with the reward, and settles by publishing lifecycle events to RabbitMQ through
-the outbox. Each settlement event (`errand.completed`, `errand.cancelled`,
+credit-service before saving the errand, has credit-service hold more before
+it saves a raised reward, and asks it to release a lowered one right after
+saving. Every reward change also publishes `errand.reward_set`, which releases
+a lowered reward if that call failed, and the service settles by publishing
+lifecycle events to RabbitMQ through the outbox. Each settlement event (`errand.completed`, `errand.cancelled`,
 `errand.expired`, `errand.failed`) carries in `amount` the errand's reward at
 that transition, which is what settles; credit-service returns any hold left
 over to the requester. It verifies every caller's access token itself. A
@@ -68,7 +69,7 @@ only through the gateway. The whole-stack tests are in
 | `PORT` | `8083` | `8083` | The HTTP port |
 | `ORDER_DB_URL` | `postgres://postgres:postgres@localhost:5432/orders?sslmode=disable` | the `order-db` container | The service's own database |
 | `SUPPLIER_BASE_URL` | `http://localhost:8082` | `http://supplier-service:8082` | Where suppliers are checked |
-| `CREDIT_BASE_URL` | `http://localhost:8084` | `http://credit-service:8084` | Where rewards are reserved and adjusted |
+| `CREDIT_BASE_URL` | `http://localhost:8084` | `http://credit-service:8084` | Where rewards are reserved, raised and released |
 | `RABBITMQ_URL` | `amqp://foc:foc-dev-password@localhost:5672/foc` | `amqp://foc:foc-dev-password@rabbitmq:5672/foc`; the shell and `.env` cannot override it | The broker the outbox relay publishes to, exchange `foc.events` |
 | `JWKS_URL` | `http://localhost:8081/.well-known/jwks.json` | `http://user-service:8081/.well-known/jwks.json` | Where user-service publishes the keys access tokens are verified with |
 | `REDIS_URL` | `redis://localhost:6379` | `redis://redis:6379` | The shared Redis holding user-service's revocation keys |
@@ -125,10 +126,12 @@ every response that carries errands also carries `serverTime`.
 
 What order-service needs at run time, and what it does while each is down:
 
-- **credit-service**: reserves and adjusts rewards, and consumes the events
-  order-service publishes. While it is down, posting an errand or amending its
-  reward answers 503 and saves nothing; a failed create leaves only its queued
-  `errand.failed` refund in the outbox.
+- **credit-service**: reserves, raises and releases rewards, and consumes the
+  events order-service publishes. While it is down, posting an errand or
+  raising its reward answers 503 and saves nothing; a failed create leaves
+  only its queued `errand.failed` refund in the outbox. Lowering a reward
+  still succeeds: its release call fails, and the saved `errand.reward_set`
+  releases the credits once credit-service is back.
 - **supplier-service**: checks the supplier on create and amend. While it is
   down, both answer 503.
 - **user-service**: publishes the keys access tokens are verified with

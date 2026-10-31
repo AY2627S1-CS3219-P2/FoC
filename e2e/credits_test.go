@@ -23,7 +23,8 @@ type reservationRequest struct {
 }
 
 type adjustRewardRequest struct {
-	NewReward int `json:"newReward"`
+	NewReward   int `json:"newReward"`
+	CurrVersion int `json:"currVersion"`
 }
 
 // TestBrowserCannotWriteCredits sends the two credit writes meant only for
@@ -50,7 +51,7 @@ func TestBrowserCannotWriteCredits(t *testing.T) {
 		{"reserve", http.MethodPost, creditsPath + "/reservations",
 			reservationRequest{ErrandID: randomUUID(), Amount: 1}},
 		{"adjust", http.MethodPatch, creditsPath + "/reservations/" + e.ID,
-			adjustRewardRequest{NewReward: reward + 10}},
+			adjustRewardRequest{NewReward: reward + 10, CurrVersion: e.Version}},
 	}
 	for _, w := range writes {
 		t.Run(w.name, func(t *testing.T) {
@@ -67,7 +68,7 @@ func TestBrowserCannotWriteCredits(t *testing.T) {
 // AI-generated (edited by James Teo).
 // TestRewardChangeMovesTheHold raises an errand's reward, lowers it, then
 // cancels it, and follows the requester's credits after each step: the hold
-// tracks the reward (D-057), and the cancel returns all of it, whatever the
+// tracks the reward (D-085), and the cancel returns all of it, whatever the
 // hold was, because errand.cancelled settles by its amount and credit-service
 // returns any hold left over (D-059).
 func TestRewardChangeMovesTheHold(t *testing.T) {

@@ -8,7 +8,7 @@
 // Author review: James Teo — reviewed and verified.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { documentVisibility, startPolling, type Poller, type Visibility } from "./polling";
+import { documentVisibility, startBurst, startPolling, type Poller, type Visibility } from "./polling";
 
 const INTERVAL = 5_000;
 
@@ -247,6 +247,52 @@ describe("startPolling", () => {
     await vi.advanceTimersByTimeAsync(3 * INTERVAL);
     poller.refresh();
     expect(task).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("startBurst", () => {
+  const STEP = 2_000;
+  let stop: (() => void) | null = null;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    stop?.();
+    stop = null;
+    vi.useRealTimers();
+  });
+
+  it("refreshes once per interval, at most the given number of times", () => {
+    const refresh = vi.fn();
+    stop = startBurst(refresh, () => false, STEP, 3);
+
+    expect(refresh).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(STEP);
+    expect(refresh).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(10 * STEP);
+    expect(refresh).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops early once settled", () => {
+    const refresh = vi.fn();
+    let settled = false;
+    stop = startBurst(refresh, () => settled, STEP, 3);
+
+    vi.advanceTimersByTime(STEP);
+    settled = true;
+    vi.advanceTimersByTime(10 * STEP);
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("does nothing more once stopped", () => {
+    const refresh = vi.fn();
+    stop = startBurst(refresh, () => false, STEP, 3);
+
+    stop();
+    vi.advanceTimersByTime(10 * STEP);
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 

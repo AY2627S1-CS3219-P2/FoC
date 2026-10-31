@@ -38,7 +38,7 @@ import {
   writeLastMode,
   writeLastView,
 } from "./lib/lastView";
-import { usePolling } from "./lib/polling";
+import { startBurst, usePolling } from "./lib/polling";
 import { createAuthorizedSend } from "./features/auth/session";
 import { createSuppliersApi } from "./features/suppliers/suppliersApi";
 import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
@@ -66,6 +66,10 @@ import { isViewAvailable, type ViewName } from "./views";
  * flow runs against in-browser fixtures instead of the gateway.
  */
 const usingGateway = !config.useFixtures;
+
+// The balance re-fetch after a lowered reward (D-086): how often, how many times.
+const RELEASE_REFETCH_MS = 2_000;
+const RELEASE_REFETCHES = 3;
 
 const authClient = usingGateway
   ? {
@@ -236,6 +240,26 @@ export function App() {
     10_000,
     [creditAccounts, session?.userId],
   );
+
+  // After a lowered reward, credit-service releases the difference a moment
+  // after the save, by event (D-085), so the balance is re-fetched until the
+  // held credits drop; the regular poll covers a slower release.
+  const heldRef = useRef<number | null>(null);
+  useEffect(() => {
+    heldRef.current = balance.status === "ready" ? balance.account.reservedCredits : null;
+  }, [balance]);
+  const stopReleaseWatch = useRef<(() => void) | null>(null);
+  const watchRelease = useCallback(() => {
+    const before = heldRef.current;
+    stopReleaseWatch.current?.();
+    stopReleaseWatch.current = startBurst(
+      refreshBalance,
+      () => before !== null && heldRef.current !== null && heldRef.current < before,
+      RELEASE_REFETCH_MS,
+      RELEASE_REFETCHES,
+    );
+  }, [refreshBalance]);
+  useEffect(() => () => stopReleaseWatch.current?.(), []);
 
   const dismissToast = useCallback(() => setToast(null), []);
 
@@ -436,6 +460,7 @@ export function App() {
               available={available}
               onNotify={setToast}
               onCreditsChanged={refreshBalance}
+              onRewardLowered={watchRelease}
               onNavigate={navigate}
             />
           ) : (

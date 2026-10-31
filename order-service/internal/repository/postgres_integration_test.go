@@ -57,7 +57,6 @@ func TestPostgres(t *testing.T) {
 	t.Run("Transition", e.testTransition)
 	t.Run("Accept", e.testAccept)
 	t.Run("Amend", e.testAmend)
-	t.Run("QueueLocked", e.testQueueLocked)
 	t.Run("CheckConstraints", e.testCheckConstraints)
 	t.Run("ServiceLifecycle", e.testServiceLifecycle)
 
@@ -65,11 +64,10 @@ func TestPostgres(t *testing.T) {
 	t.Run("ConcurrentAcceptsRespectK", e.testConcurrentAcceptsRespectK)
 	t.Run("AcceptLatency", e.testAcceptLatency)
 	t.Run("AmendHoldsRowLock", e.testAmendHoldsRowLock)
-	t.Run("QueueLockedHoldsRowLock", e.testQueueLockedHoldsRowLock)
 	// AI-generated (edited by James Teo).
 	t.Run("ConcurrentCreatesRespectTheOpenLimit", e.testConcurrentCreatesRespectTheOpenLimit)
 	t.Run("AcceptIsJudgedAtArrival", e.testAcceptIsJudgedAtArrival)
-	t.Run("NoRewardSetBehindASettlement", e.testNoRewardSetBehindASettlement)
+	t.Run("NoRewardSetAfterAFailedRaise", e.testNoRewardSetAfterAFailedRaise)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.
@@ -833,18 +831,13 @@ func (e *env) testWithdrawnCouriers(t *testing.T) {
 	active, err := e.repo.ListActive(t.Context(), 0)
 	require.NoError(t, err)
 	requireList(t, []order.Order{want, plain}, active)
-	var underAmend, underQueue order.Order
+	var underAmend order.Order
 	_, err = e.repo.Amend(t.Context(), o.ID, func(cur order.Order) (*order.AmendResult, error) {
 		underAmend = cur
 		return nil, nil
 	})
 	require.NoError(t, err)
-	require.NoError(t, e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
-		underQueue = cur
-		return nil, nil
-	}))
 	require.Equal(t, want, underAmend, "the row Amend locks")
-	require.Equal(t, want, underQueue, "the row QueueLocked locks")
 
 	t.Run("an accept's row, and a withdrawal written now, read back the same", func(t *testing.T) {
 		accepted, err := e.repo.Accept(t.Context(), acceptCmd(want, holder, at(4*time.Minute), 2))
