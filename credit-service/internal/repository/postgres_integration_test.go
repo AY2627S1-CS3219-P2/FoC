@@ -8,7 +8,6 @@
 
 package repository_test
 
-// AI-generated (edited by choppyback).
 import (
 	"context"
 	"net"
@@ -150,10 +149,12 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// 1. Increase reward: 40 -> 60 (requires 20 extra credits)
 		op1 := uuid.New()
-		resOp, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, 1, op1)
+		resOp, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, op1)
 		require.NoError(t, err)
 		require.Equal(t, credit.OutcomeSuccess, resOp.OutcomeCode)
 		require.Equal(t, int64(60), res.Amount)
+		require.Equal(t, int64(2), res.Version)
+		require.Equal(t, int64(1), resOp.CurrVersion)
 
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
@@ -161,17 +162,22 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(60), acc.ReservedCredits)
 
 		// Repeated adjustment with same op1 is idempotent
-		resOpRetry, resRetry, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, 1, op1)
+		resOpRetry, resRetry, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, op1)
 		require.NoError(t, err)
 		require.Equal(t, resOp.OperationID, resOpRetry.OperationID)
 		require.Equal(t, res.Amount, resRetry.Amount)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 2, op1)
+		require.ErrorIs(t, err, credit.ErrIdempotencyConflict)
 
 		// 2. Decrease reward: 60 -> 25 (releases 35 credits back to available)
 		op2 := uuid.New()
-		resOp2, res2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 25, 1, 1, op2)
+		resOp2, res2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 25, 1, op2)
 		require.NoError(t, err)
 		require.Equal(t, credit.OutcomeSuccess, resOp2.OutcomeCode)
 		require.Equal(t, int64(25), res2.Amount)
+		require.Equal(t, int64(3), res2.Version)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 20, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
 
 		acc2, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
@@ -180,10 +186,11 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// A later amendment may legitimately reuse an earlier target, but must use a new operation ID.
 		op3 := uuid.New()
-		resOp3, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, 1, op3)
+		resOp3, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, op3)
 		require.NoError(t, err)
 		require.Equal(t, credit.OutcomeSuccess, resOp3.OutcomeCode)
 		require.Equal(t, int64(60), res3.Amount)
+		require.Equal(t, int64(4), res3.Version)
 		acc3, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, int64(40), acc3.AvailableCredits)
@@ -192,7 +199,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		// 3. Unowned reservation returns ErrReservationNotFound
 		otherUser := uuid.New()
 		op4 := uuid.New()
-		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, 1, 1, op4)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, 1, op4)
 		require.ErrorIs(t, err, credit.ErrReservationNotFound)
 	})
 
@@ -204,14 +211,14 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		opID := uuid.New()
-		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 110, 1, 1, opID)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 110, 1, opID)
 		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
 
 		// Refund the reservation, which changes the wallet state. The same
 		// operation ID must still replay its original outcome, not re-evaluate it.
 		err = env.repo.RefundReservation(ctx, errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
 		require.NoError(t, err)
-		stored, _, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 110, 1, 1, opID)
+		stored, _, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 110, 1, opID)
 		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
 		require.NotNil(t, stored)
 		require.Equal(t, credit.OutcomeInsufficientCredits, stored.OutcomeCode)

@@ -8,6 +8,7 @@ package credit
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 	"time"
 
@@ -72,6 +73,15 @@ func TestAdjustReservationRewardValidations(t *testing.T) {
 		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, validNew, 1, uuid.Nil)
 		if !errors.Is(err, ErrInvalidOperationID) {
 			t.Fatalf("expected ErrInvalidOperationID, got %v", err)
+		}
+	})
+
+	t.Run("rejects order version that cannot advance", func(t *testing.T) {
+		for _, version := range []int64{0, math.MaxInt64} {
+			_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, validNew, version, validOpID)
+			if !errors.Is(err, ErrInvalidRequest) {
+				t.Fatalf("version %d: expected invalid request, got %v", version, err)
+			}
 		}
 	})
 

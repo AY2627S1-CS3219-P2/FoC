@@ -10,6 +10,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"foc/credit-service/internal/credit"
@@ -197,6 +198,11 @@ func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUI
 
 // AdjustReservationReward executes the reward adjustment transaction described in Phase 5.
 func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+	// A PATCH describes the order state after its next commit.
+	if currVersion < 1 || currVersion == math.MaxInt64 {
+		return nil, nil, fmt.Errorf("%w: currVersion cannot advance", credit.ErrInvalidRequest)
+	}
+	targetVersion := currVersion + 1
 	var resOp *credit.OperationResult
 	var resRev *credit.Reservation
 	var businessErr error
@@ -214,18 +220,18 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		// 2. Look up operationId.
 		var op credit.OperationResult
 		err := tx.QueryRow(txCtx, `
-			SELECT operation_id, operation_type, errand_id, current_amount, new_amount,
+			SELECT operation_id, operation_type, errand_id, current_amount, curr_version, new_amount,
 			       outcome_code, resulting_amount, authoritative_amount, created_at
 			FROM credit_operation_results
 			WHERE operation_id = $1`,
 			operationID,
 		).Scan(
-			&op.OperationID, &op.OperationType, &op.ErrandID, &op.CurrentAmount, &op.NewAmount,
+			&op.OperationID, &op.OperationType, &op.ErrandID, &op.CurrentAmount, &op.CurrVersion, &op.NewAmount,
 			&op.OutcomeCode, &op.ResultingAmount, &op.AuthoritativeAmount, &op.CreatedAt,
 		)
 		if err == nil {
 			// Row exists. Compare stored fields directly.
-			if op.OperationType != credit.OperationTypeRewardAdjustment || op.ErrandID != errandID || op.NewAmount != newReward {
+			if op.OperationType != credit.OperationTypeRewardAdjustment || op.ErrandID != errandID || op.NewAmount != newReward || op.CurrVersion != currVersion {
 				return credit.ErrIdempotencyConflict
 			}
 			existing, err := findReservationByErrandID(txCtx, tx, errandID)
@@ -271,7 +277,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		}
 		currentAmount := reservation.Amount
 		persistFailure := func(outcome credit.CreditOperationOutcome) error {
-			opRecord, persistErr := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, outcome, nil, nil)
+			opRecord, persistErr := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, currVersion, newAmount, outcome, nil, nil)
 			if persistErr != nil {
 				return persistErr
 			}
@@ -284,14 +290,21 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		if reservation.Status != credit.ReservationStatusReserved {
 			return persistFailure(credit.OutcomeReservationStateConflict)
 		}
+		if targetVersion < reservation.Version {
+			return credit.ErrReservationConflict
+		}
 
 		// 5. If currentAmount == newAmount, persist successful result and return unchanged reservation (validated idempotent no-op).
 		if currentAmount == newAmount {
 			resulting := currentAmount
-			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeSuccess, &resulting, nil)
+			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, currVersion, newAmount, credit.OutcomeSuccess, &resulting, nil)
 			if err != nil {
 				return err
 			}
+			if _, err := tx.Exec(txCtx, `UPDATE credit_reservations SET version = $1, updated_at = NOW() WHERE id = $2`, targetVersion, reservation.ID); err != nil {
+				return fmt.Errorf("update reservation version: %w", err)
+			}
+			reservation.Version = targetVersion
 			resOp = opRecord
 			resRev = &reservation
 			return nil
@@ -373,10 +386,11 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		err = tx.QueryRow(txCtx, `
 			UPDATE credit_reservations
 			SET amount = $1,
+			    version = $3,
 			    updated_at = NOW()
 			WHERE id = $2
 			RETURNING id, errand_id, requester_id, amount, status, version, created_at, updated_at`,
-			newAmount, reservation.ID,
+			newAmount, reservation.ID, targetVersion,
 		).Scan(
 			&reservation.ID, &reservation.ErrandID, &reservation.RequesterID, &reservation.Amount,
 			&reservation.Status, &reservation.Version, &reservation.CreatedAt, &reservation.UpdatedAt,
@@ -410,7 +424,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 
 		// 12. Persist the successful operation result.
 		resulting := newAmount
-		opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeSuccess, &resulting, nil)
+		opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, currVersion, newAmount, credit.OutcomeSuccess, &resulting, nil)
 		if err != nil {
 			return err
 		}
@@ -429,19 +443,19 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 	return resOp, resRev, nil
 }
 
-func persistOperationResult(ctx context.Context, tx pgx.Tx, operationID uuid.UUID, errandID uuid.UUID, currentAmount, newAmount int64, outcome credit.CreditOperationOutcome, resulting, authoritative *int64) (*credit.OperationResult, error) {
+func persistOperationResult(ctx context.Context, tx pgx.Tx, operationID uuid.UUID, errandID uuid.UUID, currentAmount, currVersion, newAmount int64, outcome credit.CreditOperationOutcome, resulting, authoritative *int64) (*credit.OperationResult, error) {
 	var op credit.OperationResult
 	err := tx.QueryRow(ctx, `
 		INSERT INTO credit_operation_results (
-			operation_id, operation_type, errand_id, current_amount, new_amount,
+			operation_id, operation_type, errand_id, current_amount, curr_version, new_amount,
 			outcome_code, resulting_amount, authoritative_amount, created_at
 		)
-		VALUES ($1, 'REWARD_ADJUSTMENT', $2, $3, $4, $5, $6, $7, NOW())
-		RETURNING operation_id, operation_type, errand_id, current_amount, new_amount,
+		VALUES ($1, 'REWARD_ADJUSTMENT', $2, $3, $4, $5, $6, $7, $8, NOW())
+		RETURNING operation_id, operation_type, errand_id, current_amount, curr_version, new_amount,
 		          outcome_code, resulting_amount, authoritative_amount, created_at`,
-		operationID, errandID, currentAmount, newAmount, outcome, resulting, authoritative,
+		operationID, errandID, currentAmount, currVersion, newAmount, outcome, resulting, authoritative,
 	).Scan(
-		&op.OperationID, &op.OperationType, &op.ErrandID, &op.CurrentAmount, &op.NewAmount,
+		&op.OperationID, &op.OperationType, &op.ErrandID, &op.CurrentAmount, &op.CurrVersion, &op.NewAmount,
 		&op.OutcomeCode, &op.ResultingAmount, &op.AuthoritativeAmount, &op.CreatedAt,
 	)
 	if err != nil {

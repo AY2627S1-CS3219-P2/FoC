@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -108,7 +109,7 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID, request
 	if operationID == uuid.Nil {
 		return nil, nil, ErrInvalidOperationID
 	}
-	if currVersion < 1 {
+	if currVersion < 1 || currVersion == math.MaxInt64 {
 		return nil, nil, fmt.Errorf("%w: currVersion must be positive", ErrInvalidRequest)
 	}
 	if err := ValidateRewardAmount(newReward); err != nil {
