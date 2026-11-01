@@ -1,9 +1,10 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: Amending an OPEN errand (F3.7): recorded field changes, validation, the
-//   supplier check on every amend (D-052), the credit adjust under the row
-//   lock and the reward_set that brings credit's hold in line (D-057),
-//   and the deadline that never moves (D-049).
+//   supplier check on every amend (D-052), the raise's credit call under the
+//   row lock, the reward_set saved with every reward change and the release
+//   call after a saved decrease (D-102), and the deadline that never moves
+//   (D-049).
 // Author review: James Teo — reviewed and verified.
 
 package order_test
@@ -79,12 +80,13 @@ func TestAmendRecordsEveryChangedField(t *testing.T) {
 		{Field: order.FieldReward, From: "5", To: "8"},
 	}, a.Changes, "F3.7.7: what changed, from and to")
 
-	// F3.7.5, D-057: credit's hold follows the reward, set while the row is
+	// F3.7.5, D-102: a raise is held before it is saved, while the row is
 	// locked, in the requester's name (D-056).
 	assert.Equal(t, []ordertest.AdjustCall{{
-		ErrandID: o.ID, RequesterID: f.requester.UserID, NewReward: 8, CorrelationID: "corr-amend",
+		ErrandID: o.ID, RequesterID: f.requester.UserID, NewReward: 8, CurrVersion: o.Version, CorrelationID: "corr-amend",
 	}}, f.credit.Adjusts())
 	assert.Equal(t, []bool{true}, underLock)
+	assert.Empty(t, f.credit.Releases(), "a raise makes no release call")
 	held, _ := f.credit.Hold(o.ID)
 	assert.Equal(t, 8, held)
 	events := f.repo.EventsFor(o.ID)
@@ -140,6 +142,56 @@ func TestScheduledErrandClearedAtOpenLimitIsCancelled(t *testing.T) {
 	assert.Equal(t, order.RoutingCancelled, events[0].RoutingKey)
 }
 
+func TestScheduledErrandDecreaseIsReleasedAfterTheSave(t *testing.T) {
+	// D-102 applies to a SCHEDULED errand as to an OPEN one: its reward is
+	// already held, so a decrease is saved, then released by one call keyed
+	// on the saved reward_set.
+	f := newFixture(t)
+	o := f.seed(order.StateScheduled)
+	before := f.stored(o.ID)
+
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(o.Reward - 2), CorrelationID: "corr-amend"})
+
+	require.NoError(t, err)
+	assert.Equal(t, order.StateScheduled, got.State)
+	assert.Empty(t, f.credit.Adjusts())
+	event := newEvents(before, f.stored(o.ID))
+	require.Len(t, event, 1)
+	releases := f.credit.Releases()
+	require.Len(t, releases, 1)
+	assert.Equal(t, event[0].EventID, releases[0].OperationID)
+}
+
+func TestScheduledErrandClearedAtOpenLimitMovesNoCreditsForAReward(t *testing.T) {
+	// Clearing the schedule at the open limit cancels the errand, and the
+	// cancellation returns the whole hold, so a reward change in the same
+	// amend makes no credit call, neither the raise's nor the release.
+	for _, tc := range []struct {
+		name  string
+		delta int
+	}{{"a raise", 4}, {"a decrease", -2}} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			o := f.seed(order.StateScheduled)
+			for i := 0; i < order.MaxOpenErrands; i++ {
+				f.seed(order.StateOpen)
+			}
+
+			got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{
+				Version: o.Version, Scheduled: &order.ScheduledChange{}, Reward: ptr(o.Reward + tc.delta), CorrelationID: "corr-limit",
+			})
+
+			require.NoError(t, err)
+			assert.Equal(t, order.StateCancelled, got.State)
+			assert.Empty(t, f.credit.Adjusts())
+			assert.Empty(t, f.credit.Releases())
+			events := f.repo.EventsFor(o.ID)
+			require.Len(t, events, 1)
+			assert.Equal(t, order.RoutingCancelled, events[0].RoutingKey)
+		})
+	}
+}
+
 func TestRequesterCanCancelScheduledErrand(t *testing.T) {
 	f := newFixture(t)
 	o := f.seed(order.StateScheduled)
@@ -161,6 +213,7 @@ func TestAmendWithoutARewardChangeLeavesCreditAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "UTown Residence lobby", got.DeliveryLocation)
 	assert.Empty(t, f.credit.Adjusts())
+	assert.Empty(t, f.credit.Releases())
 }
 
 func TestAmendWithNothingNewWritesNothing(t *testing.T) {
@@ -179,6 +232,7 @@ func TestAmendWithNothingNewWritesNothing(t *testing.T) {
 	assert.Equal(t, o, got)
 	f.requireUnchanged(before)
 	assert.Empty(t, f.credit.Adjusts())
+	assert.Empty(t, f.credit.Releases())
 }
 
 func TestAmendClearsTheNoteWithAnEmptyString(t *testing.T) {
@@ -454,7 +508,7 @@ func TestAmendWithInsufficientCredits(t *testing.T) {
 
 	requireKind(t, err, order.KindInsufficientCredits)
 	f.requireUnchanged(before)
-	assert.Equal(t, []int{50}, rewards(f.credit.Adjusts()), "a definite refusal queues no reward_set")
+	assert.Equal(t, []int{50}, rewards(f.credit.Adjusts()))
 	held, _ := f.credit.Hold(o.ID)
 	assert.Equal(t, 5, held)
 }
@@ -469,22 +523,120 @@ func TestAmendWhenCreditRefuses(t *testing.T) {
 
 	requireKind(t, err, order.KindUnavailable)
 	f.requireUnchanged(before)
-	assert.Equal(t, []int{8}, rewards(f.credit.Adjusts()), "a definite refusal queues no reward_set")
+	assert.Equal(t, []int{8}, rewards(f.credit.Adjusts()))
 	held, _ := f.credit.Hold(o.ID)
 	assert.Equal(t, 5, held)
 }
 
-func TestAmendQueuesRewardSetWhenTheAdjustOutcomeIsUnknown(t *testing.T) {
-	// D-057: when the PATCH's outcome is unclear, the amend is refused and a
-	// reward_set for the errand as saved is queued under the row lock, so
-	// credit sets its hold back to the saved reward whether or not the PATCH
-	// took effect. Nothing is retried over HTTP.
+func TestAmendDecreaseIsSavedThenReleasedAtOnce(t *testing.T) {
+	// D-102: a decrease is saved with its reward_set first, then released by
+	// one call keyed on that event, so the requester's credits are back
+	// before the reply and the event is a repeat credit-service ignores.
+	f := newFixture(t)
+	o := f.post()
+	before := f.stored(o.ID)
+	var underLock []bool
+	f.credit.ReleaseHook = func(ordertest.AdjustCall) (bool, error) {
+		underLock = append(underLock, f.repo.locked.Load())
+		return true, nil
+	}
+
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(3), CorrelationID: "corr-amend"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 3, got.Reward)
+	assert.Empty(t, f.credit.Adjusts(), "a decrease never waits for credit-service before saving")
+	after := f.stored(o.ID)
+	requireRewardSet(t, before, after, o, 3, got.Version, "corr-amend")
+	event := newEvents(before, after)[0]
+	assert.Equal(t, []ordertest.AdjustCall{{
+		ErrandID: o.ID, RequesterID: f.requester.UserID, NewReward: 3, CurrVersion: o.Version,
+		OperationID: event.EventID, CorrelationID: "corr-amend",
+	}}, f.credit.Releases(), "one release, keyed on the saved event")
+	assert.Equal(t, []bool{false}, underLock, "made after the commit, not under the row lock")
+	held, _ := f.credit.Hold(o.ID)
+	assert.Equal(t, 3, held)
+}
+
+func TestAmendDecreaseSucceedsWhenTheReleaseFails(t *testing.T) {
+	// D-102: the release call is best effort. Whatever it answers, the
+	// decrease is saved and the committed reward_set releases the credits
+	// later, so the amend succeeds even with credit-service down.
 	cases := []struct {
 		name  string
 		apply bool
 	}{
-		{"credit applied it but the answer was lost", true},
-		{"the call failed before credit acted", false},
+		{"credit-service is down", false},
+		{"credit released it but the answer was lost", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			o := f.post()
+			before := f.stored(o.ID)
+			logs := &logRecorder{}
+			svc := order.NewService(f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
+			f.credit.ReleaseHook = func(ordertest.AdjustCall) (bool, error) { return tc.apply, ordertest.ErrInjected }
+
+			got, err := svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(3), CorrelationID: "corr-amend"})
+
+			require.NoError(t, err)
+			assert.Equal(t, 3, got.Reward)
+			requireRewardSet(t, before, f.stored(o.ID), o, 3, got.Version, "corr-amend")
+			assert.Len(t, f.credit.Releases(), 1, "one attempt, no retry")
+			warns := logs.at(slog.LevelWarn)
+			require.Len(t, warns, 1, "the delayed release is logged")
+			assert.Equal(t, o.ID, attrsOf(warns[0])["errand_id"])
+		})
+	}
+}
+
+func TestAmendDecreaseThatCannotBeSavedMakesNoCall(t *testing.T) {
+	// The release call follows the commit, so a decrease whose write fails
+	// releases nothing: the hold must never drop below the saved reward (D-102).
+	f := newFixture(t)
+	o := f.post()
+	before := f.stored(o.ID)
+	f.repo.AfterAmendFn = ordertest.ErrInjected
+
+	_, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(3), CorrelationID: "corr-amend"})
+
+	requireKind(t, err, order.KindUnavailable)
+	f.requireUnchanged(before)
+	assert.Empty(t, f.credit.Releases())
+	held, _ := f.credit.Hold(o.ID)
+	assert.Equal(t, 5, held)
+}
+
+func TestAmendRaiseSendsTheVersionItLocked(t *testing.T) {
+	// D-102: a raise carries the errand's version as locked, before the amend
+	// bumps it; credit-service records the next one, the version this amend saves.
+	f := newFixture(t)
+	o := f.post()
+	mid, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, ItemDescription: ptr("One kaya toast set")})
+	require.NoError(t, err)
+
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: mid.Version, Reward: ptr(9)})
+
+	require.NoError(t, err)
+	calls := f.credit.Adjusts()
+	require.Len(t, calls, 1)
+	assert.Equal(t, mid.Version, calls[0].CurrVersion)
+	assert.Equal(t, mid.Version+1, got.Version)
+}
+
+func TestAmendRaiseWithAnUnknownOutcomeSavesAndQueuesNothing(t *testing.T) {
+	// D-102: when the PATCH's outcome is unclear, the raise is refused and
+	// nothing is queued. If credit-service did hold the extra, it stays held
+	// until the next saved reward change or the errand ends. Nothing is
+	// retried over HTTP.
+	cases := []struct {
+		name  string
+		apply bool
+		held  int
+	}{
+		{"credit held it but the answer was lost", true, 8},
+		{"the call failed before credit acted", false, 5},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -496,20 +648,17 @@ func TestAmendQueuesRewardSetWhenTheAdjustOutcomeIsUnknown(t *testing.T) {
 			_, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
 
 			requireKind(t, err, order.KindUnavailable)
-			after := f.stored(o.ID)
-			assert.Equal(t, before.order, after.order, "the errand keeps its saved reward")
-			assert.Equal(t, before.history, after.history, "no AMEND history row")
+			f.requireUnchanged(before)
 			assert.Equal(t, []int{8}, rewards(f.credit.Adjusts()), "one PATCH, no retry over HTTP")
-			assert.Contains(t, f.repo.attemptedWrites(), "QueueLocked", "built under the row lock")
-			requireRewardSet(t, before, after, o, 5, o.Version, "corr-amend")
+			held, _ := f.credit.Hold(o.ID)
+			assert.Equal(t, tc.held, held)
 		})
 	}
 }
 
-func TestAmendQueuesRewardSetWhenTheWriteFailsAfterTheAdjust(t *testing.T) {
-	// The PATCH applied, then the commit failed: credit holds the new amount
-	// for an errand still at the old reward, until it applies the queued
-	// reward_set (D-057).
+func TestAmendRaiseThatCannotBeSavedQueuesNothing(t *testing.T) {
+	// The PATCH held the extra, then the write failed: the errand keeps its
+	// reward, and credit-service keeps the extra until it heals (D-102).
 	f := newFixture(t)
 	o := f.post()
 	before := f.stored(o.ID)
@@ -518,53 +667,51 @@ func TestAmendQueuesRewardSetWhenTheWriteFailsAfterTheAdjust(t *testing.T) {
 	_, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
 
 	requireKind(t, err, order.KindUnavailable)
-	after := f.stored(o.ID)
-	assert.Equal(t, before.order, after.order)
-	assert.Equal(t, before.history, after.history)
+	f.requireUnchanged(before)
 	assert.Equal(t, []int{8}, rewards(f.credit.Adjusts()))
-	requireRewardSet(t, before, after, o, 5, o.Version, "corr-amend")
+	held, _ := f.credit.Hold(o.ID)
+	assert.Equal(t, 8, held)
 }
 
-func TestAmendQueuesRewardSetEvenWhenTheClientGivesUp(t *testing.T) {
-	// The client disconnects while the PATCH is in flight and credit applied
-	// it: the reward_set must still be queued, on a context the request's
-	// cancellation does not reach (D-057).
+func TestAmendRetriedRaiseHealsTheExtraHold(t *testing.T) {
+	// The first raise's answer is lost, but credit held the extra. The retry
+	// carries the same version, asks for no more than credit holds, and saves
+	// with a reward_set at the version credit recorded, so the hold and the
+	// reward agree again (D-102).
 	f := newFixture(t)
 	o := f.post()
-	before := f.stored(o.ID)
-	ctx, cancel := context.WithCancel(f.ctx)
-	defer cancel()
-	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) {
-		cancel()
-		return true, context.Canceled
-	}
-
-	_, err := f.svc.Amend(ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
-
+	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
+	_, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8)})
 	requireKind(t, err, order.KindUnavailable)
-	require.Error(t, ctx.Err(), "the request was cancelled")
-	assert.Equal(t, []bool{false}, f.repo.queueContexts(), "the queueing did not inherit the cancellation")
-	requireRewardSet(t, before, f.stored(o.ID), o, 5, o.Version, "corr-amend")
+	f.credit.AdjustHook = nil
+	before := f.stored(o.ID)
+
+	got, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-retry"})
+
+	require.NoError(t, err)
+	assert.Equal(t, 8, got.Reward)
+	calls := f.credit.Adjusts()
+	require.Len(t, calls, 2)
+	assert.Equal(t, calls[0].CurrVersion, calls[1].CurrVersion, "nothing was saved in between")
+	held, _ := f.credit.Hold(o.ID)
+	assert.Equal(t, 8, held)
+	requireRewardSet(t, before, f.stored(o.ID), o, 8, got.Version, "corr-retry")
 }
 
-func TestAmendLogsWhenTheRewardSetCannotBeQueued(t *testing.T) {
-	// If even the reward_set cannot be written, the amend still answers 503
-	// and the possible mismatch is logged at ERROR for someone to resolve.
+func TestAmendLogsARaiseWithAnUnknownOutcome(t *testing.T) {
+	// A possible extra hold is logged with its errand, so it can be traced.
 	f := newFixture(t)
 	o := f.post()
-	before := f.stored(o.ID)
 	logs := &logRecorder{}
 	svc := order.NewService(f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
 	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
-	f.repo.FailNext("QueueLocked", ordertest.ErrInjected)
 
 	_, err := svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
 
 	requireKind(t, err, order.KindUnavailable)
-	f.requireUnchanged(before)
-	errs := logs.at(slog.LevelError)
-	require.Len(t, errs, 1)
-	attrs := attrsOf(errs[0])
+	warns := logs.at(slog.LevelWarn)
+	require.Len(t, warns, 1)
+	attrs := attrsOf(warns[0])
 	assert.Equal(t, o.ID, attrs["errand_id"])
 	assert.Equal(t, "corr-amend", attrs["request_id"])
 	cause, ok := attrs["err"].(error)
@@ -572,49 +719,8 @@ func TestAmendLogsWhenTheRewardSetCannotBeQueued(t *testing.T) {
 	assert.ErrorIs(t, cause, ordertest.ErrInjected)
 }
 
-// AI-generated (edited by James Teo).
-func TestAmendQueuesNoRewardSetOnceTheErrandIsFinal(t *testing.T) {
-	// The PATCH's outcome is unknown, and the errand settles before the
-	// reward_set is queued. Its settlement event settles by its own amount
-	// and credit returns any hold left over (D-059), so a reward_set behind
-	// it could only put back a hold that nothing would release.
-	cases := []struct {
-		name   string
-		settle func(f *fixture, o order.Order)
-		key    string
-	}{
-		{"cancelled by the requester", func(f *fixture, o order.Order) {
-			_, err := f.svc.Cancel(f.ctx, f.requester, o.ID, "corr-cancel")
-			require.NoError(f.t, err)
-		}, order.RoutingCancelled},
-		{"expired by the sweeper", func(f *fixture, o order.Order) {
-			f.clock.Advance(expiryPeriod)
-			ok, err := f.svc.Expire(f.ctx, o.ID, "corr-sweep")
-			require.NoError(f.t, err)
-			require.True(f.t, ok)
-		}, order.RoutingExpired},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			f := newFixture(t)
-			o := f.post()
-			f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
-			f.repo.beforeNext("QueueLocked", func() { tc.settle(f, o) })
-
-			_, err := f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})
-
-			requireKind(t, err, order.KindUnavailable)
-			assert.Contains(t, f.repo.attemptedWrites(), "QueueLocked", "the errand was read under its row lock")
-			events := f.repo.EventsFor(o.ID)
-			require.Len(t, events, 1, "the settlement event only, no reward_set")
-			assert.Equal(t, tc.key, events[0].RoutingKey)
-			assert.Equal(t, 5, events[0].Payload.Amount, "it settles the reward the errand kept")
-		})
-	}
-}
-
 func TestAmendWritesRewardSetWithTheRewardChange(t *testing.T) {
-	// D-057: a saved reward change carries its reward_set in the same write,
+	// D-102: a saved reward change carries its reward_set in the same write,
 	// at the errand's new version; a change that leaves the reward alone
 	// carries none.
 	f := newFixture(t)
@@ -626,7 +732,6 @@ func TestAmendWritesRewardSetWithTheRewardChange(t *testing.T) {
 
 	requireRewardSet(t, before, f.stored(o.ID), o, 8, got.Version, "corr-amend")
 	assert.Equal(t, o.Version+1, got.Version)
-	assert.NotContains(t, f.repo.attemptedWrites(), "QueueLocked", "no separate write")
 
 	mid := f.stored(o.ID)
 	_, err = f.svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: got.Version, ItemDescription: ptr("One kaya toast set")})
@@ -678,11 +783,8 @@ func attrsOf(r slog.Record) map[string]any {
 	return out
 }
 
-// requireRewardSet fails unless exactly one outbox event was added between
-// before and after, and it is an errand.reward_set for o carrying amount and
-// version (D-057).
-func requireRewardSet(t *testing.T, before, after stored, o order.Order, amount, version int, correlationID string) {
-	t.Helper()
+// newEvents returns the outbox events after holds that before did not.
+func newEvents(before, after stored) []order.OutboxEvent {
 	seen := map[uuid.UUID]bool{}
 	for _, e := range before.events {
 		seen[e.EventID] = true
@@ -693,6 +795,15 @@ func requireRewardSet(t *testing.T, before, after stored, o order.Order, amount,
 			added = append(added, e)
 		}
 	}
+	return added
+}
+
+// requireRewardSet fails unless exactly one outbox event was added between
+// before and after, and it is an errand.reward_set for o carrying amount and
+// version (D-102).
+func requireRewardSet(t *testing.T, before, after stored, o order.Order, amount, version int, correlationID string) {
+	t.Helper()
+	added := newEvents(before, after)
 	require.Len(t, added, 1, "exactly one new outbox event")
 	e := added[0]
 	assert.Equal(t, order.RoutingRewardSet, e.RoutingKey)

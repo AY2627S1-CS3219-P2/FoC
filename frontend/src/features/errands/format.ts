@@ -361,6 +361,17 @@ export function actionDoneText(action: ErrandAction, errand: Pick<Errand, "rewar
   }
 }
 
+/**
+ * The message after an amend succeeds. A lowered reward's credits come back a
+ * moment later, when credit-service applies the change (D-102), so the message
+ * says they are on the way rather than returned.
+ */
+export function amendDoneText(before: Pick<Errand, "reward">, after: Pick<Errand, "reward">): string {
+  return after.reward < before.reward
+    ? "Reward updated. The difference returns to your balance shortly."
+    : actionDoneText("amend", before);
+}
+
 /** The message after an admin's cancel succeeds. */
 export function adminCancelDoneText(errand: Pick<Errand, "reward">): string {
   return `Errand cancelled · the requester gets ${creditsText(errand.reward)} back`;

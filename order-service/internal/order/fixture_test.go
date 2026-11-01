@@ -349,10 +349,8 @@ func rewards(calls []ordertest.AdjustCall) []int {
 // conditional write (D-046). Every write the service attempts is recorded,
 // with each Transition and AcceptCommand in full, so a test can see that a
 // refused action wrote nothing and read the conditions a write carries.
-// locked is true while Amend or QueueLocked holds an errand's row, so a test
-// can see credit called, and a reward_set built, under the row lock (D-057).
-// queueCtxDone records, for each QueueLocked, whether its context was
-// already done, so a test can see the queueing outlive a cancelled request. And the key lookup and
+// locked is true while Amend holds an errand's row, so a test can see credit
+// called under the row lock (D-102). And the key lookup and
 // the reads the fake cannot fail can be made to fail. The limit each capped
 // list was asked for is recorded too, so a test can hold it to the contract
 // (D-053).
@@ -368,8 +366,7 @@ type hookedRepo struct {
 	accepts     []order.AcceptCommand
 	limits      map[string]int
 
-	locked       atomic.Bool
-	queueCtxDone []bool
+	locked atomic.Bool
 }
 
 // recordLimit notes the limit the service passed to a list method.
@@ -562,26 +559,6 @@ func (r *hookedRepo) Amend(ctx context.Context, id uuid.UUID, fn func(order.Orde
 		defer r.locked.Store(false)
 		return fn(cur)
 	})
-}
-
-// AI-generated (edited by James Teo): fn returns a nil event for "queue nothing".
-func (r *hookedRepo) QueueLocked(ctx context.Context, id uuid.UUID, fn func(order.Order) (*order.OutboxEvent, error)) error {
-	r.mu.Lock()
-	r.queueCtxDone = append(r.queueCtxDone, ctx.Err() != nil)
-	r.mu.Unlock()
-	r.attempt("QueueLocked")
-	return r.Repository.QueueLocked(ctx, id, func(cur order.Order) (*order.OutboxEvent, error) {
-		r.locked.Store(true)
-		defer r.locked.Store(false)
-		return fn(cur)
-	})
-}
-
-// queueContexts returns queueCtxDone so far.
-func (r *hookedRepo) queueContexts() []bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return slices.Clone(r.queueCtxDone)
 }
 
 // countingSuppliers counts lookups in supplier-service, so a test can see a

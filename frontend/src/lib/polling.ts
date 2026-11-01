@@ -184,3 +184,28 @@ export function usePolling(
 
   return useCallback(() => pollerRef.current?.refresh(), []);
 }
+
+/**
+ * Calls `refresh` every `intervalMs`, at most `times` times, and stops early
+ * once `settled()` is true. For a change another service makes a moment after
+ * its reply, such as credits released by an event, so the screen shows it
+ * before the regular poll would. Returns a function that stops it.
+ */
+export function startBurst(
+  refresh: () => void,
+  settled: () => boolean,
+  intervalMs: number,
+  times: number,
+): () => void {
+  let left = times;
+  const timer = setInterval(() => {
+    if (settled()) {
+      clearInterval(timer);
+      return;
+    }
+    refresh();
+    left -= 1;
+    if (left <= 0) clearInterval(timer);
+  }, intervalMs);
+  return () => clearInterval(timer);
+}
