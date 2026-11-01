@@ -70,8 +70,7 @@ propose answers; implement the decision the owner recorded. The rows in
 - which lifecycle events are published asynchronously, and what they carry —
   D-048, D-051, D-057, D-059, D-102 (D-042 binds four of the keys, and
   `rabbitmq/definitions.json` binds `errand.reward_set` too; D-102 is the
-  cross-service row, and credit-service's half of it is pending with its owner,
-  #68).
+  cross-service row, built in #72 and #73).
 
 The order requirements themselves are in `docs/requirements.md`.
 
