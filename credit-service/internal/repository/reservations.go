@@ -509,14 +509,34 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return nil
 		}
 
-		// AI-generated (edited by choppyback).
-		// D-057: Ignore only events older than the saved Order Service version.
-		// An equal-version event may be recovery for a PATCH whose response was lost.
+		// A successful PATCH with this operation ID already made the financial move.
+		var appliedErrand uuid.UUID
+		var appliedOutcome credit.CreditOperationOutcome
+		err = tx.QueryRow(txCtx, `
+			SELECT errand_id, outcome_code
+			FROM credit_operation_results
+			WHERE operation_id = $1`, eventID,
+		).Scan(&appliedErrand, &appliedOutcome)
+		if err == nil {
+			if appliedErrand != errandID {
+				return credit.ErrLifecycleViolation
+			}
+			if appliedOutcome == credit.OutcomeSuccess {
+				return nil
+			}
+		} else if !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("lookup reward operation for reward_set: %w", err)
+		}
+
+		// Older events cannot change a hold already set for a newer order state.
 		if version < reservation.Version {
 			return nil
 		}
 
 		diff := newReward - reservation.Amount
+		if diff > 0 {
+			return credit.ErrLifecycleViolation
+		}
 		if diff == 0 {
 			_, err := tx.Exec(txCtx, `
 				UPDATE credit_reservations
@@ -552,57 +572,22 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return credit.ErrAccountIntegrityFlagged
 		}
 
-		var ledgerReason credit.TransactionReason
-		if diff > 0 {
-			if availableCredits < diff {
-				_, _ = tx.Exec(txCtx, `
-					UPDATE credit_accounts
-					SET integrity_status = 'FLAGGED',
-					    integrity_flagged_at = COALESCE(integrity_flagged_at, NOW()),
-					    integrity_reason_code = 'REWARD_RESTORATION_DEFICIT',
-					    integrity_detail = 'insufficient available balance to apply errand.reward_set',
-					    updated_at = NOW()
-					WHERE user_id = $1`,
-					reservation.RequesterID,
-				)
-				return credit.ErrInsufficientCredits
-			}
-			if reservedCredits+diff > credit.MaxBalanceCredits {
-				return credit.ErrCreditLimitExceeded
-			}
+		absDiff := -diff
+		if availableCredits+absDiff > credit.MaxBalanceCredits {
+			return credit.ErrCreditLimitExceeded
+		}
 
-			cmdTag, err := tx.Exec(txCtx, `
-				UPDATE credit_accounts
-				SET available_credits = available_credits - $1,
-				    reserved_credits = reserved_credits + $1,
-				    version = version + 1,
-				    updated_at = NOW()
-				WHERE user_id = $2 AND available_credits >= $1`,
-				diff, reservation.RequesterID,
-			)
-			if err != nil || cmdTag.RowsAffected() != 1 {
-				return fmt.Errorf("debit requester available for reward_set increase: %w", err)
-			}
-			ledgerReason = credit.TransactionReasonRewardIncreased
-		} else {
-			absDiff := -diff
-			if availableCredits+absDiff > credit.MaxBalanceCredits {
-				return credit.ErrCreditLimitExceeded
-			}
-
-			cmdTag, err := tx.Exec(txCtx, `
-				UPDATE credit_accounts
-				SET available_credits = available_credits + $1,
-				    reserved_credits = reserved_credits - $1,
-				    version = version + 1,
-				    updated_at = NOW()
-				WHERE user_id = $2 AND reserved_credits >= $1`,
-				absDiff, reservation.RequesterID,
-			)
-			if err != nil || cmdTag.RowsAffected() != 1 {
-				return fmt.Errorf("release requester reserved for reward_set decrease: %w", err)
-			}
-			ledgerReason = credit.TransactionReasonRewardDecreased
+		cmdTag, err := tx.Exec(txCtx, `
+			UPDATE credit_accounts
+			SET available_credits = available_credits + $1,
+			    reserved_credits = reserved_credits - $1,
+			    version = version + 1,
+			    updated_at = NOW()
+			WHERE user_id = $2 AND reserved_credits >= $1`,
+			absDiff, reservation.RequesterID,
+		)
+		if err != nil || cmdTag.RowsAffected() != 1 {
+			return fmt.Errorf("release requester reserved for reward_set decrease: %w", err)
 		}
 
 		_, err = tx.Exec(txCtx, `
@@ -617,14 +602,7 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return fmt.Errorf("update reservation for reward_set: %w", err)
 		}
 
-		var availDelta, resDelta int64
-		if diff > 0 {
-			availDelta = -diff
-			resDelta = diff
-		} else {
-			availDelta = -diff
-			resDelta = diff
-		}
+		availDelta, resDelta := -diff, diff
 
 		var occ *time.Time
 		if !occurredAt.IsZero() {
@@ -640,7 +618,7 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 				($1, $2, $3, 'AVAILABLE', $4, $6, $7, NOW()),
 				($1, $2, $3, 'RESERVED', $5, $6, $7, NOW())`,
 			reservation.RequesterID, errandID, eventID,
-			availDelta, resDelta, ledgerReason, occ,
+			availDelta, resDelta, credit.TransactionReasonRewardDecreased, occ,
 		)
 		if err != nil {
 			return fmt.Errorf("insert ledger entries for reward_set: %w", err)

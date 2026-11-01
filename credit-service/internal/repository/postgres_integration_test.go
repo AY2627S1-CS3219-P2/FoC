@@ -227,65 +227,44 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(90), amount)
 	})
 
-	t.Run("ApplyRewardSet (D-057) reconciles holds and enforces versioning", func(t *testing.T) {
-		userID := uuid.New()
-		errandID := uuid.New()
+	t.Run("ApplyRewardSet releases only and ignores replayed PATCH operations", func(t *testing.T) {
+		userID, errandID := uuid.New(), uuid.New()
 		now := time.Now().UTC()
-
 		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
-		res, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
-		require.NoError(t, err)
-		require.Equal(t, int64(1), res.Version)
-
-		// AI-generated (edited by choppyback).
-		// 1. The same version reconciles a PATCH whose response was lost without incrementing the version.
-		eventRecovery := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventRecovery, 50, 1, now)
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
 		require.NoError(t, err)
 
+		// An event cannot increase the secured amount, even with a newer version.
+		err = env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 30, 2, now)
+		require.ErrorIs(t, err, credit.ErrLifecycleViolation)
+		var heldAmount, heldVersion int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&heldAmount, &heldVersion))
+		require.Equal(t, int64(20), heldAmount)
+		require.Equal(t, int64(1), heldVersion)
+
+		// A PATCH can raise the hold. Its matching event is a financial duplicate.
+		opID := uuid.New()
+		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, opID)
+		require.NoError(t, err)
+		require.Equal(t, int64(2), res.Version)
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, opID, 50, 2, now))
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
-		require.Equal(t, int64(50), acc.AvailableCredits)
 		require.Equal(t, int64(50), acc.ReservedCredits)
-		var reservationAmount, reservationVersion int64
-		require.NoError(t, env.pool.QueryRow(ctx, `
-			SELECT amount, version
-			FROM credit_reservations
-			WHERE errand_id = $1`, errandID).Scan(&reservationAmount, &reservationVersion))
-		require.Equal(t, int64(50), reservationAmount)
-		require.Equal(t, int64(1), reservationVersion)
 
-		// 2. Higher version (version: 2) updates hold to 35
-		eventNew := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventNew, 35, 2, now)
-		require.NoError(t, err)
-
+		// A committed decrease releases the difference once. Older and duplicate
+		// events cannot change the hold again.
+		eventID := uuid.New()
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, eventID, 35, 3, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, eventID, 35, 3, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 50, 2, now))
 		acc, err = env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, int64(65), acc.AvailableCredits)
 		require.Equal(t, int64(35), acc.ReservedCredits)
-
-		// 3. Exact re-delivery is harmless, while an older version is discarded.
-		eventDuplicate := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventDuplicate, 35, 2, now)
-		require.NoError(t, err)
-		eventOld := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventOld, 50, 1, now)
-		require.NoError(t, err)
-
-		acc, err = env.repo.GetAccount(ctx, userID)
-		require.NoError(t, err)
-		require.Equal(t, int64(35), acc.ReservedCredits)
-
-		// 4. Version 3 lowers hold to 10
-		eventLower := uuid.New()
-		err = env.repo.ApplyRewardSet(ctx, errandID, eventLower, 10, 3, now)
-		require.NoError(t, err)
-
-		acc, err = env.repo.GetAccount(ctx, userID)
-		require.NoError(t, err)
-		require.Equal(t, int64(90), acc.AvailableCredits)
-		require.Equal(t, int64(10), acc.ReservedCredits)
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&heldAmount, &heldVersion))
+		require.Equal(t, int64(3), heldVersion)
+		require.Equal(t, int64(35), heldAmount)
 	})
 
 	t.Run("PayoutReservation (D-059) settles by event amount and returns leftover hold", func(t *testing.T) {
