@@ -164,7 +164,7 @@ func (m *inMemoryStateMachineRepo) CreateReservation(_ context.Context, errandID
 	return res, true, nil
 }
 
-func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -602,7 +602,7 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				u := users[r.Intn(len(users))]
 				opID := opIDs[r.Intn(len(opIDs))]
 				newAmt := int64(r.Intn(60) + 1)
-				_, _, err := svc.AdjustReservationReward(ctx, e, u, newAmt, opID)
+				_, _, err := svc.AdjustReservationReward(ctx, e, u, newAmt, 1, opID)
 				historyLog = append(historyLog, fmt.Sprintf("step %d: AdjustReservationReward(errand=%s, requester=%s, next=%d, op=%s) -> err=%v", step, e, u, newAmt, opID, err))
 
 			case 3: // Refund reservation
@@ -677,7 +677,7 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 		_ = svc.RefundReservation(context.Background(), errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
 
 		// Cannot adjust after terminal refund
-		_, _, err := svc.AdjustReservationReward(context.Background(), errandID, u1, 40, uuid.New())
+		_, _, err := svc.AdjustReservationReward(context.Background(), errandID, u1, 40, 1, uuid.New())
 		if !errors.Is(err, credit.ErrReservationStateConflict) {
 			t.Fatalf("expected ErrReservationStateConflict, got %v", err)
 		}

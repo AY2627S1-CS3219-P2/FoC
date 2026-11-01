@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Added CreateReservation, AdjustReservationReward, RefundReservation, PayoutReservation, GetAccount, and ListTransactions service orchestration per sourceOfTruth.md.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit
 
@@ -98,7 +98,7 @@ func (s *Service) CreateReservation(ctx context.Context, errandID, requesterID u
 }
 
 // AdjustReservationReward validates parameters and requests reward adjustment from the repository.
-func (s *Service) AdjustReservationReward(ctx context.Context, errandID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
+func (s *Service) AdjustReservationReward(ctx context.Context, errandID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
 	if errandID == uuid.Nil {
 		return nil, nil, ErrInvalidErrandID
 	}
@@ -108,6 +108,9 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID, request
 	if operationID == uuid.Nil {
 		return nil, nil, ErrInvalidOperationID
 	}
+	if currVersion < 1 {
+		return nil, nil, fmt.Errorf("%w: currVersion must be positive", ErrInvalidRequest)
+	}
 	if err := ValidateRewardAmount(newReward); err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +118,7 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID, request
 		return nil, nil, errors.New("reservation repository is required")
 	}
 
-	return s.reservationRepo.AdjustReservationReward(ctx, errandID, requesterID, newReward, operationID)
+	return s.reservationRepo.AdjustReservationReward(ctx, errandID, requesterID, newReward, currVersion, operationID)
 }
 
 // ApplyRewardSet reconciles an existing reservation's reward amount with an errand.reward_set event (D-057).

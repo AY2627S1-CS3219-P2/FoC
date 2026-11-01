@@ -1,11 +1,10 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Implemented PostgreSQL reservation creation and reward adjustment transactions per sourceOfTruth.md Phases 4 & 5.
-// Author review: PENDING - reviewer to complete
+// Author review: reviewed by Seth
 
 package repository
 
-// AI-generated (edited by choppyback).
 import (
 	"context"
 	"encoding/binary"
@@ -197,7 +196,7 @@ func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUI
 }
 
 // AdjustReservationReward executes the reward adjustment transaction described in Phase 5.
-func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	var resOp *credit.OperationResult
 	var resRev *credit.Reservation
 	var businessErr error

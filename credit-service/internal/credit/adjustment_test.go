@@ -18,6 +18,7 @@ type adjustmentRepositoryStub struct {
 	called      bool
 	errandID    uuid.UUID
 	newReward   int64
+	currVersion int64
 	operationID uuid.UUID
 	opResult    *OperationResult
 	reservation *Reservation
@@ -28,10 +29,11 @@ func (s *adjustmentRepositoryStub) CreateReservation(_ context.Context, _ uuid.U
 	return nil, false, nil
 }
 
-func (s *adjustmentRepositoryStub) AdjustReservationReward(_ context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
+func (s *adjustmentRepositoryStub) AdjustReservationReward(_ context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
 	s.called = true
 	s.errandID = errandID
 	s.newReward = newReward
+	s.currVersion = currVersion
 	s.operationID = operationID
 	return s.opResult, s.reservation, s.err
 }
@@ -53,42 +55,42 @@ func TestAdjustReservationRewardValidations(t *testing.T) {
 	validNew := int64(150)
 
 	t.Run("rejects nil errand ID", func(t *testing.T) {
-		_, _, err := service.AdjustReservationReward(context.Background(), uuid.Nil, validRequesterID, validNew, validOpID)
+		_, _, err := service.AdjustReservationReward(context.Background(), uuid.Nil, validRequesterID, validNew, 1, validOpID)
 		if !errors.Is(err, ErrInvalidErrandID) {
 			t.Fatalf("expected ErrInvalidErrandID, got %v", err)
 		}
 	})
 
 	t.Run("rejects nil requester ID", func(t *testing.T) {
-		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, uuid.Nil, validNew, validOpID)
+		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, uuid.Nil, validNew, 1, validOpID)
 		if !errors.Is(err, ErrInvalidUserID) {
 			t.Fatalf("expected ErrInvalidUserID, got %v", err)
 		}
 	})
 
 	t.Run("rejects nil operation ID", func(t *testing.T) {
-		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, validNew, uuid.Nil)
+		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, validNew, 1, uuid.Nil)
 		if !errors.Is(err, ErrInvalidOperationID) {
 			t.Fatalf("expected ErrInvalidOperationID, got %v", err)
 		}
 	})
 
 	t.Run("rejects zero new amount", func(t *testing.T) {
-		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, 0, validOpID)
+		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, 0, 1, validOpID)
 		if !errors.Is(err, ErrInvalidRewardAmount) {
 			t.Fatalf("expected ErrInvalidRewardAmount, got %v", err)
 		}
 	})
 
 	t.Run("rejects negative new amount", func(t *testing.T) {
-		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, -5, validOpID)
+		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, -5, 1, validOpID)
 		if !errors.Is(err, ErrInvalidRewardAmount) {
 			t.Fatalf("expected ErrInvalidRewardAmount, got %v", err)
 		}
 	})
 
 	t.Run("rejects new amount above max", func(t *testing.T) {
-		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, MaxErrandReward+1, validOpID)
+		_, _, err := service.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, MaxErrandReward+1, 1, validOpID)
 		if !errors.Is(err, ErrInvalidRewardAmount) {
 			t.Fatalf("expected ErrInvalidRewardAmount, got %v", err)
 		}
@@ -96,7 +98,7 @@ func TestAdjustReservationRewardValidations(t *testing.T) {
 
 	t.Run("rejects missing repository", func(t *testing.T) {
 		svc := NewService(nil)
-		_, _, err := svc.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, validNew, validOpID)
+		_, _, err := svc.AdjustReservationReward(context.Background(), validErrandID, validRequesterID, validNew, 1, validOpID)
 		if err == nil {
 			t.Fatal("expected error when reservation repository is missing")
 		}
@@ -137,12 +139,15 @@ func TestAdjustReservationRewardDelegation(t *testing.T) {
 	service := NewService(nil, WithReservationRepository(repo))
 
 	t.Run("successfully adjusts reward", func(t *testing.T) {
-		op, res, err := service.AdjustReservationReward(context.Background(), errandID, requesterID, newAmount, opID)
+		op, res, err := service.AdjustReservationReward(context.Background(), errandID, requesterID, newAmount, 1, opID)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 		if !repo.called {
 			t.Fatal("expected repository to be called")
+		}
+		if repo.currVersion != 1 {
+			t.Fatalf("currVersion = %d, want 1", repo.currVersion)
 		}
 		if op != expectedOp {
 			t.Fatalf("expected op %v, got %v", expectedOp, op)
@@ -154,7 +159,7 @@ func TestAdjustReservationRewardDelegation(t *testing.T) {
 
 	t.Run("propagates idempotency conflict error", func(t *testing.T) {
 		repo.err = ErrIdempotencyConflict
-		_, _, err := service.AdjustReservationReward(context.Background(), errandID, requesterID, newAmount, opID)
+		_, _, err := service.AdjustReservationReward(context.Background(), errandID, requesterID, newAmount, 1, opID)
 		if !errors.Is(err, ErrIdempotencyConflict) {
 			t.Fatalf("expected ErrIdempotencyConflict, got %v", err)
 		}
@@ -162,7 +167,7 @@ func TestAdjustReservationRewardDelegation(t *testing.T) {
 
 	t.Run("propagates insufficient credits error", func(t *testing.T) {
 		repo.err = ErrInsufficientCredits
-		_, _, err := service.AdjustReservationReward(context.Background(), errandID, requesterID, newAmount, opID)
+		_, _, err := service.AdjustReservationReward(context.Background(), errandID, requesterID, newAmount, 1, opID)
 		if !errors.Is(err, ErrInsufficientCredits) {
 			t.Fatalf("expected ErrInsufficientCredits, got %v", err)
 		}
