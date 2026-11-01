@@ -13,6 +13,15 @@ records only. They are not implementation contracts and may contain superseded
 information. If any of them differs from this document, this document takes
 precedence.
 
+<!-- AI-generated (edited by choppyback). -->
+### Issue #60 reward-adjustment amendment
+
+The [2026-10-31 agreed design in issue #60](https://github.com/AY2627S1-CS3219-P2/FoC/issues/60) supersedes older reward-adjustment and completion-amount passages below. `PATCH` takes the locked order's positive `currVersion` and sets the hold to `newReward`; Credit Service records `currVersion + 1` with checked arithmetic. It applies only an adjustment at least as new as its recorded reservation version, and identical operation-ID retries must carry the same amount and version. An increase secures additional credits before Order Service commits. A decrease releases the difference after Order Service commits. Credit Service keeps no provisional-adjustment record.
+
+The versioned `errand.reward_set` event is a fallback for a committed decrease. It may release an excess hold but never raises one. A successful `PATCH` with the same operation ID makes the event a financial duplicate. Older events are ignored. If a release call or event is delayed, the excess remains held until a later reward change or terminal settlement; elapsed time alone never authorizes release.
+
+A completion must carry a positive amount. Credit Service pays exactly that amount and returns any excess hold in the same transaction. An amount above the hold is a non-retryable lifecycle violation: no balance, reservation, payout-ledger, or pending-payout change occurs, and the event goes to the lifecycle DLQ for investigation. Pending payout work retains the completion amount and uses it on retry. Refunds continue returning the full hold. Monitor the lifecycle DLQ and investigate each dead-lettered reward event against Order Service's committed reward and version before authorized replay.
+
 ## Business Problem
 
 The platform needs a reliable way to manage the credits that requesters offer
@@ -101,9 +110,10 @@ The finished service will support the following behavior:
   or amount details are rejected. After reservation success, Order Service must
   stop issuing creation requests for that errand.
 - **Reward adjustment:** while Order Service permits an errand to be edited, it
-  can synchronously request an adjustment of the held reward. The request specifies the target reward (`newReward`), and Credit
-  Service adjusts the held balance by computing the delta against the currently
-  stored reservation.
+  can request an adjustment using target `newReward` and its locked order's
+  `currVersion`. Credit Service adjusts the hold from the stored reservation
+  amount and records the next version. Order Service calls before committing
+  an increase and after committing a decrease.
 - **Cancellation, expiry, or terminal failure:** after receiving one of these
   lifecycle outcomes through RabbitMQ, Credit Service returns the reservation's
   current stored amount from reserved to available and marks the reservation
@@ -113,9 +123,9 @@ The finished service will support the following behavior:
   version 1 defines no repair interface and therefore does not promise eventual
   recovery from an integrity flag.
 - **Completion payout:** after receiving a completion containing the
-  `errandId` and `courierId`, Credit Service reads the requester and amount from
-  its own reservation, removes that amount from the requester's reserved
-  balance, credits the courier's available balance, and marks the reservation
+  `errandId`, `courierId`, and positive amount, Credit Service reads the requester
+  and hold from its reservation, pays the event amount to the courier, returns
+  any excess hold to the requester, and marks the reservation
   `PAID_OUT`. The transfer happens atomically and at most once. The `errandId`
   is the business idempotency key: after the reservation is `PAID_OUT`, any
   later completion for that errand is acknowledged without another transfer.
@@ -192,27 +202,16 @@ complex crash recovery. Instead, Order Service stores a `PENDING` order, Credit
 Service commits an idempotent reservation, and Order Service moves the order to
 `OPEN` only after receiving success.
 
-### Trust the completion event to provide the payout amount
+### Settle the amount committed by Order Service
 
-We considered including the requester and reward amount in every completion
-event. This was rejected because those values would duplicate financial facts
-already owned by Credit Service and could disagree with the stored reservation.
-A completion event identifies the `errandId` and `courierId`; Credit Service
-uses the requester and amount from its own reservation.
-
-Order Service owns the reward offered as part of the errand, but Credit Service
-owns the amount that was actually secured. When a reservation is created,
-Credit Service validates the proposed reward, moves that amount into the
-requester's reserved balance, stores it against the `errandId`, and confirms the
-result to Order Service. A later reward edit becomes effective only after Credit
-Service successfully adjusts that same reservation.
-
-Completion therefore does not establish or renegotiate the amount. It settles
-the financial reservation that has already been confirmed. Requiring Order
-Service to send the amount again would create a second copy of the same fact
-without giving Credit Service a safe rule for resolving a mismatch. The event
-supplies only the new information Credit Service needs at completion: which
-errand completed and which courier should receive the stored reserved amount.
+<!-- AI-generated (edited by choppyback). -->
+Credit Service keeps the hold, which may temporarily exceed the reward committed
+by Order Service. This can happen after an increase is secured but not committed,
+or while a committed decrease's release is delayed. The completion event's
+positive amount is authoritative for payout. Credit Service pays exactly that
+amount, returns any excess hold in the same transaction, and rejects an amount
+above the hold without a financial change. A delayed payout stores the event
+amount and applies the same rule when retried.
 
 ### Create a new reservation row whenever the reward changes
 
@@ -1257,23 +1256,17 @@ table above rather than choosing statuses independently.
 
 ### Phase 5: implement reward adjustment
 
-Reward adjustment accepts `{"newReward": <int>}` with the caller's request
+Reward adjustment accepts `{"newReward": <int>, "currVersion": <positive int>}` with the caller's request
 correlation ID in `X-Request-Id`.
 
-#### Why Caller Compare-and-Swap (CAS) is Not Needed
-In this architecture, caller-level CAS is not needed for the following reasons:
-1. **Single-Writer Authority:** Only the student who created the errand can amend
-   its reward. Couriers and other users cannot alter errand rewards.
-2. **Upstream Serialization:** Order Service owns the errand aggregate and enforces
-   optimistic concurrency control on the order row (`cur.Version != in.Version`)
-   under an exclusive database lock during amendment. Order Service guarantees that
-   two concurrent edit requests cannot both succeed for the same errand.
-3. **Database Concurrency in Credit Service:** Credit Service takes an exclusive
-   row lock (`SELECT ... FOR UPDATE`) on the reservation row for `errandId` during
-   adjustment.
-4. **Deterministic Delta:** Credit Service reads the authoritative current amount
-   from the locked reservation row, calculates $\Delta = \text{newReward} - \text{currentStoredAmount}$,
-   and moves the difference atomically between `available` and `reserved`.
+#### Order version and reservation serialization
+
+<!-- AI-generated (edited by choppyback). -->
+Order Service sends `currVersion` from the locked order row. Credit Service
+locks the reservation, rejects a target version older than its recorded version,
+and moves the difference between `available` and `reserved` in one transaction.
+The operation result records `currVersion` so an operation ID cannot be reused
+with another version.
 
 Reward adjustment executes this transaction:
 
@@ -1284,18 +1277,20 @@ Reward adjustment executes this transaction:
    merge operations. Every adjustment path takes this lock before reading or
    mutating financial state.
 3. Look up `operationId` in `credit_operation_results`. Return the stored result for
-   an identical retry, or an idempotency conflict if parameters differ.
+   an identical retry, or an idempotency conflict if the amount or `currVersion` differs.
 4. Lock the reservation by `errandId` (`SELECT ... FOR UPDATE`).
 5. Require reservation status `RESERVED`. If already in terminal status (`PAID_OUT`
    or `REFUNDED`), reject with `409 Conflict: RESERVATION_STATE_CONFLICT`.
-6. Read the currently stored amount: `currentAmount = storedAmount`, `newAmount = newReward`.
+6. Reject a target version older than the reservation's recorded version. Derive
+   the target as `currVersion + 1` with checked arithmetic. Read the stored
+   amount: `currentAmount = storedAmount`, `newAmount = newReward`.
 7. If `currentAmount == newAmount`, persist the successful operation result and
    return the unchanged reservation as `200 OK`.
 8. Otherwise, lock and verify the requester account.
 9. For an increase, conditionally move the positive difference from available
    to reserved.
 10. For a decrease, move the difference from reserved to available.
-11. Update the same reservation row's amount and `updated_at`; do not insert a
+11. Update the same reservation row's amount, version, and `updated_at`; do not insert a
     second reservation.
 12. Append two new ledger entries under `operationId`.
 13. Persist the successful operation result and commit. Any deterministic
@@ -1306,13 +1301,9 @@ with the same new `operationId` waits, then re-reads the first request's durable
 result and returns that result or `IDEMPOTENCY_CONFLICT`. It never surfaces the
 operation-results primary-key violation as an internal error.
 
-A zero difference is a validated idempotent no-op, not a financial mutation. It
-creates no ledger entries, changes no balances, and does not update the account
-version, reservation version, or either row's timestamps. The stored operation
-result is the only new record and makes reuse of `operationId` idempotent. If
-the two supplied amounts are equal to each other but differ from the stored
-reservation amount, step 4 returns `RESERVATION_AMOUNT_MISMATCH`; it is not
-treated as a no-op.
+A zero difference is a validated no-op for balances. It creates no ledger entries
+and does not update the account version, but records the target reservation
+version and operation result so later events are ordered correctly.
 
 ### Phase 6: implement refunds
 
@@ -1401,7 +1392,7 @@ refund intent and credits but cannot complete the refund automatically.
 
 ### Phase 7: implement completion payout
 
-The completion handler validates `eventId`, `errandId`, `courierId`, and
+The completion handler validates `eventId`, `errandId`, `courierId`, positive `amount`, and
 `occurredAt`, then asks the repository to settle.
 
 For a ready courier wallet, settlement executes this transaction:
@@ -1415,6 +1406,8 @@ For a ready courier wallet, settlement executes this transaction:
 5. Compare the reservation's `requesterId` with the event's `courierId`. If they
    are equal, return a non-retryable self-payout lifecycle violation without
    changing balances, changing reservation state, or creating pending work.
+   Reject an amount above the hold with the same no-change guarantee; route it
+   to the lifecycle DLQ for investigation.
 6. Lock requester and courier accounts in ascending UUID order.
 7. If either account is `FLAGGED`, the requester reserved projection is smaller
    than the reservation amount, or adding the completion payout amount would exceed the courier's
