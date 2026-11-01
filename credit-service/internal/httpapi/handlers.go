@@ -199,7 +199,7 @@ func (h *Handler) CreateReservation(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdjustReservationReward handles reward adjustments from Order Service.
-func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID) {
+func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID, _ gen.AdjustReservationRewardParams) {
 	identity, ok := IdentityFromContext(r.Context())
 	if !ok {
 		writeError(w, http.StatusUnauthorized, gen.INVALIDREQUEST, "unauthorized")
@@ -230,7 +230,7 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 		}
 	}
 
-	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, identity.UserID, req.NewReward, operationID)
+	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, identity.UserID, req.NewReward, req.CurrVersion, operationID)
 	if err != nil {
 		h.mapDomainError(w, err)
 		return

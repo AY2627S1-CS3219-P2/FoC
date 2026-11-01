@@ -163,7 +163,8 @@ type AccountResponse struct {
 
 // AdjustRewardRequest defines model for AdjustRewardRequest.
 type AdjustRewardRequest struct {
-	NewReward int64 `json:"newReward"`
+	CurrVersion int64 `json:"currVersion"`
+	NewReward   int64 `json:"newReward"`
 }
 
 // CreateReservationRequest defines model for CreateReservationRequest.
@@ -253,6 +254,12 @@ type ListMyCreditTransactionsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// AdjustReservationRewardParams defines parameters for AdjustReservationReward.
+type AdjustReservationRewardParams struct {
+	// XRequestId Optional UUID. Retry idempotency requires the caller to supply it and reuse it for retries of the same logical adjustment. If omitted, each call gets a new generated ID and retries are not idempotent.
+	XRequestId *openapi_types.UUID `json:"X-Request-Id,omitempty"`
+}
+
 // CreateReservationJSONRequestBody defines body for CreateReservation for application/json ContentType.
 type CreateReservationJSONRequestBody = CreateReservationRequest
 
@@ -272,7 +279,7 @@ type ServerInterface interface {
 	CreateReservation(w http.ResponseWriter, r *http.Request)
 	// AdjustReservationReward Adjust the reward secured by a reservation.
 	// (PATCH /api/v1/credits/reservations/{errandId})
-	AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID)
+	AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID, params AdjustReservationRewardParams)
 	// GetLiveness Check process liveness.
 	// (GET /health/live)
 	GetLiveness(w http.ResponseWriter, r *http.Request)
@@ -305,7 +312,7 @@ func (_ Unimplemented) CreateReservation(w http.ResponseWriter, r *http.Request)
 
 // AdjustReservationReward Adjust the reward secured by a reservation.
 // (PATCH /api/v1/credits/reservations/{errandId})
-func (_ Unimplemented) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID) {
+func (_ Unimplemented) AdjustReservationReward(w http.ResponseWriter, r *http.Request, errandId openapi_types.UUID, params AdjustReservationRewardParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -419,8 +426,32 @@ func (siw *ServerInterfaceWrapper) AdjustReservationReward(w http.ResponseWriter
 		return
 	}
 
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdjustReservationRewardParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Request-Id" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-Id")]; found {
+		var XRequestId openapi_types.UUID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-Id", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-Id", valueList[0], &XRequestId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: "uuid"})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-Id", Err: err})
+			return
+		}
+
+		params.XRequestId = &XRequestId
+
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.AdjustReservationReward(w, r, errandId)
+		siw.Handler.AdjustReservationReward(w, r, errandId, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {

@@ -287,29 +287,31 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 			return fmt.Errorf("credit courier available credits: %w", err)
 		}
 
-		// AI-generated (edited by choppyback): mirror immediate settlement's surplus ledger entry.
 		if leftover > 0 {
+			leftoverOpID := uuid.NewSHA1(eventID, []byte("reward_decreased"))
 			_, err = tx.Exec(txCtx, `
 				INSERT INTO credit_transactions (
 					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 				)
 				VALUES
-					($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
-					($1, $2, $3, 'AVAILABLE', $6, 'REWARD_DECREASED', $5, NOW()),
-					($7, $2, $3, 'AVAILABLE', $8, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
-				res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), leftover, courierID, payoutAmount,
+					($1, $2, $3, 'AVAILABLE', $4, 'REWARD_DECREASED', $5, NOW()),
+					($1, $2, $3, 'RESERVED', -($4::bigint), 'REWARD_DECREASED', $5, NOW())`,
+				res.RequesterID, errandID, leftoverOpID, leftover, occurredAt.UTC(),
 			)
-		} else {
-			_, err = tx.Exec(txCtx, `
+			if err != nil {
+				return fmt.Errorf("insert leftover return ledger entries: %w", err)
+			}
+		}
+
+		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 			)
 			VALUES
 				($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
 				($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
-				res.RequesterID, errandID, eventID, res.Amount, occurredAt.UTC(), courierID,
-			)
-		}
+			res.RequesterID, errandID, eventID, payoutAmount, occurredAt.UTC(), courierID,
+		)
 		if err != nil {
 			return fmt.Errorf("insert payout ledger entries: %w", err)
 		}
@@ -317,9 +319,10 @@ func (r *PostgresRepository) ProcessPendingPayout(ctx context.Context, id uuid.U
 		_, err = tx.Exec(txCtx, `
 			UPDATE credit_reservations
 			SET status = 'PAID_OUT',
+			    amount = $2,
 			    updated_at = NOW()
 			WHERE id = $1`,
-			res.ID,
+			res.ID, payoutAmount,
 		)
 		if err != nil {
 			return fmt.Errorf("update reservation status to PAID_OUT: %w", err)

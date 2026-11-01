@@ -1,8 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Defined focused repository ports for credit-domain operations and background workers per sourceOfTruth.md.
-// Author review: PENDING - reviewer to complete
-
+// Author review: Reviewed by Seth
 package credit
 
 import (
@@ -24,7 +23,7 @@ type ReservationRepository interface {
 	CreateReservation(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, amount int64) (*Reservation, bool, error)
 
 	// AdjustReservationReward modifies an existing reservation's reward amount idempotently.
-	AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error)
+	AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*OperationResult, *Reservation, error)
 
 	// ApplyRewardSet reconciles an existing reservation's reward amount with an errand.reward_set event (D-057).
 	ApplyRewardSet(ctx context.Context, errandID uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
