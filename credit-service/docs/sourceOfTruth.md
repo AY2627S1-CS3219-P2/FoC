@@ -13,7 +13,6 @@ records only. They are not implementation contracts and may contain superseded
 information. If any of them differs from this document, this document takes
 precedence.
 
-<!-- AI-generated (edited by choppyback). -->
 ### Issue #60 reward-adjustment amendment
 
 The [2026-10-31 agreed design in issue #60](https://github.com/AY2627S1-CS3219-P2/FoC/issues/60) supersedes older reward-adjustment and completion-amount passages below. `PATCH` takes the locked order's positive `currVersion` and sets the hold to `newReward`; Credit Service records `currVersion + 1` with checked arithmetic. It applies only an adjustment at least as new as its recorded reservation version, and identical operation-ID retries must carry the same amount and version. An increase secures additional credits before Order Service commits. A decrease releases the difference after Order Service commits. Credit Service keeps no provisional-adjustment record.
@@ -717,7 +716,7 @@ financial history to one reservation.
 Cancellation, expiry, and terminal failure do not reverse every historical
 ledger row. They read the reservation's current stored amount and append one
 movement from reserved back to available under a new refund operation. Payout
-similarly settles that current amount from the requester to the courier. The
+pays the completion event's amount to the courier and returns any excess hold under a separate decrease operation. The
 application-append-only ledger retains every earlier adjustment, so the history remains
 traceable without row-by-row reversal links.
 
@@ -770,7 +769,7 @@ is generated and tested against the decisions actually made.
 1. Change reservation creation from the public route to the private internal
    route and require `requesterId`, `amount`, and `errandId`.
 2. Mount `/api/v1/credits/reservations` routes and specify the target-state reward
-   adjustment schema (`newReward` + `X-Request-Id`).
+   adjustment schema (`newReward`, `currVersion` + `X-Request-Id`).
 3. Keep user account and transaction-history reads under the public bearer-token
    routes. In OpenAPI, explicitly retain bearer security on those operations and
    set `security: []` on each private reservation command so it does not inherit
@@ -782,7 +781,7 @@ is generated and tested against the decisions actually made.
    `reservedDelta`, `occurredAt`, and `createdAt`; do not expose each internal
    ledger row as a separate user-visible transaction.
 6. Record the RabbitMQ completion payload as exactly `schemaVersion`, `eventId`,
-   `errandId`, `courierId`, and `occurredAt`; registration uses
+   `errandId`, `courierId`, positive `amount`, and `occurredAt`; registration uses
    `schemaVersion`, `eventId`, `userId`, and `occurredAt`; cancellation, expiry,
    and failure use `schemaVersion`, `eventId`, `errandId`, and `occurredAt`. Use
    the existing routing keys
@@ -1419,9 +1418,8 @@ For a ready courier wallet, settlement executes this transaction:
 8. Subtract the stored hold from requester reserved credits and return any
    surplus above the completion payout amount to requester available credits.
 9. Add the completion payout amount to courier available credits.
-10. Use the completion `eventId` as `operationId` and append the requester
-   deduction, any surplus return, and courier payout under it.
-11. Mark the reservation `PAID_OUT`.
+10. Record the completion payout under `eventId` (requester deduction and courier payout). Any surplus return is recorded as its own `REWARD_DECREASED` operation with an operation ID derived from `eventId` so each operation maintains a 2-row zero-sum shape.
+11. Mark the reservation `PAID_OUT` and update its stored amount to the paid amount.
 12. Delete any pending payout row for the errand.
 13. Commit before acknowledging the completion message.
 
@@ -1673,7 +1671,7 @@ be implemented as aliases, because aliases would hide producer contract drift.
 RabbitMQ payloads may supply integer `schemaVersion: 1` or omit it (defaulting
 to version 1 as published by upstream outbox relays). Unsupported future versions
 (`>= 2`) are rejected. Decoding follows Postel's law: unknown or additional JSON
-envelope fields (such as `eventType`, `correlationId`, `requesterId`, or `amount`)
+envelope fields (such as `eventType`, `correlationId`, or `requesterId`; for completion, `amount` is required and authoritative; for refunds, it is ignored)
 are ignored rather than rejected, allowing consumers to interoperate safely with
 different service outbox formats. Redelivery and republication of the same logical
 event preserve both its original `schemaVersion` and `eventId`.

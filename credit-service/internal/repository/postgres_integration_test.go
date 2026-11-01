@@ -297,6 +297,24 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(130), courierAcc.AvailableCredits)
 		require.Equal(t, int64(0), courierAcc.ReservedCredits)
+
+		// Transaction history loads cleanly without 409
+		history, err := env.repo.ListTransactions(ctx, requesterID, 10, nil)
+		require.NoError(t, err)
+		require.NotEmpty(t, history.Items)
+
+		// Reconciliation flags neither account
+		flaggedReq, err := env.repo.ReconcileAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.False(t, flaggedReq)
+		flaggedCour, err := env.repo.ReconcileAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.False(t, flaggedCour)
+
+		// Reservation amount updated to paid amount
+		var storedAmount int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&storedAmount))
+		require.Equal(t, int64(30), storedAmount)
 	})
 
 	t.Run("completion above hold moves no credits and creates no pending payout", func(t *testing.T) {
@@ -387,14 +405,22 @@ func TestPostgresRepository_Integration(t *testing.T) {
 			ledger = append(ledger, entry)
 		}
 		require.NoError(t, rows.Err())
-		require.Len(t, ledger, 3)
-		require.Equal(t, requesterID, ledger[0].userID)
-		require.Equal(t, int64(2), ledger[0].amount)
-		require.Equal(t, credit.TransactionReasonRewardDecreased, ledger[0].reason)
-		require.Equal(t, courierID, ledger[1].userID)
-		require.Equal(t, int64(8), ledger[1].amount)
-		require.Equal(t, requesterID, ledger[2].userID)
-		require.Equal(t, int64(-10), ledger[2].amount)
+		require.Len(t, ledger, 2)
+		require.Equal(t, courierID, ledger[0].userID)
+		require.Equal(t, int64(8), ledger[0].amount)
+		require.Equal(t, credit.TransactionReasonErrandCompletedPayout, ledger[0].reason)
+		require.Equal(t, requesterID, ledger[1].userID)
+		require.Equal(t, int64(-8), ledger[1].amount)
+		require.Equal(t, credit.TransactionReasonErrandCompletedDeduct, ledger[1].reason)
+
+		leftoverOpID := uuid.NewSHA1(eventID, []byte("reward_decreased"))
+		var leftoverCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, leftoverOpID).Scan(&leftoverCount))
+		require.Equal(t, 2, leftoverCount)
+
+		flagged, err := env.repo.ReconcileAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.False(t, flagged)
 	})
 
 	t.Run("pending payout uses completion amount for courier limit", func(t *testing.T) {
