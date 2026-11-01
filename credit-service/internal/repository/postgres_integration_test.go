@@ -299,6 +299,29 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(0), courierAcc.ReservedCredits)
 	})
 
+	t.Run("completion above hold moves no credits and creates no pending payout", func(t *testing.T) {
+		requesterID, courierID, errandID, eventID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 20)
+		require.NoError(t, err)
+
+		amount := int64(30)
+		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now), credit.ErrLifecycleViolation)
+		requester, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(80), requester.AvailableCredits)
+		require.Equal(t, int64(20), requester.ReservedCredits)
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusReserved, status)
+		var pendingCount, ledgerCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM pending_payouts WHERE errand_id = $1`, errandID).Scan(&pendingCount))
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, eventID).Scan(&ledgerCount))
+		require.Zero(t, pendingCount)
+		require.Zero(t, ledgerCount)
+	})
+
 	t.Run("pending payout retains completion amount through retry", func(t *testing.T) {
 		requesterID, courierID, errandID, eventID := uuid.New(), uuid.New(), uuid.New(), uuid.New()
 		now := time.Now().UTC()

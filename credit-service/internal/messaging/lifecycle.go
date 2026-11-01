@@ -115,6 +115,9 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil || ev.CourierID == nil || *ev.CourierID == uuid.Nil {
 			return fmt.Errorf("%w: missing required UUIDs", ErrMalformedEvent)
 		}
+		if ev.Amount == nil || *ev.Amount < 1 || *ev.Amount > credit.MaxErrandReward {
+			return fmt.Errorf("%w: completion amount is required and must be positive", ErrMalformedEvent)
+		}
 		if ev.OccurredAt.IsZero() {
 			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 		}

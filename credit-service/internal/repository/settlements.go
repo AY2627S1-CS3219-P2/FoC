@@ -271,12 +271,12 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return credit.ErrSelfPayoutNotAllowed
 		}
 
-		// D-059: Determine payout amount and any surplus hold returned to requester.
-		// Implemented to settle by event amount and return surplus hold; can be revised later if domain boundary contracts evolve.
-		payoutAmount := res.Amount
-		if amount != nil && *amount > 0 && *amount < res.Amount {
-			payoutAmount = *amount
+		// The completion amount is authoritative. Reject an unexplained amount
+		// above the hold before creating pending work or changing any balance.
+		if amount == nil || *amount < 1 || *amount > res.Amount {
+			return credit.ErrLifecycleViolation
 		}
+		payoutAmount := *amount
 		leftover := res.Amount - payoutAmount
 
 		// 6. Lock requester and courier accounts in ascending UUID order.

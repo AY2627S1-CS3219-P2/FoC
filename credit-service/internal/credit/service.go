@@ -180,6 +180,9 @@ func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, ev
 	if eventID == uuid.Nil {
 		return ErrInvalidOperationID
 	}
+	if amount == nil || *amount < 1 || *amount > MaxErrandReward {
+		return ErrLifecycleViolation
+	}
 	if occurredAt.IsZero() {
 		return errors.New("completion event occurredAt is required")
 	}

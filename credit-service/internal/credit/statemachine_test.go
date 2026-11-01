@@ -617,7 +617,7 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				e := errands[r.Intn(len(errands))]
 				courier := users[r.Intn(len(users))]
 				eventID := uuid.New()
-				err := svc.PayoutReservation(ctx, e, courier, eventID, nil, time.Now().UTC())
+				err := svc.PayoutReservation(ctx, e, courier, eventID, ptrAmount(1), time.Now().UTC())
 				historyLog = append(historyLog, fmt.Sprintf("step %d: PayoutReservation(errand=%s, courier=%s) -> err=%v", step, e, courier, err))
 
 			case 5: // Replay / Duplicate settlement step
@@ -625,8 +625,8 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				courier := users[r.Intn(len(users))]
 				eventID := uuid.New()
 				if r.Float32() < 0.5 {
-					_ = svc.PayoutReservation(ctx, e, courier, eventID, nil, time.Now().UTC())
-					err := svc.PayoutReservation(ctx, e, courier, eventID, nil, time.Now().UTC())
+					_ = svc.PayoutReservation(ctx, e, courier, eventID, ptrAmount(1), time.Now().UTC())
+					err := svc.PayoutReservation(ctx, e, courier, eventID, ptrAmount(1), time.Now().UTC())
 					historyLog = append(historyLog, fmt.Sprintf("step %d: Duplicate PayoutReservation(errand=%s) -> err=%v", step, e, err))
 				} else {
 					_ = svc.RefundReservation(ctx, e, eventID, credit.TransactionReasonErrandCancelled, time.Now().UTC())
@@ -665,7 +665,7 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 	t.Run("rejects self-payout", func(t *testing.T) {
 		errandID := uuid.New()
 		_, _, _ = svc.CreateReservation(context.Background(), errandID, u1, 50)
-		err := svc.PayoutReservation(context.Background(), errandID, u1, uuid.New(), nil, time.Now().UTC())
+		err := svc.PayoutReservation(context.Background(), errandID, u1, uuid.New(), ptrAmount(50), time.Now().UTC())
 		if !errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
 			t.Fatalf("expected ErrSelfPayoutNotAllowed, got %v", err)
 		}
@@ -683,3 +683,5 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 		}
 	})
 }
+
+func ptrAmount(amount int64) *int64 { return &amount }

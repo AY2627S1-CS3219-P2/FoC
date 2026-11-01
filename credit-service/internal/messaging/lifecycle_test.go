@@ -75,6 +75,7 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 		"eventId": "` + eventID.String() + `",
 		"errandId": "` + errandID.String() + `",
 		"courierId": "` + courierID.String() + `",
+		"amount": 20,
 		"occurredAt": "` + now.Format(time.RFC3339Nano) + `"
 	}`)
 
