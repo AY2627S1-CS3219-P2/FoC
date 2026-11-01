@@ -171,7 +171,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// 2. Decrease reward: 60 -> 25 (releases 35 credits back to available)
 		op2 := uuid.New()
-		resOp2, res2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 25, 1, op2)
+		resOp2, res2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 25, 2, op2)
 		require.NoError(t, err)
 		require.Equal(t, credit.OutcomeSuccess, resOp2.OutcomeCode)
 		require.Equal(t, int64(25), res2.Amount)
@@ -186,7 +186,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// A later amendment may legitimately reuse an earlier target, but must use a new operation ID.
 		op3 := uuid.New()
-		resOp3, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, op3)
+		resOp3, res3, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 3, op3)
 		require.NoError(t, err)
 		require.Equal(t, credit.OutcomeSuccess, resOp3.OutcomeCode)
 		require.Equal(t, int64(60), res3.Amount)
