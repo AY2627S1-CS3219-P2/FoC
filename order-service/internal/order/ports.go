@@ -52,7 +52,7 @@ type Reservation struct {
 }
 
 // CreditClient calls credit-service synchronously. Settlement is by events
-// only (D-048), so these are the only two calls.
+// only (D-048), so these are the only calls.
 type CreditClient interface {
 	// AI-generated (edited by James Teo).
 	// Reserve returns nil once the credits are held, ErrInsufficientCredits on
@@ -61,12 +61,22 @@ type CreditClient interface {
 	// retry included. After a retry even ErrCreditRejected cannot prove
 	// nothing was held, so callers rely on D-047's queued refund either way.
 	Reserve(ctx context.Context, r Reservation) error
-	// Adjust sets the held amount for an errand to newReward (an absolute
-	// amount, D-057). It returns nil when applied, ErrInsufficientCredits on
-	// 422, ErrCreditRejected on another definite refusal, and any other error
-	// when the outcome is not known. Calls are made as the errand's requester:
-	// ctx carries their own access token, which the adapter forwards (D-056).
-	Adjust(ctx context.Context, errandID, requesterID uuid.UUID, newReward int, correlationID string) error
+	// Adjust asks credit-service to hold newReward for an errand before a
+	// raise is saved (D-102). currVersion is the errand's version before the
+	// raise: credit-service records currVersion + 1, so an older
+	// errand.reward_set can't undo the raise. It returns nil when held,
+	// ErrInsufficientCredits on 422, ErrCreditRejected on another definite
+	// refusal, and any other error when the outcome is not known. Calls are
+	// made as the errand's requester: ctx carries their own access token,
+	// which the adapter forwards (D-056).
+	Adjust(ctx context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, correlationID string) error
+	// Release asks credit-service to lower the hold to newReward right after
+	// a decrease is saved, so the requester's credits come back before the
+	// reply (D-102). operationID is the eventId of the errand.reward_set saved
+	// with the decrease: credit-service keys the change on it, so the event
+	// is then a duplicate and moves nothing. Any error means the release did
+	// not happen as far as the caller can tell; the event releases it later.
+	Release(ctx context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error
 }
 
 // OutboxEvent is one row of the outbox (D-051). AvailableAt delays publishing;
@@ -121,8 +131,8 @@ type AcceptCommand struct {
 type AmendResult struct {
 	Order   Order // the full row after the amendment; Version already incremented
 	History HistoryEntry
-	// Event is D-057's errand.reward_set when the reward changed, written in
-	// the same transaction; nil otherwise.
+	// Event is the errand.reward_set when the reward changed, written in the
+	// same transaction (D-102); nil otherwise.
 	Event *OutboxEvent
 }
 
@@ -203,19 +213,11 @@ type Repository interface {
 	Accept(ctx context.Context, c AcceptCommand) (Order, error)
 	// Amend locks the row (SELECT ... FOR UPDATE), calls fn with it while the
 	// lock is held, then writes fn's result and history row in the same
-	// transaction, with fn's event when it has one (D-057). fn's error
+	// transaction, with fn's event when it has one (D-102). fn's error
 	// rolls back and is returned unchanged. It returns ErrNotFound for an
 	// unknown id, and the unchanged row when fn returns a nil result.
 	Amend(ctx context.Context, id uuid.UUID, fn func(current Order) (*AmendResult, error)) (Order, error)
 	// AmendScheduled also serializes changes that open an errand against creates
 	// for the same requester, passing the transactional OPEN count to fn.
 	AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current Order, openCount int) (*AmendResult, error)) (Order, error)
-	// QueueLocked locks the row, calls fn with it as committed, and inserts
-	// the outbox event fn returns in the same transaction, so the event reflects
-	// the row no later write has yet changed (D-057). It returns ErrNotFound for
-	// an unknown id and fn's error unchanged.
-	//
-	// AI-generated (edited by James Teo).
-	// A nil event from fn inserts nothing.
-	QueueLocked(ctx context.Context, id uuid.UUID, fn func(current Order) (*OutboxEvent, error)) error
 }

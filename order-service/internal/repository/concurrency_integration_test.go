@@ -4,8 +4,8 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: Concurrency integration tests of the PostgreSQL order.Repository:
 //   one winner among racing accepts and K under contention (D-046, F3.3.2 to
-//   F3.3.4), accept latency against NFR2.3, and the row lock Amend and
-//   QueueLocked hold while their callback runs (D-057).
+//   F3.3.4), accept latency against NFR2.3, and the row lock Amend holds
+//   while its callback runs (D-057).
 // Author review: James Teo — reviewed and verified.
 
 package repository
@@ -268,46 +268,6 @@ func (e *env) testAmendHoldsRowLock(t *testing.T) {
 	require.Equal(t, 9, got.Reward)
 }
 
-// testQueueLockedHoldsRowLock is D-057's reward_set after a failed amend: fn
-// sees the row as committed while holding its lock, so a racing write waits
-// for it, and the event is in the outbox before that write goes through.
-func (e *env) testQueueLockedHoldsRowLock(t *testing.T) {
-	e.reset(t)
-	o := openErrand(uuid.New(), at(0))
-	e.insert(t, o)
-
-	var ev order.OutboxEvent
-	inFn, release, locked := holdInCallback(t, func(wait func()) error {
-		// AI-generated (edited by James Teo): fn returns a pointer, nil for no event.
-		return e.repo.QueueLocked(t.Context(), o.ID, func(cur order.Order) (*order.OutboxEvent, error) {
-			wait()
-			ev = rewardSetEvent(cur, at(5*time.Minute), "corr-amend")
-			return &ev, nil
-		})
-	})
-	receive(t, inFn, "QueueLocked to lock the row")
-
-	cancelled := make(chan error, 1)
-	go func() {
-		_, err := e.repo.Transition(t.Context(), cancelOpen(o, at(10*time.Minute)))
-		cancelled <- err
-	}()
-	e.waitForLockWait(t)
-	select {
-	case err := <-cancelled:
-		t.Fatalf("the cancel finished while QueueLocked held the row: %v", err)
-	default:
-	}
-
-	release()
-	require.NoError(t, receive(t, locked, "QueueLocked to return"))
-	require.NoError(t, receive(t, cancelled, "the cancel to finish"))
-	got := e.get(t, o.ID)
-	require.Equal(t, order.StateCancelled, got.State)
-	require.Equal(t, 2, got.Version, "QueueLocked itself changed no errand column")
-	require.Contains(t, e.outbox(t, ev.EventID).payload, `"version": 1`, "the event carries the version it saw")
-}
-
 // AI-generated (edited by James Teo).
 // testConcurrentCreatesRespectTheOpenLimit is D-058 under contention: ten
 // creates by one requester at once, with none OPEN before, save exactly five,
@@ -441,37 +401,15 @@ func (e *env) testAcceptIsJudgedAtArrival(t *testing.T) {
 }
 
 // AI-generated (edited by James Teo).
-// queueAfter is the PostgreSQL repository with QueueLocked held back until
-// wait returns, so a test can let another write commit first.
-type queueAfter struct {
-	*Postgres
-	wait func()
-}
-
-func (q *queueAfter) QueueLocked(ctx context.Context, id uuid.UUID, fn func(order.Order) (*order.OutboxEvent, error)) error {
-	q.wait()
-	return q.Postgres.QueueLocked(ctx, id, fn)
-}
-
-// AI-generated (edited by James Teo).
-// testNoRewardSetBehindASettlement is the race that would put a hold back on
-// a settled reservation. An amend's credit call has an unknown outcome while
-// the requester's cancel waits on its row lock; the cancel then commits
-// errand.cancelled before the amend's reward_set can be queued. The errand is
-// final by then, so no reward_set is queued behind the settlement, which
-// settles the reward the errand kept (D-059).
-func (e *env) testNoRewardSetBehindASettlement(t *testing.T) {
+// testNoRewardSetAfterAFailedRaise is a raise whose answer is lost while the
+// requester's cancel waits on the row lock the amend holds across its credit
+// call. The amend saves and queues nothing (D-102), so the cancel's
+// errand.cancelled is the only event, at the reward the errand kept, and
+// credit-service returns the whole hold, the lost raise's extra included.
+func (e *env) testNoRewardSetAfterAFailedRaise(t *testing.T) {
 	e.reset(t)
 	ctx := t.Context()
-	cancelled := make(chan error, 1)
-	cancelDone := make(chan struct{})
-	repo := &queueAfter{Postgres: e.repo, wait: func() {
-		select {
-		case <-cancelDone:
-		case <-time.After(10 * time.Second):
-		}
-	}}
-	svc, _, credit, supplier := serviceOn(repo)
+	svc, _, credit, supplier := serviceOn(e.repo)
 	requester := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
 	o, _, err := svc.Create(ctx, requester, order.CreateInput{
 		SupplierID: supplier.ID, ItemDescription: latte, DeliveryLocation: "COM3 Lobby", Reward: 5, CorrelationID: "corr-create",
@@ -486,10 +424,10 @@ func (e *env) testNoRewardSetBehindASettlement(t *testing.T) {
 		amended <- err
 	}()
 	receive(t, inAdjust, "the amend to hold the row across its credit call")
+	cancelled := make(chan error, 1)
 	go func() {
 		_, err := svc.Cancel(ctx, requester, o.ID, "corr-cancel")
 		cancelled <- err
-		close(cancelDone)
 	}()
 	e.waitForLockWait(t)
 
@@ -511,5 +449,5 @@ func (e *env) testNoRewardSetBehindASettlement(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []queued{{order.RoutingCancelled, 5}}, events, "the settlement alone, at the reward the errand kept")
 	held, _ := credit.Hold(o.ID)
-	require.Equal(t, 8, held, "credit holds the lost raise; settling by amount returns the rest to the requester")
+	require.Equal(t, 8, held, "credit holds the lost raise; the refund returns all of it")
 }

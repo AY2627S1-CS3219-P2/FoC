@@ -44,6 +44,8 @@ interface MyErrandsViewProps {
   onNotify: (message: ToastMessage) => void;
   /** After an action in the detail, so App refreshes the balance. */
   onCreditsChanged: () => void;
+  /** After a lowered reward, so App watches the balance for the release. */
+  onRewardLowered: () => void;
   /** For the empty states' buttons and the Credits link. */
   onNavigate: (view: ViewName) => void;
 }
@@ -81,6 +83,7 @@ export function MyErrandsView({
   available,
   onNotify,
   onCreditsChanged,
+  onRewardLowered,
   onNavigate,
 }: MyErrandsViewProps) {
   // AI-generated (edited by James Teo): Active is polled while shown; History
@@ -303,6 +306,7 @@ export function MyErrandsView({
             viewerRole="STUDENT"
             available={available}
             onChanged={changed}
+            onRewardLowered={onRewardLowered}
             onGone={(message) => {
               setOpen(null);
               onNotify({ text: message, kind: "error" });
