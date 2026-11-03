@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-11-03
-// Scope: Removed credit_operation_results dependency; reward adjustment and reward_set idempotency backed by credit_transactions ledger and reservation version.
+// Scope: Removed credit_operation_results dependency; reward adjustment and reward_set idempotency backed by credit_transactions ledger and reservation version. Lazy wallet initialization on reservation creation.
 // Author review: Reviewed by Seth
 
 package repository
@@ -52,7 +52,11 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID, re
 			return nil
 		}
 
-		// 4. If row does not exist: lock requester's credit_accounts row.
+		// 4. Ensure requester wallet exists (lazy initialization) and lock it.
+		if err := ensureWalletInitialized(txCtx, tx, requesterID, credit.InitialAllocationCredits, time.Now().UTC()); err != nil {
+			return fmt.Errorf("ensure requester wallet initialized: %w", err)
+		}
+
 		var (
 			availableCredits int64
 			reservedCredits  int64
@@ -67,9 +71,6 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID, re
 			requesterID,
 		).Scan(&availableCredits, &reservedCredits, &version, &integrityStatus)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return credit.ErrWalletNotReady
-			}
 			return fmt.Errorf("lock requester account: %w", err)
 		}
 

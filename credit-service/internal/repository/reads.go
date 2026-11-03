@@ -27,6 +27,7 @@ type cursorPayload struct {
 }
 
 // GetAccount retrieves the account projection for a user.
+// If the account has not been materialized yet, it lazily provisions the starting wallet with initial credits.
 func (r *PostgresRepository) GetAccount(ctx context.Context, userID uuid.UUID) (*credit.Account, error) {
 	var a credit.Account
 	err := r.pool.QueryRow(ctx, `
@@ -43,7 +44,13 @@ func (r *PostgresRepository) GetAccount(ctx context.Context, userID uuid.UUID) (
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, credit.ErrWalletNotReady
+			now := time.Now().UTC()
+			if err := r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
+				return ensureWalletInitialized(txCtx, tx, userID, credit.InitialAllocationCredits, now)
+			}); err != nil {
+				return nil, fmt.Errorf("lazy initialize wallet for get account: %w", err)
+			}
+			return r.GetAccount(ctx, userID)
 		}
 		return nil, fmt.Errorf("get credit account: %w", err)
 	}

@@ -408,4 +408,31 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		err = env.repo.RefundReservation(ctx, errandID, &requesterID, uuid.New(), credit.TransactionReasonErrandCancelled, now)
 		require.NoError(t, err)
 	})
+
+	t.Run("GetAccount lazily initializes missing wallet with 100 credits", func(t *testing.T) {
+		userID := uuid.New()
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, userID, acc.UserID)
+		require.Equal(t, int64(100), acc.AvailableCredits)
+		require.Equal(t, int64(0), acc.ReservedCredits)
+
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_transactions WHERE user_id = $1", userID).Scan(&txCount))
+		require.Equal(t, 1, txCount)
+	})
+
+	t.Run("CreateReservation lazily initializes missing requester wallet", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		res, created, err := env.repo.CreateReservation(ctx, errandID, userID, 30)
+		require.NoError(t, err)
+		require.True(t, created)
+		require.Equal(t, int64(30), res.Amount)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), acc.AvailableCredits)
+		require.Equal(t, int64(30), acc.ReservedCredits)
+	})
 }

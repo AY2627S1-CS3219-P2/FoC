@@ -59,7 +59,11 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return credit.ErrLifecycleViolation
 		}
 
-		// 4. Lock and verify the requester account.
+		// 4. Ensure requester account exists (lazy initialization) and lock it.
+		if err := ensureWalletInitialized(txCtx, tx, res.RequesterID, credit.InitialAllocationCredits, occurredAt); err != nil {
+			return fmt.Errorf("ensure requester wallet for refund: %w", err)
+		}
+
 		var (
 			availCredits int64
 			resCredits   int64
@@ -74,9 +78,6 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			res.RequesterID,
 		).Scan(&availCredits, &resCredits, &version, &integrity)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return credit.ErrWalletNotReady
-			}
 			return fmt.Errorf("lock requester account for refund: %w", err)
 		}
 
@@ -112,24 +113,10 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			res.Amount, res.RequesterID,
 		)
 		if err != nil || cmdTag.RowsAffected() != 1 {
-			return fmt.Errorf("refund credit account balance update failed: %w", err)
+			return fmt.Errorf("refund requester balance transfer failed: %w", err)
 		}
 
-		// 7. Use lifecycle event's eventId as operationId and append two new refund ledger entries.
-		_, err = tx.Exec(txCtx, `
-			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
-			)
-			VALUES
-				($1, $2, $3, 'RESERVED', -($4::bigint), $5, $6, NOW()),
-				($1, $2, $3, 'AVAILABLE', $4, $5, $6, NOW())`,
-			res.RequesterID, errandID, eventID, res.Amount, reason, occurredAt.UTC(),
-		)
-		if err != nil {
-			return fmt.Errorf("insert refund ledger entries: %w", err)
-		}
-
-		// 8. Mark the reservation REFUNDED.
+		// 7. Update reservation status to REFUNDED.
 		_, err = tx.Exec(txCtx, `
 			UPDATE credit_reservations
 			SET status = 'REFUNDED',
@@ -141,14 +128,29 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("update reservation status to REFUNDED: %w", err)
 		}
 
+		// 8. Append two balanced ledger rows under eventId.
+		_, err = tx.Exec(txCtx, `
+			INSERT INTO credit_transactions (
+				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+			)
+			VALUES
+				($1, $2, $3, 'AVAILABLE', $4, $5, $6, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), $5, $6, NOW())`,
+			res.RequesterID, errandID, eventID, res.Amount, reason, occurredAt.UTC(),
+		)
+		if err != nil {
+			return fmt.Errorf("insert refund ledger entries: %w", err)
+		}
+
 		return nil
 	})
 }
 
-// PayoutReservation executes the completion payout settlement transaction.
+// PayoutReservation executes the payout settlement transaction.
+// If the courier wallet does not exist, Step 1 creates it with initial credits atomically.
 func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		// 1. Lock the reservation.
+		// 1. Lock the reservation by errandId.
 		var res credit.Reservation
 		err := tx.QueryRow(txCtx, `
 			SELECT id, errand_id, requester_id, amount, status, created_at, updated_at
@@ -189,39 +191,17 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return credit.ErrSelfPayoutNotAllowed
 		}
 
-		// The completion amount is authoritative.
+		// The completion amount is authoritative. Reject an unexplained amount
+		// above the hold before changing any balance.
 		if amount == nil || *amount < 1 || *amount > res.Amount {
 			return credit.ErrLifecycleViolation
 		}
 		payoutAmount := *amount
 		leftover := res.Amount - payoutAmount
 
-		// Step 1: Ensure courier wallet exists (Lazy Wallet Initialization).
-		// If courier does not have an account yet, create it with 100 available credits and record REGISTRATION_ALLOCATION.
-		cmdTag, err := tx.Exec(txCtx, `
-			INSERT INTO credit_accounts (
-				user_id, available_credits, reserved_credits, version, created_at, updated_at
-			)
-			VALUES ($1, $2, 0, 1, $3, $3)
-			ON CONFLICT (user_id) DO NOTHING`,
-			courierID, credit.InitialAllocationCredits, occurredAt.UTC(),
-		)
-		if err != nil {
+		// Step 1: Ensure courier wallet exists (Universal Lazy Wallet Initialization).
+		if err := ensureWalletInitialized(txCtx, tx, courierID, credit.InitialAllocationCredits, occurredAt.UTC()); err != nil {
 			return fmt.Errorf("ensure courier wallet: %w", err)
-		}
-		if cmdTag.RowsAffected() == 1 {
-			// Record the registration allocation ledger entry with its own fresh operation ID.
-			regOpID := uuid.New()
-			_, err = tx.Exec(txCtx, `
-				INSERT INTO credit_transactions (
-					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
-				)
-				VALUES ($1, NULL, $2, 'AVAILABLE', $3, 'REGISTRATION_ALLOCATION', $4, $4)`,
-				courierID, regOpID, credit.InitialAllocationCredits, occurredAt.UTC(),
-			)
-			if err != nil {
-				return fmt.Errorf("insert lazy registration allocation transaction: %w", err)
-			}
 		}
 
 		// Step 2: Lock requester and courier accounts in ascending UUID order to prevent deadlock.
@@ -257,9 +237,6 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 
 		if orderRequesterFirst {
 			if err := lockRequester(); err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return credit.ErrWalletNotReady
-				}
 				return fmt.Errorf("lock requester account: %w", err)
 			}
 			if err := lockCourier(); err != nil {
@@ -270,9 +247,6 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				return fmt.Errorf("lock courier account: %w", err)
 			}
 			if err := lockRequester(); err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					return credit.ErrWalletNotReady
-				}
 				return fmt.Errorf("lock requester account: %w", err)
 			}
 		}
@@ -302,7 +276,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 		}
 
 		// Subtract stored amount from requester reserved credits, returning any leftover to available (D-059).
-		cmdTag, err = tx.Exec(txCtx, `
+		cmdTag, err := tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET reserved_credits = reserved_credits - $1,
 			    available_credits = available_credits + $2,
