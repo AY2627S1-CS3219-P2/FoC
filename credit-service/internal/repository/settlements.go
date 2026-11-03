@@ -20,7 +20,7 @@ import (
 )
 
 // RefundReservation executes the refund settlement transaction described in Phase 6.
-func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
 	switch reason {
 	case credit.TransactionReasonErrandCancelled, credit.TransactionReasonErrandExpired, credit.TransactionReasonErrandFailed:
 	default:
@@ -45,6 +45,10 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 				return credit.ErrReservationNotFound
 			}
 			return fmt.Errorf("lock reservation for refund: %w", err)
+		}
+
+		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
+			return credit.ErrRequesterMismatch
 		}
 
 		// 2. If it is already REFUNDED, acknowledge the duplicate.
@@ -220,7 +224,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 }
 
 // PayoutReservation executes the completion payout settlement transaction described in Phase 7.
-func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
+func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		// 1. Lock the reservation.
 		var res credit.Reservation
@@ -239,6 +243,10 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				return credit.ErrReservationNotFound
 			}
 			return fmt.Errorf("lock reservation for payout: %w", err)
+		}
+
+		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
+			return credit.ErrRequesterMismatch
 		}
 
 		// 2. If it is already PAID_OUT, treat incoming completion as a duplicate and return success.

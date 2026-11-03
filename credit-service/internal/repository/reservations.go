@@ -530,7 +530,7 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 
 		// Older events cannot change a hold already set for a newer order state.
 		if version < reservation.Version {
-			return nil
+			return credit.ErrRewardSetStale
 		}
 
 		diff := newReward - reservation.Amount

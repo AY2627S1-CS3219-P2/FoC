@@ -147,7 +147,7 @@ func (s *Service) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUI
 }
 
 // RefundReservation validates refund parameters and requests refund settlement from the repository.
-func (s *Service) RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
+func (s *Service) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
 	if errandID == uuid.Nil {
 		return ErrInvalidErrandID
 	}
@@ -166,11 +166,11 @@ func (s *Service) RefundReservation(ctx context.Context, errandID, eventID uuid.
 		return errors.New("settlement repository is required")
 	}
 
-	return s.settlementRepo.RefundReservation(ctx, errandID, eventID, reason, occurredAt)
+	return s.settlementRepo.RefundReservation(ctx, errandID, requesterID, eventID, reason, occurredAt)
 }
 
 // PayoutReservation validates completion payout parameters and requests payout settlement from the repository.
-func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
+func (s *Service) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	if errandID == uuid.Nil {
 		return ErrInvalidErrandID
 	}
@@ -190,7 +190,7 @@ func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, ev
 		return errors.New("settlement repository is required")
 	}
 
-	return s.settlementRepo.PayoutReservation(ctx, errandID, courierID, eventID, amount, occurredAt)
+	return s.settlementRepo.PayoutReservation(ctx, errandID, requesterID, courierID, eventID, amount, occurredAt)
 }
 
 // GetAccount retrieves the account projection for a user.

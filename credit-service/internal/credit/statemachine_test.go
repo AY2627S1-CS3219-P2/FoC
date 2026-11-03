@@ -342,13 +342,16 @@ func (m *inMemoryStateMachineRepo) ApplyRewardSet(_ context.Context, errandID, e
 	return nil
 }
 
-func (m *inMemoryStateMachineRepo) RefundReservation(_ context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+func (m *inMemoryStateMachineRepo) RefundReservation(_ context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	res, exists := m.reservations[errandID]
 	if !exists {
 		return credit.ErrReservationNotFound
+	}
+	if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
+		return credit.ErrLifecycleViolation
 	}
 	if res.Status == credit.ReservationStatusRefunded {
 		// duplicate redelivery
@@ -392,13 +395,16 @@ func (m *inMemoryStateMachineRepo) RefundReservation(_ context.Context, errandID
 	return nil
 }
 
-func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
+func (m *inMemoryStateMachineRepo) PayoutReservation(_ context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	res, exists := m.reservations[errandID]
 	if !exists {
 		return credit.ErrReservationNotFound
+	}
+	if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
+		return credit.ErrLifecycleViolation
 	}
 	if res.Status == credit.ReservationStatusPaidOut {
 		// duplicate redelivery
@@ -610,14 +616,14 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				eventID := uuid.New()
 				reasons := []credit.TransactionReason{credit.TransactionReasonErrandCancelled, credit.TransactionReasonErrandExpired, credit.TransactionReasonErrandFailed}
 				reason := reasons[r.Intn(len(reasons))]
-				err := svc.RefundReservation(ctx, e, eventID, reason, time.Now().UTC())
+				err := svc.RefundReservation(ctx, e, nil, eventID, reason, time.Now().UTC())
 				historyLog = append(historyLog, fmt.Sprintf("step %d: RefundReservation(errand=%s, reason=%s) -> err=%v", step, e, reason, err))
 
 			case 4: // Payout reservation
 				e := errands[r.Intn(len(errands))]
 				courier := users[r.Intn(len(users))]
 				eventID := uuid.New()
-				err := svc.PayoutReservation(ctx, e, courier, eventID, ptrAmount(1), time.Now().UTC())
+				err := svc.PayoutReservation(ctx, e, nil, courier, eventID, ptrAmount(1), time.Now().UTC())
 				historyLog = append(historyLog, fmt.Sprintf("step %d: PayoutReservation(errand=%s, courier=%s) -> err=%v", step, e, courier, err))
 
 			case 5: // Replay / Duplicate settlement step
@@ -625,12 +631,12 @@ func TestCreditStateMachine_DeterministicGeneratedInvariants(t *testing.T) {
 				courier := users[r.Intn(len(users))]
 				eventID := uuid.New()
 				if r.Float32() < 0.5 {
-					_ = svc.PayoutReservation(ctx, e, courier, eventID, ptrAmount(1), time.Now().UTC())
-					err := svc.PayoutReservation(ctx, e, courier, eventID, ptrAmount(1), time.Now().UTC())
+					_ = svc.PayoutReservation(ctx, e, nil, courier, eventID, ptrAmount(1), time.Now().UTC())
+					err := svc.PayoutReservation(ctx, e, nil, courier, eventID, ptrAmount(1), time.Now().UTC())
 					historyLog = append(historyLog, fmt.Sprintf("step %d: Duplicate PayoutReservation(errand=%s) -> err=%v", step, e, err))
 				} else {
-					_ = svc.RefundReservation(ctx, e, eventID, credit.TransactionReasonErrandCancelled, time.Now().UTC())
-					err := svc.RefundReservation(ctx, e, eventID, credit.TransactionReasonErrandCancelled, time.Now().UTC())
+					_ = svc.RefundReservation(ctx, e, nil, eventID, credit.TransactionReasonErrandCancelled, time.Now().UTC())
+					err := svc.RefundReservation(ctx, e, nil, eventID, credit.TransactionReasonErrandCancelled, time.Now().UTC())
 					historyLog = append(historyLog, fmt.Sprintf("step %d: Duplicate RefundReservation(errand=%s) -> err=%v", step, e, err))
 				}
 			}
@@ -665,7 +671,7 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 	t.Run("rejects self-payout", func(t *testing.T) {
 		errandID := uuid.New()
 		_, _, _ = svc.CreateReservation(context.Background(), errandID, u1, 50)
-		err := svc.PayoutReservation(context.Background(), errandID, u1, uuid.New(), ptrAmount(50), time.Now().UTC())
+		err := svc.PayoutReservation(context.Background(), errandID, nil, u1, uuid.New(), ptrAmount(50), time.Now().UTC())
 		if !errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
 			t.Fatalf("expected ErrSelfPayoutNotAllowed, got %v", err)
 		}
@@ -674,7 +680,7 @@ func TestCreditStateMachine_RejectsInvalidOperations(t *testing.T) {
 	t.Run("rejects post-terminal mutation", func(t *testing.T) {
 		errandID := uuid.New()
 		_, _, _ = svc.CreateReservation(context.Background(), errandID, u1, 30)
-		_ = svc.RefundReservation(context.Background(), errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
+		_ = svc.RefundReservation(context.Background(), errandID, nil, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
 
 		// Cannot adjust after terminal refund
 		_, _, err := svc.AdjustReservationReward(context.Background(), errandID, u1, 40, 1, uuid.New())

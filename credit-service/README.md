@@ -61,11 +61,18 @@ The service consumes events on durable queues bound to the `foc.events` topic ex
 - **Pending Refund Worker**: Claims and retries delayed refunds until committed.
 - **Reconciliation Worker**: Acquires PostgreSQL session advisory lock (`0x435245445F524543`), performs repeatable-read batch snapshot audits, and flags discrepancies.
 
-## Reward Hold Recovery
+## Reward Hold Recovery & DLQ Replay Procedure
 
 An increase can leave an excess hold if Order Service fails to commit after Credit Service secures the extra credits. A committed decrease can also leave an excess hold if its release call or `errand.reward_set` delivery fails. The excess remains reserved; completion pays exactly the event amount and returns the rest, while cancellation or expiry returns the full hold. A later successful reward change can also reset the hold. Do not release an excess hold solely because time has passed: Order Service's committed state must be checked first.
 
-Monitor `credit.errand.lifecycle.dlq` and the lifecycle consumer's structured errors. For an `errand.reward_set` in the DLQ, record its `eventId`, `errandId`, amount, and version; compare them with the committed order and the reservation before an authorized replay through the documented lifecycle replay procedure. Replay the original event identity so processing remains idempotent. Escalate a completion amount above the hold for investigation; replay it only after the producer and financial state are reconciled. Credit Service does not repair balances automatically.
+Monitor `credit.errand.lifecycle.dlq` and the lifecycle consumer's structured errors. Credit Service logs a structured warning on startup if any Dead Letter Queue contains messages. For an `errand.reward_set` in the DLQ, record its `eventId`, `errandId`, amount, and version; compare them with the committed order and the reservation before an authorized replay through the documented lifecycle replay procedure. Replay the original event identity so processing remains idempotent. Escalate a completion amount above the hold for investigation; replay it only after the producer and financial state are reconciled. Credit Service does not repair balances automatically.
+
+### DLQ Replay Procedure
+When replaying dead-lettered events after resolving the root cause:
+1. Fetch the dead-lettered event payload and note its original routing key (`errand.completed`, `errand.reward_set`, `errand.cancelled`, etc.).
+2. Republish the message body to exchange `foc.events` with its **original routing key** and header `content_type: application/json`.
+   > **WARNING**: Do **not** move/shovel messages directly back into `credit.errand.lifecycle`. Moving a message directly delivers it with the queue's name as its routing key, causing `validateTransport` to reject it right back to the DLQ. Republishing to `foc.events` routes it correctly.
+3. Remove/ack the message from the DLQ only after successful republishing.
 
 ---
 
