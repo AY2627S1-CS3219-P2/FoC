@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"math/rand"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -45,25 +46,72 @@ var LifecycleRoutingKeys = []string{
 
 // LifecycleService declares the domain actions needed by lifecycle consumers.
 type LifecycleService interface {
-	RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
+	RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
+	PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 	ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
+}
+
+// LifecycleOption configures optional behavior of a LifecycleHandler.
+type LifecycleOption func(*LifecycleHandler)
+
+// WithLifecycleBackoff configures a custom retry backoff function.
+func WithLifecycleBackoff(fn func(ctx context.Context, attempt int) bool) LifecycleOption {
+	return func(h *LifecycleHandler) {
+		h.backoffFn = fn
+	}
 }
 
 // LifecycleHandler processes errand lifecycle events.
 type LifecycleHandler struct {
-	service LifecycleService
-	logger  *slog.Logger
+	service   LifecycleService
+	logger    *slog.Logger
+	backoffFn func(ctx context.Context, attempt int) bool
 }
 
 // NewLifecycleHandler constructs a new LifecycleHandler.
-func NewLifecycleHandler(service LifecycleService, logger *slog.Logger) *LifecycleHandler {
+func NewLifecycleHandler(service LifecycleService, logger *slog.Logger, opts ...LifecycleOption) *LifecycleHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &LifecycleHandler{
+	h := &LifecycleHandler{
 		service: service,
 		logger:  logger,
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// CalculateLifecycleRetryBackoff computes nominal 1, 2, 4, 8s backoff with +/-20% random jitter.
+func CalculateLifecycleRetryBackoff(attempt int) time.Duration {
+	var nominal time.Duration
+	switch attempt {
+	case 1:
+		nominal = 1 * time.Second
+	case 2:
+		nominal = 2 * time.Second
+	case 3:
+		nominal = 4 * time.Second
+	case 4:
+		nominal = 8 * time.Second
+	default:
+		nominal = 8 * time.Second
+	}
+	jitterFactor := 0.8 + rand.Float64()*0.4
+	return time.Duration(float64(nominal) * jitterFactor)
+}
+
+func (h *LifecycleHandler) waitRetryBackoff(ctx context.Context, attempt int) bool {
+	if h.backoffFn != nil {
+		return h.backoffFn(ctx, attempt)
+	}
+	delay := CalculateLifecycleRetryBackoff(attempt)
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(delay):
+		return true
 	}
 }
 
@@ -78,11 +126,12 @@ type completedPayload struct {
 }
 
 type refundPayload struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	EventID       uuid.UUID `json:"eventId"`
-	ErrandID      uuid.UUID `json:"errandId"`
-	Amount        *int64    `json:"amount,omitempty"`
-	OccurredAt    time.Time `json:"occurredAt"`
+	SchemaVersion int        `json:"schemaVersion"`
+	EventID       uuid.UUID  `json:"eventId"`
+	ErrandID      uuid.UUID  `json:"errandId"`
+	RequesterID   *uuid.UUID `json:"requesterId,omitempty"`
+	Amount        *int64     `json:"amount,omitempty"`
+	OccurredAt    time.Time  `json:"occurredAt"`
 }
 
 type rewardSetPayload struct {
@@ -127,7 +176,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.PayoutReservation(ctx, ev.ErrandID, *ev.CourierID, ev.EventID, ev.Amount, ev.OccurredAt)
+		return h.service.PayoutReservation(ctx, ev.ErrandID, ev.RequesterID, *ev.CourierID, ev.EventID, ev.Amount, ev.OccurredAt)
 
 	case RoutingCancelled, RoutingExpired, RoutingFailed:
 		var ev refundPayload
@@ -165,7 +214,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.RefundReservation(ctx, ev.ErrandID, ev.EventID, reason, ev.OccurredAt)
+		return h.service.RefundReservation(ctx, ev.ErrandID, ev.RequesterID, ev.EventID, reason, ev.OccurredAt)
 
 	case RoutingRewardSet:
 		var ev rewardSetPayload
@@ -199,7 +248,26 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
+		err := h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
+		if errors.Is(err, credit.ErrRewardSetStale) {
+			h.logger.Info("errand.reward_set ignored as stale",
+				"routingKey", routingKey,
+				"errandId", ev.ErrandID,
+				"version", *ev.Version,
+				"amount", ev.Amount,
+			)
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		h.logger.Info("errand.reward_set applied",
+			"routingKey", routingKey,
+			"errandId", ev.ErrandID,
+			"version", *ev.Version,
+			"amount", ev.Amount,
+		)
+		return nil
 
 	default:
 		return fmt.Errorf("%w: unsupported routing key %s", ErrMalformedEvent, routingKey)
@@ -214,14 +282,30 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 		return
 	}
 
+	var meta struct {
+		ErrandID uuid.UUID `json:"errandId"`
+		Version  *int64    `json:"version"`
+	}
+	_ = json.Unmarshal(d.Body, &meta)
+
+	var logAttrs []any
+	logAttrs = append(logAttrs, "routingKey", d.RoutingKey)
+	if meta.ErrandID != uuid.Nil {
+		logAttrs = append(logAttrs, "errandId", meta.ErrandID)
+	}
+	if meta.Version != nil {
+		logAttrs = append(logAttrs, "version", *meta.Version)
+	}
+
 	err := h.Dispatch(ctx, d.RoutingKey, d.Body)
 	if err == nil {
 		_ = d.Ack(false)
 		return
 	}
 
-	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
-		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", "routingKey", d.RoutingKey, "error", err)
+	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) || errors.Is(err, credit.ErrRequesterMismatch) {
+		attrs := append(logAttrs, "error", err)
+		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", attrs...)
 		_ = d.Nack(false, false)
 		return
 	}
@@ -229,26 +313,36 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	attempt := getDeliveryAttempt(d)
 	if errors.Is(err, credit.ErrReservationNotFound) {
 		if d.RoutingKey == RoutingFailed {
-			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", "routingKey", d.RoutingKey)
+			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", logAttrs...)
 			_ = d.Ack(false)
 			return
 		}
 		if attempt >= 5 {
-			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+			attrs := append(logAttrs, "attempt", attempt, "error", err)
+			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", attrs...)
 			_ = d.Nack(false, false)
 			return
 		}
-		h.logger.Warn("reservation not found for lifecycle event, requeuing", "routingKey", d.RoutingKey, "attempt", attempt)
+		attrs := append(logAttrs, "attempt", attempt)
+		h.logger.Warn("reservation not found for lifecycle event, requeuing", attrs...)
+		if !h.waitRetryBackoff(ctx, attempt) {
+			return
+		}
 		_ = d.Nack(false, true)
 		return
 	}
 
 	if attempt >= 5 {
-		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+		attrs := append(logAttrs, "attempt", attempt, "error", err)
+		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", attrs...)
 		_ = d.Nack(false, false)
 		return
 	}
-	h.logger.Warn("retrying lifecycle event after temporary error", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+	attrs := append(logAttrs, "attempt", attempt, "error", err)
+	h.logger.Warn("retrying lifecycle event after temporary error", attrs...)
+	if !h.waitRetryBackoff(ctx, attempt) {
+		return
+	}
 	_ = d.Nack(false, true)
 }
 

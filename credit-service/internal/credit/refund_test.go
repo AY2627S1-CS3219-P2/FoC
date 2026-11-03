@@ -15,27 +15,30 @@ import (
 )
 
 type settlementRepositoryStub struct {
-	called     bool
-	errandID   uuid.UUID
-	courierID  uuid.UUID
-	eventID    uuid.UUID
-	reason     TransactionReason
-	occurredAt time.Time
-	err        error
+	called      bool
+	errandID    uuid.UUID
+	requesterID *uuid.UUID
+	courierID   uuid.UUID
+	eventID     uuid.UUID
+	reason      TransactionReason
+	occurredAt  time.Time
+	err         error
 }
 
-func (s *settlementRepositoryStub) RefundReservation(_ context.Context, errandID uuid.UUID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
+func (s *settlementRepositoryStub) RefundReservation(_ context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
 	s.called = true
 	s.errandID = errandID
+	s.requesterID = requesterID
 	s.eventID = eventID
 	s.reason = reason
 	s.occurredAt = occurredAt
 	return s.err
 }
 
-func (s *settlementRepositoryStub) PayoutReservation(_ context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, _ *int64, occurredAt time.Time) error {
+func (s *settlementRepositoryStub) PayoutReservation(_ context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, _ *int64, occurredAt time.Time) error {
 	s.called = true
 	s.errandID = errandID
+	s.requesterID = requesterID
 	s.courierID = courierID
 	s.eventID = eventID
 	s.occurredAt = occurredAt
@@ -52,21 +55,21 @@ func TestRefundReservationValidations(t *testing.T) {
 	validReason := TransactionReasonErrandCancelled
 
 	t.Run("rejects nil errand ID", func(t *testing.T) {
-		err := service.RefundReservation(context.Background(), uuid.Nil, validEventID, validReason, validOccurredAt)
+		err := service.RefundReservation(context.Background(), uuid.Nil, nil, validEventID, validReason, validOccurredAt)
 		if !errors.Is(err, ErrInvalidErrandID) {
 			t.Fatalf("expected ErrInvalidErrandID, got %v", err)
 		}
 	})
 
 	t.Run("rejects nil event ID", func(t *testing.T) {
-		err := service.RefundReservation(context.Background(), validErrandID, uuid.Nil, validReason, validOccurredAt)
+		err := service.RefundReservation(context.Background(), validErrandID, nil, uuid.Nil, validReason, validOccurredAt)
 		if !errors.Is(err, ErrInvalidOperationID) {
 			t.Fatalf("expected ErrInvalidOperationID, got %v", err)
 		}
 	})
 
 	t.Run("rejects zero occurredAt", func(t *testing.T) {
-		err := service.RefundReservation(context.Background(), validErrandID, validEventID, validReason, time.Time{})
+		err := service.RefundReservation(context.Background(), validErrandID, nil, validEventID, validReason, time.Time{})
 		if err == nil {
 			t.Fatal("expected error for zero occurredAt")
 		}
@@ -82,7 +85,7 @@ func TestRefundReservationValidations(t *testing.T) {
 			TransactionReasonRegistrationAllocation,
 		}
 		for _, r := range invalidReasons {
-			err := service.RefundReservation(context.Background(), validErrandID, validEventID, r, validOccurredAt)
+			err := service.RefundReservation(context.Background(), validErrandID, nil, validEventID, r, validOccurredAt)
 			if !errors.Is(err, ErrLifecycleViolation) {
 				t.Fatalf("expected ErrLifecycleViolation for reason %v, got %v", r, err)
 			}
@@ -91,7 +94,7 @@ func TestRefundReservationValidations(t *testing.T) {
 
 	t.Run("rejects missing repository", func(t *testing.T) {
 		svc := NewService(nil)
-		err := svc.RefundReservation(context.Background(), validErrandID, validEventID, validReason, validOccurredAt)
+		err := svc.RefundReservation(context.Background(), validErrandID, nil, validEventID, validReason, validOccurredAt)
 		if err == nil {
 			t.Fatal("expected error when settlement repository is missing")
 		}
@@ -113,7 +116,7 @@ func TestRefundReservationDelegation(t *testing.T) {
 			repo := &settlementRepositoryStub{}
 			service := NewService(nil, WithSettlementRepository(repo))
 
-			err := service.RefundReservation(context.Background(), errandID, eventID, reason, occurredAt)
+			err := service.RefundReservation(context.Background(), errandID, nil, eventID, reason, occurredAt)
 			if err != nil {
 				t.Fatalf("unexpected error for reason %s: %v", reason, err)
 			}
@@ -131,6 +134,7 @@ func TestRefundReservationDelegation(t *testing.T) {
 		testErrors := []error{
 			ErrReservationNotFound,
 			ErrLifecycleViolation,
+			ErrRequesterMismatch,
 			ErrWalletNotReady,
 			ErrServiceUnavailable,
 		}
@@ -138,7 +142,7 @@ func TestRefundReservationDelegation(t *testing.T) {
 			repo := &settlementRepositoryStub{err: targetErr}
 			service := NewService(nil, WithSettlementRepository(repo))
 
-			err := service.RefundReservation(context.Background(), errandID, eventID, TransactionReasonErrandCancelled, occurredAt)
+			err := service.RefundReservation(context.Background(), errandID, nil, eventID, TransactionReasonErrandCancelled, occurredAt)
 			if !errors.Is(err, targetErr) {
 				t.Fatalf("expected error %v, got %v", targetErr, err)
 			}

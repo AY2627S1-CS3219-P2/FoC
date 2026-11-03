@@ -32,10 +32,10 @@ type ReservationRepository interface {
 // SettlementRepository manages refunds and payouts from asynchronous errand lifecycle events.
 type SettlementRepository interface {
 	// RefundReservation settles a cancelled, expired, or failed errand back to the requester.
-	RefundReservation(ctx context.Context, errandID uuid.UUID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error
+	RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error
 
 	// PayoutReservation settles a completed errand from the requester's hold to the courier's available balance.
-	PayoutReservation(ctx context.Context, errandID uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
+	PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 }
 
 // ReadRepository provides queries for authenticated user balance and paginated history reads.
