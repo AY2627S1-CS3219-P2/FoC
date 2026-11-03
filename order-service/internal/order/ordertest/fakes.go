@@ -214,6 +214,8 @@ type Repository struct {
 	outbox  map[uuid.UUID]*outboxRow
 	nextID  int64
 	fail    map[string]error
+	// audits are the admin audit rows saved, in order.
+	audits []*order.AuditEntry
 	// AfterAmendFn, when set, is returned by Amend after fn has run and
 	// before anything is written: a commit that fails after credit was called.
 	AfterAmendFn error
@@ -566,6 +568,9 @@ func (r *Repository) Transition(_ context.Context, t order.Transition) (order.Or
 	r.appendHistory(t.History)
 	if t.Event != nil {
 		r.outbox[t.Event.EventID] = &outboxRow{event: *t.Event}
+	}
+	if t.Audit != nil {
+		r.audits = append(r.audits, t.Audit)
 	}
 	// AI-generated (edited by James Teo).
 	return r.withHistory(o), nil

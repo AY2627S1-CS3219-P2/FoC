@@ -195,6 +195,13 @@ func (p *Postgres) Transition(ctx context.Context, t order.Transition) (order.Or
 				return err
 			}
 		}
+		// An admin's cancel or complete saves its audit row with the transition
+		// (D-108): if this write fails, the transition rolls back with it.
+		if t.Audit != nil {
+			if err := insertAudit(ctx, tx, t.Audit); err != nil {
+				return err
+			}
+		}
 		// AI-generated (edited by James Teo).
 		// RETURNING ran before this transaction's history row, so a
 		// withdrawal's own courier is added here, as a read now would (D-060).

@@ -107,13 +107,18 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
-	done := make(chan struct{}, 2)
+	done := make(chan struct{}, 3)
 	go func() {
 		sweeper.New(repo, svc, order.SystemClock{}, log, sweepInterval).Run(ctx)
 		done <- struct{}{}
 	}()
 	go func() {
 		relay.New(relay.NewPostgresStore(pool), publisher, log, relay.Options{}).Run(ctx)
+		done <- struct{}{}
+	}()
+	// D-115: admin audit entries older than 6 months are removed by a scheduled job.
+	go func() {
+		svc.RunAuditPurge(ctx, order.PurgeInterval)
 		done <- struct{}{}
 	}()
 
@@ -165,7 +170,7 @@ func run(log *slog.Logger) error {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Warn("http shutdown", "err", err)
 	}
-	for range 2 {
+	for range 3 {
 		select {
 		case <-done:
 		case <-shutdownCtx.Done():

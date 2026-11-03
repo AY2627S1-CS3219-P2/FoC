@@ -60,6 +60,11 @@ func TestPostgres(t *testing.T) {
 	t.Run("Amend", e.testAmend)
 	t.Run("CheckConstraints", e.testCheckConstraints)
 	t.Run("ServiceLifecycle", e.testServiceLifecycle)
+	t.Run("AdminAudit", e.testAdminAudit)
+	t.Run("AdminAuditImmutableAndPurged", e.testAdminAuditImmutableAndPurged)
+	t.Run("AuditLogFiltersAndPages", e.testAuditLogFiltersAndPages)
+	t.Run("ListAdminErrands", e.testListAdminErrands)
+	t.Run("CountByUser", e.testCountByUser)
 
 	t.Run("ConcurrentAcceptsOneWinner", e.testConcurrentAcceptsOneWinner)
 	t.Run("ConcurrentAcceptsRespectK", e.testConcurrentAcceptsRespectK)
@@ -139,7 +144,7 @@ func startPostgres(t *testing.T) string {
 // reset empties every table.
 func (e *env) reset(t *testing.T) {
 	t.Helper()
-	_, err := e.pool.Exec(context.Background(), `TRUNCATE order_history, outbox, orders RESTART IDENTITY`)
+	_, err := e.pool.Exec(context.Background(), `TRUNCATE order_history, outbox, orders, admin_audit RESTART IDENTITY`)
 	require.NoError(t, err, "empty the tables")
 }
 
@@ -446,7 +451,8 @@ func (e *env) testMigrate(t *testing.T) {
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
 		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — 000003 updates active indexes for SCHEDULED.
-		require.Equal(t, 3, version)
+		// 000004 creates the admin audit table (D-106 to D-115).
+		require.Equal(t, 4, version)
 		require.False(t, dirty)
 	})
 	t.Run("a missing directory is an error", func(t *testing.T) {
