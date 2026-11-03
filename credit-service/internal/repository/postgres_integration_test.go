@@ -257,7 +257,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		eventID := uuid.New()
 		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, eventID, 35, 3, now))
 		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, eventID, 35, 3, now))
-		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 50, 2, now))
+		require.ErrorIs(t, env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 50, 2, now), credit.ErrRewardSetStale)
 		acc, err = env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, int64(65), acc.AvailableCredits)

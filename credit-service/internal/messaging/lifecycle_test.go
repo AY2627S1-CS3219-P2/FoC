@@ -6,6 +6,7 @@
 package messaging_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -270,7 +271,8 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 }
 
 func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 	eventID := uuid.New()
 	errandID := uuid.New()
 	now := time.Now().UTC()
@@ -291,7 +293,8 @@ func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
 	}
 	h := messaging.NewLifecycleHandler(svc, logger)
 
-	t.Run("valid reward_set payload dispatches successfully", func(t *testing.T) {
+	t.Run("valid reward_set payload dispatches successfully and logs applied", func(t *testing.T) {
+		logBuf.Reset()
 		body := fmt.Sprintf(`{
 			"schemaVersion": 1,
 			"eventId": "%s",
@@ -308,6 +311,41 @@ func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
 		if calledErrand != errandID || calledEvent != eventID || calledReward != 75 || calledVersion != 3 || !calledTime.Equal(now) {
 			t.Fatalf("dispatch did not forward expected values: errand=%s, event=%s, reward=%d, version=%d, time=%v",
 				calledErrand, calledEvent, calledReward, calledVersion, calledTime)
+		}
+		if !bytes.Contains(logBuf.Bytes(), []byte("errand.reward_set applied")) {
+			t.Fatalf("expected log 'errand.reward_set applied', got: %s", logBuf.String())
+		}
+		if !bytes.Contains(logBuf.Bytes(), []byte(errandID.String())) {
+			t.Fatalf("expected log to contain errandId %s, got: %s", errandID, logBuf.String())
+		}
+	})
+
+	t.Run("stale reward_set event logs ignored as stale", func(t *testing.T) {
+		logBuf.Reset()
+		staleSvc := &mockLifecycleService{
+			rewardSetFn: func(ctx context.Context, eID, evID uuid.UUID, reward, version int64, occ time.Time) error {
+				return credit.ErrRewardSetStale
+			},
+		}
+		staleHandler := messaging.NewLifecycleHandler(staleSvc, logger)
+		body := fmt.Sprintf(`{
+			"schemaVersion": 1,
+			"eventId": "%s",
+			"errandId": "%s",
+			"amount": 75,
+			"version": 2,
+			"occurredAt": "%s"
+		}`, eventID, errandID, now.Format(time.RFC3339Nano))
+
+		err := staleHandler.Dispatch(context.Background(), messaging.RoutingRewardSet, []byte(body))
+		if err != nil {
+			t.Fatalf("stale event should be acknowledged without error, got: %v", err)
+		}
+		if !bytes.Contains(logBuf.Bytes(), []byte("errand.reward_set ignored as stale")) {
+			t.Fatalf("expected log 'errand.reward_set ignored as stale', got: %s", logBuf.String())
+		}
+		if !bytes.Contains(logBuf.Bytes(), []byte(errandID.String())) {
+			t.Fatalf("expected log to contain errandId %s, got: %s", errandID, logBuf.String())
 		}
 	})
 
@@ -349,9 +387,10 @@ func TestCalculateLifecycleRetryBackoff(t *testing.T) {
 }
 
 func TestLifecycleHandler_RetryBackoff_InvokedOnTemporaryError(t *testing.T) {
-	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
+	var logBuf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 	svc := &mockLifecycleService{
-		refundFn: func(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+		rewardSetFn: func(ctx context.Context, errandID, eventID uuid.UUID, reward, version int64, occurredAt time.Time) error {
 			return errors.New("temporary database connection error")
 		},
 	}
@@ -362,15 +401,18 @@ func TestLifecycleHandler_RetryBackoff_InvokedOnTemporaryError(t *testing.T) {
 		return true
 	}))
 
+	errandID := uuid.New()
 	body := []byte(fmt.Sprintf(`{
 		"schemaVersion": 1,
 		"eventId": "%s",
 		"errandId": "%s",
+		"amount": 50,
+		"version": 2,
 		"occurredAt": "%s"
-	}`, uuid.New(), uuid.New(), time.Now().UTC().Format(time.RFC3339Nano)))
+	}`, uuid.New(), errandID, time.Now().UTC().Format(time.RFC3339Nano)))
 
 	d := amqp.Delivery{
-		RoutingKey:  messaging.RoutingCancelled,
+		RoutingKey:  messaging.RoutingRewardSet,
 		ContentType: "application/json",
 		Body:        body,
 	}
@@ -379,6 +421,15 @@ func TestLifecycleHandler_RetryBackoff_InvokedOnTemporaryError(t *testing.T) {
 
 	if backoffInvokedWithAttempt != 1 {
 		t.Fatalf("expected backoff called with attempt 1, got %d", backoffInvokedWithAttempt)
+	}
+
+	// Verify errandId and version are logged in the retry log
+	logStr := logBuf.String()
+	if !bytes.Contains([]byte(logStr), []byte(errandID.String())) {
+		t.Fatalf("expected retry log to contain errandId %s, got: %s", errandID, logStr)
+	}
+	if !bytes.Contains([]byte(logStr), []byte(`"version":2`)) {
+		t.Fatalf("expected retry log to contain version:2, got: %s", logStr)
 	}
 }
 

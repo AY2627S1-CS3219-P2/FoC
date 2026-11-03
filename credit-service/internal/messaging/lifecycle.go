@@ -247,7 +247,26 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
+		err := h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
+		if errors.Is(err, credit.ErrRewardSetStale) {
+			h.logger.Info("errand.reward_set ignored as stale",
+				"routingKey", routingKey,
+				"errandId", ev.ErrandID,
+				"version", *ev.Version,
+				"amount", ev.Amount,
+			)
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		h.logger.Info("errand.reward_set applied",
+			"routingKey", routingKey,
+			"errandId", ev.ErrandID,
+			"version", *ev.Version,
+			"amount", ev.Amount,
+		)
+		return nil
 
 	default:
 		return fmt.Errorf("%w: unsupported routing key %s", ErrMalformedEvent, routingKey)
@@ -262,6 +281,21 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 		return
 	}
 
+	var meta struct {
+		ErrandID uuid.UUID `json:"errandId"`
+		Version  *int64    `json:"version"`
+	}
+	_ = json.Unmarshal(d.Body, &meta)
+
+	var logAttrs []any
+	logAttrs = append(logAttrs, "routingKey", d.RoutingKey)
+	if meta.ErrandID != uuid.Nil {
+		logAttrs = append(logAttrs, "errandId", meta.ErrandID)
+	}
+	if meta.Version != nil {
+		logAttrs = append(logAttrs, "version", *meta.Version)
+	}
+
 	err := h.Dispatch(ctx, d.RoutingKey, d.Body)
 	if err == nil {
 		_ = d.Ack(false)
@@ -269,7 +303,8 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	}
 
 	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
-		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", "routingKey", d.RoutingKey, "error", err)
+		attrs := append(logAttrs, "error", err)
+		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", attrs...)
 		_ = d.Nack(false, false)
 		return
 	}
@@ -277,16 +312,18 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	attempt := getDeliveryAttempt(d)
 	if errors.Is(err, credit.ErrReservationNotFound) {
 		if d.RoutingKey == RoutingFailed {
-			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", "routingKey", d.RoutingKey)
+			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", logAttrs...)
 			_ = d.Ack(false)
 			return
 		}
 		if attempt >= 5 {
-			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+			attrs := append(logAttrs, "attempt", attempt, "error", err)
+			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", attrs...)
 			_ = d.Nack(false, false)
 			return
 		}
-		h.logger.Warn("reservation not found for lifecycle event, requeuing", "routingKey", d.RoutingKey, "attempt", attempt)
+		attrs := append(logAttrs, "attempt", attempt)
+		h.logger.Warn("reservation not found for lifecycle event, requeuing", attrs...)
 		if !h.waitRetryBackoff(ctx, attempt) {
 			return
 		}
@@ -295,11 +332,13 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	}
 
 	if attempt >= 5 {
-		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+		attrs := append(logAttrs, "attempt", attempt, "error", err)
+		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", attrs...)
 		_ = d.Nack(false, false)
 		return
 	}
-	h.logger.Warn("retrying lifecycle event after temporary error", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+	attrs := append(logAttrs, "attempt", attempt, "error", err)
+	h.logger.Warn("retrying lifecycle event after temporary error", attrs...)
 	if !h.waitRetryBackoff(ctx, attempt) {
 		return
 	}

@@ -28,4 +28,5 @@ var (
 	ErrLifecycleViolation       = errors.New("non-retryable lifecycle violation")
 	ErrSelfPayoutNotAllowed     = errors.New("requester cannot be courier")
 	ErrServiceUnavailable       = errors.New("service unavailable")
+	ErrRewardSetStale           = errors.New("errand.reward_set version is older than reservation, ignored as stale")
 )
