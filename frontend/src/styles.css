@@ -2094,3 +2094,12 @@ button.service-card:hover {
   padding: 0;
   list-style: none;
 }
+
+/* An account's details, open under its row in the Accounts tab. */
+.account-detail {
+  margin: -4px 0 12px;
+  padding: 14px;
+  background: var(--surface);
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-lg);
+}

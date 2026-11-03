@@ -123,7 +123,7 @@ export function AuditLogView({ usersApi, ordersApi, suppliersApi, onOpenAccount 
       </p>
       <div className="filter-row">
         <div className="field">
-          <label htmlFor="audit-source">Area</label>
+          <label htmlFor="audit-source">Service</label>
           <select
             id="audit-source"
             value={source}

@@ -11,16 +11,21 @@ import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
 import { ErrandCard } from "../errands/ErrandCard";
 import { ERRAND_DETAIL_TITLE_ID, ErrandDetail } from "../errands/ErrandDetail";
-import { endedText, orderErrorMessage, STATE_LABEL } from "../errands/format";
+import { ErrandFilters, useSupplierChoices, type ErrandFilterValues } from "../errands/ErrandFilters";
+import { endedText, orderErrorMessage } from "../errands/format";
 import type { OrdersApi } from "../errands/ordersApi";
 import type { AdminErrandSort, ErrandList, ErrandStatus } from "../errands/orderTypes";
 import type { UsersApi } from "../profile/usersApi";
-import type { Supplier } from "../suppliers/types";
 import type { SuppliersApi } from "../suppliers/suppliersApi";
 import { PAGE_SIZE, offsetOfPage, pageCount } from "./auditTypes";
 
 /** The final states a past errand can be in. */
 const FINAL: ErrandStatus[] = ["COMPLETED", "CANCELLED", "EXPIRED"];
+
+const SORTS: { value: AdminErrandSort; label: string }[] = [
+  { value: "recent", label: "Most recent" },
+  { value: "supplier_name", label: "Supplier name (A–Z)" },
+];
 
 interface PastErrandsViewProps {
   ordersApi: OrdersApi;
@@ -40,31 +45,22 @@ export function PastErrandsView({
   onNotify,
   onLookUpAccount,
 }: PastErrandsViewProps) {
-  const [state, setState] = useState<ErrandStatus | "">("");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [supplierId, setSupplierId] = useState("");
-  const [sort, setSort] = useState<AdminErrandSort>("recent");
+  const [filters, setFilters] = useState<ErrandFilterValues>({
+    state: "",
+    supplierId: "",
+    from: "",
+    to: "",
+    sort: "recent",
+  });
+  const { state, supplierId, from, to, sort } = filters;
   const [page, setPage] = useState(1);
   const [list, setList] = useState<ErrandList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const suppliers = useSupplierChoices(suppliersApi);
   const [open, setOpen] = useState<string | null>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
-
-  // The supplier filter is a list of names; a failed load only leaves it empty.
-  useEffect(() => {
-    let live = true;
-    suppliersApi
-      .listSuppliers()
-      .then((s) => live && setSuppliers(s))
-      .catch(() => undefined);
-    return () => {
-      live = false;
-    };
-  }, [suppliersApi]);
 
   useEffect(() => {
     let live = true;
@@ -92,57 +88,23 @@ export function PastErrandsView({
     };
   }, [ordersApi, state, from, to, supplierId, sort, page, reload]);
 
-  function filtered<T>(set: (v: T) => void) {
-    return (v: T) => {
-      set(v);
-      setPage(1);
-    };
-  }
-
   return (
     <div>
       <h2 className="section-label" ref={headingRef} tabIndex={-1}>
         Past errands
       </h2>
-      <div className="filter-row">
-        <div className="field">
-          <label htmlFor="past-state">State</label>
-          <select id="past-state" value={state} onChange={(e) => filtered(setState)(e.target.value as ErrandStatus | "")}>
-            <option value="">Any</option>
-            {FINAL.map((s) => (
-              <option key={s} value={s}>
-                {STATE_LABEL[s]}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="past-supplier">Supplier</label>
-          <select id="past-supplier" value={supplierId} onChange={(e) => filtered(setSupplierId)(e.target.value)}>
-            <option value="">Any</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="past-from">Ended from</label>
-          <input id="past-from" type="date" value={from} onChange={(e) => filtered(setFrom)(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="past-to">Ended before</label>
-          <input id="past-to" type="date" value={to} onChange={(e) => filtered(setTo)(e.target.value)} />
-        </div>
-        <div className="field">
-          <label htmlFor="past-sort">Sort</label>
-          <select id="past-sort" value={sort} onChange={(e) => filtered(setSort)(e.target.value as AdminErrandSort)}>
-            <option value="recent">Most recent</option>
-            <option value="supplier_name">Supplier name (A–Z)</option>
-          </select>
-        </div>
-      </div>
+      <ErrandFilters
+        idPrefix="past"
+        value={filters}
+        states={FINAL}
+        dateLabel="Ended"
+        sorts={SORTS}
+        suppliers={suppliers}
+        onChange={(next) => {
+          setFilters(next);
+          setPage(1);
+        }}
+      />
 
       {error && (
         <p className="status error" role="alert">

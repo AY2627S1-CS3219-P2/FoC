@@ -5,7 +5,7 @@
 //   act on it (reset its password, suspend or reactivate).
 // Author review: PENDING — <reviewer to complete>
 
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
 import type { OrdersApi } from "../errands/ordersApi";
@@ -17,6 +17,9 @@ import { PAGE_SIZE, offsetOfPage, pageCount } from "./auditTypes";
 
 const STATUSES: AccountStatus[] = ["ACTIVE", "SUSPENDED", "UNVERIFIED"];
 
+/** How long typing must pause before the list is searched again. */
+const SEARCH_DELAY_MS = 250;
+
 interface AccountsPanelProps {
   usersApi: UsersApi;
   ordersApi: OrdersApi | null;
@@ -26,7 +29,7 @@ interface AccountsPanelProps {
   onNotify: (message: ToastMessage) => void;
 }
 
-/** Search and list on top; the chosen account's actions and review below it. */
+/** Search and list; the chosen account's actions and review open under its row. */
 export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccountId, onNotify }: AccountsPanelProps) {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
@@ -62,11 +65,50 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
     };
   }, [usersApi, query, status, page, reload]);
 
+  // The list follows the typing: it searches once typing pauses, and Enter
+  // searches at once.
+  useEffect(() => {
+    const typed = draft.trim();
+    if (typed === query) return;
+    const timer = setTimeout(() => {
+      setQuery(typed);
+      setPage(1);
+    }, SEARCH_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [draft, query]);
+
   function search(e: FormEvent) {
     e.preventDefault();
     setQuery(draft.trim());
     setPage(1);
   }
+
+  const chosen = selected ? list?.items.find((a) => a.uid === selected.uid) : undefined;
+  // The details open under their row. When the account is not on this page
+  // (it was looked up from an errand, or the search moved on), they open above
+  // the list instead of vanishing.
+  const detail = selected && (
+    <div className="account-detail">
+      <AdminView
+        key={selected.uid}
+        embedded
+        usersApi={usersApi}
+        currentUserId={currentUserId}
+        initialAccountId={selected.uid}
+        onNotify={(m) => {
+          onNotify(m);
+          // A status change shows in the list too.
+          setReload((n) => n + 1);
+        }}
+      />
+      <AccountReview
+        uid={selected.uid}
+        ordersApi={ordersApi}
+        usersApi={usersApi}
+        lastLoginAt={chosen ? (chosen.lastLoginAt ?? null) : selected.lastLoginAt}
+      />
+    </div>
+  );
 
   return (
     <div>
@@ -96,7 +138,6 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
             </option>
           ))}
         </select>
-        <button className="btn btn-primary">Search</button>
       </form>
 
       {error && (
@@ -117,45 +158,35 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
           No accounts match.
         </p>
       )}
-      {list?.items.map((a) => (
-        <button
-          key={a.uid}
-          type="button"
-          className="account-row"
-          aria-current={selected?.uid === a.uid}
-          onClick={() => setSelected({ uid: a.uid, lastLoginAt: a.lastLoginAt ?? null })}
-        >
-          <span>
-            <strong>{a.username || "—"}</strong>
-            <span className="audit-meta"> {a.email}</span>
-          </span>
-          <span className="audit-meta">
-            {a.role} · {a.status}
-            {a.lastLoginAt ? ` · last in ${formatDateTime(a.lastLoginAt) || a.lastLoginAt}` : " · never signed in"}
-          </span>
-        </button>
-      ))}
+      {list && !chosen && detail}
+      {list?.items.map((a) => {
+        const isSelected = selected?.uid === a.uid;
+        return (
+          <Fragment key={a.uid}>
+            <button
+              type="button"
+              className="account-row"
+              aria-expanded={isSelected}
+              aria-current={isSelected}
+              onClick={() => setSelected(isSelected ? null : { uid: a.uid, lastLoginAt: a.lastLoginAt ?? null })}
+            >
+              <span>
+                <strong>{a.username || "—"}</strong>
+                <span className="audit-meta"> {a.email}</span>
+              </span>
+              <span className="audit-meta">
+                {a.role} · {a.status}
+                {a.lastLoginAt ? ` · last in ${formatDateTime(a.lastLoginAt) || a.lastLoginAt}` : " · never signed in"}
+              </span>
+            </button>
+            {isSelected && detail}
+          </Fragment>
+        );
+      })}
       {list && (
         <Pager page={page} pageCount={pageCount(list.total, list.limit)} total={list.total} busy={loading} onPage={setPage} />
       )}
 
-      {selected && (
-        <div className="card" style={{ marginTop: 16 }}>
-          <AdminView
-            key={selected.uid}
-            embedded
-            usersApi={usersApi}
-            currentUserId={currentUserId}
-            initialAccountId={selected.uid}
-            onNotify={(m) => {
-              onNotify(m);
-              // A status change shows in the list too.
-              setReload((n) => n + 1);
-            }}
-          />
-          <AccountReview uid={selected.uid} ordersApi={ordersApi} usersApi={usersApi} lastLoginAt={selected.lastLoginAt} />
-        </div>
-      )}
     </div>
   );
 }

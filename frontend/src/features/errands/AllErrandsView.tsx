@@ -7,15 +7,18 @@
 
 import { useRef, useState } from "react";
 import { Modal } from "../../components/Modal";
+import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
 import { usePolling } from "../../lib/polling";
+import { PAGE_SIZE, offsetOfPage, pageCount } from "../admin/auditTypes";
 import type { UsersApi } from "../profile/usersApi";
 import type { SuppliersApi } from "../suppliers/suppliersApi";
 import { ErrandCard } from "./ErrandCard";
+import { ErrandFilters, useSupplierChoices, type ErrandFilterValues } from "./ErrandFilters";
 import { ERRAND_DETAIL_TITLE_ID, ErrandDetail, type ErrandSnapshot } from "./ErrandDetail";
 import { orderErrorMessage, timeInStateText } from "./format";
 import type { OrdersApi } from "./ordersApi";
-import type { Errand } from "./orderTypes";
+import type { AdminErrandSort, Errand, ErrandStatus } from "./orderTypes";
 import { clockOffset, serverNow, useNow } from "./time";
 
 interface AllErrandsViewProps {
@@ -35,8 +38,20 @@ interface AllErrandsViewProps {
 
 interface ActiveList {
   items: Errand[];
+  /** Server clock minus device clock, for the time-in-state lines. */
   offset: number;
+  total: number;
+  limit: number;
 }
+
+/** The states an errand that is not finished can be in. */
+const ACTIVE_STATES: ErrandStatus[] = ["OPEN", "ACCEPTED", "PICKED_UP", "DELIVERED"];
+
+const SORTS: { value: AdminErrandSort; label: string }[] = [
+  { value: "oldest", label: "Longest in its state" },
+  { value: "recent", label: "Most recent" },
+  { value: "supplier_name", label: "Supplier name (A–Z)" },
+];
 
 /**
  * App shows this to ADMIN sessions only, which is an affordance: order-service
@@ -53,6 +68,15 @@ export function AllErrandsView({
   onLookUpAccount,
   embedded = false,
 }: AllErrandsViewProps) {
+  const [filters, setFilters] = useState<ErrandFilterValues>({
+    state: "",
+    supplierId: "",
+    from: "",
+    to: "",
+    sort: "oldest",
+  });
+  const [page, setPage] = useState(1);
+  const suppliers = useSupplierChoices(suppliersApi);
   const [list, setList] = useState<ActiveList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState<{ id: string; initial?: ErrandSnapshot } | null>(null);
@@ -63,9 +87,23 @@ export function AllErrandsView({
   const refresh = usePolling(
     async (isActive) => {
       try {
-        const result = await ordersApi.listActiveForAdmin();
+        const result = await ordersApi.listErrandsAsAdmin({
+          scope: "active",
+          state: filters.state || undefined,
+          supplierId: filters.supplierId || undefined,
+          from: filters.from || undefined,
+          to: filters.to || undefined,
+          sort: filters.sort,
+          limit: PAGE_SIZE,
+          offset: offsetOfPage(page, PAGE_SIZE),
+        });
         if (!isActive()) return;
-        setList({ items: result.items, offset: clockOffset(result.serverTime) });
+        setList({
+          items: result.items,
+          offset: clockOffset(result.serverTime),
+          total: result.total ?? result.items.length,
+          limit: result.limit ?? PAGE_SIZE,
+        });
         setError(null);
       } catch (err) {
         if (isActive()) setError(orderErrorMessage(err));
@@ -73,8 +111,9 @@ export function AllErrandsView({
       }
     },
     5_000,
-    [ordersApi],
+    [ordersApi, filters, page],
   );
+  const filtering = filters.state !== "" || filters.supplierId !== "" || filters.from !== "" || filters.to !== "";
 
   const at = list ? serverNow(list.offset, now) : now;
 
@@ -86,10 +125,23 @@ export function AllErrandsView({
           {embedded ? "Active errands" : "All errands"}
         </Heading>
         <p className="page-sub">
-          Every errand that isn&rsquo;t finished yet, the longest in its state first. Open one
-          to cancel it or mark it completed when it has stalled.
+          Every errand that isn&rsquo;t finished yet, the longest in its state first unless you
+          sort it differently. Open one to cancel it or mark it completed when it has stalled.
         </p>
       </div>
+
+      <ErrandFilters
+        idPrefix="active"
+        value={filters}
+        states={ACTIVE_STATES}
+        dateLabel="In state"
+        sorts={SORTS}
+        suppliers={suppliers}
+        onChange={(next) => {
+          setFilters(next);
+          setPage(1);
+        }}
+      />
 
       {error && (
         <p className="status error" role="alert">
@@ -109,7 +161,7 @@ export function AllErrandsView({
 
       {list && list.items.length === 0 && (
         <p className="status" role="status">
-          No errands in progress.
+          {filtering ? "No errands match." : "No errands in progress."}
         </p>
       )}
 
@@ -126,6 +178,16 @@ export function AllErrandsView({
           }
         />
       ))}
+
+      {list && (
+        <Pager
+          page={page}
+          pageCount={pageCount(list.total, list.limit)}
+          total={list.total}
+          busy={false}
+          onPage={setPage}
+        />
+      )}
 
       {open && (
         <Modal
