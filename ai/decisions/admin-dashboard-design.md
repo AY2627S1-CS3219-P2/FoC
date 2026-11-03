@@ -7,7 +7,7 @@ Author review: PENDING — <reviewer to complete> -->
 
 # Admin dashboard: the shapes D-104 to D-123 leave open
 
-**Status: proposed (D-124).** Everything here follows from the owner's decisions
+**Status: accepted (D-124), owner approved 2026-11-03.** Everything here follows from the owner's decisions
 D-104 to D-123 in `ai/decisions.md`. Where a decision left a name, a type or a
 route open, this file fills it in so the three services can be built to the same
 shape. Edit this file to change one, and the code follows.
