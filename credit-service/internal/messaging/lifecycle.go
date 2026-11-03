@@ -14,6 +14,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"math/rand"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -50,20 +51,67 @@ type LifecycleService interface {
 	ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
+// LifecycleOption configures optional behavior of a LifecycleHandler.
+type LifecycleOption func(*LifecycleHandler)
+
+// WithLifecycleBackoff configures a custom retry backoff function.
+func WithLifecycleBackoff(fn func(ctx context.Context, attempt int) bool) LifecycleOption {
+	return func(h *LifecycleHandler) {
+		h.backoffFn = fn
+	}
+}
+
 // LifecycleHandler processes errand lifecycle events.
 type LifecycleHandler struct {
-	service LifecycleService
-	logger  *slog.Logger
+	service   LifecycleService
+	logger    *slog.Logger
+	backoffFn func(ctx context.Context, attempt int) bool
 }
 
 // NewLifecycleHandler constructs a new LifecycleHandler.
-func NewLifecycleHandler(service LifecycleService, logger *slog.Logger) *LifecycleHandler {
+func NewLifecycleHandler(service LifecycleService, logger *slog.Logger, opts ...LifecycleOption) *LifecycleHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &LifecycleHandler{
+	h := &LifecycleHandler{
 		service: service,
 		logger:  logger,
+	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
+}
+
+// CalculateLifecycleRetryBackoff computes nominal 1, 2, 4, 8s backoff with +/-20% random jitter.
+func CalculateLifecycleRetryBackoff(attempt int) time.Duration {
+	var nominal time.Duration
+	switch attempt {
+	case 1:
+		nominal = 1 * time.Second
+	case 2:
+		nominal = 2 * time.Second
+	case 3:
+		nominal = 4 * time.Second
+	case 4:
+		nominal = 8 * time.Second
+	default:
+		nominal = 8 * time.Second
+	}
+	jitterFactor := 0.8 + rand.Float64()*0.4
+	return time.Duration(float64(nominal) * jitterFactor)
+}
+
+func (h *LifecycleHandler) waitRetryBackoff(ctx context.Context, attempt int) bool {
+	if h.backoffFn != nil {
+		return h.backoffFn(ctx, attempt)
+	}
+	delay := CalculateLifecycleRetryBackoff(attempt)
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(delay):
+		return true
 	}
 }
 
@@ -239,6 +287,9 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 			return
 		}
 		h.logger.Warn("reservation not found for lifecycle event, requeuing", "routingKey", d.RoutingKey, "attempt", attempt)
+		if !h.waitRetryBackoff(ctx, attempt) {
+			return
+		}
 		_ = d.Nack(false, true)
 		return
 	}
@@ -249,6 +300,9 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 		return
 	}
 	h.logger.Warn("retrying lifecycle event after temporary error", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+	if !h.waitRetryBackoff(ctx, attempt) {
+		return
+	}
 	_ = d.Nack(false, true)
 }
 
