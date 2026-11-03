@@ -209,7 +209,7 @@ func (s *Supervisor) verifyTopology(ch *amqp.Channel) error {
 		return fmt.Errorf("passive exchange foc.dlx: %w", err)
 	}
 
-	// Passively declare queues
+	// Passively declare queues and check DLQ depth
 	queues := []string{
 		RegistrationQueue,
 		"credit.registration.dlq",
@@ -217,8 +217,15 @@ func (s *Supervisor) verifyTopology(ch *amqp.Channel) error {
 		"credit.errand.lifecycle.dlq",
 	}
 	for _, q := range queues {
-		if _, err := ch.QueueDeclarePassive(q, true, false, false, false, nil); err != nil {
+		qState, err := ch.QueueDeclarePassive(q, true, false, false, false, nil)
+		if err != nil {
 			return fmt.Errorf("passive queue %s: %w", q, err)
+		}
+		if (q == "credit.registration.dlq" || q == "credit.errand.lifecycle.dlq") && qState.Messages > 0 {
+			s.logger.Warn("dead letter queue is not empty, manual investigation or replay required",
+				"queue", q,
+				"messageCount", qState.Messages,
+			)
 		}
 	}
 
