@@ -46,8 +46,8 @@ var LifecycleRoutingKeys = []string{
 
 // LifecycleService declares the domain actions needed by lifecycle consumers.
 type LifecycleService interface {
-	RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
+	RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
+	PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 	ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
@@ -126,11 +126,12 @@ type completedPayload struct {
 }
 
 type refundPayload struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	EventID       uuid.UUID `json:"eventId"`
-	ErrandID      uuid.UUID `json:"errandId"`
-	Amount        *int64    `json:"amount,omitempty"`
-	OccurredAt    time.Time `json:"occurredAt"`
+	SchemaVersion int        `json:"schemaVersion"`
+	EventID       uuid.UUID  `json:"eventId"`
+	ErrandID      uuid.UUID  `json:"errandId"`
+	RequesterID   *uuid.UUID `json:"requesterId,omitempty"`
+	Amount        *int64     `json:"amount,omitempty"`
+	OccurredAt    time.Time  `json:"occurredAt"`
 }
 
 type rewardSetPayload struct {
@@ -175,7 +176,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.PayoutReservation(ctx, ev.ErrandID, *ev.CourierID, ev.EventID, ev.Amount, ev.OccurredAt)
+		return h.service.PayoutReservation(ctx, ev.ErrandID, ev.RequesterID, *ev.CourierID, ev.EventID, ev.Amount, ev.OccurredAt)
 
 	case RoutingCancelled, RoutingExpired, RoutingFailed:
 		var ev refundPayload
@@ -213,7 +214,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
-		return h.service.RefundReservation(ctx, ev.ErrandID, ev.EventID, reason, ev.OccurredAt)
+		return h.service.RefundReservation(ctx, ev.ErrandID, ev.RequesterID, ev.EventID, reason, ev.OccurredAt)
 
 	case RoutingRewardSet:
 		var ev rewardSetPayload
@@ -302,7 +303,7 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 		return
 	}
 
-	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
+	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) || errors.Is(err, credit.ErrRequesterMismatch) {
 		attrs := append(logAttrs, "error", err)
 		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", attrs...)
 		_ = d.Nack(false, false)

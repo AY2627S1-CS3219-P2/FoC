@@ -23,21 +23,21 @@ import (
 )
 
 type mockLifecycleService struct {
-	refundFn    func(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	payoutFn    func(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
+	refundFn    func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
+	payoutFn    func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 	rewardSetFn func(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
-func (m *mockLifecycleService) RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+func (m *mockLifecycleService) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
 	if m.refundFn != nil {
-		return m.refundFn(ctx, errandID, eventID, reason, occurredAt)
+		return m.refundFn(ctx, errandID, requesterID, eventID, reason, occurredAt)
 	}
 	return nil
 }
 
-func (m *mockLifecycleService) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
+func (m *mockLifecycleService) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	if m.payoutFn != nil {
-		return m.payoutFn(ctx, errandID, courierID, eventID, amount, occurredAt)
+		return m.payoutFn(ctx, errandID, requesterID, courierID, eventID, amount, occurredAt)
 	}
 	return nil
 }
@@ -57,11 +57,13 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 	now := time.Now().UTC()
 
 	var calledErrand, calledCourier, calledEvent uuid.UUID
+	var calledRequester *uuid.UUID
 	var calledTime time.Time
 
 	svc := &mockLifecycleService{
-		payoutFn: func(ctx context.Context, eID, cID, evID uuid.UUID, amount *int64, occ time.Time) error {
+		payoutFn: func(ctx context.Context, eID uuid.UUID, reqID *uuid.UUID, cID, evID uuid.UUID, amount *int64, occ time.Time) error {
 			calledErrand = eID
+			calledRequester = reqID
 			calledCourier = cID
 			calledEvent = evID
 			calledTime = occ
@@ -71,22 +73,24 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 	h := messaging.NewLifecycleHandler(svc, logger)
 
 	t.Run("valid completed payload dispatches successfully", func(t *testing.T) {
-		body := fmt.Sprintf(`{
+		requesterID := uuid.New()
+	body := fmt.Sprintf(`{
 			"schemaVersion": 1,
 			"eventId": "%s",
 			"errandId": "%s",
+			"requesterId": "%s",
 			"courierId": "%s",
 			"amount": 50,
 			"occurredAt": "%s"
-		}`, eventID, errandID, courierID, now.Format(time.RFC3339Nano))
+		}`, eventID, errandID, requesterID, courierID, now.Format(time.RFC3339Nano))
 
 		err := h.Dispatch(context.Background(), messaging.RoutingCompleted, []byte(body))
 		if err != nil {
 			t.Fatalf("unexpected dispatch error: %v", err)
 		}
-		if calledErrand != errandID || calledCourier != courierID || calledEvent != eventID || !calledTime.Equal(now) {
-			t.Fatalf("dispatch did not forward expected values: errand=%s, courier=%s, event=%s, time=%v",
-				calledErrand, calledCourier, calledEvent, calledTime)
+		if calledErrand != errandID || calledCourier != courierID || calledEvent != eventID || calledRequester == nil || *calledRequester != requesterID || !calledTime.Equal(now) {
+			t.Fatalf("dispatch did not forward expected values: errand=%s, requester=%v, courier=%s, event=%s, time=%v",
+				calledErrand, calledRequester, calledCourier, calledEvent, calledTime)
 		}
 	})
 
@@ -140,27 +144,31 @@ func TestLifecycleHandler_DispatchRefunds(t *testing.T) {
 	for _, tc := range routes {
 		t.Run(tc.key, func(t *testing.T) {
 			var calledReason credit.TransactionReason
+			var calledRequester *uuid.UUID
 			svc := &mockLifecycleService{
-				refundFn: func(ctx context.Context, eID, evID uuid.UUID, reason credit.TransactionReason, occ time.Time) error {
+				refundFn: func(ctx context.Context, eID uuid.UUID, reqID *uuid.UUID, evID uuid.UUID, reason credit.TransactionReason, occ time.Time) error {
 					calledReason = reason
+					calledRequester = reqID
 					return nil
 				},
 			}
 			h := messaging.NewLifecycleHandler(svc, logger)
 
+			requesterID := uuid.New()
 			body := fmt.Sprintf(`{
 				"schemaVersion": 1,
 				"eventId": "%s",
 				"errandId": "%s",
+				"requesterId": "%s",
 				"occurredAt": "%s"
-			}`, eventID, errandID, now.Format(time.RFC3339Nano))
+			}`, eventID, errandID, requesterID, now.Format(time.RFC3339Nano))
 
 			err := h.Dispatch(context.Background(), tc.key, []byte(body))
 			if err != nil {
 				t.Fatalf("unexpected dispatch error: %v", err)
 			}
-			if calledReason != tc.wantReason {
-				t.Fatalf("want reason %s, got: %s", tc.wantReason, calledReason)
+			if calledReason != tc.wantReason || calledRequester == nil || *calledRequester != requesterID {
+				t.Fatalf("want reason %s and requester %s, got: %s, %v", tc.wantReason, requesterID, calledReason, calledRequester)
 			}
 		})
 	}
@@ -267,6 +275,21 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 			Body:        []byte(`{bad-json`),
 		}
 		h.HandleDelivery(ctx, d)
+	})
+
+	t.Run("requester mismatch rejected to DLQ", func(t *testing.T) {
+		mismatchedSvc := &mockLifecycleService{
+			refundFn: func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+				return credit.ErrRequesterMismatch
+			},
+		}
+		handler := messaging.NewLifecycleHandler(mismatchedSvc, logger)
+		d := amqp.Delivery{
+			RoutingKey:  messaging.RoutingCancelled,
+			ContentType: "application/json",
+			Body:        body,
+		}
+		handler.HandleDelivery(ctx, d)
 	})
 }
 
@@ -436,7 +459,7 @@ func TestLifecycleHandler_RetryBackoff_InvokedOnTemporaryError(t *testing.T) {
 func TestLifecycleHandler_RetryBackoff_AbortsOnContextCancellation(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(io.Discard, nil))
 	svc := &mockLifecycleService{
-		refundFn: func(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+		refundFn: func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
 			return errors.New("temporary database connection error")
 		},
 	}

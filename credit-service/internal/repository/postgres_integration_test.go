@@ -216,7 +216,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// Refund the reservation, which changes the wallet state. The same
 		// operation ID must still replay its original outcome, not re-evaluate it.
-		err = env.repo.RefundReservation(ctx, errandID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
+		err = env.repo.RefundReservation(ctx, errandID, nil, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC())
 		require.NoError(t, err)
 		stored, _, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 110, 1, opID)
 		require.ErrorIs(t, err, credit.ErrInsufficientCredits)
@@ -283,7 +283,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// Event specifies amount 30 (leftover 20 returned to requester)
 		settleAmount := int64(30)
-		err = env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &settleAmount, now)
+		err = env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &settleAmount, now)
 		require.NoError(t, err)
 
 		// Requester: started with 100, held 50 (available 50), returned 20 -> available 70, reserved 0
@@ -325,7 +325,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		amount := int64(30)
-		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now), credit.ErrLifecycleViolation)
+		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now), credit.ErrLifecycleViolation)
 		requester, err := env.repo.GetAccount(ctx, requesterID)
 		require.NoError(t, err)
 		require.Equal(t, int64(80), requester.AvailableCredits)
@@ -348,7 +348,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		amount := int64(8)
-		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now))
 		var pendingID uuid.UUID
 		var storedAmount int64
 		require.NoError(t, env.pool.QueryRow(ctx, `
@@ -357,16 +357,16 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, amount, storedAmount)
 
 		// The same event is harmless, but a changed amount cannot replace its durable intent.
-		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now))
 		conflictingAmount := int64(9)
-		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &conflictingAmount, now), credit.ErrLifecycleViolation)
+		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &conflictingAmount, now), credit.ErrLifecycleViolation)
 
 		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
 		// A redelivery after the blocker clears must still be compared with pending work.
-		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &conflictingAmount, now), credit.ErrLifecycleViolation)
+		require.ErrorIs(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &conflictingAmount, now), credit.ErrLifecycleViolation)
 		require.NoError(t, env.repo.ProcessPendingPayout(ctx, pendingID, time.Second))
 		require.NoError(t, env.repo.ProcessPendingPayout(ctx, pendingID, time.Second))
-		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now))
 
 		requester, err := env.repo.GetAccount(ctx, requesterID)
 		require.NoError(t, err)
@@ -434,7 +434,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		// Force the limit blocker, then make room for 8 credits but not the full hold of 10.
 		_, err = env.pool.Exec(ctx, `UPDATE credit_accounts SET available_credits = $1 WHERE user_id = $2`, credit.MaxBalanceCredits-7, courierID)
 		require.NoError(t, err)
-		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now))
 		var pendingID uuid.UUID
 		var blockedReason string
 		require.NoError(t, env.pool.QueryRow(ctx, `SELECT id, blocked_reason FROM pending_payouts WHERE errand_id = $1`, errandID).Scan(&pendingID, &blockedReason))
@@ -463,7 +463,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 			WHERE user_id = $1`, courierID)
 		require.NoError(t, err)
 		amount := int64(8)
-		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, courierID, eventID, &amount, now))
+		require.NoError(t, env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now))
 		var pendingID uuid.UUID
 		var blockedReason string
 		require.NoError(t, env.pool.QueryRow(ctx, `SELECT id, blocked_reason FROM pending_payouts WHERE errand_id = $1`, errandID).Scan(&pendingID, &blockedReason))
@@ -480,5 +480,27 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		courier, err := env.repo.GetAccount(ctx, courierID)
 		require.NoError(t, err)
 		require.Equal(t, int64(108), courier.AvailableCredits)
+	})
+
+	t.Run("settlements reject mismatched requesterId as requester mismatch", func(t *testing.T) {
+		requesterID, courierID, errandID := uuid.New(), uuid.New(), uuid.New()
+		now := time.Now().UTC()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 20)
+		require.NoError(t, err)
+
+		wrongRequesterID := uuid.New()
+		amount := int64(20)
+		// Payout with wrong requesterId fails with ErrRequesterMismatch
+		err = env.repo.PayoutReservation(ctx, errandID, &wrongRequesterID, courierID, uuid.New(), &amount, now)
+		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
+
+		// Refund with wrong requesterId fails with ErrRequesterMismatch
+		err = env.repo.RefundReservation(ctx, errandID, &wrongRequesterID, uuid.New(), credit.TransactionReasonErrandCancelled, now)
+		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
+
+		// Refund with correct requesterId succeeds
+		err = env.repo.RefundReservation(ctx, errandID, &requesterID, uuid.New(), credit.TransactionReasonErrandCancelled, now)
+		require.NoError(t, err)
 	})
 }
