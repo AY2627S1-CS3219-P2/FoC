@@ -167,19 +167,23 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 
 		// 2. Check if this operationId was already committed in the ledger.
 		var (
-			existingErrandID uuid.UUID
-			existingUserID   uuid.UUID
+			existingErrandID   uuid.UUID
+			existingUserID     uuid.UUID
+			existingResVersion *int64
 		)
 		err := tx.QueryRow(txCtx, `
-			SELECT errand_id, user_id
+			SELECT errand_id, user_id, reservation_version
 			FROM credit_transactions
-			WHERE operation_id = $1
+			WHERE operation_id = $1 AND balance_bucket = 'RESERVED'
 			LIMIT 1`,
 			operationID,
-		).Scan(&existingErrandID, &existingUserID)
+		).Scan(&existingErrandID, &existingUserID, &existingResVersion)
 		if err == nil {
-			// Operation already committed. Verify it was for the exact same errand and requester.
+			// Operation already committed. Verify it was for the exact same errand, requester, and target version.
 			if existingErrandID != errandID || existingUserID != requesterID {
+				return credit.ErrIdempotencyConflict
+			}
+			if existingResVersion != nil && *existingResVersion != targetVersion {
 				return credit.ErrIdempotencyConflict
 			}
 			existing, err := findReservationByErrandID(txCtx, tx, errandID)
@@ -338,12 +342,12 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 
 		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				user_id, errand_id, operation_id, balance_bucket, amount, reason, reservation_version, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'AVAILABLE', $4, $6, NULL, NOW()),
-				($1, $2, $3, 'RESERVED', $5, $6, NULL, NOW())`,
-			reservation.RequesterID, errandID, operationID, availDelta, resDelta, ledgerReason,
+				($1, $2, $3, 'AVAILABLE', $4, $6, $7, NULL, NOW()),
+				($1, $2, $3, 'RESERVED', $5, $6, $7, NULL, NOW())`,
+			reservation.RequesterID, errandID, operationID, availDelta, resDelta, ledgerReason, targetVersion,
 		)
 		if err != nil {
 			return fmt.Errorf("insert adjustment ledger entries: %w", err)
@@ -478,12 +482,12 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, event
 		// Append balanced ledger entries
 		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				user_id, errand_id, operation_id, balance_bucket, amount, reason, reservation_version, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'AVAILABLE', $4, 'REWARD_DECREASED', $5, NOW()),
-				($1, $2, $3, 'RESERVED', -($4::bigint), 'REWARD_DECREASED', $5, NOW())`,
-			reservation.RequesterID, errandID, eventID, absDiff, occurredAt.UTC(),
+				($1, $2, $3, 'AVAILABLE', $4, 'REWARD_DECREASED', $6, $5, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), 'REWARD_DECREASED', $6, $5, NOW())`,
+			reservation.RequesterID, errandID, eventID, absDiff, occurredAt.UTC(), version,
 		)
 		if err != nil {
 			return fmt.Errorf("insert reward_set ledger entries: %w", err)

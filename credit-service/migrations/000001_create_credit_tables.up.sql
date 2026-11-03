@@ -80,6 +80,7 @@ CREATE TABLE credit_transactions (
     balance_bucket TEXT NOT NULL CHECK (balance_bucket IN ('AVAILABLE', 'RESERVED')),
     amount BIGINT NOT NULL,
     reason transaction_reason NOT NULL,
+    reservation_version BIGINT NULL,
     occurred_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
