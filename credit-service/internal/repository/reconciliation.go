@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
-// Tool: Antigravity, date: 2026-10-19
-// Scope: Implemented PostgreSQL reconciliation repository with session advisory locks, keyset batch scanning, ledger replay, and version-checked account flagging per sourceOfTruth.md Phase 10.
-// Author review: PENDING - reviewer to complete
+// Tool: Antigravity, date: 2026-11-03
+// Scope: Removed pending work checks from reconciliation replay per 3-table schema.
+// Author review: Reviewed by Seth
 
 package repository
 
@@ -244,31 +244,6 @@ func (r *PostgresRepository) auditAccountSnapshot(ctx context.Context, userID uu
 	}
 
 	for _, res := range reservations {
-		// Check pending work invariants
-		var hasPendingRefund, hasPendingPayout bool
-		err := tx.QueryRow(ctx, `
-			SELECT
-				EXISTS(SELECT 1 FROM pending_refunds WHERE errand_id = $1),
-				EXISTS(SELECT 1 FROM pending_payouts WHERE errand_id = $1)`,
-			res.errandID,
-		).Scan(&hasPendingRefund, &hasPendingPayout)
-		if err != nil {
-			return nil, 0, fmt.Errorf("check pending work: %w", err)
-		}
-
-		if hasPendingRefund && hasPendingPayout {
-			return &discrepancyFinding{
-				reasonCode: "RESERVATION_LIFECYCLE_MISMATCH",
-				detail:     fmt.Sprintf("both pending refund and pending payout exist for errand %s", res.errandID),
-			}, version, nil
-		}
-		if (hasPendingRefund || hasPendingPayout) && res.status != credit.ReservationStatusReserved {
-			return &discrepancyFinding{
-				reasonCode: "RESERVATION_LIFECYCLE_MISMATCH",
-				detail:     fmt.Sprintf("pending work exists for non-reserved errand %s (status %s)", res.errandID, res.status),
-			}, version, nil
-		}
-
 		// Replay errand-linked transactions
 		finding, err := r.replayErrandTransactions(ctx, tx, res.errandID, res.amount, res.status)
 		if err != nil {
@@ -363,15 +338,6 @@ func (r *PostgresRepository) replayErrandTransactions(ctx context.Context, tx pg
 		payoutCount         int
 	)
 
-	// Group by operation in order
-	type opGroup struct {
-		reason credit.TransactionReason
-		rows   []ledgerRow
-	}
-	var ops []opGroup
-	rowMap := make(map[credit.TransactionReason]int)
-	_ = rowMap
-
 	for _, entry := range entries {
 		if entry.balanceBucket == credit.BucketReserved {
 			switch entry.reason {
@@ -395,7 +361,6 @@ func (r *PostgresRepository) replayErrandTransactions(ctx context.Context, tx pg
 			}
 		}
 	}
-	_ = ops
 
 	if !reservationFound {
 		return &discrepancyFinding{

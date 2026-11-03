@@ -82,7 +82,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 
 		// 5. If the requester has an integrity flag or insufficient reserved credits, reject.
 		if integrity == credit.IntegrityFlagged {
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 		if resCredits < res.Amount {
 			_, _ = tx.Exec(txCtx, `
@@ -98,7 +98,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 				WHERE user_id = $3`,
 				res.Amount, resCredits, res.RequesterID,
 			)
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 
 		// 6. Move the stored amount from reserved to available.
@@ -279,7 +279,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 
 		// Verify account integrity and limits.
 		if reqIntegrity == credit.IntegrityFlagged || courierIntegrity == credit.IntegrityFlagged {
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 		if reqRes < res.Amount {
 			_, _ = tx.Exec(txCtx, `
@@ -295,7 +295,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				WHERE user_id = $3`,
 				res.Amount, reqRes, res.RequesterID,
 			)
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 		if courierAvail+payoutAmount > credit.MaxBalanceCredits {
 			return credit.ErrCreditLimitExceeded

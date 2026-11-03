@@ -75,7 +75,7 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID, re
 
 		// 5. Account integrity checks.
 		if integrityStatus == credit.IntegrityFlagged {
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 		if availableCredits < amount {
 			return credit.ErrInsufficientCredits
@@ -259,7 +259,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		}
 
 		if integrityStatus == credit.IntegrityFlagged {
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 
 		diff := newAmount - currentAmount
@@ -437,7 +437,7 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, event
 		}
 
 		if integrityStatus == credit.IntegrityFlagged {
-			return credit.ErrAccountIntegrityFailure
+			return credit.ErrAccountIntegrityFlagged
 		}
 
 		absDiff := -diff
