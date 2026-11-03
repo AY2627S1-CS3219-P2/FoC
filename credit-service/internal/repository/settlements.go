@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
-// Tool: Antigravity, date: 2026-10-19
-// Scope: Implemented PostgreSQL refund and completion payout settlement transactions per sourceOfTruth.md Phases 6 & 7.
-// Author review: PENDING - reviewer to complete
+// Tool: Antigravity, date: 2026-11-03
+// Scope: Streamlined settlements to 3-table schema: 2-step atomic lazy wallet initialization on payout, direct refund settlement, and removed pending tables.
+// Author review: Reviewed by Seth
 
 package repository
 
@@ -16,29 +16,22 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// RefundReservation executes the refund settlement transaction described in Phase 6.
+// RefundReservation executes the refund settlement transaction.
 func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
-	switch reason {
-	case credit.TransactionReasonErrandCancelled, credit.TransactionReasonErrandExpired, credit.TransactionReasonErrandFailed:
-	default:
-		return credit.ErrLifecycleViolation
-	}
-
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		// 1. Look up and lock the reservation by errandId.
+		// 1. Lock the reservation by errandId.
 		var res credit.Reservation
 		err := tx.QueryRow(txCtx, `
-			SELECT id, errand_id, requester_id, amount, status, version, created_at, updated_at
+			SELECT id, errand_id, requester_id, amount, status, created_at, updated_at
 			FROM credit_reservations
 			WHERE errand_id = $1
 			FOR UPDATE`,
 			errandID,
 		).Scan(
 			&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
-			&res.Status, &res.Version, &res.CreatedAt, &res.UpdatedAt,
+			&res.Status, &res.CreatedAt, &res.UpdatedAt,
 		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
@@ -66,19 +59,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return credit.ErrLifecycleViolation
 		}
 
-		// 4. If pending payout work exists, return a non-retryable lifecycle violation.
-		var pendingPayoutExists int
-		err = tx.QueryRow(txCtx, `
-			SELECT 1 FROM pending_payouts WHERE errand_id = $1 FOR UPDATE`,
-			errandID,
-		).Scan(&pendingPayoutExists)
-		if err == nil {
-			return credit.ErrLifecycleViolation
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("check pending payouts: %w", err)
-		}
-
-		// 5. Lock and verify the requester account.
+		// 4. Lock and verify the requester account.
 		var (
 			availCredits int64
 			resCredits   int64
@@ -99,77 +80,28 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("lock requester account for refund: %w", err)
 		}
 
-		// 6. If the requester is FLAGGED, or its stored reserved projection is smaller than the reservation amount:
-		// leave balances and reservation status unchanged, insert or verify durable pending-refund work, commit that work, and return a delayed outcome.
-		isFlagged := integrity == credit.IntegrityFlagged
-		hasProjectionMismatch := resCredits < res.Amount
-
-		if isFlagged || hasProjectionMismatch {
-			if hasProjectionMismatch && !isFlagged {
-				// Projection mismatch flags the account, increments its version, and records a reconciliation finding.
-				_, err = tx.Exec(txCtx, `
-					UPDATE credit_accounts
-					SET integrity_status = 'FLAGGED',
-					    integrity_flagged_at = COALESCE(integrity_flagged_at, NOW()),
-					    integrity_reason_code = 'RESERVED_PROJECTION_MISMATCH',
-					    integrity_detail = 'reserved projection is smaller than reservation amount',
-					    integrity_expected = $1,
-					    integrity_observed = $2,
-					    version = version + 1,
-					    updated_at = NOW()
-					WHERE user_id = $3`,
-					res.Amount, resCredits, res.RequesterID,
-				)
-				if err != nil {
-					return fmt.Errorf("flag account on projection mismatch: %w", err)
-				}
-			}
-
-			// Insert or verify pending_refunds work.
-			var (
-				existingEventID uuid.UUID
-				existingReason  credit.TransactionReason
+		// 5. If the requester has an integrity flag or insufficient reserved credits, reject.
+		if integrity == credit.IntegrityFlagged {
+			return credit.ErrAccountIntegrityFailure
+		}
+		if resCredits < res.Amount {
+			_, _ = tx.Exec(txCtx, `
+				UPDATE credit_accounts
+				SET integrity_status = 'FLAGGED',
+				    integrity_flagged_at = COALESCE(integrity_flagged_at, NOW()),
+				    integrity_reason_code = 'RESERVED_PROJECTION_MISMATCH',
+				    integrity_detail = 'reserved projection is smaller than reservation amount',
+				    integrity_expected = $1,
+				    integrity_observed = $2,
+				    version = version + 1,
+				    updated_at = NOW()
+				WHERE user_id = $3`,
+				res.Amount, resCredits, res.RequesterID,
 			)
-			err = tx.QueryRow(txCtx, `
-				SELECT event_id, reason
-				FROM pending_refunds
-				WHERE errand_id = $1
-				FOR UPDATE`,
-				errandID,
-			).Scan(&existingEventID, &existingReason)
-			if err == nil {
-				// A new event for an errand that already has pending refund work must match its event identity and reason;
-				// otherwise it is a non-retryable lifecycle conflict.
-				if existingEventID == eventID && existingReason == reason {
-					return nil
-				}
-				return credit.ErrLifecycleViolation
-			} else if !errors.Is(err, pgx.ErrNoRows) {
-				return fmt.Errorf("lookup existing pending refund: %w", err)
-			}
-
-			// Insert durable pending refund row.
-			_, err = tx.Exec(txCtx, `
-				INSERT INTO pending_refunds (
-					errand_id, event_id, reason, occurred_at, first_seen_at, next_attempt_at, attempt_count
-				)
-				VALUES ($1, $2, $3, $4, NOW(), NOW(), 0)`,
-				errandID, eventID, reason, occurredAt.UTC(),
-			)
-			if err != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-					// Unique violation on event_id or errand_id from concurrent race
-					return credit.ErrLifecycleViolation
-				}
-				return fmt.Errorf("insert pending refund: %w", err)
-			}
-
-			// Delayed outcome committed.
-			return nil
+			return credit.ErrAccountIntegrityFailure
 		}
 
-		// 7. Move the stored amount from reserved to available.
+		// 6. Move the stored amount from reserved to available.
 		cmdTag, err := tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET available_credits = available_credits + $1,
@@ -183,7 +115,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("refund credit account balance update failed: %w", err)
 		}
 
-		// 8. Use lifecycle event's eventId as operationId and append two new refund ledger entries.
+		// 7. Use lifecycle event's eventId as operationId and append two new refund ledger entries.
 		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
 				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
@@ -197,7 +129,7 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("insert refund ledger entries: %w", err)
 		}
 
-		// 9. Mark the reservation REFUNDED and delete any pending-refund row.
+		// 8. Mark the reservation REFUNDED.
 		_, err = tx.Exec(txCtx, `
 			UPDATE credit_reservations
 			SET status = 'REFUNDED',
@@ -209,21 +141,11 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("update reservation status to REFUNDED: %w", err)
 		}
 
-		_, err = tx.Exec(txCtx, `
-			DELETE FROM pending_refunds
-			WHERE errand_id = $1`,
-			errandID,
-		)
-		if err != nil {
-			return fmt.Errorf("delete pending refund: %w", err)
-		}
-
-		// 10. Commit before acknowledging RabbitMQ message (handled by withTx).
 		return nil
 	})
 }
 
-// PayoutReservation executes the completion payout settlement transaction described in Phase 7.
+// PayoutReservation executes the completion payout settlement transaction.
 func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		// 1. Lock the reservation.
@@ -262,39 +184,53 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return credit.ErrLifecycleViolation
 		}
 
-		// 4. Return a non-retryable lifecycle violation if pending refund work exists.
-		var pendingRefundExists int
-		err = tx.QueryRow(txCtx, `
-			SELECT 1 FROM pending_refunds WHERE errand_id = $1 FOR UPDATE`,
-			errandID,
-		).Scan(&pendingRefundExists)
-		if err == nil {
-			return credit.ErrLifecycleViolation
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("check pending refunds: %w", err)
-		}
-
-		// 5. Compare reservation's requesterId with the event's courierId. If equal, return self-payout violation.
+		// 4. Compare reservation's requesterId with the event's courierId. If equal, return self-payout violation.
 		if res.RequesterID == courierID {
 			return credit.ErrSelfPayoutNotAllowed
 		}
 
-		// The completion amount is authoritative. Reject an unexplained amount
-		// above the hold before creating pending work or changing any balance.
+		// The completion amount is authoritative.
 		if amount == nil || *amount < 1 || *amount > res.Amount {
 			return credit.ErrLifecycleViolation
 		}
 		payoutAmount := *amount
 		leftover := res.Amount - payoutAmount
 
-		// 6. Lock requester and courier accounts in ascending UUID order.
+		// Step 1: Ensure courier wallet exists (Lazy Wallet Initialization).
+		// If courier does not have an account yet, create it with 100 available credits and record REGISTRATION_ALLOCATION.
+		cmdTag, err := tx.Exec(txCtx, `
+			INSERT INTO credit_accounts (
+				user_id, available_credits, reserved_credits, version, created_at, updated_at
+			)
+			VALUES ($1, $2, 0, 1, $3, $3)
+			ON CONFLICT (user_id) DO NOTHING`,
+			courierID, credit.InitialAllocationCredits, occurredAt.UTC(),
+		)
+		if err != nil {
+			return fmt.Errorf("ensure courier wallet: %w", err)
+		}
+		if cmdTag.RowsAffected() == 1 {
+			// Record the registration allocation ledger entry with its own fresh operation ID.
+			regOpID := uuid.New()
+			_, err = tx.Exec(txCtx, `
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				VALUES ($1, NULL, $2, 'AVAILABLE', $3, 'REGISTRATION_ALLOCATION', $4, $4)`,
+				courierID, regOpID, credit.InitialAllocationCredits, occurredAt.UTC(),
+			)
+			if err != nil {
+				return fmt.Errorf("insert lazy registration allocation transaction: %w", err)
+			}
+		}
+
+		// Step 2: Lock requester and courier accounts in ascending UUID order to prevent deadlock.
 		var (
 			reqAvail, reqRes, reqVersion int64
 			reqIntegrity                 credit.AccountIntegrityStatus
 
 			courierAvail, courierRes, courierVersion int64
 			courierIntegrity                         credit.AccountIntegrityStatus
-			courierWalletFound                       bool
 		)
 
 		orderRequesterFirst := bytes.Compare(res.RequesterID[:], courierID[:]) < 0
@@ -310,22 +246,13 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 		}
 
 		lockCourier := func() error {
-			err := tx.QueryRow(txCtx, `
+			return tx.QueryRow(txCtx, `
 				SELECT available_credits, reserved_credits, version, integrity_status
 				FROM credit_accounts
 				WHERE user_id = $1
 				FOR UPDATE`,
 				courierID,
 			).Scan(&courierAvail, &courierRes, &courierVersion, &courierIntegrity)
-			if err != nil {
-				if errors.Is(err, pgx.ErrNoRows) {
-					courierWalletFound = false
-					return nil
-				}
-				return err
-			}
-			courierWalletFound = true
-			return nil
 		}
 
 		if orderRequesterFirst {
@@ -350,18 +277,12 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			}
 		}
 
-		// 7. Check blockers:
-		// If either account is FLAGGED, requester reserved projection is smaller than reservation amount,
-		// or adding amount would exceed courier available-bucket limit (or courier wallet missing),
-		// preserve or create pending payout work and return delayed outcome.
-		var blockedReason string
-		if !courierWalletFound {
-			blockedReason = "MISSING_WALLET"
-		} else if reqIntegrity == credit.IntegrityFlagged || courierIntegrity == credit.IntegrityFlagged {
-			blockedReason = "ACCOUNT_FLAGGED"
-		} else if reqRes < res.Amount {
-			// Projection mismatch flags the affected account, increments version, records finding.
-			_, err = tx.Exec(txCtx, `
+		// Verify account integrity and limits.
+		if reqIntegrity == credit.IntegrityFlagged || courierIntegrity == credit.IntegrityFlagged {
+			return credit.ErrAccountIntegrityFailure
+		}
+		if reqRes < res.Amount {
+			_, _ = tx.Exec(txCtx, `
 				UPDATE credit_accounts
 				SET integrity_status = 'FLAGGED',
 				    integrity_flagged_at = COALESCE(integrity_flagged_at, NOW()),
@@ -374,62 +295,14 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				WHERE user_id = $3`,
 				res.Amount, reqRes, res.RequesterID,
 			)
-			if err != nil {
-				return fmt.Errorf("flag requester account on projection mismatch: %w", err)
-			}
-			blockedReason = "ACCOUNT_FLAGGED"
-		} else if courierAvail+payoutAmount > credit.MaxBalanceCredits {
-			blockedReason = "AVAILABLE_LIMIT_EXCEEDED"
+			return credit.ErrAccountIntegrityFailure
+		}
+		if courierAvail+payoutAmount > credit.MaxBalanceCredits {
+			return credit.ErrCreditLimitExceeded
 		}
 
-		// The reservation lock serializes settlement; a row lock here can deadlock with the worker.
-		var (
-			existingEventID      uuid.UUID
-			existingCourierID    uuid.UUID
-			existingPayoutAmount int64
-			existingOccurred     time.Time
-		)
-		err = tx.QueryRow(txCtx, `
-			SELECT event_id, courier_id, payout_amount, occurred_at
-			FROM pending_payouts
-			WHERE errand_id = $1`,
-			errandID,
-		).Scan(&existingEventID, &existingCourierID, &existingPayoutAmount, &existingOccurred)
-		if err == nil {
-			if existingEventID != eventID || existingCourierID != courierID || existingPayoutAmount != payoutAmount || !existingOccurred.Equal(occurredAt.UTC()) {
-				return credit.ErrLifecycleViolation
-			}
-			if blockedReason != "" {
-				return nil
-			}
-		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("lookup existing pending payout: %w", err)
-		}
-
-		if blockedReason != "" {
-
-			// Insert pending payout row.
-			_, err = tx.Exec(txCtx, `
-				INSERT INTO pending_payouts (
-					errand_id, event_id, courier_id, payout_amount, occurred_at, first_seen_at, next_attempt_at, attempt_count, blocked_reason
-				)
-				VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), 0, $6)`,
-				errandID, eventID, courierID, payoutAmount, occurredAt.UTC(), blockedReason,
-			)
-			if err != nil {
-				var pgErr *pgconn.PgError
-				if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-					return credit.ErrLifecycleViolation
-				}
-				return fmt.Errorf("insert pending payout: %w", err)
-			}
-
-			// Delayed outcome committed.
-			return nil
-		}
-
-		// 8. Subtract stored amount from requester reserved credits, returning any leftover to available (D-059).
-		cmdTag, err := tx.Exec(txCtx, `
+		// Subtract stored amount from requester reserved credits, returning any leftover to available (D-059).
+		cmdTag, err = tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET reserved_credits = reserved_credits - $1,
 			    available_credits = available_credits + $2,
@@ -442,7 +315,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("payout requester reserved debit failed: %w", err)
 		}
 
-		// 9. Add payoutAmount to courier available credits.
+		// Add payoutAmount to courier available credits.
 		cmdTag, err = tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET available_credits = available_credits + $1,
@@ -455,9 +328,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("payout courier available credit failed: %w", err)
 		}
 
-		// 10. Ledger entries:
-		// If there is leftover, record it as its own REWARD_DECREASED operation
-		// derived from eventID so each operation maintains a 2-row zero-sum shape.
+		// Ledger entries:
 		if leftover > 0 {
 			leftoverOpID := uuid.NewSHA1(eventID, []byte("reward_decreased"))
 			_, err = tx.Exec(txCtx, `
@@ -487,7 +358,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("insert payout ledger entries: %w", err)
 		}
 
-		// 11. Mark reservation PAID_OUT and update stored amount to payoutAmount.
+		// Mark reservation PAID_OUT and update stored amount to payoutAmount.
 		_, err = tx.Exec(txCtx, `
 			UPDATE credit_reservations
 			SET status = 'PAID_OUT',
@@ -500,17 +371,6 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 			return fmt.Errorf("update reservation status to PAID_OUT: %w", err)
 		}
 
-		// 12. Delete any pending payout row for the errand.
-		_, err = tx.Exec(txCtx, `
-			DELETE FROM pending_payouts
-			WHERE errand_id = $1`,
-			errandID,
-		)
-		if err != nil {
-			return fmt.Errorf("delete pending payout: %w", err)
-		}
-
-		// 13. Commit before acknowledging completion message (handled by withTx).
 		return nil
 	})
 }
