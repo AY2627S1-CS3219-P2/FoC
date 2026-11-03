@@ -206,6 +206,13 @@ func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.U
 // student also queues user.registered in the same transaction, unless the
 // student already has one.
 func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
+	return r.updateAccountStatus(ctx, uid, status, tokensValidAfter, nil)
+}
+
+// updateAccountStatus is UpdateAccountStatusByID; a non-nil e is the admin's
+// audit row, saved in the same transaction with the before and after status of
+// the row this transaction locked (D-108).
+func (r *PostgresRepository) updateAccountStatus(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time, e *user.AuditEntry) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin account status transaction: %w", err)
@@ -239,6 +246,13 @@ func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uu
 		}
 		if _, err := tx.Exec(ctx, queueMissingRegistrationEventQuery, event.EventID, user.RoutingUserRegistered, payload, uid.String()); err != nil {
 			return fmt.Errorf("queue registration event: %w", err)
+		}
+	}
+	if e != nil {
+		e.BeforeState = map[string]any{"account_status": string(currentStatus)}
+		e.AfterState = map[string]any{"account_status": string(status)}
+		if err := insertAudit(ctx, tx, e); err != nil {
+			return err
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {

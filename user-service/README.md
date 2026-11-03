@@ -125,7 +125,9 @@ All paths below are relative to `http://localhost:8081`. You may refer to the [o
 | `POST` | `/api/v1/users/logout` | Bearer access token | JSON body: `refreshToken`. Invalidates the access token and refresh session; success returns `204`; errors include `400`, `401`, `413`, and `500`. |
 | `GET` | `/api/v1/users/{uid}` | Bearer access token | Returns a full profile to administrators and a restricted profile to other callers. Unknown or malformed user IDs return `404`. |
 | `PUT` | `/api/v1/users/{uid}` | Bearer access token | JSON body may contain `username`, `phone_num` (at most 20 characters), `currentPassword`, and `newPassword`. The caller may update their own profile, or an admin may update any profile. Returns the updated profile. |
-| `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated; `409` means either the last active admin would be suspended or the account has not verified its email; other errors include `400`, `401`, `403`, `404`, `413`, and `500`. |
+| `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated. **`403`** also means the target is an admin account or the caller's own account: no admin account is suspended through the API (D-118, D-119); the refusal is logged. `409` means either the last active admin would be suspended or the account has not verified its email; other errors include `400`, `401`, `404`, `413`, and `500`. Each change is recorded in the audit log in the same transaction. |
+| `GET` | `/api/v1/users` | Bearer access token, `ADMIN` role | The admin's account search and list (D-121 to D-123): `q` matches anywhere in the username or email, ignoring case and treating `%` and `_` literally; `status` is `ACTIVE`, `SUSPENDED` or `UNVERIFIED`; `limit` (at most 50, the default) and `offset`. Sorted by username. Returns `{items, total, limit, offset}`; each item has `uid`, `username`, `email`, `phone_num`, `account_role`, `account_status`, `date_created` and `last_login_date`. Bad query `400`, student `403`. |
+| `GET` | `/api/v1/users/audit-log` | Bearer access token, `ADMIN` role | The admin audit log, newest first (D-110): `action`, `outcome`, `actor_id`, `target_id`, `from`, `to` (RFC 3339 or `YYYY-MM-DD`, `to` exclusive), `limit` and `offset`. Returns `{items, total, limit, offset}`; any admin reads all of it. See *Admin audit log* below. |
 | `GET` | `/.well-known/jwks.json` | None | Returns the active and retired public JWT keys. The endpoint is unauthenticated so token-verifying services can read it over the private network; it is not published to the host. |
 <!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — documents D-078's two 409 responses. -->
 
@@ -143,6 +145,29 @@ For protected endpoints, send the token as follows:
 ```http
 Authorization: Bearer <access-token>
 ```
+
+### Admin audit log
+
+Every admin action on an account is recorded in `admin_audit` (D-106 to D-115;
+the shapes are in `ai/decisions/admin-dashboard-design.md`):
+
+| Action | When |
+|---|---|
+| `account.suspend`, `account.reactivate` | `PATCH /users/{uid}/status`; the row holds the status before and after |
+| `account.password_reset` | an admin changes another account's password; the row holds no value (D-111) |
+| `account.update` | an admin changes another account's username or phone; the row holds the new values |
+
+- The change and its `succeeded` row commit in **one transaction** (D-108). The
+  Redis suspension key and the session revocation happen outside it; if one
+  fails, the status is not saved and nothing is logged as succeeded.
+- A **refused or failed** attempt (a suspension of an admin, an unverified
+  account or a bad edit) is logged as `refused` or `failed` in a write of its own
+  (D-109). A student's 403 and a missing token are not admin actions and are not
+  logged.
+- Rows are **immutable**: a trigger refuses every `UPDATE` and any `DELETE` of a
+  row under 6 months old. A job at start and every 24 hours deletes the older ones
+  (D-114, D-115).
+- An admin editing **their own** profile is self-service and is not logged.
 
 ### Revocation keys
 

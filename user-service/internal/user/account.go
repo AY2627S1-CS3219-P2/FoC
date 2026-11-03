@@ -324,7 +324,7 @@ func (s *AccountService) GetByID(ctx context.Context, uid uuid.UUID) (*User, err
 // value leaves that field unchanged; a password change verifies the current
 // password first.
 func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, username, phone, currentPassword, newPassword string) (*User, error) {
-	return s.updateProfile(ctx, uid, username, phone, newPassword, func(account *User) error {
+	return s.updateProfile(ctx, uid, username, phone, newPassword, nil, func(account *User) error {
 		if !hash.CheckPassword(account.PasswordHash, currentPassword) {
 			return ErrInvalidCurrentPassword
 		}
@@ -336,10 +336,10 @@ func (s *AccountService) UpdateProfile(ctx context.Context, uid uuid.UUID, usern
 // An administrator may reset the target account's password without its current
 // password, as recorded for administrative recovery.
 func (s *AccountService) UpdateProfileAsAdmin(ctx context.Context, uid uuid.UUID, username, phone, newPassword string) (*User, error) {
-	return s.updateProfile(ctx, uid, username, phone, newPassword, func(*User) error { return nil })
+	return s.updateProfile(ctx, uid, username, phone, newPassword, nil, func(*User) error { return nil })
 }
 
-func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, username, phone, newPassword string, authorizePasswordChange func(*User) error) (*User, error) {
+func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, username, phone, newPassword string, ac *AuditContext, authorizePasswordChange func(*User) error) (*User, error) {
 	if s.repository == nil {
 		return nil, errors.New("user repository is required")
 	}
@@ -359,10 +359,17 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 	if account == nil {
 		return nil, ErrNotFound
 	}
+	changed := map[string]any{}
 	if username != "" {
+		if username != account.Username {
+			changed["username"] = username
+		}
 		account.Username = username
 	}
 	if phone != "" {
+		if phone != account.PhoneNum {
+			changed["phone_num"] = phone
+		}
 		account.PhoneNum = phone
 	}
 	passwordChanged := newPassword != ""
@@ -383,7 +390,11 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 		// AI-generated (edited by nigeltzy): whole seconds, see tokenCutoff.
 		account.TokensValidAfter = s.tokenCutoff()
 	}
-	if err := s.repository.Update(ctx, account); err != nil {
+	if ac == nil {
+		if err := s.repository.Update(ctx, account); err != nil {
+			return nil, fmt.Errorf("update account: %w", err)
+		}
+	} else if err := s.repository.UpdateAsAdminAudited(ctx, account, profileAuditEntries(*ac, uid, changed, passwordChanged)); err != nil {
 		return nil, fmt.Errorf("update account: %w", err)
 	}
 	if passwordChanged {
@@ -402,6 +413,13 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 // status; if either earlier step fails, the status is left unchanged. An
 // UNVERIFIED account is refused with ErrAccountUnverified before any of that.
 func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus) error {
+	return s.setAccountStatus(ctx, uid, status, nil)
+}
+
+// setAccountStatus is UpdateAccountStatus; ac is nil for the unaudited call and
+// the admin's identity for AdminUpdateAccountStatus, which also refuses
+// suspending an admin or oneself (D-118, D-119) before any side effect.
+func (s *AccountService) setAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus, ac *AuditContext) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")
 	}
@@ -426,6 +444,12 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — checks the
 		// recorded last-active-admin guard before invalidating any sessions.
 		// Author review: ZI YANG - validate correctness.
+		if ac != nil && account.AccountRole == AccountRoleAdmin {
+			if uid.String() == ac.ActorID {
+				return ErrCannotSuspendSelf
+			}
+			return ErrCannotSuspendAdmin
+		}
 		if account.AccountRole == AccountRoleAdmin {
 			activeAdmins, err := s.repository.CountActiveAdmins(ctx)
 			if err != nil {
@@ -451,7 +475,18 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 			return fmt.Errorf("revoke suspended account sessions: %w", err)
 		}
 	}
-	if err := s.repository.UpdateAccountStatusByID(ctx, uid, status, tokensValidAfter); err != nil {
+	if ac == nil {
+		if err := s.repository.UpdateAccountStatusByID(ctx, uid, status, tokensValidAfter); err != nil {
+			return fmt.Errorf("update account status: %w", err)
+		}
+		return nil
+	}
+	action := ActionReactivate
+	if status == AccountStatusSuspended {
+		action = ActionSuspend
+	}
+	e := ac.entry(action, uid.String(), OutcomeSucceeded, "")
+	if err := s.repository.UpdateAccountStatusAudited(ctx, uid, status, tokensValidAfter, e); err != nil {
 		return fmt.Errorf("update account status: %w", err)
 	}
 	return nil

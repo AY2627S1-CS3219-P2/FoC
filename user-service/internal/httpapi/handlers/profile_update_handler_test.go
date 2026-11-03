@@ -25,6 +25,8 @@ type fakeProfileUpdater struct {
 	newPassword  string
 	adminUpdated bool
 	err          error
+	// audit is who an admin's edit was attributed to.
+	audit user.AuditContext
 }
 
 func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, id uuid.UUID, _, phone, currentPassword, newPassword string) (*user.User, error) {
@@ -38,7 +40,8 @@ func (f *fakeProfileUpdater) UpdateProfile(_ context.Context, id uuid.UUID, _, p
 	return &user.User{UID: id, Username: "new", AccountRole: user.AccountRoleStudent, AccountStatus: user.AccountStatusActive}, nil
 }
 
-func (f *fakeProfileUpdater) UpdateProfileAsAdmin(_ context.Context, id uuid.UUID, _, phone, newPassword string) (*user.User, error) {
+func (f *fakeProfileUpdater) AdminUpdateProfile(_ context.Context, ac user.AuditContext, id uuid.UUID, _, phone, newPassword string) (*user.User, error) {
+	f.audit = ac
 	f.uid = id
 	f.phone = phone
 	f.newPassword = newPassword

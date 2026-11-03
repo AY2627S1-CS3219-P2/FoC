@@ -92,6 +92,22 @@ func (f *fakeAuthRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.U
 
 func (f *fakeAuthRepository) ActivateUser(context.Context, string) error { return nil }
 
+// The admin audit and search methods are not on the login path.
+func (f *fakeAuthRepository) UpdateAccountStatusAudited(context.Context, uuid.UUID, AccountStatus, time.Time, *AuditEntry) error {
+	return nil
+}
+func (f *fakeAuthRepository) UpdateAsAdminAudited(context.Context, *User, []*AuditEntry) error {
+	return nil
+}
+func (f *fakeAuthRepository) RecordAudit(context.Context, *AuditEntry) error { return nil }
+func (f *fakeAuthRepository) ListAudit(context.Context, AuditFilter) (*AuditPage, error) {
+	return &AuditPage{}, nil
+}
+func (f *fakeAuthRepository) PurgeAudit(context.Context) (int64, error) { return 0, nil }
+func (f *fakeAuthRepository) SearchUsers(context.Context, UserFilter) (*UserPage, error) {
+	return &UserPage{}, nil
+}
+
 type fakeTokenIssuer struct {
 	pair      TokenPair
 	err       error

@@ -27,6 +27,24 @@ type UserRepository interface {
 	UpdateLastLoginByID(ctx context.Context, uid uuid.UUID, timestamp time.Time) error
 	UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time) error
 	ActivateUser(ctx context.Context, email string) error
+
+	// UpdateAccountStatusAudited is UpdateAccountStatusByID with the admin's audit
+	// row saved in the same transaction (D-108). The repository fills the row's
+	// before and after states from the account it locked.
+	UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time, e *AuditEntry) error
+	// UpdateAsAdminAudited is Update with the admin's audit rows saved in the same
+	// transaction (D-108).
+	UpdateAsAdminAudited(ctx context.Context, u *User, entries []*AuditEntry) error
+	// RecordAudit writes one audit row on its own, for an attempt that did not
+	// commit and so had no transaction to share (D-109).
+	RecordAudit(ctx context.Context, e *AuditEntry) error
+	ListAudit(ctx context.Context, f AuditFilter) (*AuditPage, error)
+	// PurgeAudit deletes the audit rows older than 6 months and returns how many
+	// it removed (D-115).
+	PurgeAudit(ctx context.Context) (int64, error)
+	// SearchUsers lists accounts for the admin: a contains-match on username or
+	// email and an optional status, sorted by username, paged (D-121 to D-123).
+	SearchUsers(ctx context.Context, f UserFilter) (*UserPage, error)
 }
 
 // OTPStore stores OTP hashes and tracks OTP request counts in Redis.

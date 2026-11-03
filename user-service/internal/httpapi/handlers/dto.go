@@ -87,3 +87,51 @@ type UpdateProfileRequest struct {
 	NewPassword     string `json:"newPassword"`
 	PhoneNum        string `json:"phone_num"`
 }
+
+// UserListItem is one row of the admin's account list (D-122): the full profile
+// plus the last login, for admins only.
+type UserListItem struct {
+	UID           string     `json:"uid"`
+	Username      string     `json:"username"`
+	Email         string     `json:"email"`
+	PhoneNum      string     `json:"phone_num"`
+	AccountRole   string     `json:"account_role"`
+	AccountStatus string     `json:"account_status"`
+	DateCreated   time.Time  `json:"date_created"`
+	LastLoginDate *time.Time `json:"last_login_date"`
+}
+
+// UserPageResponse is one page of the account list with the total that matched,
+// for "page 3 of N" (D-104).
+type UserPageResponse struct {
+	Items  []UserListItem `json:"items"`
+	Total  int            `json:"total"`
+	Limit  int            `json:"limit"`
+	Offset int            `json:"offset"`
+}
+
+// AuditEntryResponse is one audit log row as the API returns it (D-113).
+type AuditEntryResponse struct {
+	ID                 string         `json:"id"`
+	OccurredAt         time.Time      `json:"occurred_at"`
+	ActorID            string         `json:"actor_id"`
+	ActorRole          string         `json:"actor_role"`
+	Action             string         `json:"action"`
+	TargetType         string         `json:"target_type"`
+	TargetID           string         `json:"target_id"`
+	Outcome            string         `json:"outcome"`
+	RefusalReason      string         `json:"refusal_reason"`
+	Reason             string         `json:"reason"`
+	BeforeState        map[string]any `json:"before_state"`
+	AfterState         map[string]any `json:"after_state"`
+	AdditionalComments map[string]any `json:"additional_comments"`
+	CorrelationID      string         `json:"correlation_id"`
+}
+
+// AuditPageResponse is one page of the audit log with the total that matched.
+type AuditPageResponse struct {
+	Items  []AuditEntryResponse `json:"items"`
+	Total  int                  `json:"total"`
+	Limit  int                  `json:"limit"`
+	Offset int                  `json:"offset"`
+}
