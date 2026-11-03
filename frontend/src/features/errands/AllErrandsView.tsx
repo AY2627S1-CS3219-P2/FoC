@@ -27,6 +27,10 @@ interface AllErrandsViewProps {
   onNotify: (message: ToastMessage) => void;
   /** Opens the Admin screen with that account looked up. */
   onLookUpAccount: (uid: string) => void;
+  // AI-generated (edited by Claude Code, 2026-11-03): the dashboard's Active
+  // errands tab holds this list under its own heading.
+  /** Shown as a tab of the dashboard: a section heading and no page title. */
+  embedded?: boolean;
 }
 
 interface ActiveList {
@@ -47,6 +51,7 @@ export function AllErrandsView({
   userId,
   onNotify,
   onLookUpAccount,
+  embedded = false,
 }: AllErrandsViewProps) {
   const [list, setList] = useState<ActiveList | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -73,12 +78,13 @@ export function AllErrandsView({
 
   const at = list ? serverNow(list.offset, now) : now;
 
+  const Heading = embedded ? "h2" : "h1";
   return (
     <section>
       <div className="page-head">
-        <h1 ref={headingRef} tabIndex={-1}>
-          All errands
-        </h1>
+        <Heading ref={headingRef} tabIndex={-1} className={embedded ? "section-label" : undefined}>
+          {embedded ? "Active errands" : "All errands"}
+        </Heading>
         <p className="page-sub">
           Every errand that isn&rsquo;t finished yet, the longest in its state first. Open one
           to cancel it or mark it completed when it has stalled.

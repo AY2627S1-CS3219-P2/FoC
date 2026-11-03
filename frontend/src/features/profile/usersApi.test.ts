@@ -194,3 +194,52 @@ describe("usersApi account status", () => {
     expect((err as UsersApiError).status).toBe(0);
   });
 });
+
+describe("admin list and audit log", () => {
+  it("searches accounts with q, status and paging, leaving empty values out", async () => {
+    const { send, api } = stubSend({
+      ok: true,
+      status: 200,
+      body: {
+        items: [{ ...FULL, last_login_date: "2026-11-01T08:00:00Z" }, { ...FULL, uid: "u2", last_login_date: null }],
+        total: 120,
+        limit: 50,
+        offset: 50,
+      },
+    });
+    const page = await api.listUsers({ query: " stu ", status: "ACTIVE", limit: 50, offset: 50 });
+    const path = send.mock.calls[0]![0].path;
+    expect(path.startsWith("/api/users?")).toBe(true);
+    expect(path).toContain("q=stu");
+    expect(path).toContain("status=ACTIVE");
+    expect(path).toContain("offset=50");
+    expect(page.total).toBe(120);
+    expect(page.items[0]!.lastLoginAt).toBe("2026-11-01T08:00:00Z");
+    expect(page.items[1]!.lastLoginAt).toBeUndefined();
+  });
+
+  it("asks for the plain list when no search is given", async () => {
+    const { send, api } = stubSend({ ok: true, status: 200, body: { items: [], total: 0, limit: 50, offset: 0 } });
+    await api.listUsers();
+    expect(send.mock.calls[0]![0].path).toBe("/api/users");
+  });
+
+  it("rejects a list in the wrong shape", async () => {
+    const { api } = stubSend({ ok: true, status: 200, body: { items: "x" } });
+    await expect(api.listUsers()).rejects.toMatchObject({ status: 0 });
+  });
+
+  it("reads the audit log from /api/users/audit-log with its filters", async () => {
+    const { send, api } = stubSend({
+      ok: true,
+      status: 200,
+      body: { items: [], total: 0, limit: 50, offset: 0 },
+    });
+    await api.listAuditLog({ targetId: UID, outcome: "refused", from: "2026-11-01" });
+    const path = send.mock.calls[0]![0].path;
+    expect(path.startsWith("/api/users/audit-log?")).toBe(true);
+    expect(path).toContain(`target_id=${UID}`);
+    expect(path).toContain("outcome=refused");
+    expect(path).toContain("from=2026-11-01");
+  });
+});

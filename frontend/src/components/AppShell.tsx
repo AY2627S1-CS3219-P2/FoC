@@ -45,7 +45,6 @@ const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
   profile: UserIcon,
   notifications: BellIcon,
   admin: ShieldIcon,
-  "all-errands": ListIcon,
 };
 
 interface AppShellProps {

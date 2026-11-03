@@ -49,14 +49,13 @@ import { NeedsService } from "./components/NeedsService";
 import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
-import { AllErrandsView } from "./features/errands/AllErrandsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
 import { HomeView } from "./features/home/HomeView";
 import { ProfileView } from "./features/profile/ProfileView";
 import { createUsersApi, type UserProfile } from "./features/profile/usersApi";
-import { AdminView } from "./features/admin/AdminView";
+import { DashboardView } from "./features/admin/DashboardView";
 import { SuppliersView } from "./features/suppliers/SuppliersView";
 // AI-generated (edited by James Teo): one availability rule for nav and guard.
 import { isViewAvailable, type ViewName } from "./views";
@@ -145,7 +144,6 @@ export function App() {
         clearLastView();
         setMode("requesting");
         setBalance({ status: "loading" });
-        setAdminLookupId(null);
         // AI-generated (edited by James Teo): the login page says the user was
         // signed out, unless the session had already ended another way.
         if (signedIn.current) setSessionEnded(true);
@@ -178,10 +176,6 @@ export function App() {
   // shell shows "—" unless it is "ready": while loading, with no account yet,
   // when credit-service fails, for an admin and in a fixture build.
   const [balance, setBalance] = useState<Balance>({ status: "loading" });
-
-  // AI-generated (edited by James Teo): an account ID handed from an errand's
-  // detail to the Admin screen, which looks it up on opening.
-  const [adminLookupId, setAdminLookupId] = useState<string | null>(null);
 
   /**
    * A reload drops the in-memory access token but keeps the HttpOnly refresh
@@ -292,7 +286,6 @@ export function App() {
     // while the logout was on its way.
     setMode("requesting");
     setBalance({ status: "loading" });
-    setAdminLookupId(null);
     setSessionEnded(false);
     setSession(null);
     setView("home");
@@ -330,7 +323,6 @@ export function App() {
     // refresh failed during the change must not add "signed out" to it.
     setMode("requesting");
     setBalance({ status: "loading" });
-    setAdminLookupId(null);
     setSessionEnded(false);
     setSession(null);
     setView("home");
@@ -371,11 +363,8 @@ export function App() {
   const shownView: ViewName = isViewAvailable(view, role, mode) ? view : "home";
   const { available, held } = balanceFigures(balance);
 
-  // AI-generated (edited by James Teo): navigation, mode and the hand-over to
-  // the Admin screen.
-  /** A nav or in-page link: an account handed to the Admin screen is dropped. */
+  /** A nav or in-page link. */
   const navigate = (next: ViewName) => {
-    setAdminLookupId(null);
     setView(next);
   };
 
@@ -383,12 +372,6 @@ export function App() {
   const changeMode = (next: ActingMode) => {
     setMode(next);
     if (!isViewAvailable(view, role, next)) setView("home");
-  };
-
-  /** From an errand's detail: the Admin screen, with that account looked up. */
-  const lookUpAccount = (uid: string) => {
-    setAdminLookupId(uid);
-    setView("admin");
   };
 
   /** After a post: the held credits show at once, then the new errand. */
@@ -467,20 +450,6 @@ export function App() {
             <NeedsService title="My errands" service="order-service" />
           ))}
 
-        {shownView === "all-errands" &&
-          (orders ? (
-            <AllErrandsView
-              ordersApi={orders}
-              suppliersApi={suppliers}
-              usersApi={usersApi}
-              userId={session.userId}
-              onNotify={setToast}
-              onLookUpAccount={lookUpAccount}
-            />
-          ) : (
-            <NeedsService title="All errands" service="order-service" />
-          ))}
-
         {shownView === "suppliers" && (
           <SuppliersView
             api={suppliers}
@@ -517,12 +486,13 @@ export function App() {
         {/* AI-generated (edited by James Teo): keyed by the handed-over account,
             so each hand-over opens with that account looked up. */}
         {shownView === "admin" && (
-          <AdminView
-            key={adminLookupId ?? ""}
+          <DashboardView
             usersApi={usersApi}
-            currentUserId={session.userId}
-            initialAccountId={adminLookupId}
+            ordersApi={orders}
+            suppliersApi={suppliers}
+            userId={session.userId}
             onNotify={setToast}
+            initialAccountId={null}
           />
         )}
       </AppShell>

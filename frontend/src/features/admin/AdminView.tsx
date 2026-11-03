@@ -36,6 +36,13 @@ interface AdminViewProps {
    */
   initialAccountId?: string | null;
   onNotify: (message: ToastMessage) => void;
+  // AI-generated (edited by Claude Code, 2026-11-03): the dashboard's Accounts
+  // tab shows an account's actions inside its own card, picked from the list.
+  /**
+   * Shown inside the dashboard's Accounts tab: no page heading, no ID lookup
+   * form (the account is picked from the list), and no card of its own.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -53,6 +60,7 @@ export function AdminView({
   currentUserId,
   initialAccountId,
   onNotify,
+  embedded = false,
 }: AdminViewProps) {
   const [query, setQuery] = useState(initialAccountId ?? "");
   const [loading, setLoading] = useState(false);
@@ -179,14 +187,18 @@ export function AdminView({
     setChangingStatus(false);
   }
 
+  const Shell = embedded ? "div" : "section";
   return (
-    <section>
-      <div className="page-head">
-        <h1>Admin</h1>
-      </div>
+    <Shell>
+      {!embedded && (
+        <div className="page-head">
+          <h1>Admin</h1>
+        </div>
+      )}
 
-      <div className="card">
-        <h2 className="section-label">Look up a user</h2>
+      <div className={embedded ? undefined : "card"}>
+        {!embedded && <h2 className="section-label">Look up a user</h2>}
+        {!embedded && (
         <form className="controls" onSubmit={lookUp}>
           <input
             className="search-input"
@@ -207,6 +219,7 @@ export function AdminView({
             {loading ? "Looking up…" : "Look up"}
           </button>
         </form>
+        )}
 
         {error && <p className="status error">{error}</p>}
 
@@ -297,7 +310,7 @@ export function AdminView({
           />
         </Modal>
       )}
-    </section>
+    </Shell>
   );
 }
 
