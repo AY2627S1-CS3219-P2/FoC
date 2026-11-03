@@ -72,7 +72,14 @@ func (s *server) CreateErrand(w http.ResponseWriter, r *http.Request, params gen
 	if !decodeBody(w, r, &body) {
 		return
 	}
-	o, replayed, err := s.svc.Create(r.Context(), c, createInput(body, key, order.CorrelationID(r.Context())))
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — reject malformed
+	// scheduled timestamps before invoking the domain service.
+	in, err := createInput(body, key, order.CorrelationID(r.Context()))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	o, replayed, err := s.svc.Create(r.Context(), c, in)
 	if err != nil {
 		s.writeServiceError(w, r, err)
 		return
@@ -215,8 +222,8 @@ func (s *server) GetErrand(w http.ResponseWriter, r *http.Request, errandID uuid
 	writeJSON(w, http.StatusOK, toDetail(o, history, c, s.svc.Now()))
 }
 
-// AmendErrand handles PATCH /{errandId}: the requester changes an OPEN errand
-// (F3.7); a field left out is unchanged.
+// AmendErrand handles PATCH /{errandId}: the requester changes an OPEN or
+// SCHEDULED errand; a field left out is unchanged.
 func (s *server) AmendErrand(w http.ResponseWriter, r *http.Request, errandID uuid.UUID) {
 	c, ok := callerOf(w, r)
 	if !ok {
@@ -228,7 +235,11 @@ func (s *server) AmendErrand(w http.ResponseWriter, r *http.Request, errandID uu
 	}
 	in, ok := body.input(order.CorrelationID(r.Context()))
 	if !ok {
-		writeError(w, http.StatusBadRequest, "version is required")
+		message := "version is required"
+		if body.Version != nil && body.Scheduled != nil && *body.Scheduled != "" {
+			message = "scheduled must be an RFC 3339 UTC timestamp"
+		}
+		writeError(w, http.StatusBadRequest, message)
 		return
 	}
 	o, err := s.svc.Amend(r.Context(), c, errandID, in)

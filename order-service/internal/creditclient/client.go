@@ -1,14 +1,16 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: order.CreditClient over credit-service's REST API (its api/openapi.yaml):
-//   reserve with one retry on the same errandId, adjust with none, each
-//   forwarding the requester's access token (D-047, D-055, D-056, D-057).
+//   reserve with one retry on the same errandId, adjust and release with
+//   none, each forwarding the requester's access token (D-047, D-055, D-056,
+//   D-057, D-102).
 // Author review: James Teo — reviewed and verified.
 
-// Package creditclient calls credit-service's REST API (D-055) for the two
+// Package creditclient calls credit-service's REST API (D-055) for the
 // synchronous credit operations order-service makes: reserving an errand's
-// reward before the errand is saved (D-047), and setting the held amount when
-// the reward is amended (D-057). Settlement is by events (D-048). Every call
+// reward before the errand is saved (D-047), holding more before a raised
+// reward is saved, and releasing a lowered one right after it is saved
+// (D-102). Settlement is by events (D-048). Every call
 // forwards the access token the request arrived with (D-056): only the
 // errand's requester reserves or amends, so it is always the requester's.
 package creditclient
@@ -80,7 +82,8 @@ type reserveRequest struct {
 
 // adjustRequest is credit-service's AdjustRewardRequest.
 type adjustRequest struct {
-	NewReward int `json:"newReward"`
+	NewReward   int `json:"newReward"`
+	CurrVersion int `json:"currVersion"`
 }
 
 // Reserve implements order.CreditClient with POST
@@ -150,35 +153,47 @@ func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 // /api/v1/credits/reservations/{errandId}. It returns nil when applied,
 // order.ErrInsufficientCredits on 422, an error wrapping
 // order.ErrCreditRejected on 400, 401, 403, 404 or 409, and any other error
-// when the outcome is not known. It is never retried here: when the outcome
-// is unknown, the order service queues errand.reward_set for the errand as
-// saved instead (D-057).
+// when the outcome is not known. It is never retried: when the outcome is
+// unknown the raise is not saved, and any extra credit-service held stays held
+// until the errand's next saved reward change or its end (D-102).
 //
 // Each call is one reward change, so it sends a new UUID as X-Request-Id,
 // which credit-service keys the change on, never the caller's correlation id:
 // a caller could reuse that and get an earlier change's answer replayed
 // (D-081). The log line pairs the two ids.
-func (c *Client) Adjust(ctx context.Context, errandID, _ uuid.UUID, newReward int, correlationID string) error {
-	operationID := uuid.New()
-	body, err := json.Marshal(adjustRequest{NewReward: newReward})
+func (c *Client) Adjust(ctx context.Context, errandID, _ uuid.UUID, newReward, currVersion int, correlationID string) error {
+	return c.patch(ctx, "adjust", errandID, newReward, currVersion, uuid.New(), correlationID)
+}
+
+// Release implements order.CreditClient with the same PATCH, keyed on the
+// saved errand.reward_set's eventId, so credit-service treats the event as a
+// repeat of this call (D-102). Same answers as Adjust; one attempt.
+func (c *Client) Release(ctx context.Context, errandID, _ uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error {
+	return c.patch(ctx, "release", errandID, newReward, currVersion, operationID, correlationID)
+}
+
+// patch is one PATCH of the reservation, keyed on operationID. verb names the
+// caller in errors, so a failed release does not read as a failed raise.
+func (c *Client) patch(ctx context.Context, verb string, errandID uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error {
+	body, err := json.Marshal(adjustRequest{NewReward: newReward, CurrVersion: currVersion})
 	if err != nil {
-		return fmt.Errorf("adjust credits for errand %s: encode request: %w", errandID, err)
+		return fmt.Errorf("%s credits for errand %s: encode request: %w", verb, errandID, err)
 	}
 	status, err := c.send(ctx, http.MethodPatch, c.baseURL+reservationsPath+"/"+errandID.String(), body, operationID.String())
 	c.log.InfoContext(ctx, "credit reward change sent",
 		"errand_id", errandID, "request_id", correlationID, "operation_id", operationID, "status", status)
 	if err != nil {
-		return fmt.Errorf("adjust credits for errand %s: %w", errandID, err)
+		return fmt.Errorf("%s credits for errand %s: %w", verb, errandID, err)
 	}
 	switch status {
 	case http.StatusOK:
 		return nil
 	case http.StatusUnprocessableEntity:
-		return fmt.Errorf("adjust credits for errand %s: %w", errandID, order.ErrInsufficientCredits)
+		return fmt.Errorf("%s credits for errand %s: %w", verb, errandID, order.ErrInsufficientCredits)
 	case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound, http.StatusConflict:
-		return fmt.Errorf("adjust credits for errand %s: credit-service answered %d: %w", errandID, status, order.ErrCreditRejected)
+		return fmt.Errorf("%s credits for errand %s: credit-service answered %d: %w", verb, errandID, status, order.ErrCreditRejected)
 	default:
-		return fmt.Errorf("adjust credits for errand %s: credit-service answered %d", errandID, status)
+		return fmt.Errorf("%s credits for errand %s: credit-service answered %d", verb, errandID, status)
 	}
 }
 

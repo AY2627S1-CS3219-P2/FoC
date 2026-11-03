@@ -40,10 +40,11 @@ var _ order.Repository = (*Postgres)(nil)
 // migrations/000001_create_orders.up.sql. They spell the order.State values.
 const (
 	// orderColumns is every orders column, in the order scanOrder reads them.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — appended scheduled_time.
 	orderColumns = `id, requester_id, courier_id, supplier_id, supplier_name,
 		supplier_location, item_description, delivery_location, delivery_note, reward,
 		state, version, request_key, created_at, updated_at, state_changed_at,
-		expires_at, confirm_by`
+		expires_at, confirm_by, scheduled_time`
 
 	// AI-generated (edited by James Teo).
 	// withdrawnCouriersColumn lists the couriers who withdrew from the errand,
@@ -95,13 +96,13 @@ const (
 
 	listActiveSQL = `SELECT ` + orderSelect + `
 		FROM orders
-		WHERE state IN ('OPEN', 'ACCEPTED', 'PICKED_UP', 'DELIVERED')
+		WHERE state IN ('SCHEDULED', 'OPEN', 'ACCEPTED', 'PICKED_UP', 'DELIVERED')
 		ORDER BY state_changed_at
 		LIMIT $1`
 
 	countActiveBySupplierSQL = `SELECT count(*)
 		FROM orders
-		WHERE supplier_id = $1 AND state IN ('OPEN', 'ACCEPTED', 'PICKED_UP', 'DELIVERED')`
+		WHERE supplier_id = $1 AND state IN ('SCHEDULED', 'OPEN', 'ACCEPTED', 'PICKED_UP', 'DELIVERED')`
 
 	// AI-generated (edited by James Teo).
 	// countOpenByRequesterSQL counts the requester's errands that are OPEN
@@ -115,6 +116,13 @@ const (
 		FROM orders
 		WHERE state = 'OPEN' AND expires_at <= $1
 		ORDER BY expires_at
+		LIMIT $2`
+
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — query scheduled errands due to open.
+	dueForScheduledSQL = `SELECT id
+		FROM orders
+		WHERE state = 'SCHEDULED' AND scheduled_time <= $1
+		ORDER BY scheduled_time
 		LIMIT $2`
 
 	dueForAutoConfirmSQL = `SELECT id
@@ -238,6 +246,11 @@ func (p *Postgres) DueForExpiry(ctx context.Context, now time.Time, limit int) (
 	return p.listIDs(ctx, "list errands due to expire", dueForExpirySQL, now, limitArg(limit))
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — repository due-scheduled query.
+func (p *Postgres) DueForScheduled(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	return p.listIDs(ctx, "list scheduled errands due to open", dueForScheduledSQL, now, limitArg(limit))
+}
+
 // DueForAutoConfirm implements order.Repository.
 func (p *Postgres) DueForAutoConfirm(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
 	return p.listIDs(ctx, "list errands due for auto-confirm", dueForAutoConfirmSQL, now, limitArg(limit))
@@ -299,11 +312,13 @@ func scanOrder(row pgx.Row) (order.Order, error) {
 		state      string
 		requestKey *string
 	)
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — scan the nullable
+	// scheduled_time value and normalize it to UTC with the other timestamps.
 	err := row.Scan(
 		&o.ID, &o.RequesterID, &o.CourierID, &o.Supplier.ID, &o.Supplier.Name,
 		&o.Supplier.Location, &o.ItemDescription, &o.DeliveryLocation, &o.DeliveryNote, &o.Reward,
 		&state, &o.Version, &requestKey, &o.CreatedAt, &o.UpdatedAt, &o.StateChangedAt,
-		&o.ExpiresAt, &o.ConfirmBy, &o.WithdrawnCouriers,
+		&o.ExpiresAt, &o.ConfirmBy, &o.ScheduledAt, &o.WithdrawnCouriers,
 	)
 	if err != nil {
 		return order.Order{}, err
@@ -320,6 +335,7 @@ func scanOrder(row pgx.Row) (order.Order, error) {
 	o.StateChangedAt = o.StateChangedAt.UTC()
 	o.ExpiresAt = utcPtr(o.ExpiresAt)
 	o.ConfirmBy = utcPtr(o.ConfirmBy)
+	o.ScheduledAt = utcPtr(o.ScheduledAt)
 	return o, nil
 }
 

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Updated ExpectedSchemaVersion to 2 for reservation version support (D-057).
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package repository
 
@@ -14,7 +14,7 @@ import (
 )
 
 // ExpectedSchemaVersion is the latest known database migration version supported by this release.
-const ExpectedSchemaVersion uint = 2
+const ExpectedSchemaVersion uint = 3
 
 // Apply runs all pending migrations from sourceURL against databaseURL.
 func Apply(databaseURL, sourceURL string) error {

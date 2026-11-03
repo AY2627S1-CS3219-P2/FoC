@@ -90,11 +90,14 @@ func (s *Suppliers) Supplier(_ context.Context, id uuid.UUID) (order.Supplier, e
 	return sup, nil
 }
 
-// AdjustCall records one Credit.Adjust call.
+// AdjustCall records one Credit.Adjust or Credit.Release call. OperationID
+// is set on a Release: the reward_set's eventId it is keyed on.
 type AdjustCall struct {
 	ErrandID      uuid.UUID
 	RequesterID   uuid.UUID
 	NewReward     int
+	CurrVersion   int
+	OperationID   uuid.UUID
 	CorrelationID string
 }
 
@@ -111,6 +114,9 @@ type Credit struct {
 	ReserveHook func(r order.Reservation) (apply bool, err error)
 	// AdjustHook does the same for Adjust.
 	AdjustHook func(c AdjustCall) (apply bool, err error)
+	// ReleaseHook does the same for Release.
+	ReleaseHook func(c AdjustCall) (apply bool, err error)
+	releases    []AdjustCall
 }
 
 // NewCredit returns a Credit that accepts every call.
@@ -131,20 +137,45 @@ func (c *Credit) Reserve(_ context.Context, r order.Reservation) error {
 	return err
 }
 
-// Adjust implements order.CreditClient.
-func (c *Credit) Adjust(_ context.Context, errandID, requesterID uuid.UUID, newReward int, correlationID string) error {
+// Adjust implements order.CreditClient. The service calls it only for a
+// raise, so the fake only grows the hold; Release lowers it (D-102).
+func (c *Credit) Adjust(_ context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, correlationID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	call := AdjustCall{ErrandID: errandID, RequesterID: requesterID, NewReward: newReward, CorrelationID: correlationID}
+	call := AdjustCall{ErrandID: errandID, RequesterID: requesterID, NewReward: newReward, CurrVersion: currVersion, CorrelationID: correlationID}
 	c.adjusts = append(c.adjusts, call)
 	apply, err := true, error(nil)
 	if c.AdjustHook != nil {
 		apply, err = c.AdjustHook(call)
 	}
 	if apply {
-		c.holds[errandID] = newReward
+		c.holds[errandID] = max(c.holds[errandID], newReward)
 	}
 	return err
+}
+
+// Release implements order.CreditClient. Like credit-service, it lowers the
+// hold to newReward (D-102).
+func (c *Credit) Release(_ context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	call := AdjustCall{ErrandID: errandID, RequesterID: requesterID, NewReward: newReward, CurrVersion: currVersion, OperationID: operationID, CorrelationID: correlationID}
+	c.releases = append(c.releases, call)
+	apply, err := true, error(nil)
+	if c.ReleaseHook != nil {
+		apply, err = c.ReleaseHook(call)
+	}
+	if apply {
+		c.holds[errandID] = min(c.holds[errandID], newReward)
+	}
+	return err
+}
+
+// Releases returns every Release call so far.
+func (c *Credit) Releases() []AdjustCall {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return slices.Clone(c.releases)
 }
 
 // Hold returns the amount held for an errand and whether any is.
@@ -425,6 +456,18 @@ func (r *Repository) countOpen(requesterID uuid.UUID, now time.Time) int {
 }
 
 // DueForExpiry implements order.Repository.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — fake due-scheduled query.
+func (r *Repository) DueForScheduled(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	due := r.filter(func(o order.Order) bool {
+		return o.State == order.StateScheduled && o.ScheduledAt != nil && !o.ScheduledAt.After(now)
+	})
+	slices.SortFunc(due, func(a, b order.Order) int { return a.ScheduledAt.Compare(*b.ScheduledAt) })
+	return ids(limited(due, limit)), nil
+}
+
+// DueForExpiry implements order.Repository.
 func (r *Repository) DueForExpiry(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -484,7 +527,9 @@ func (r *Repository) Create(_ context.Context, o order.Order, h order.HistoryEnt
 		}
 	}
 	// AI-generated (edited by James Teo).
-	if r.countOpen(o.RequesterID, o.CreatedAt) >= order.MaxOpenErrands {
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — only OPEN creates
+	// consume the requester's open-errand allowance.
+	if o.State == order.StateOpen && r.countOpen(o.RequesterID, o.CreatedAt) >= order.MaxOpenErrands {
 		return order.ErrTooManyOpen
 	}
 	delete(r.outbox, guardEventID)
@@ -611,28 +656,35 @@ func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current orde
 	return r.withHistory(res.Order), nil
 }
 
-// AI-generated (edited by James Teo).
-// QueueLocked implements order.Repository. fn runs with the repository locked,
-// the way the real adapter holds the row lock.
-func (r *Repository) QueueLocked(_ context.Context, id uuid.UUID, fn func(current order.Order) (*order.OutboxEvent, error)) error {
+// AmendScheduled runs the callback with the fake locked and includes its
+// requester's current OPEN count, mirroring the PostgreSQL transaction.
+func (r *Repository) AmendScheduled(_ context.Context, id uuid.UUID, now time.Time, fn func(current order.Order, openCount int) (*order.AmendResult, error)) (order.Order, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if err := r.takeFail("QueueLocked"); err != nil {
-		return err
-	}
 	cur, ok := r.orders[id]
 	if !ok {
-		return order.ErrNotFound
+		return order.Order{}, order.ErrNotFound
 	}
-	// AI-generated (edited by James Teo).
-	e, err := fn(r.withHistory(cur))
+	cur = r.withHistory(cur)
+	count := r.countOpen(cur.RequesterID, now)
+	res, err := fn(cur, count)
 	if err != nil {
-		return err
+		return order.Order{}, err
 	}
-	if e != nil {
-		r.outbox[e.EventID] = &outboxRow{event: *e}
+	if res == nil {
+		return cur, nil
 	}
-	return nil
+	if r.AfterAmendFn != nil {
+		err := r.AfterAmendFn
+		r.AfterAmendFn = nil
+		return order.Order{}, err
+	}
+	r.orders[id] = res.Order
+	r.appendHistory(res.History)
+	if res.Event != nil {
+		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
+	}
+	return r.withHistory(res.Order), nil
 }
 
 // ErrInjected is a ready-made error for FailNext and the hooks.

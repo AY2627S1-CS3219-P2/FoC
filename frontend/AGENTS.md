@@ -188,9 +188,12 @@ change reaching into another service needs that owner (root §3). So:
   store and return, nothing more.
 
 **Errand states.** `ErrandStatus` in `features/errands/orderTypes.ts`
-transcribes order-service's seven states, cased as its spec sends them:
-OPEN, ACCEPTED, PICKED_UP, DELIVERED, and the three final ones, COMPLETED,
-CANCELLED and EXPIRED. Which transitions are permitted stays with
+transcribes order-service's eight states, cased as its spec sends them:
+SCHEDULED, OPEN, ACCEPTED, PICKED_UP, DELIVERED, and the three final ones,
+COMPLETED, CANCELLED and EXPIRED. `SCHEDULED` and the `scheduled` timestamp
+are part of the current order-service API contract.
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — aligned the state note with order-service OpenAPI. -->
+Which transitions are permitted stays with
 order-service and is never worked out in this folder: each errand arrives
 with the `actions` its viewer may take, and the screens draw one button per
 action and nothing else.

@@ -44,7 +44,7 @@ func (m *mockReadRepo) ListTransactions(ctx context.Context, userID uuid.UUID, l
 
 type mockReservationRepo struct {
 	createReservationFn func(ctx context.Context, errandID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error)
-	adjustRewardFn      func(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error)
+	adjustRewardFn      func(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error)
 }
 
 func (m *mockReservationRepo) CreateReservation(ctx context.Context, errandID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error) {
@@ -54,9 +54,9 @@ func (m *mockReservationRepo) CreateReservation(ctx context.Context, errandID, r
 	return nil, false, errors.New("not implemented")
 }
 
-func (m *mockReservationRepo) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+func (m *mockReservationRepo) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 	if m.adjustRewardFn != nil {
-		return m.adjustRewardFn(ctx, errandID, requesterID, newReward, operationID)
+		return m.adjustRewardFn(ctx, errandID, requesterID, newReward, currVersion, operationID)
 	}
 	return nil, nil, errors.New("not implemented")
 }
@@ -530,7 +530,7 @@ func TestAdjustReservationReward(t *testing.T) {
 
 	t.Run("rejects missing bearer token", func(t *testing.T) {
 		router, _, _ := setupTestRouter(t, nil, nil, nil)
-		payload := map[string]any{"newReward": 35}
+		payload := map[string]any{"newReward": 35, "currVersion": 1}
 		data, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
@@ -545,7 +545,7 @@ func TestAdjustReservationReward(t *testing.T) {
 	t.Run("rejects admin role with 403 Forbidden", func(t *testing.T) {
 		router, _, iss := setupTestRouter(t, nil, nil, nil)
 		adminToken := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "ADMIN"})
-		payload := map[string]any{"newReward": 35}
+		payload := map[string]any{"newReward": 35, "currVersion": 1}
 		data, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
@@ -560,7 +560,10 @@ func TestAdjustReservationReward(t *testing.T) {
 
 	t.Run("returns 200 OK on successful reward adjustment via /api/v1/credits/reservations/{errandId}", func(t *testing.T) {
 		repo := &mockReservationRepo{
-			adjustRewardFn: func(ctx context.Context, eID, rID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+			adjustRewardFn: func(ctx context.Context, eID, rID uuid.UUID, next int64, currVersion int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+				if currVersion != 1 {
+					t.Errorf("currVersion = %d, want 1", currVersion)
+				}
 				if opID != operationID {
 					t.Errorf("operationID = %s, want caller X-Request-Id %s", opID, operationID)
 				}
@@ -583,7 +586,7 @@ func TestAdjustReservationReward(t *testing.T) {
 		router, _, iss := setupTestRouter(t, nil, repo, nil)
 		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
 		payload := map[string]any{
-			"newReward": 35,
+			"newReward": 35, "currVersion": 1,
 		}
 		data, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))
@@ -607,13 +610,13 @@ func TestAdjustReservationReward(t *testing.T) {
 
 	t.Run("rejects a malformed X-Request-Id", func(t *testing.T) {
 		called := false
-		repo := &mockReservationRepo{adjustRewardFn: func(context.Context, uuid.UUID, uuid.UUID, int64, uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+		repo := &mockReservationRepo{adjustRewardFn: func(context.Context, uuid.UUID, uuid.UUID, int64, int64, uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 			called = true
 			return nil, nil, nil
 		}}
 		router, _, iss := setupTestRouter(t, nil, repo, nil)
 		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
-		payload, _ := json.Marshal(map[string]any{"newReward": 35})
+		payload, _ := json.Marshal(map[string]any{"newReward": 35, "currVersion": 1})
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -631,7 +634,7 @@ func TestAdjustReservationReward(t *testing.T) {
 	// AI-generated (edited by choppyback).
 	t.Run("generates an operation ID when X-Request-Id is absent", func(t *testing.T) {
 		var gotOperationID uuid.UUID
-		repo := &mockReservationRepo{adjustRewardFn: func(_ context.Context, eID, rID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+		repo := &mockReservationRepo{adjustRewardFn: func(_ context.Context, eID, rID uuid.UUID, next int64, currVersion int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 			gotOperationID = opID
 			return &credit.OperationResult{OperationID: opID}, &credit.Reservation{
 				ID: resID, ErrandID: eID, RequesterID: rID, Amount: next,
@@ -640,7 +643,7 @@ func TestAdjustReservationReward(t *testing.T) {
 		}}
 		router, _, iss := setupTestRouter(t, nil, repo, nil)
 		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
-		payload, _ := json.Marshal(map[string]any{"newReward": 35})
+		payload, _ := json.Marshal(map[string]any{"newReward": 35, "currVersion": 1})
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", "Bearer "+token)
@@ -657,7 +660,7 @@ func TestAdjustReservationReward(t *testing.T) {
 	t.Run("returns 404 on dropped internal alias /internal/v1/credit-reservations/{errandId}", func(t *testing.T) {
 		router, _, iss := setupTestRouter(t, nil, nil, nil)
 		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
-		payload := map[string]any{"newReward": 35}
+		payload := map[string]any{"newReward": 35, "currVersion": 1}
 		data, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPatch, "/internal/v1/credit-reservations/"+errandID.String(), bytes.NewReader(data))
 		req.Header.Set("Content-Type", "application/json")
@@ -672,7 +675,7 @@ func TestAdjustReservationReward(t *testing.T) {
 
 	t.Run("returns 404 RESERVATION_NOT_FOUND when reservation does not exist or belongs to another user", func(t *testing.T) {
 		repo := &mockReservationRepo{
-			adjustRewardFn: func(ctx context.Context, eID, rID uuid.UUID, next int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+			adjustRewardFn: func(ctx context.Context, eID, rID uuid.UUID, next int64, currVersion int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
 				return nil, nil, credit.ErrReservationNotFound
 			},
 		}
@@ -680,7 +683,7 @@ func TestAdjustReservationReward(t *testing.T) {
 		router, _, iss := setupTestRouter(t, nil, repo, nil)
 		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
 		payload := map[string]any{
-			"newReward": 35,
+			"newReward": 35, "currVersion": 1,
 		}
 		data, _ := json.Marshal(payload)
 		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))

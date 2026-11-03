@@ -135,6 +135,9 @@ func (s *Service) ListOpen(ctx context.Context, _ Caller) ([]Order, error) {
 // ListRequested lists c's own errands: those not final, or the final ones (F3.4).
 func (s *Service) ListRequested(ctx context.Context, c Caller, scope Scope) ([]Order, error) {
 	states, limit := ActiveStates(), AdminListLimit
+	if scope != ScopeHistory {
+		states = append([]State{StateScheduled}, states...)
+	}
 	if scope == ScopeHistory {
 		states, limit = FinalStates(), HistoryListLimit
 	}
