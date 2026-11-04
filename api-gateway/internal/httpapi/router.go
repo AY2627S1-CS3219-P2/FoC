@@ -146,7 +146,20 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		// reservation routes are for order-service alone, so nothing else
 		// under /api/credits is routed and it gets the JSON 404 below.
 		{"/api/credits/accounts", downstream.Credit, creditServiceAccountsPrefix, proxy.NewRetainingToken},
+		{"/api/chat", downstream.Chat, "", proxy.NewRetainingToken},
 	}
+
+	// WebSocket upgrade endpoint: authenticates downstream via single-use ticket
+	// (?ticket=<uuid>), allowing browsers to connect without Authorization headers.
+	chatWSProxy, err := proxy.NewRetainingToken(proxy.Route{
+		BaseURL:     downstream.Chat,
+		StripPrefix: "/api/chat",
+		AddPrefix:   "",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("httpapi: route /api/chat/ws: %w", err)
+	}
+	r.Handle("/api/chat/ws", chatWSProxy)
 
 	for _, route := range serviceRoutes {
 		p, err := route.newProxy(proxy.Route{
