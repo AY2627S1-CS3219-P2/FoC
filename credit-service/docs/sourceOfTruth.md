@@ -1,4 +1,21 @@
-# Credit Service Source of Truth
+# [DEPRECATED] Credit Service Source of Truth (Historical Record)
+
+> [!CAUTION]
+> **HISTORICAL RECORD — NOT TO BE TRUSTED AS ACTIVE SPECIFICATION**
+> This document is retained strictly as an archived historical decision record and **must not be trusted** for current implementation contracts, database schemas, or system behavior.
+>
+> **Key Superseded & Inaccurate Information in this Document:**
+> 1. **Database Schema**: This document describes a 6-table database schema with `credit_operation_results`, `pending_refunds`, and `pending_payouts`. The database schema has been consolidated down to **3 core domain tables in Migration 1**: `credit_accounts`, `credit_reservations`, and `credit_transactions`.
+> 2. **Database-as-a-Queue Anti-Pattern**: All sections describing `pending_refunds`, `pending_payouts`, `pending_work.go`, `internal/worker/pending_refund.go`, and `internal/worker/pending_payout.go` have been completely removed. Retries and dead-letter handling are handled natively by RabbitMQ Quorum Queues and DLQ (`credit.errand.lifecycle.dlq`).
+> 3. **Operation Results Cache**: All sections describing the `credit_operation_results` table for caching `PATCH` responses have been removed; idempotency is derived directly from `credit_transactions` and reservation versions.
+> 4. **Lazy Wallet Initialization**: Mentions of `ErrWalletNotReady` delaying payouts/refunds into database queues are superseded. The service uses **Universal Lazy Wallet Initialization ("Materialize on First Touch")** across reads, reservations, and settlements.
+>
+> **Authoritative Current Documentation:**
+> - System invariants and domain specifications: [`credit-service/docs/requirements.md`](requirements.md)
+> - Service overview, APIs, and active workers: [`credit-service/README.md`](../README.md)
+
+---
+
 
 This document is the source of truth for the Credit Service only. It defines the
 Credit Service's responsibilities, data, interfaces, behavior, implementation
@@ -8,10 +25,9 @@ describe integration boundaries; they do not expand the Credit Service
 implementation scope. Work owned by another service is explicitly separated and
 must be planned and implemented by that service's owner.
 
-The other Markdown files in this directory are retained as historical decision
-records only. They are not implementation contracts and may contain superseded
-information. If any of them differs from this document, this document takes
-precedence.
+The Markdown files in this directory are retained as historical decision
+records only. They are not active implementation contracts and contain superseded
+information. For active requirements, refer to `requirements.md` and `README.md`.
 
 ### Issue #60 reward-adjustment amendment
 
