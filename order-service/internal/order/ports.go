@@ -127,6 +127,7 @@ type AcceptCommand struct {
 	Now             time.Time
 	MaxActive       int
 	History         HistoryEntry
+	Event           *OutboxEvent
 }
 
 // AmendResult is what an amend writes under the row lock. A nil *AmendResult

@@ -243,6 +243,11 @@ func (p *Postgres) Accept(ctx context.Context, c order.AcceptCommand) (order.Ord
 		if err := insertHistory(ctx, tx, o.ID, c.History); err != nil {
 			return err
 		}
+		if c.Event != nil {
+			if err := insertEvent(ctx, tx, *c.Event); err != nil {
+				return err
+			}
+		}
 		accepted = o
 		return nil
 	})

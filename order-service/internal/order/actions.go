@@ -54,6 +54,7 @@ func (s *Service) Accept(ctx context.Context, c Caller, id uuid.UUID, version in
 			OccurredAt:    now,
 			CorrelationID: correlationID,
 		},
+		Event: newEvent(uuid.New(), RoutingAccepted, o, uuidPtr(c.UserID), now, correlationID),
 	})
 	switch {
 	case err == nil:
@@ -289,6 +290,9 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 		t.Event = newEvent(uuid.New(), RoutingCancelled, o, nil, now, correlationID)
 	case StateExpired:
 		t.Event = newEvent(uuid.New(), RoutingExpired, o, nil, now, correlationID)
+	}
+	if a == ActionWithdraw {
+		t.Event = newEvent(uuid.New(), RoutingWithdrawn, o, o.CourierID, now, correlationID)
 	}
 	return t
 }
