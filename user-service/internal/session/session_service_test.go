@@ -6,8 +6,11 @@
 package session
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -122,7 +125,7 @@ func newSessionServiceFixtures(t *testing.T) (*User, *fakeAuthRepository, *fakeS
 func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
 	authenticator := NewAuthenticator(repo, issuer)
-	service := NewLoginService(authenticator, sessions, func() time.Time { return now })
+	service := NewLoginService(authenticator, sessions, func() time.Time { return now }, nil)
 
 	pair, err := service.Login(context.Background(), "user@example.com", "ValidPass1")
 	if err != nil {
@@ -145,7 +148,7 @@ func TestLoginServiceStoresHashedRefreshSession(t *testing.T) {
 func TestLoginServiceRejectsUnverifiedAccountBeforeSessionCreation(t *testing.T) {
 	account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
 	account.AccountStatus = AccountStatusUnverified
-	service := NewLoginService(NewAuthenticator(repo, issuer), sessions, func() time.Time { return now })
+	service := NewLoginService(NewAuthenticator(repo, issuer), sessions, func() time.Time { return now }, nil)
 
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-09 — verifies the
 	// OTP gate prevents analytics, token issuance, and refresh-session storage. Author review: ZI YANG - validated correctness.
@@ -155,6 +158,44 @@ func TestLoginServiceRejectsUnverifiedAccountBeforeSessionCreation(t *testing.T)
 	}
 	if pair != (TokenPair{}) || sessions.created != nil || issuer.issuedFor != uuid.Nil || repo.lastLogin != nil {
 		t.Fatalf("login side effects = pair %#v, session %#v, issuedFor %v, lastLogin %v", pair, sessions.created, issuer.issuedFor, repo.lastLogin)
+	}
+}
+
+func TestLoginServiceLogsAFailedLastLoginUpdateWithoutFailingTheLogin(t *testing.T) {
+	tests := map[string]struct {
+		lastLoginErr error
+		wantLogged   bool
+	}{
+		"a recorded last login logs nothing":     {},
+		"a failed update is logged as a warning": {lastLoginErr: errors.New("deadlock detected"), wantLogged: true},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			account, repo, sessions, issuer, now := newSessionServiceFixtures(t)
+			repo.lastLoginErr = tt.lastLoginErr
+			var logs bytes.Buffer
+			service := NewLoginService(NewAuthenticator(repo, issuer), sessions, func() time.Time { return now }, slog.New(slog.NewJSONHandler(&logs, nil)))
+
+			if _, err := service.Login(context.Background(), "user@example.com", "ValidPass1"); err != nil {
+				t.Fatalf("login error = %v, want the login to succeed", err)
+			}
+			if !tt.wantLogged {
+				if logs.Len() != 0 {
+					t.Fatalf("logs = %q, want none", logs.String())
+				}
+				return
+			}
+			var line map[string]any
+			if err := json.Unmarshal(logs.Bytes(), &line); err != nil {
+				t.Fatalf("logs = %q, want one JSON line: %v", logs.String(), err)
+			}
+			want := map[string]any{"level": "WARN", "msg": "record last login failed", "user_id": account.UID.String(), "error": "deadlock detected"}
+			for key, value := range want {
+				if line[key] != value {
+					t.Errorf("%s = %v, want %v", key, line[key], value)
+				}
+			}
+		})
 	}
 }
 

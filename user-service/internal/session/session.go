@@ -16,7 +16,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"foc/user-service/internal/user"
@@ -53,18 +53,23 @@ type LoginService struct {
 	authenticator *Authenticator
 	sessions      user.SessionRepository
 	now           func() time.Time
+	logger        *slog.Logger
 }
 
 // NewLoginService constructs a login service with its persistence and token
-// dependencies ready for use.
-func NewLoginService(a *Authenticator, sessions user.SessionRepository, now func() time.Time) *LoginService {
+// dependencies ready for use. A nil logger discards the service's logs.
+func NewLoginService(a *Authenticator, sessions user.SessionRepository, now func() time.Time, logger *slog.Logger) *LoginService {
 	if now == nil {
 		now = time.Now
+	}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
 	return &LoginService{
 		authenticator: a,
 		sessions:      sessions,
 		now:           now,
+		logger:        logger,
 	}
 }
 
@@ -81,7 +86,7 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 	}
 	if err := s.authenticator.repository.UpdateLastLoginByID(ctx, account.UID, s.now().UTC()); err != nil {
 		// AI-generated (edited by ZI YANG): login analytics must not make authentication unavailable.
-		log.Printf("record last login for user %s: %v", account.UID, err)
+		s.logger.WarnContext(ctx, "record last login failed", "user_id", account.UID.String(), "error", err.Error())
 	}
 	pair, err := s.authenticator.issuer.Issue(ctx, account)
 	if err != nil {
