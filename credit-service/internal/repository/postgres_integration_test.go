@@ -270,6 +270,83 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.ErrorIs(t, env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 10, 2, now), credit.ErrRewardSetStale)
 	})
 
+	t.Run("ApplyRewardSet forward recovery heals ghost holds and strict OCC rejects ghost arrivals", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
+		require.NoError(t, err)
+
+		// 1. Strict OCC rejects skipped future version (currVersion 5 when stored is 1)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 5, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// 2. Legitimate raise: 20 -> 50 with currVersion 1
+		raiseOp := uuid.New()
+		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, raiseOp)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), res.Amount)
+		require.Equal(t, int64(2), res.Version)
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(50), acc.AvailableCredits)
+		require.Equal(t, int64(50), acc.ReservedCredits)
+
+		// 3. Strict OCC rejects stale request (currVersion 1 when stored is 2)
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// 4. Forward recovery: Order Service timed out, kept reward at 20, advanced order to version 2,
+		// and sent errand.reward_set {amount: 20, version: 2}.
+		timeoutEventID := uuid.New()
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, timeoutEventID, 20, 2, now))
+
+		accHealed, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(80), accHealed.AvailableCredits)
+		require.Equal(t, int64(20), accHealed.ReservedCredits)
+
+		var (
+			healedAmt int64
+			healedVer int64
+		)
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&healedAmt, &healedVer))
+		require.Equal(t, int64(20), healedAmt)
+		require.Equal(t, int64(2), healedVer)
+
+		// 5. Ghost Arrival: A lagging HTTP request (currVersion 1) arrives late.
+		// Strict OCC immediately rejects it because Credit Service is at Version 2.
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// Balances and hold remain unchanged
+		accPostGhost, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(80), accPostGhost.AvailableCredits)
+		require.Equal(t, int64(20), accPostGhost.ReservedCredits)
+
+		// 6. Zero-Delta Forward Recovery: Suppose an errand is created at 20 (V1). An HTTP raise to 50
+		// died on the wire before reaching Credit Service. Order Service times out and emits
+		// errand.reward_set {amount: 20, version: 2}.
+		errandID2 := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, errandID2, userID, 20)
+		require.NoError(t, err)
+
+		zeroDeltaEventID := uuid.New()
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID2, zeroDeltaEventID, 20, 2, now))
+
+		var zVer int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT version FROM credit_reservations WHERE errand_id = $1`, errandID2).Scan(&zVer))
+		require.Equal(t, int64(2), zVer)
+
+		// Lagging HTTP request for errandID2 with currVersion 1 is rejected by strict OCC
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID2, userID, 50, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+	})
+
 	t.Run("RefundReservation settles cancelled and expired errands atomically", func(t *testing.T) {
 		requesterID := uuid.New()
 		errandID := uuid.New()
