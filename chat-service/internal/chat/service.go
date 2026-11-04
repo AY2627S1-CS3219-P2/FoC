@@ -156,7 +156,15 @@ func (s *Service) MarkAsRead(ctx context.Context, callerID, convID uuid.UUID) er
 	if _, ok := conv.ParticipantRole(callerID); !ok {
 		return ErrUnauthorized
 	}
-	return s.repo.UpdateLastRead(ctx, convID, callerID, now)
+	if err := s.repo.UpdateLastRead(ctx, convID, callerID, now); err != nil {
+		return err
+	}
+	if s.broadcaster != nil {
+		if otherID, ok := conv.OtherParticipantID(callerID); ok {
+			_ = s.broadcaster.BroadcastReadReceipt(ctx, convID, callerID, otherID, now)
+		}
+	}
+	return nil
 }
 
 func (s *Service) GetUnreadSummary(ctx context.Context, callerID uuid.UUID) (bool, []uuid.UUID, error) {
@@ -174,7 +182,6 @@ func (s *Service) AdminListConversations(ctx context.Context, admin Caller, erra
 	if err != nil {
 		return nil, err
 	}
-	// Record audit log for inspected conversation(s)
 	now := s.clock.Now()
 	for _, conv := range convs {
 		_ = s.repo.RecordAudit(ctx, &AuditEntry{
@@ -187,4 +194,30 @@ func (s *Service) AdminListConversations(ctx context.Context, admin Caller, erra
 		})
 	}
 	return convs, nil
+}
+
+func (s *Service) CreateOrResumeConversation(ctx context.Context, errandID, requesterID, courierID uuid.UUID, occurredAt time.Time) (*Conversation, error) {
+	return s.repo.UpsertConversationOnAccepted(ctx, errandID, requesterID, courierID, occurredAt)
+}
+
+func (s *Service) MarkCourierWithdrawn(ctx context.Context, errandID, courierID uuid.UUID, occurredAt time.Time) error {
+	conv, err := s.repo.GetConversationByErrandCourier(ctx, errandID, courierID)
+	if err == nil && conv != nil && s.broadcaster != nil {
+		_ = s.broadcaster.BroadcastReadOnly(ctx, conv.ID, conv.ErrandID, conv.RequesterID, conv.CourierID)
+	}
+	return s.repo.FreezeConversation(ctx, errandID, courierID, occurredAt)
+}
+
+func (s *Service) MarkErrandCompleted(ctx context.Context, errandID uuid.UUID, occurredAt time.Time) error {
+	return s.repo.MarkErrandCompleted(ctx, errandID, occurredAt)
+}
+
+func (s *Service) MarkErrandTerminated(ctx context.Context, errandID uuid.UUID, occurredAt time.Time) error {
+	return s.repo.FreezeErrandCancelledOrExpired(ctx, errandID, occurredAt)
+}
+
+func (s *Service) FreezeExpiredCompletedConversations(ctx context.Context) (int64, error) {
+	now := s.clock.Now()
+	cutoff := now.Add(-24 * time.Hour)
+	return s.repo.FreezeConversationsPast24Hours(ctx, cutoff)
 }

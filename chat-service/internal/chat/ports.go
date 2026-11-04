@@ -42,4 +42,6 @@ type Repository interface {
 
 type EventBroadcaster interface {
 	BroadcastMessage(ctx context.Context, msg *Message, recipientID uuid.UUID) error
+	BroadcastReadOnly(ctx context.Context, conversationID, errandID, requesterID, courierID uuid.UUID) error
+	BroadcastReadReceipt(ctx context.Context, conversationID, readerID, recipientID uuid.UUID, readAt time.Time) error
 }
