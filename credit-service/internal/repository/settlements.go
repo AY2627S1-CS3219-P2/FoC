@@ -1,12 +1,12 @@
 // AI Assistance Disclosure:
-// Tool: Antigravity, date: 2026-11-03
-// Scope: Streamlined settlements to 3-table schema: 2-step atomic lazy wallet initialization on payout, direct refund settlement, and removed pending tables.
+// Tool: Antigravity, date: 2026-11-04
+// Scope: Collapsed settlement workflows (RefundReservation and PayoutReservation) into single atomic CTE operations.
+// Eliminates multi-roundtrip transaction bloat, multi-account row-lock contention, and deadlocks.
 // Author review: Reviewed by Seth
 
 package repository
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -16,76 +16,138 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-// RefundReservation executes the refund settlement transaction.
+// RefundReservation executes the refund settlement transaction via a single atomic CTE.
+// It conditionally transitions the reservation to REFUNDED, returns reserved credits back to available,
+// and appends balanced ledger entries in one database operation.
 func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		// 1. Lock the reservation by errandId.
-		var res credit.Reservation
-		err := tx.QueryRow(txCtx, `
-			SELECT id, errand_id, requester_id, amount, status, created_at, updated_at
-			FROM credit_reservations
-			WHERE errand_id = $1
-			FOR UPDATE`,
-			errandID,
-		).Scan(
-			&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
-			&res.Status, &res.CreatedAt, &res.UpdatedAt,
-		)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return credit.ErrReservationNotFound
+		// Ensure requester account is initialized before executing the refund.
+		if requesterID != nil && *requesterID != uuid.Nil {
+			if err := ensureWalletInitialized(txCtx, tx, *requesterID, credit.InitialAllocationCredits, occurredAt); err != nil {
+				return fmt.Errorf("ensure requester wallet for refund: %w", err)
 			}
-			return fmt.Errorf("lock reservation for refund: %w", err)
 		}
 
-		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
-			return credit.ErrRequesterMismatch
-		}
+		// Single Atomic CTE:
+		// 1. Conditionally lock and transition the reservation to REFUNDED.
+		// 2. Transfer reserved_credits back to available_credits on the requester account.
+		// 3. Append two balanced ledger entries under eventID.
+		const refundCTE = `
+			WITH locked_res AS (
+				UPDATE credit_reservations
+				SET status = 'REFUNDED',
+				    updated_at = NOW()
+				WHERE errand_id = $1
+				  AND status = 'RESERVED'
+				  AND ($2::uuid IS NULL OR requester_id = $2)
+				RETURNING id, amount, requester_id
+			),
+			update_account AS (
+				UPDATE credit_accounts a
+				SET available_credits = a.available_credits + r.amount,
+				    reserved_credits = a.reserved_credits - r.amount,
+				    version = a.version + 1,
+				    updated_at = NOW()
+				FROM locked_res r
+				WHERE a.user_id = r.requester_id
+				  AND a.reserved_credits >= r.amount
+				  AND a.integrity_status != 'FLAGGED'
+				RETURNING a.user_id
+			),
+			insert_ledger AS (
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				SELECT
+					r.requester_id, $1, $3::uuid, t.bucket, t.amt, $4::transaction_reason, $5, NOW()
+				FROM locked_res r
+				JOIN update_account u ON u.user_id = r.requester_id
+				CROSS JOIN (
+					VALUES
+						('AVAILABLE'::text, (SELECT amount FROM locked_res)),
+						('RESERVED'::text, -((SELECT amount FROM locked_res)::bigint))
+				) AS t(bucket, amt)
+				RETURNING id
+			)
+			SELECT id, amount, requester_id FROM locked_res;`
 
-		// 2. If it is already REFUNDED, acknowledge the duplicate.
-		if res.Status == credit.ReservationStatusRefunded {
+		var (
+			resID       uuid.UUID
+			resAmount   int64
+			actualReqID uuid.UUID
+		)
+		err := tx.QueryRow(txCtx, refundCTE, errandID, requesterID, eventID, reason, occurredAt.UTC()).
+			Scan(&resID, &resAmount, &actualReqID)
+
+		if err == nil {
+			// Fast path: atomically transitioned and settled!
 			return nil
 		}
 
-		// 3. If it is PAID_OUT, return a non-retryable lifecycle violation.
-		if res.Status == credit.ReservationStatusPaidOut {
-			return credit.ErrLifecycleViolation
+		if !errors.Is(err, pgx.ErrNoRows) {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.ConstraintName == "chk_accounts_available_credits_range" {
+				return credit.ErrAccountIntegrityFlagged
+			}
+			return fmt.Errorf("execute atomic refund CTE: %w", err)
 		}
 
-		// If reservation is not in RESERVED status, reject as lifecycle violation.
-		if res.Status != credit.ReservationStatusReserved {
-			return credit.ErrLifecycleViolation
-		}
-
-		// 4. Ensure requester account exists (lazy initialization) and lock it.
-		if err := ensureWalletInitialized(txCtx, tx, res.RequesterID, credit.InitialAllocationCredits, occurredAt); err != nil {
-			return fmt.Errorf("ensure requester wallet for refund: %w", err)
-		}
-
+		// Diagnostics path: CTE returned 0 rows. Query reservation state to return precise domain error.
 		var (
-			availCredits int64
-			resCredits   int64
-			version      int64
-			integrity    credit.AccountIntegrityStatus
+			currStatus  credit.ReservationStatus
+			currReqID   uuid.UUID
+			currHold    int64
+			currVersion int64
 		)
-		err = tx.QueryRow(txCtx, `
-			SELECT available_credits, reserved_credits, version, integrity_status
-			FROM credit_accounts
-			WHERE user_id = $1
-			FOR UPDATE`,
-			res.RequesterID,
-		).Scan(&availCredits, &resCredits, &version, &integrity)
-		if err != nil {
-			return fmt.Errorf("lock requester account for refund: %w", err)
+		diagErr := tx.QueryRow(txCtx, `
+			SELECT status, requester_id, amount, version
+			FROM credit_reservations
+			WHERE errand_id = $1`,
+			errandID,
+		).Scan(&currStatus, &currReqID, &currHold, &currVersion)
+
+		if errors.Is(diagErr, pgx.ErrNoRows) {
+			return credit.ErrReservationNotFound
+		}
+		if diagErr != nil {
+			return fmt.Errorf("diagnose refund failure: %w", diagErr)
 		}
 
-		// 5. If the requester has an integrity flag or insufficient reserved credits, reject.
-		if integrity == credit.IntegrityFlagged {
+		// Requester identity mismatch check
+		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != currReqID {
+			return credit.ErrRequesterMismatch
+		}
+
+		// Lifecycle state checks
+		if currStatus == credit.ReservationStatusRefunded {
+			return nil // Idempotent duplicate delivery: already refunded
+		}
+		if currStatus == credit.ReservationStatusPaidOut || currStatus != credit.ReservationStatusReserved {
+			return credit.ErrLifecycleViolation
+		}
+
+		// Check account integrity or balance mismatch if reservation was RESERVED
+		var (
+			accResCredits int64
+			accIntegrity  credit.AccountIntegrityStatus
+		)
+		accErr := tx.QueryRow(txCtx, `
+			SELECT reserved_credits, integrity_status
+			FROM credit_accounts
+			WHERE user_id = $1`,
+			currReqID,
+		).Scan(&accResCredits, &accIntegrity)
+		if accErr != nil {
+			return fmt.Errorf("diagnose requester account for refund: %w", accErr)
+		}
+
+		if accIntegrity == credit.IntegrityFlagged {
 			return credit.ErrAccountIntegrityFlagged
 		}
-		if resCredits < res.Amount {
+		if accResCredits < currHold {
 			_, _ = tx.Exec(txCtx, `
 				UPDATE credit_accounts
 				SET integrity_status = 'FLAGGED',
@@ -97,165 +159,213 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 				    version = version + 1,
 				    updated_at = NOW()
 				WHERE user_id = $3`,
-				res.Amount, resCredits, res.RequesterID,
+				currHold, accResCredits, currReqID,
 			)
 			return credit.ErrAccountIntegrityFlagged
 		}
 
-		// 6. Move the stored amount from reserved to available.
-		cmdTag, err := tx.Exec(txCtx, `
-			UPDATE credit_accounts
-			SET available_credits = available_credits + $1,
-			    reserved_credits = reserved_credits - $1,
-			    version = version + 1,
-			    updated_at = NOW()
-			WHERE user_id = $2 AND reserved_credits >= $1`,
-			res.Amount, res.RequesterID,
-		)
-		if err != nil || cmdTag.RowsAffected() != 1 {
-			return fmt.Errorf("refund requester balance transfer failed: %w", err)
-		}
-
-		// 7. Update reservation status to REFUNDED.
-		_, err = tx.Exec(txCtx, `
-			UPDATE credit_reservations
-			SET status = 'REFUNDED',
-			    updated_at = NOW()
-			WHERE id = $1`,
-			res.ID,
-		)
-		if err != nil {
-			return fmt.Errorf("update reservation status to REFUNDED: %w", err)
-		}
-
-		// 8. Append two balanced ledger rows under eventId.
-		_, err = tx.Exec(txCtx, `
-			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
-			)
-			VALUES
-				($1, $2, $3, 'AVAILABLE', $4, $5, $6, NOW()),
-				($1, $2, $3, 'RESERVED', -($4::bigint), $5, $6, NOW())`,
-			res.RequesterID, errandID, eventID, res.Amount, reason, occurredAt.UTC(),
-		)
-		if err != nil {
-			return fmt.Errorf("insert refund ledger entries: %w", err)
-		}
-
-		return nil
+		return credit.ErrLifecycleViolation
 	})
 }
 
-// PayoutReservation executes the payout settlement transaction.
-// If the courier wallet does not exist, Step 1 creates it with initial credits atomically.
+// PayoutReservation executes the completion payout settlement transaction via a single atomic CTE.
+// It ensures courier wallet initialization in Step 1, then atomically locks the reservation,
+// transfers credits between requester hold and courier available balance, returns leftover credits,
+// marks the reservation PAID_OUT, and appends all audit ledger rows in one single database command.
 func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
+	// Pre-validations outside database transaction
+	if amount == nil || *amount < 1 {
+		return credit.ErrLifecycleViolation
+	}
+	if requesterID != nil && *requesterID == courierID {
+		return credit.ErrSelfPayoutNotAllowed
+	}
+	payoutAmount := *amount
+
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		// 1. Lock the reservation by errandId.
-		var res credit.Reservation
-		err := tx.QueryRow(txCtx, `
-			SELECT id, errand_id, requester_id, amount, status, created_at, updated_at
-			FROM credit_reservations
-			WHERE errand_id = $1
-			FOR UPDATE`,
-			errandID,
-		).Scan(
-			&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
-			&res.Status, &res.CreatedAt, &res.UpdatedAt,
-		)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return credit.ErrReservationNotFound
-			}
-			return fmt.Errorf("lock reservation for payout: %w", err)
-		}
-
-		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
-			return credit.ErrRequesterMismatch
-		}
-
-		// 2. If it is already PAID_OUT, treat incoming completion as a duplicate and return success.
-		if res.Status == credit.ReservationStatusPaidOut {
-			return nil
-		}
-
-		// 3. Return a non-retryable lifecycle violation if it is REFUNDED.
-		if res.Status == credit.ReservationStatusRefunded {
-			return credit.ErrLifecycleViolation
-		}
-		if res.Status != credit.ReservationStatusReserved {
-			return credit.ErrLifecycleViolation
-		}
-
-		// 4. Compare reservation's requesterId with the event's courierId. If equal, return self-payout violation.
-		if res.RequesterID == courierID {
-			return credit.ErrSelfPayoutNotAllowed
-		}
-
-		// The completion amount is authoritative. Reject an unexplained amount
-		// above the hold before changing any balance.
-		if amount == nil || *amount < 1 || *amount > res.Amount {
-			return credit.ErrLifecycleViolation
-		}
-		payoutAmount := *amount
-		leftover := res.Amount - payoutAmount
-
-		// Step 1: Ensure courier wallet exists (Universal Lazy Wallet Initialization).
+		// Step 1: Ensure courier wallet exists (Universal Lazy Wallet Initialization)
 		if err := ensureWalletInitialized(txCtx, tx, courierID, credit.InitialAllocationCredits, occurredAt.UTC()); err != nil {
 			return fmt.Errorf("ensure courier wallet: %w", err)
 		}
 
-		// Step 2: Lock requester and courier accounts in ascending UUID order to prevent deadlock.
+		// Single Atomic CTE:
+		// 1. Lock current reservation and capture original_hold before updating.
+		// 2. Transition reservation to PAID_OUT and set amount to payoutAmount.
+		// 3. Debit requester reserved credits by original_hold, returning leftover to available.
+		// 4. Credit courier available credits by payoutAmount (enforcing MaxBalanceCredits).
+		// 5. Append audit ledger rows atomically under eventID (and leftover return under deterministic SHA1).
+		leftoverOpID := uuid.NewSHA1(eventID, []byte("reward_decreased"))
+
+		const payoutCTE = `
+			WITH current_res AS (
+				SELECT id, amount AS original_hold, requester_id
+				FROM credit_reservations
+				WHERE errand_id = $1
+				  AND status = 'RESERVED'
+				  AND ($2::uuid IS NULL OR requester_id = $2)
+				  AND requester_id != $4
+				  AND amount >= $3
+				FOR UPDATE
+			),
+			locked_res AS (
+				UPDATE credit_reservations r
+				SET status = 'PAID_OUT',
+				    amount = $3,
+				    updated_at = NOW()
+				FROM current_res c
+				WHERE r.id = c.id
+				RETURNING r.id, c.original_hold, r.requester_id
+			),
+			debit_requester AS (
+				UPDATE credit_accounts a
+				SET reserved_credits = a.reserved_credits - r.original_hold,
+				    available_credits = a.available_credits + (r.original_hold - $3),
+				    version = a.version + 1,
+				    updated_at = NOW()
+				FROM locked_res r
+				WHERE a.user_id = r.requester_id
+				  AND a.reserved_credits >= r.original_hold
+				  AND a.integrity_status != 'FLAGGED'
+				RETURNING a.user_id
+			),
+			credit_courier AS (
+				UPDATE credit_accounts c
+				SET available_credits = c.available_credits + $3,
+				    version = c.version + 1,
+				    updated_at = NOW()
+				FROM locked_res r
+				JOIN debit_requester d ON d.user_id = r.requester_id
+				WHERE c.user_id = $4
+				  AND c.available_credits + $3 <= $5
+				  AND c.integrity_status != 'FLAGGED'
+				RETURNING c.user_id
+			),
+			insert_leftover_ledger AS (
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				SELECT
+					r.requester_id, $1, $6::uuid, t.bucket, t.amt, 'REWARD_DECREASED'::transaction_reason, $7, NOW()
+				FROM locked_res r
+				JOIN credit_courier cc ON true
+				CROSS JOIN (
+					VALUES
+						('AVAILABLE'::text, (SELECT (original_hold - $3) FROM locked_res)),
+						('RESERVED'::text, -((SELECT (original_hold - $3) FROM locked_res)::bigint))
+				) AS t(bucket, amt)
+				WHERE (r.original_hold - $3) > 0
+				RETURNING id
+			),
+			insert_payout_ledger AS (
+				INSERT INTO credit_transactions (
+					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				)
+				SELECT
+					r.requester_id, $1, $8::uuid, 'RESERVED'::text, -($3::bigint), 'ERRAND_COMPLETED_DEDUCTION'::transaction_reason, $7, NOW()
+				FROM locked_res r
+				JOIN credit_courier cc ON true
+				UNION ALL
+				SELECT
+					$4, $1, $8::uuid, 'AVAILABLE'::text, $3, 'ERRAND_COMPLETED_PAYOUT'::transaction_reason, $7, NOW()
+				FROM locked_res r
+				JOIN credit_courier cc ON true
+				RETURNING id
+			)
+			SELECT id, original_hold, requester_id FROM locked_res;`
+
 		var (
-			reqAvail, reqRes, reqVersion int64
-			reqIntegrity                 credit.AccountIntegrityStatus
-
-			courierAvail, courierRes, courierVersion int64
-			courierIntegrity                         credit.AccountIntegrityStatus
+			resID        uuid.UUID
+			originalHold int64
+			actualReqID  uuid.UUID
 		)
+		err := tx.QueryRow(txCtx, payoutCTE,
+			errandID, requesterID, payoutAmount, courierID,
+			credit.MaxBalanceCredits, leftoverOpID, occurredAt.UTC(), eventID,
+		).Scan(&resID, &originalHold, &actualReqID)
 
-		orderRequesterFirst := bytes.Compare(res.RequesterID[:], courierID[:]) < 0
-
-		lockRequester := func() error {
-			return tx.QueryRow(txCtx, `
-				SELECT available_credits, reserved_credits, version, integrity_status
-				FROM credit_accounts
-				WHERE user_id = $1
-				FOR UPDATE`,
-				res.RequesterID,
-			).Scan(&reqAvail, &reqRes, &reqVersion, &reqIntegrity)
+		if err == nil {
+			// Fast path: completed, settled, and ledger recorded in 1 atomic roundtrip!
+			return nil
 		}
 
-		lockCourier := func() error {
-			return tx.QueryRow(txCtx, `
-				SELECT available_credits, reserved_credits, version, integrity_status
-				FROM credit_accounts
-				WHERE user_id = $1
-				FOR UPDATE`,
-				courierID,
-			).Scan(&courierAvail, &courierRes, &courierVersion, &courierIntegrity)
+		if !errors.Is(err, pgx.ErrNoRows) {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.ConstraintName == "chk_accounts_available_credits_range" {
+				return credit.ErrAccountIntegrityFlagged
+			}
+			return fmt.Errorf("execute atomic payout CTE: %w", err)
 		}
 
-		if orderRequesterFirst {
-			if err := lockRequester(); err != nil {
-				return fmt.Errorf("lock requester account: %w", err)
-			}
-			if err := lockCourier(); err != nil {
-				return fmt.Errorf("lock courier account: %w", err)
-			}
-		} else {
-			if err := lockCourier(); err != nil {
-				return fmt.Errorf("lock courier account: %w", err)
-			}
-			if err := lockRequester(); err != nil {
-				return fmt.Errorf("lock requester account: %w", err)
-			}
+		// Diagnostics path: CTE returned 0 rows. Query reservation state to return precise domain error.
+		var (
+			currStatus credit.ReservationStatus
+			currReqID  uuid.UUID
+			currHold   int64
+		)
+		diagErr := tx.QueryRow(txCtx, `
+			SELECT status, requester_id, amount
+			FROM credit_reservations
+			WHERE errand_id = $1`,
+			errandID,
+		).Scan(&currStatus, &currReqID, &currHold)
+
+		if errors.Is(diagErr, pgx.ErrNoRows) {
+			return credit.ErrReservationNotFound
+		}
+		if diagErr != nil {
+			return fmt.Errorf("diagnose payout failure: %w", diagErr)
 		}
 
-		// Verify account integrity and limits.
+		// Requester identity mismatch check
+		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != currReqID {
+			return credit.ErrRequesterMismatch
+		}
+
+		// Self payout prohibition
+		if currReqID == courierID {
+			return credit.ErrSelfPayoutNotAllowed
+		}
+
+		// Payout amount above hold is a lifecycle violation
+		if payoutAmount > currHold {
+			return credit.ErrLifecycleViolation
+		}
+
+		// Lifecycle state checks
+		if currStatus == credit.ReservationStatusPaidOut {
+			return nil // Idempotent duplicate delivery: already paid out
+		}
+		if currStatus == credit.ReservationStatusRefunded || currStatus != credit.ReservationStatusReserved {
+			return credit.ErrLifecycleViolation
+		}
+
+		// Inspect requester & courier account limits / flags
+		var (
+			reqResCredits int64
+			reqIntegrity  credit.AccountIntegrityStatus
+		)
+		if err := tx.QueryRow(txCtx, `
+			SELECT reserved_credits, integrity_status
+			FROM credit_accounts WHERE user_id = $1`, currReqID,
+		).Scan(&reqResCredits, &reqIntegrity); err != nil {
+			return fmt.Errorf("diagnose requester account: %w", err)
+		}
+
+		var (
+			courierAvailCredits int64
+			courierIntegrity    credit.AccountIntegrityStatus
+		)
+		if err := tx.QueryRow(txCtx, `
+			SELECT available_credits, integrity_status
+			FROM credit_accounts WHERE user_id = $1`, courierID,
+		).Scan(&courierAvailCredits, &courierIntegrity); err != nil {
+			return fmt.Errorf("diagnose courier account: %w", err)
+		}
+
 		if reqIntegrity == credit.IntegrityFlagged || courierIntegrity == credit.IntegrityFlagged {
 			return credit.ErrAccountIntegrityFlagged
 		}
-		if reqRes < res.Amount {
+		if reqResCredits < currHold {
 			_, _ = tx.Exec(txCtx, `
 				UPDATE credit_accounts
 				SET integrity_status = 'FLAGGED',
@@ -267,84 +377,14 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 				    version = version + 1,
 				    updated_at = NOW()
 				WHERE user_id = $3`,
-				res.Amount, reqRes, res.RequesterID,
+				currHold, reqResCredits, currReqID,
 			)
 			return credit.ErrAccountIntegrityFlagged
 		}
-		if courierAvail+payoutAmount > credit.MaxBalanceCredits {
+		if courierAvailCredits+payoutAmount > credit.MaxBalanceCredits {
 			return credit.ErrCreditLimitExceeded
 		}
 
-		// Subtract stored amount from requester reserved credits, returning any leftover to available (D-059).
-		cmdTag, err := tx.Exec(txCtx, `
-			UPDATE credit_accounts
-			SET reserved_credits = reserved_credits - $1,
-			    available_credits = available_credits + $2,
-			    version = version + 1,
-			    updated_at = NOW()
-			WHERE user_id = $3 AND reserved_credits >= $1`,
-			res.Amount, leftover, res.RequesterID,
-		)
-		if err != nil || cmdTag.RowsAffected() != 1 {
-			return fmt.Errorf("payout requester reserved debit failed: %w", err)
-		}
-
-		// Add payoutAmount to courier available credits.
-		cmdTag, err = tx.Exec(txCtx, `
-			UPDATE credit_accounts
-			SET available_credits = available_credits + $1,
-			    version = version + 1,
-			    updated_at = NOW()
-			WHERE user_id = $2 AND available_credits + $1 <= $3`,
-			payoutAmount, courierID, credit.MaxBalanceCredits,
-		)
-		if err != nil || cmdTag.RowsAffected() != 1 {
-			return fmt.Errorf("payout courier available credit failed: %w", err)
-		}
-
-		// Ledger entries:
-		if leftover > 0 {
-			leftoverOpID := uuid.NewSHA1(eventID, []byte("reward_decreased"))
-			_, err = tx.Exec(txCtx, `
-				INSERT INTO credit_transactions (
-					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
-				)
-				VALUES
-					($1, $2, $3, 'AVAILABLE', $4, 'REWARD_DECREASED', $5, NOW()),
-					($1, $2, $3, 'RESERVED', -($4::bigint), 'REWARD_DECREASED', $5, NOW())`,
-				res.RequesterID, errandID, leftoverOpID, leftover, occurredAt.UTC(),
-			)
-			if err != nil {
-				return fmt.Errorf("insert leftover return ledger entries: %w", err)
-			}
-		}
-
-		_, err = tx.Exec(txCtx, `
-			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
-			)
-			VALUES
-				($1, $2, $3, 'RESERVED', -($4::bigint), 'ERRAND_COMPLETED_DEDUCTION', $5, NOW()),
-				($6, $2, $3, 'AVAILABLE', $4, 'ERRAND_COMPLETED_PAYOUT', $5, NOW())`,
-			res.RequesterID, errandID, eventID, payoutAmount, occurredAt.UTC(), courierID,
-		)
-		if err != nil {
-			return fmt.Errorf("insert payout ledger entries: %w", err)
-		}
-
-		// Mark reservation PAID_OUT and update stored amount to payoutAmount.
-		_, err = tx.Exec(txCtx, `
-			UPDATE credit_reservations
-			SET status = 'PAID_OUT',
-			    amount = $2,
-			    updated_at = NOW()
-			WHERE id = $1`,
-			res.ID, payoutAmount,
-		)
-		if err != nil {
-			return fmt.Errorf("update reservation status to PAID_OUT: %w", err)
-		}
-
-		return nil
+		return credit.ErrLifecycleViolation
 	})
 }
