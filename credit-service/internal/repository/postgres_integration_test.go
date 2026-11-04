@@ -409,7 +409,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("GetAccount lazily initializes missing wallet with 100 credits", func(t *testing.T) {
+	t.Run("GetAccount returns virtual default 100 credits without database writes", func(t *testing.T) {
 		userID := uuid.New()
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
@@ -417,9 +417,12 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(100), acc.AvailableCredits)
 		require.Equal(t, int64(0), acc.ReservedCredits)
 
-		var txCount int
+		// Assert read-only: no rows written to credit_accounts or credit_transactions
+		var accCount, txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_accounts WHERE user_id = $1", userID).Scan(&accCount))
+		require.Equal(t, 0, accCount)
 		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_transactions WHERE user_id = $1", userID).Scan(&txCount))
-		require.Equal(t, 1, txCount)
+		require.Equal(t, 0, txCount)
 	})
 
 	t.Run("CreateReservation lazily initializes missing requester wallet", func(t *testing.T) {
