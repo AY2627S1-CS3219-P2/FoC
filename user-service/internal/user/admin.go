@@ -57,29 +57,39 @@ func (s *AccountService) AdminUpdateProfile(ctx context.Context, ac AuditContext
 	return account, nil
 }
 
-// attemptedProfile is what an attempted edit asked for, never the password.
+// attemptedProfile names the fields an attempted edit asked for: never a value,
+// and never the password.
 func attemptedProfile(username, phone string) map[string]any {
-	m := map[string]any{}
+	var fields []string
 	if username != "" {
-		m["username"] = username
+		fields = append(fields, "username")
 	}
 	if phone != "" {
-		m["phone_num"] = phone
+		fields = append(fields, "phone_num")
 	}
-	return m
+	return fieldNames(AuditFieldsRequested, fields)
+}
+
+// fieldNames is the additional comments of an edit: the names of its fields
+// under key, or nil when there are none.
+func fieldNames(key string, fields []string) map[string]any {
+	if len(fields) == 0 {
+		return nil
+	}
+	return map[string]any{key: fields}
 }
 
 // profileAuditEntries is the audit rows of one admin profile edit: a password
-// reset row when the password changed, and an update row holding the new value
-// of each field that changed (an edit that changed nothing still logs one).
-func profileAuditEntries(ac AuditContext, uid uuid.UUID, changed map[string]any, passwordChanged bool) []*AuditEntry {
+// reset row when the password changed, and an update row naming the fields that
+// changed, not their values (an edit that changed nothing still logs one).
+func profileAuditEntries(ac AuditContext, uid uuid.UUID, changed []string, passwordChanged bool) []*AuditEntry {
 	var entries []*AuditEntry
 	if passwordChanged {
 		entries = append(entries, ac.entry(ActionPasswordReset, uid.String(), OutcomeSucceeded, ""))
 	}
 	if len(changed) > 0 || !passwordChanged {
 		e := ac.entry(ActionUpdate, uid.String(), OutcomeSucceeded, "")
-		e.AdditionalComments = changed
+		e.AdditionalComments = fieldNames(AuditFieldsChanged, changed)
 		entries = append(entries, e)
 	}
 	return entries

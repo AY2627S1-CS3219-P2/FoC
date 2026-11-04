@@ -359,16 +359,18 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 	if account == nil {
 		return nil, ErrNotFound
 	}
-	changed := map[string]any{}
+	// Only the names of the fields that changed go to the audit log, never
+	// their values: a phone number is personal data.
+	var changed []string
 	if username != "" {
 		if username != account.Username {
-			changed["username"] = username
+			changed = append(changed, "username")
 		}
 		account.Username = username
 	}
 	if phone != "" {
 		if phone != account.PhoneNum {
-			changed["phone_num"] = phone
+			changed = append(changed, "phone_num")
 		}
 		account.PhoneNum = phone
 	}

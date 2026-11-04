@@ -194,11 +194,24 @@ export function describeChange(entry: AuditEntry): string | null {
   return `${String(before ?? "—")} → ${String(after ?? "—")}`;
 }
 
+/** The wording of the additional-comments keys that are not field names (D-127). */
+const COMMENT_LABEL: Record<string, string> = {
+  fields_changed: "Fields changed",
+  fields_requested: "Fields requested",
+};
+
+/** A comment's value as text: a list of field names reads as "username, phone_num". */
+function commentValue(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value) && value.every((v) => typeof v === "string")) return value.join(", ");
+  return JSON.stringify(value);
+}
+
 /**
  * What an audit row shows besides its time, actor, action and outcome: why it
- * was refused, the status or state it changed, the admin's reason, and the new
- * value of each field an edit changed. A password reset holds no value (D-111),
- * so none is shown.
+ * was refused, the status or state it changed, the admin's reason, and what an
+ * edit changed: a supplier's new values, or the names of an account's fields
+ * (D-127). A password reset holds no value (D-111), so none is shown.
  */
 export function auditDetails(entry: AuditEntry): AuditDetail[] {
   const details: AuditDetail[] = [];
@@ -210,7 +223,7 @@ export function auditDetails(entry: AuditEntry): AuditDetail[] {
   if (entry.reason) details.push({ label: "Reason", value: entry.reason });
   if (entry.additionalComments) {
     for (const [field, value] of Object.entries(entry.additionalComments)) {
-      details.push({ label: field, value: typeof value === "string" ? value : JSON.stringify(value) });
+      details.push({ label: COMMENT_LABEL[field] ?? field, value: commentValue(value) });
     }
   }
   return details;

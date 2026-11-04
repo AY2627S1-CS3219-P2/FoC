@@ -101,7 +101,7 @@ func TestAdminChangesAndTheirAuditRowsShareOneTransaction(t *testing.T) {
 		a.Username = "renamed"
 		reset := integrationAdmin.EntryForTest(user.ActionPasswordReset, a.UID.String())
 		update := integrationAdmin.EntryForTest(user.ActionUpdate, a.UID.String())
-		update.AdditionalComments = map[string]any{"username": "renamed"}
+		update.AdditionalComments = map[string]any{user.AuditFieldsChanged: []string{"username"}}
 		if err := repo.UpdateAsAdminAudited(ctx, a, []*user.AuditEntry{reset, update}); err != nil {
 			t.Fatal(err)
 		}

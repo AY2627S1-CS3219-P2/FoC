@@ -40,6 +40,12 @@ describe("statusControlFor", () => {
     },
   );
 
+  it("offers no suspend on an active admin account, but can still reactivate a suspended one", () => {
+    expect(statusControlFor("ACTIVE", false, "ADMIN")).toBe("none");
+    expect(statusControlFor("ACTIVE", false, "STUDENT")).toBe("suspend");
+    expect(statusControlFor("SUSPENDED", false, "ADMIN")).toBe("reactivate");
+  });
+
   it("offers nothing when the profile carries no status", () => {
     expect(statusControlFor(undefined, false)).toBe("none");
   });

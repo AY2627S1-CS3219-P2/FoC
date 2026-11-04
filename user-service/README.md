@@ -155,7 +155,7 @@ the shapes are in `ai/decisions/admin-dashboard-design.md`):
 |---|---|
 | `account.suspend`, `account.reactivate` | `PATCH /users/{uid}/status`; the row holds the status before and after |
 | `account.password_reset` | an admin changes another account's password; the row holds no value (D-111) |
-| `account.update` | an admin changes another account's username or phone; the row holds the new values |
+| `account.update` | an admin changes another account's username or phone; the row holds the names of the fields changed, not their values (D-127) |
 
 - The change and its `succeeded` row commit in **one transaction** (D-108). The
   Redis suspension key and the session revocation happen outside it; if one

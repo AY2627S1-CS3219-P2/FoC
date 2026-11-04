@@ -22,6 +22,12 @@ const (
 
 	// AuditTargetType is the audit target_type of every account action.
 	AuditTargetType = "account"
+
+	// AuditFieldsChanged and AuditFieldsRequested are the additional_comments
+	// keys of a profile edit: the names of the fields it changed, or asked to
+	// change when it was refused or failed. Never their values.
+	AuditFieldsChanged   = "fields_changed"
+	AuditFieldsRequested = "fields_requested"
 )
 
 // Audit outcomes (D-109).
@@ -74,8 +80,8 @@ type AuditEntry struct {
 	// {"account_status": "ACTIVE"} (D-113).
 	BeforeState map[string]any
 	AfterState  map[string]any
-	// AdditionalComments holds the new value of each field a profile edit set;
-	// a password reset holds nothing (D-111).
+	// AdditionalComments holds the names of the fields a profile edit changed,
+	// never their values (D-127); a password reset holds nothing (D-111).
 	AdditionalComments map[string]any
 	CorrelationID      string
 }

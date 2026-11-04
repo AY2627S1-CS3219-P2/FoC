@@ -222,7 +222,7 @@ func TestAPasswordResetIsLoggedAsAChangeWithNoValue(t *testing.T) {
 	}
 }
 
-func TestAProfileEditLogsTheNewValuesOfWhatChanged(t *testing.T) {
+func TestAProfileEditLogsOnlyTheNamesOfWhatChanged(t *testing.T) {
 	uid := uuid.New()
 	repo := &fakeAccountRepository{user: student(uid)}
 	svc, _, _ := newAdminService(repo)
@@ -235,8 +235,12 @@ func TestAProfileEditLogsTheNewValuesOfWhatChanged(t *testing.T) {
 		t.Fatalf("entries = %+v", repo.adminEntries)
 	}
 	got := repo.adminEntries[0].AdditionalComments
-	if len(got) != 1 || got["username"] != "alice2" {
-		t.Errorf("comments = %v, want only the changed username (the phone is the same)", got)
+	names, _ := got[AuditFieldsChanged].([]string)
+	if len(got) != 1 || len(names) != 1 || names[0] != "username" {
+		t.Errorf("comments = %v, want only the name of the changed username (the phone is the same)", got)
+	}
+	if raw, _ := json.Marshal(repo.adminEntries); strings.Contains(string(raw), "alice2") {
+		t.Error("the new value must not reach the log, only the field's name")
 	}
 }
 
@@ -285,8 +289,12 @@ func TestARefusedEditIsLoggedWithoutThePassword(t *testing.T) {
 	if raw, _ := json.Marshal(repo.audits); strings.Contains(string(raw), password) {
 		t.Error("the password must never reach the log, even for a refused attempt")
 	}
-	if repo.audits[0].AdditionalComments["username"] != "bad name!" {
-		t.Error("the attempted username is kept")
+	names, _ := repo.audits[0].AdditionalComments[AuditFieldsRequested].([]string)
+	if len(names) != 1 || names[0] != "username" {
+		t.Errorf("comments = %v, want the name of the attempted field", repo.audits[0].AdditionalComments)
+	}
+	if raw, _ := json.Marshal(repo.audits); strings.Contains(string(raw), "bad name!") {
+		t.Error("the attempted value must not reach the log, only the field's name")
 	}
 }
 
