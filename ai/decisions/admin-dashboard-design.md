@@ -31,7 +31,7 @@ supplier-service, with the same columns, so the dashboard merges the three by
 | `refusal_reason` | text | why it was refused or failed; empty on success |
 | `reason` | text | the admin's own reason (D-116); empty unless one is taken |
 | `before_state`, `after_state` | jsonb | a status change, e.g. `{"account_status":"ACTIVE"}`; null otherwise |
-| `additional_comments` | jsonb | supplier: the new value of every edited field (D-112); null for a status change |
+| `additional_comments` | jsonb | supplier: the new value of every edited field (D-112); account: the names of the fields a profile edit changed, never their values (D-127); null for a status change |
 | `correlation_id` | text | the request id, to tie the row to the access log |
 
 Indexes: `occurred_at DESC`, and `(target_type, target_id)`. No other index (D-105).
@@ -39,6 +39,11 @@ Indexes: `occurred_at DESC`, and `(target_type, target_id)`. No other index (D-1
 **Immutable in the database (D-114, D-115).** A trigger refuses every `UPDATE`
 and refuses a `DELETE` of a row under 6 months old. The scheduled purge, which
 runs at start and every 24 hours, deletes the older ones; nothing else can.
+
+**Known limit (D-129).** The trigger stops the application and ordinary admins, but
+not the table's owner, who can disable it. Each service connects as that owner today.
+Splitting it into a migration role and a restricted runtime role is left to the AWS
+database setup (D-009).
 
 **Written with the action (D-108).** The action's own write and its `succeeded`
 row share one database transaction. A refused or failed attempt rolls that
