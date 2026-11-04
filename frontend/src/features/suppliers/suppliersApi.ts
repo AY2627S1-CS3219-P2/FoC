@@ -12,6 +12,8 @@
 import type { AuthorizedSend } from "../auth/session";
 import { config } from "../../lib/config";
 import { NetworkError, queryString } from "../../lib/http";
+import { parseAuditPage, type AuditEntry, type AuditFilter, type Page } from "../admin/auditTypes";
+import { auditQuery } from "../profile/usersApi";
 import type { Supplier, SupplierFilter, SupplierInput } from "./types";
 
 /**
@@ -55,6 +57,8 @@ export interface SuppliersApi {
   createSupplier(input: SupplierInput): Promise<Supplier>;
   updateSupplier(id: string, input: SupplierInput): Promise<Supplier>;
   deleteSupplier(id: string): Promise<void>;
+  /** ADMIN only. The suppliers half of the admin audit log, newest first (D-110). */
+  listAuditLog(filter?: AuditFilter): Promise<Page<AuditEntry>>;
 }
 
 /**
@@ -113,6 +117,13 @@ export function createSuppliersApi(authorizedSend: AuthorizedSend): SuppliersApi
       return call<void>(`${PREFIX}/${encodeURIComponent(id)}`, {
         method: "DELETE",
       });
+    },
+
+    async listAuditLog(filter: AuditFilter = {}) {
+      const body = await call<unknown>(`${PREFIX}/audit-log${auditQuery(filter)}`);
+      const page = parseAuditPage(body, "suppliers", false);
+      if (!page) throw new SupplierApiError("The audit log came back in a shape this screen cannot read.", 0);
+      return page;
     },
   };
 }

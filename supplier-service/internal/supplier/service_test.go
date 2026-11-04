@@ -20,6 +20,13 @@ import (
 type fakeRepository struct {
 	byID       map[string]*Supplier
 	duplicates map[string]bool
+
+	// What the audit tests read and steer (see audit_test.go).
+	audits         []*AuditEntry
+	auditedErr     error
+	recordAuditErr error
+	purged         chan struct{}
+	purgeErr       error
 }
 
 func newFakeRepository() *fakeRepository {

@@ -16,6 +16,7 @@ import (
 type Dependencies struct {
 	Auth              handlers.AuthDependencies
 	Profile           handlers.ProfileDependencies
+	Admin             handlers.AdminDependencies
 	System            handlers.SystemDependencies
 	TokenVerifier     handlers.TokenVerifier
 	RevocationChecker handlers.RevocationChecker
@@ -25,6 +26,7 @@ type Dependencies struct {
 func GetRoutes(deps Dependencies) func(chi.Router) {
 	authHandler := handlers.NewAuthHandler(deps.Auth)
 	profileHandler := handlers.NewProfileHandler(deps.Profile)
+	adminHandler := handlers.NewAdminHandler(deps.Admin)
 	systemHandler := handlers.NewSystemHandler(deps.System)
 
 	return func(router chi.Router) {
@@ -37,6 +39,10 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			router.Post("/users/login", authHandler.Login)
 			router.Post("/users/refresh", authHandler.Refresh)
 			router.Post("/users/logout", authHandler.Logout)
+			// The admin list and audit log are literal paths, which chi matches
+			// before /users/{uid}.
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users", adminHandler.ListUsers)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/audit-log", adminHandler.AuditLog)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)

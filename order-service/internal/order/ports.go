@@ -113,6 +113,9 @@ type Transition struct {
 	Now          time.Time
 	History      HistoryEntry
 	Event        *OutboxEvent
+	// Audit, when set, is the admin's audit row; it is saved in the same
+	// transaction as the transition (D-108).
+	Audit *AuditEntry
 }
 
 // AcceptCommand is D-046's accept: one conditional write, with a per-courier
@@ -220,4 +223,18 @@ type Repository interface {
 	// AmendScheduled also serializes changes that open an errand against creates
 	// for the same requester, passing the transactional OPEN count to fn.
 	AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current Order, openCount int) (*AmendResult, error)) (Order, error)
+
+	// ListAdminErrands is the admin's filtered, sorted, paged errand list
+	// (D-105, D-117); Total is how many matched before paging.
+	ListAdminErrands(ctx context.Context, f AdminErrandFilter) (AdminErrandPage, error)
+	// CountByUser counts a user's errands by state, as requester and as the
+	// courier now assigned (D-117).
+	CountByUser(ctx context.Context, userID uuid.UUID) (ErrandCounts, error)
+	// RecordAudit writes one audit row on its own, for an attempt that did not
+	// commit and so had no transaction to share (D-109).
+	RecordAudit(ctx context.Context, e *AuditEntry) error
+	ListAudit(ctx context.Context, f AuditFilter) (*AuditPage, error)
+	// PurgeAudit deletes the audit rows older than 6 months and returns how many
+	// it removed (D-115).
+	PurgeAudit(ctx context.Context) (int64, error)
 }

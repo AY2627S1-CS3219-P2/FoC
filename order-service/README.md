@@ -99,7 +99,10 @@ loaded or Redis answers the revocation lookup with an error. Errors are
 | --- | --- | --- | --- | --- |
 | `GET` | `/health` | not for the browser | anyone | Liveness and database readiness |
 | `POST` | `/` | `/api/orders` | a STUDENT with fewer than 5 errands `OPEN` | Post an errand in `OPEN`. A repeated `X-Request-Id` returns the errand it created with 200 and touches no credits |
-| `GET` | `/?scope=active` | `/api/orders?scope=active` | ADMIN | Every errand that is not final, oldest state change first |
+| `GET` | `/?scope=active` | `/api/orders?scope=active` | ADMIN | Every errand that is not final, oldest state change first, at most 100. With `state`, `from`, `to`, `supplier_id`, `user_id`, `sort`, `limit` or `offset` it is the filtered, paged list below |
+| `GET` | `/?scope=history` | `/api/orders?scope=history` | ADMIN | The past errands (`COMPLETED`, `CANCELLED`, `EXPIRED`) for the admin dashboard (D-105): filter by `state`, `from` and `to` (when the errand reached its state; RFC 3339 or `YYYY-MM-DD`, `to` exclusive), `supplier_id` and `user_id` (requester or courier); `sort` is `recent` (default), `supplier_name` or `oldest`; `limit` (at most 50) and `offset` page it, and the answer adds `total`, `limit` and `offset` |
+| `GET` | `/audit-log` | `/api/orders/audit-log` | ADMIN | The admin audit log, newest first (D-110): `action` (`errand.cancel`, `errand.complete`), `outcome`, `actor_id`, `target_id`, `from`, `to`, `limit`, `offset`; answers `{items, total, limit, offset}` |
+| `GET` | `/users/{userId}/errand-counts` | `/api/orders/users/{userId}/errand-counts` | ADMIN | How many errands a user has in each state, as requester and as the courier now assigned, for the account review (D-117) |
 | `GET` | `/open` | `/api/orders/open` | anyone signed in | `OPEN` errands before their deadline, newest first |
 | `GET` | `/requested?scope=active\|history` | `/api/orders/requested?scope=…` | anyone signed in | The caller's own errands |
 | `GET` | `/assigned?scope=active\|history` | `/api/orders/assigned?scope=…` | anyone signed in | The caller's assignments; `history` includes releases by withdrawal |
@@ -121,6 +124,23 @@ count; both only read.
 
 Every errand in a response lists the `actions` the viewer may take now, and
 every response that carries errands also carries `serverTime`.
+
+## Admin audit log
+
+An ADMIN's cancel or complete of an errand is recorded in `admin_audit` (D-106
+to D-115; the shapes are in `ai/decisions/admin-dashboard-design.md`), apart
+from `order_history`, which stays the errand's own history (D-107):
+
+- The transition, its history row, its event and its `succeeded` audit row are
+  saved in **one transaction** (D-108).
+- A **refused or failed** admin attempt (a conflict, a missing errand, a failed
+  write) is recorded as `refused` or `failed` in a write of its own (D-109). A
+  student's refused cancel is not an admin action and is not logged.
+- Rows are **immutable**: a trigger refuses every `UPDATE` and any `DELETE` of a
+  row under 6 months old; a job at start and every 24 hours deletes the older
+  ones (D-114, D-115).
+- The actor is the token's `sub`, never a header; the correlation id is the
+  request's `X-Request-Id`.
 
 ## Dependencies
 

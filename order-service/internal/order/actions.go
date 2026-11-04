@@ -93,17 +93,25 @@ func (s *Service) Confirm(ctx context.Context, c Caller, id uuid.UUID, correlati
 // ADMIN's cancel of any errand that is not final (D-045). Which one applies is
 // decided by the caller's relationship to the errand, not by a flag.
 func (s *Service) Cancel(ctx context.Context, c Caller, id uuid.UUID, correlationID string) (Order, error) {
-	return s.userTransition(ctx, c, id, func(o Order) Action {
+	o, err := s.userTransition(ctx, c, id, func(o Order) Action {
 		if RelationshipOf(o, c) == RelAdmin {
 			return ActionAdminCancel
 		}
 		return ActionCancel
 	}, correlationID)
+	if err != nil {
+		s.recordAdminAttempt(ctx, c, AuditCancel, id, correlationID, err)
+	}
+	return o, err
 }
 
 // Complete is an ADMIN completing a PICKED_UP or DELIVERED errand (D-045).
 func (s *Service) Complete(ctx context.Context, c Caller, id uuid.UUID, correlationID string) (Order, error) {
-	return s.userTransition(ctx, c, id, func(Order) Action { return ActionAdminComplete }, correlationID)
+	o, err := s.userTransition(ctx, c, id, func(Order) Action { return ActionAdminComplete }, correlationID)
+	if err != nil {
+		s.recordAdminAttempt(ctx, c, AuditComplete, id, correlationID, err)
+	}
+	return o, err
 }
 
 // Expire moves an OPEN errand past its deadline to EXPIRED (F3.10.1, F3.14.1).
@@ -268,6 +276,11 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 	}
 	h.ActorKind = actorKind(by.relationship(o))
 	t.History = h
+	// An admin's cancel or complete also writes an audit row, in the same
+	// transaction (D-106, D-108).
+	if by.relationship(o) == RelAdmin {
+		t.Audit = adminAuditEntry(by.caller, a, o, r.to, now, correlationID)
+	}
 
 	switch r.to {
 	case StateCompleted:

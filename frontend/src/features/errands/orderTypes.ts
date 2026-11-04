@@ -155,6 +155,41 @@ export interface ErrandDetail {
 export interface ErrandList {
   items: Errand[];
   serverTime: string;
+  /**
+   * Present on the admin's list when a filter or paging was used (D-104):
+   * how many errands matched in all, and the page asked for.
+   */
+  total?: number;
+  limit?: number;
+  offset?: number;
+}
+
+/** How the admin's errand list is sorted (D-105). */
+export type AdminErrandSort = "recent" | "supplier_name" | "oldest";
+
+/**
+ * What the admin's errand list can be narrowed by (D-105, D-117). Every field
+ * but `scope` is optional; an empty one is left out of the request.
+ */
+export interface AdminErrandQuery {
+  scope: ListScope;
+  state?: ErrandStatus;
+  /** YYYY-MM-DD; inclusive. */
+  from?: string;
+  /** YYYY-MM-DD; exclusive. */
+  to?: string;
+  supplierId?: string;
+  /** Errands this user requested or was assigned. */
+  userId?: string;
+  sort?: AdminErrandSort;
+  limit?: number;
+  offset?: number;
+}
+
+/** How many errands a user has in each state, as requester and as courier (D-117). A state with none is absent. */
+export interface ErrandCounts {
+  requested: Partial<Record<ErrandStatus, number>>;
+  assigned: Partial<Record<ErrandStatus, number>>;
 }
 
 /** The `scope` of the requester's and courier's lists. */

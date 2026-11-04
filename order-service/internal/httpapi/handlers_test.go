@@ -267,7 +267,7 @@ func TestRequestValidation(t *testing.T) {
 		{name: "requested scope not in the contract", method: http.MethodGet, target: "/requested?scope=everything", msg: "scope must be active or history"},
 		{name: "scope sent twice", method: http.MethodGet, target: "/requested?scope=active&scope=history", msg: "scope is not valid"},
 		{name: "admin list without a scope", method: http.MethodGet, target: "/", msg: "scope is required"},
-		{name: "admin list with the history scope", method: http.MethodGet, target: "/?scope=history", msg: "scope must be active"},
+		{name: "admin list with a scope not in the contract", method: http.MethodGet, target: "/?scope=everything", msg: "scope must be active or history"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -30,8 +30,6 @@ export const VIEW_NAMES = [
   "notifications",
   // AI-generated (edited by nigeltzy).
   "admin",
-  // AI-generated (edited by James Teo): the admin's list of errands in progress.
-  "all-errands",
 ] as const;
 
 export type ViewName = (typeof VIEW_NAMES)[number];
@@ -63,11 +61,13 @@ export interface NavItem {
 // session never lists them, so its order is unchanged.
 export const NAV_ITEMS: NavItem[] = [
   { view: "home", label: "Home", enabled: true },
-  // AI-generated (edited by James Teo).
-  { view: "all-errands", label: "All errands", enabled: true, audience: "ADMIN" },
   // AI-generated (edited by nigeltzy).
   // AI-generated (edited by James Teo): `audience` in place of `adminOnly`.
-  { view: "admin", label: "Admin", enabled: true, audience: "ADMIN" },
+  // AI-generated (edited by Claude Code, 2026-11-03): the admin dashboard
+  // (D-101 to D-123) holds the screens "All errands" and "Admin" were, and the
+  // accounts, past errands and audit log. The view keeps the name "admin" so a
+  // remembered view still lands on it.
+  { view: "admin", label: "Dashboard", enabled: true, audience: "ADMIN" },
   {
     view: "new-errand",
     label: "New errand",

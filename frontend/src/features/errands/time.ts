@@ -101,7 +101,9 @@ export function formatDateTime(iso: string, timeZone?: string): string {
   const time = date.toLocaleTimeString("en-SG", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    // hour12: false shows midnight as "24:30" in some engines; h23 shows "00:30".
+    // AI-generated (Claude Code, Sonnet 5.5, 2026-11-03; review PENDING).
+    hourCycle: "h23",
     timeZone,
   });
   return `${day}, ${time}`;

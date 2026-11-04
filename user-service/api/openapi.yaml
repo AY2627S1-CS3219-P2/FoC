@@ -10,6 +10,17 @@ servers:
     description: Local development server
 
 components:
+  parameters:
+    Limit:
+      in: query
+      name: limit
+      description: Rows a page holds; at most 50, which is also the default.
+      schema: {type: integer, minimum: 1, maximum: 50}
+    Offset:
+      in: query
+      name: offset
+      description: Rows to skip, for "page 3 of N".
+      schema: {type: integer, minimum: 0}
   securitySchemes:
     BearerAuth:
       type: http
@@ -151,6 +162,69 @@ components:
         phone_num:
           type: string
           maxLength: 20
+
+    # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — D-104,
+    # D-110, D-113, D-122: the admin account list and audit log.
+    UserListItem:
+      type: object
+      additionalProperties: false
+      required: [uid, username, email, phone_num, account_role, account_status, date_created, last_login_date]
+      properties:
+        uid: {type: string, format: uuid}
+        username: {type: string}
+        email: {type: string}
+        phone_num: {type: string}
+        account_role: {type: string, enum: [STUDENT, ADMIN]}
+        account_status: {type: string, enum: [ACTIVE, SUSPENDED, UNVERIFIED]}
+        date_created: {type: string, format: date-time}
+        last_login_date: {type: [string, 'null'], format: date-time}
+
+    UserPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/UserListItem'
+        total: {type: integer}
+        limit: {type: integer, maximum: 50}
+        offset: {type: integer}
+
+    AuditEntry:
+      type: object
+      additionalProperties: false
+      required: [id, occurred_at, actor_id, actor_role, action, target_type, target_id, outcome,
+                 refusal_reason, reason, before_state, after_state, additional_comments, correlation_id]
+      properties:
+        id: {type: string, format: uuid}
+        occurred_at: {type: string, format: date-time}
+        actor_id: {type: string, format: uuid}
+        actor_role: {type: string}
+        action: {type: string}
+        target_type: {type: string}
+        target_id: {type: string}
+        outcome: {type: string, enum: [succeeded, refused, failed]}
+        refusal_reason: {type: string}
+        reason: {type: string}
+        before_state: {type: [object, 'null']}
+        after_state: {type: [object, 'null']}
+        additional_comments: {type: [object, 'null']}
+        correlation_id: {type: string}
+
+    AuditPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEntry'
+        total: {type: integer}
+        limit: {type: integer, maximum: 50}
+        offset: {type: integer}
 
     UpdateStatusRequest:
       type: object
@@ -518,6 +592,123 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — the admin
+  # dashboard's account list and audit log (D-110, D-121 to D-123). The shapes are
+  # proposed in ai/decisions/admin-dashboard-design.md.
+  /api/v1/users:
+    get:
+      summary: Search and list accounts (ADMIN only)
+      description: >-
+        Accounts whose username or email contains `q` anywhere, ignoring case
+        (D-123), optionally one `status` (D-121), sorted by username and paged,
+        at most 50 a page (D-104). `q` is matched literally.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: q
+          schema: {type: string, maxLength: 255}
+        - in: query
+          name: status
+          schema: {type: string, enum: [ACTIVE, SUSPENDED, UNVERIFIED]}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: One page of accounts.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPage'
+        '400':
+          description: A query value that is not valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Administrator access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users/audit-log:
+    get:
+      summary: The admin audit log, newest first (ADMIN only)
+      description: >-
+        Every admin action on an account (suspend, reactivate, password reset,
+        profile edit) and every refused or failed attempt (D-106, D-109). Any admin
+        reads the whole log (D-110). Rows are immutable and kept 6 months (D-114).
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: action
+          schema: {type: string, enum: [account.suspend, account.reactivate, account.password_reset, account.update]}
+        - in: query
+          name: outcome
+          schema: {type: string, enum: [succeeded, refused, failed]}
+        - in: query
+          name: actor_id
+          schema: {type: string}
+        - in: query
+          name: target_id
+          schema: {type: string}
+        - in: query
+          name: from
+          description: RFC 3339 time or YYYY-MM-DD; inclusive.
+          schema: {type: string}
+        - in: query
+          name: to
+          description: RFC 3339 time or YYYY-MM-DD; exclusive.
+          schema: {type: string}
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: One page of audit rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditPage'
+        '400':
+          description: A query value that is not valid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Authentication required, including a revoked access token.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Administrator access required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /api/v1/users/{uid}:
     get:
       summary: Fetch profile data
@@ -670,7 +861,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '403':
-          description: Administrator access required
+          # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — records D-118 and D-119.
+          description: >-
+            Administrator access required, or the target is an administrator
+            account ("an admin account cannot be suspended"), or it is the caller's
+            own account ("you cannot suspend your own account"). No admin account
+            is suspended through the API (D-118, D-119). The refusal is recorded in
+            the audit log.
           content:
             application/json:
               schema:

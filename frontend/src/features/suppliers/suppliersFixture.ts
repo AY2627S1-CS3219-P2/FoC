@@ -325,6 +325,11 @@ export function createSuppliersFixture(): SuppliersApi {
       return mockDelay(matches.map((s) => ({ ...s })));
     },
 
+    // A fixture build has no audit log: the log lives in the services.
+    async listAuditLog() {
+      return mockDelay({ items: [], total: 0, limit: 50, offset: 0 });
+    },
+
     async getSupplier(id: string) {
       return mockDelay({ ...find(id) });
     },

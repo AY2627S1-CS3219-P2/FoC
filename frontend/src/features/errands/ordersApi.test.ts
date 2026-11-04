@@ -377,3 +377,86 @@ describe("newRequestId", () => {
     expect(newRequestId()).not.toBe(first);
   });
 });
+
+// AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — tests for the
+// admin's filtered errand list, errand counts and audit log (D-104 to D-117).
+describe("ordersApi admin dashboard", () => {
+  it("lists past errands with its filters, sort and paging in the query", async () => {
+    const { send, api } = stubSend(
+      ok({ items: [ERRAND], serverTime: SERVER_TIME, total: 130, limit: 50, offset: 100 }),
+    );
+    const list = await api.listErrandsAsAdmin({
+      scope: "history",
+      state: "COMPLETED",
+      from: "2026-10-01",
+      to: "2026-11-01",
+      supplierId: SUPPLIER_ID,
+      userId: ID,
+      sort: "supplier_name",
+      limit: 50,
+      offset: 100,
+    });
+    const path = send.mock.calls[0]![0].path;
+    expect(path.startsWith("/api/orders?")).toBe(true);
+    for (const part of [
+      "scope=history",
+      "state=COMPLETED",
+      "from=2026-10-01",
+      "to=2026-11-01",
+      `supplier_id=${SUPPLIER_ID}`,
+      `user_id=${ID}`,
+      "sort=supplier_name",
+      "limit=50",
+      "offset=100",
+    ]) {
+      expect(path).toContain(part);
+    }
+    expect(list).toMatchObject({ total: 130, limit: 50, offset: 100 });
+  });
+
+  it("leaves the paging out of the list when the service sent none", async () => {
+    const { api } = stubSend(ok(LIST));
+    const list = await api.listErrandsAsAdmin({ scope: "active" });
+    expect(list.total).toBeUndefined();
+  });
+
+  it("reads a user's errand counts", async () => {
+    const { send, api } = stubSend(ok({ requested: { COMPLETED: 3 }, assigned: {} }));
+    const counts = await api.getUserErrandCounts(ID);
+    expect(send.mock.calls[0]![0].path).toBe(`/api/orders/users/${ID}/errand-counts`);
+    expect(counts).toEqual({ requested: { COMPLETED: 3 }, assigned: {} });
+  });
+
+  it("rejects counts in the wrong shape", async () => {
+    const { api } = stubSend(ok({ requested: 3 }));
+    await expect(api.getUserErrandCounts(ID)).rejects.toMatchObject({ status: 0 });
+  });
+
+  it("reads the camelCase audit log from /api/orders/audit-log", async () => {
+    const { send, api } = stubSend(
+      ok({
+        items: [
+          {
+            id: "b1",
+            occurredAt: "2026-11-02T11:00:00Z",
+            actorId: "admin-1",
+            actorRole: "ADMIN",
+            action: "errand.cancel",
+            targetType: "errand",
+            targetId: ID,
+            outcome: "succeeded",
+            refusalReason: "",
+            reason: "",
+            correlationId: "r",
+          },
+        ],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      }),
+    );
+    const page = await api.listAuditLog({ action: "errand.cancel" });
+    expect(send.mock.calls[0]![0].path).toBe("/api/orders/audit-log?action=errand.cancel");
+    expect(page.items[0]).toMatchObject({ source: "errands", targetId: ID });
+  });
+});

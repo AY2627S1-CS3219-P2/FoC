@@ -107,8 +107,8 @@ func TestConcurrentScheduledOpeningHasOneWinner(t *testing.T) {
 func TestTransitionsCarryTheirConditions(t *testing.T) {
 	// D-046: the conditional write re-checks the state, the version and the
 	// people the Go check relied on, and D-049's deadlines; the repository
-	// applies it only if the row still matches (ports.go). History and event are checked by
-	// the other tests.
+	// applies it only if the row still matches (ports.go). History, event and the admin's
+	// audit row are checked by the other tests.
 	type run func(f *fixture, o order.Order) error
 	userAction := func(act func(f *fixture, o order.Order) (order.Order, error)) run {
 		return func(f *fixture, o order.Order) error { return just(act(f, o)) }
@@ -241,7 +241,7 @@ func TestTransitionsCarryTheirConditions(t *testing.T) {
 			sent := f.repo.sentTransitions()
 			require.Len(t, sent, 1)
 			got := sent[0]
-			got.History, got.Event = order.HistoryEntry{}, nil
+			got.History, got.Event, got.Audit = order.HistoryEntry{}, nil, nil // the audit row is checked in admin_test.go
 			want := tc.want(f, o, now)
 			want.OrderID, want.Now = o.ID, now
 			want.ExpectVersion = ptr(o.Version) // every write re-checks the version it read
