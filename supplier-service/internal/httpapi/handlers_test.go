@@ -278,8 +278,8 @@ func TestDelete_AsksOrderServiceBeforeDeleting(t *testing.T) {
 			if tc.orderDown {
 				srv.Close() // its port now refuses connections at once
 			}
-			router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)),
-				startKeySet(t, http.StatusOK), &fakeRevocations{})
+			router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL), discardLog()),
+				startKeySet(t, http.StatusOK), &fakeRevocations{}, discardLog())
 
 			req := httptest.NewRequest(http.MethodDelete, "/suppliers/"+tc.id, nil)
 			if tc.caller.authorization != "" {
