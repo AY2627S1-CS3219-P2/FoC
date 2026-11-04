@@ -177,6 +177,8 @@ type harness struct {
 	suppRec     *recorder
 	orderRec    *recorder
 	creditRec   *recorder
+	// logs holds every line the router logged.
+	logs *logBuffer
 }
 
 // AI-generated (edited by nigeltzy).
@@ -200,12 +202,13 @@ func newHarness(t *testing.T) *harness {
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
 	revocations := &fakeRevocations{}
+	logs := &logBuffer{}
 	router, err := httpapi.NewRouter(config.Downstream{
 		User:     userSvc.URL,
 		Supplier: suppSvc.URL,
 		Order:    orderSvc.URL,
 		Credit:   creditSvc.URL,
-	}, verifier, revocations, testRefreshTTL)
+	}, verifier, revocations, testRefreshTTL, logs.logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -218,6 +221,7 @@ func newHarness(t *testing.T) *harness {
 		suppRec:     suppRec,
 		orderRec:    orderRec,
 		creditRec:   creditRec,
+		logs:        logs,
 	}
 }
 
@@ -622,7 +626,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
-	}, auth.NewVerifier(jwks.URL, nil), &fakeRevocations{}, testRefreshTTL)
+	}, auth.NewVerifier(jwks.URL, nil), &fakeRevocations{}, testRefreshTTL, (&logBuffer{}).logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -793,6 +797,8 @@ func TestUnknownAPIPathsGetJSON404(t *testing.T) {
 		{http.MethodPost, "/api/unknown"},
 		{http.MethodGet, "/api/supplier/42"},
 		{http.MethodGet, "/api/v1/users/login"},
+		// Browser error reports are POST only.
+		{http.MethodGet, "/api/client-errors"},
 		{http.MethodGet, "/auth"},
 		{http.MethodPost, "/auth/typo"},
 	} {
@@ -998,7 +1004,7 @@ func TestAuthRoutesSkipTheRevocationCheck(t *testing.T) {
 func TestNewRouterNeedsARevocationChecker(t *testing.T) {
 	_, err := httpapi.NewRouter(config.Downstream{
 		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit",
-	}, auth.NewVerifier("http://jwks", nil), nil, testRefreshTTL)
+	}, auth.NewVerifier("http://jwks", nil), nil, testRefreshTTL, (&logBuffer{}).logger())
 	if err == nil {
 		t.Fatal("NewRouter with a nil checker: expected an error, got nil")
 	}

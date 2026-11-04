@@ -69,9 +69,18 @@ PROXIED (token verified, headers stripped then injected, bearer token kept)
    routes are for order-service alone)
 
   GET /healthz      the gateway's own
+
+ANSWERED BY THE GATEWAY (token verified, never proxied)
+  POST /api/client-errors   a signed-in browser's error report: logged, 204
 ```
 
 The browser's URLs deliberately do not mirror the internal service paths.
+
+`POST /api/client-errors` takes one JSON object of at most 8 KB whose only
+keys are `kind` (`render`, `error` or `rejection`), `message`, `stack` and
+`view`, all strings; a key left out or null counts as empty. A larger body is
+`413`. A body that is not such an object, or has an unknown `kind`, is `400`.
+Any other method gets the JSON 404.
 
 ## Adding your service to the gateway
 
@@ -122,6 +131,38 @@ skew), and a revocation key can expire at about that `exp`, so a revoked token
 can pass for those 5 s until user-service keeps each key 5 s longer. Keep
 `clockSkew` at 5 s or less.
 
+## Logging and request ids
+
+Every line is JSON from one `log/slog` logger on stdout, built in `cmd/api`
+and passed down. `net/http`'s and `ReverseProxy`'s own error output goes
+through it too; nothing here uses the `log` package or chi's text logger.
+
+- **Request id.** A client's `X-Request-Id` is forwarded exactly as sent and
+  never checked or replaced: order-service uses it as the duplicate key when
+  an errand is created, and `TestOrderRouteReachesOrderServiceRoot` fails if
+  the gateway changes it. When the client sends several, the first non-empty
+  one is the id and the only one forwarded. A request without one gets a
+  random UUID, set on the request before it is forwarded. Either way the
+  response carries the id exactly once: a service's own `X-Request-Id` is
+  dropped from its response.
+- **One access line per request** (`msg` `http request`), written once the
+  request has finished: `request_id`, `method`, `path` (never the query
+  string), `status`, `duration_ms`, and `user_id` once the token has passed
+  every check. WARN when the client hung up, ERROR for a 5xx, INFO
+  otherwise. Health checks are logged like any other request: the central
+  log pipeline drops them, so do not filter them here.
+- **Cause lines.** Each 5xx the gateway answers itself logs why, once, at
+  ERROR with `request_id`: the 502 when a service cannot be reached, the
+  503s when the signing keys or the revocation keys cannot be read, and a
+  recovered panic, which becomes a 500 with the stack in one field. When the
+  client hung up, the 502 and 503 lines are WARN instead; a recovered panic
+  is always ERROR. A service's own 5xx is that service's to log.
+- **Browser error reports** become one WARN `browser error` line with
+  `source` (`browser`), `user_id`, `request_id`, `kind`, `message`, `stack`
+  and `view`.
+- **Never logged:** tokens, passwords, OTPs, `Authorization` and `Cookie`
+  headers, request and response bodies, query strings.
+
 ## Layout
 
 Follows root §6's layering, minus the database layers — the gateway has no
@@ -129,12 +170,14 @@ domain and no Postgres. `internal/auth` and `internal/proxy` have no
 `supplier-service` counterpart.
 
 ```
-cmd/api/              process wiring: config, verifier, router, shutdown
+cmd/api/              process wiring: config, logger, verifier, router, shutdown
 internal/config/      env read once, passed down (root §4.4)
 internal/auth/        RS256 verification against the JWKS (D-023)
 internal/revocation/  reads the two revocation keys from Redis; read-only
 internal/proxy/       claim-to-header translation and forwarding (D-055)
-internal/httpapi/     router, route table and the bearer-token middleware
+internal/httpapi/     router, route table, the error-report handler and the
+                      middleware: request id, access log, panic recovery,
+                      bearer token
 api/                  openapi.yaml - empty; see D-028
 ```
 
