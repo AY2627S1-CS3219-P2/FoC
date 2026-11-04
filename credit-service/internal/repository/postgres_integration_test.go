@@ -409,7 +409,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("GetAccount returns virtual default 100 credits without database writes", func(t *testing.T) {
+	t.Run("GetAccount and ListTransactions return virtual default 100 credits without database writes", func(t *testing.T) {
 		userID := uuid.New()
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
@@ -417,7 +417,15 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(100), acc.AvailableCredits)
 		require.Equal(t, int64(0), acc.ReservedCredits)
 
-		// Assert read-only: no rows written to credit_accounts or credit_transactions
+		// Transaction history reflects virtual genesis allocation consistently
+		txList, err := env.repo.ListTransactions(ctx, userID, 20, nil)
+		require.NoError(t, err)
+		require.Len(t, txList.Items, 1)
+		require.Equal(t, credit.TransactionReasonRegistrationAllocation, txList.Items[0].Reason)
+		require.Equal(t, int64(100), txList.Items[0].AvailableDelta)
+		require.Equal(t, int64(0), txList.Items[0].ReservedDelta)
+
+		// Assert read-only: zero rows written to credit_accounts or credit_transactions
 		var accCount, txCount int
 		require.NoError(t, env.pool.QueryRow(ctx, "SELECT COUNT(*) FROM credit_accounts WHERE user_id = $1", userID).Scan(&accCount))
 		require.Equal(t, 0, accCount)

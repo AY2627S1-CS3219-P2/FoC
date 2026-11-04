@@ -61,6 +61,8 @@ func (r *PostgresRepository) GetAccount(ctx context.Context, userID uuid.UUID) (
 }
 
 // ListTransactions retrieves cursor-paginated grouped financial operations for an authenticated user.
+// If the user's account has not been materialized in the database yet (and no cursor is supplied),
+// it returns a virtual genesis registration allocation transaction in memory to remain consistent with GetAccount.
 func (r *PostgresRepository) ListTransactions(ctx context.Context, userID uuid.UUID, limit int, cursor *string) (*credit.PaginatedTransactions, error) {
 	if limit <= 0 {
 		limit = 20
@@ -143,6 +145,29 @@ func (r *PostgresRepository) ListTransactions(ctx context.Context, userID uuid.U
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate transaction operations: %w", err)
+	}
+
+	// If no committed transactions exist for this user on initial page (no cursor),
+	// check if the account is unmaterialized. If unmaterialized, return the virtual
+	// genesis allocation operation to match the virtual 100 available credits from GetAccount.
+	if len(items) == 0 && (cursor == nil || *cursor == "") {
+		var accountExists bool
+		err := r.pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM credit_accounts WHERE user_id = $1)", userID).Scan(&accountExists)
+		if err != nil {
+			return nil, fmt.Errorf("check account existence for virtual transaction: %w", err)
+		}
+		if !accountExists {
+			now := time.Now().UTC()
+			items = append(items, credit.TransactionOperation{
+				OperationID:    uuid.NewSHA1(uuid.NameSpaceOID, []byte(userID.String()+"-genesis")),
+				ErrandID:       nil,
+				Reason:         credit.TransactionReasonRegistrationAllocation,
+				AvailableDelta: credit.InitialAllocationCredits,
+				ReservedDelta:  0,
+				OccurredAt:     &now,
+				CreatedAt:      now,
+			})
+		}
 	}
 
 	var nextCursor *string
