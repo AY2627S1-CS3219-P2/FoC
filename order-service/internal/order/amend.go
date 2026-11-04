@@ -110,7 +110,8 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 			case errors.Is(err, ErrInsufficientCredits):
 				return nil, insufficientCredits(err)
 			case errors.Is(err, ErrCreditRejected):
-				s.log.ErrorContext(ctx, "credit-service refused a reward raise",
+				// WARN: the handler logs the 503's cause at ERROR; this adds the errand.
+				s.log.WarnContext(ctx, "credit-service refused a reward raise",
 					"errand_id", cur.ID, "request_id", in.CorrelationID, "err", err)
 				return nil, unavailable("credits are unavailable right now; please try again", err)
 			default:
