@@ -3,7 +3,7 @@
 // Scope: Tests for the scheduling helpers against order-service's recorded
 //   window (a future time, from 00:00 UTC on the day before it), and the
 //   date-and-time box's text to and from an instant in any device time zone.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the tests are as expected and valid boilerplate unit tests.
 
 import { describe, expect, it } from "vitest";
 import {

@@ -35,7 +35,7 @@ errand form's checks and amend changes, the scheduling window and date box
 paging. There is no component testing
 library, so rendering is still unverified; adding one is a separate stack
 decision and still needs asking.
-<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5, 2026-10-31) added `schedule.ts` to this list. -->
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5, 2026-10-31) added `schedule.ts` to this list. -->
 
 ## Owner
 

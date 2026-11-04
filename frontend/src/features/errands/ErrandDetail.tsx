@@ -508,7 +508,7 @@ export function ErrandDetail({
           onValuesChange={rememberEditValues}
           alreadyHeld={editBase.reward}
           available={available}
-          // AI-generated (edited by PENDING): a SCHEDULED errand's time can be
+          // AI-generated (edited by nigeltzy): a SCHEDULED errand's time can be
           // changed, and its expiry starts only when it opens (PR #67).
           canSchedule={editBase.state === "SCHEDULED"}
           notice={
@@ -576,7 +576,7 @@ export function ErrandDetail({
               </Row>
             )}
             <Row label="Reward">{creditsText(errand.reward)}</Row>
-            {/* AI-generated (edited by PENDING): the time a scheduled errand
+            {/* AI-generated (edited by nigeltzy): the time a scheduled errand
                 opens, kept after it opened (PR #67). */}
             {errand.scheduled && (
               <Row label="Scheduled for">{formatDateTime(errand.scheduled)}</Row>

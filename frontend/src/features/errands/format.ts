@@ -90,14 +90,14 @@ const FIELD_LABEL: Record<ChangedField, string> = {
 export function describeChange(change: FieldChange): string {
   const label = FIELD_LABEL[change.field] ?? change.field;
   if (change.from === "" && change.to === "") return `${label} changed`;
-  // AI-generated (edited by PENDING): a scheduled time arrives as an RFC 3339
+  // AI-generated (edited by nigeltzy): a scheduled time arrives as an RFC 3339
   // timestamp, shown as the other dates are; "" means it was removed (PR #67).
   const show = (value: string) =>
     change.field === "scheduled" ? formatDateTime(value) || value : value;
   return `${label}: ${show(change.from) || "none"} → ${show(change.to) || "none"}`;
 }
 
-// AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+// AI-generated (edited by nigeltzy): PR #67's SCHEDULED state.
 /**
  * The line for a SCHEDULED errand at `now` (server time): "Opens in 3 h 20 min",
  * then "Opening…" once its time is reached, until order-service's sweeper
@@ -141,7 +141,7 @@ export function progressText(
   const deadline = deadlineText(errand, now);
   if (deadline) return deadline;
   switch (errand.state) {
-    // AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+    // AI-generated (edited by nigeltzy): PR #67's SCHEDULED state.
     case "SCHEDULED":
       return opensText({ scheduled: errand.scheduled ?? "" }, now);
     case "OPEN":
@@ -192,7 +192,7 @@ export function detailLine(
   now: number,
 ): string | null {
   if (FINAL_STATES.includes(errand.state)) return endedText(errand);
-  // AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+  // AI-generated (edited by nigeltzy): PR #67's SCHEDULED state.
   if (errand.state === "SCHEDULED") return opensDetailText(errand.scheduled ?? "", now);
   const deadline = deadlineText(errand, now);
   if (errand.state === "OPEN") {
@@ -218,7 +218,7 @@ export function detailLine(
   }
 }
 
-// AI-generated (edited by PENDING): PR #67's SCHEDULED state.
+// AI-generated (edited by nigeltzy): PR #67's SCHEDULED state.
 /**
  * "Opens to couriers 31 Oct, 14:00 · in 3 h", or "Opening to couriers…" once
  * the time is reached.

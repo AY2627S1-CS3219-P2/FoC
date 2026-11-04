@@ -472,7 +472,7 @@ describe("the newer 409s", () => {
   });
 });
 
-// AI-generated (edited by PENDING): PR #67's SCHEDULED state and schedule changes.
+// AI-generated (edited by nigeltzy): PR #67's SCHEDULED state and schedule changes.
 describe("scheduled errands", () => {
   it("writes a schedule change as dates, and a removed one as none", () => {
     const from = "2026-10-31T06:00:00Z";

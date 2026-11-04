@@ -4,7 +4,7 @@
 //   schedule may be set for, the date-and-time box's text to and from an
 //   instant, and the form's check, all from order-service's recorded
 //   scheduled-errand rules (order-service/AGENTS.md, PR #67).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the schedule frontend helpers are as expected and valid according to the requirements.
 
 import { formatDateTime } from "./time";
 

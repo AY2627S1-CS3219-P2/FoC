@@ -174,7 +174,7 @@ describe("formValuesFrom", () => {
   });
 });
 
-// AI-generated (edited by PENDING): scheduling, from order-service's recorded
+// AI-generated (edited by nigeltzy): scheduling, from order-service's recorded
 // scheduled-errand rules (PR #67).
 describe("scheduling", () => {
   const NOW = Date.parse("2026-10-30T10:00:00Z");

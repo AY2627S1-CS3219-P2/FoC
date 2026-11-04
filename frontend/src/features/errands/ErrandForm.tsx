@@ -16,7 +16,7 @@ import type { Supplier } from "../suppliers/types";
 import { creditsText } from "./format";
 import type { OrdersApi } from "./ordersApi";
 import type { CampusLocation, CreateErrandRequest, Errand, ErrandChanges } from "./orderTypes";
-// AI-generated (edited by PENDING): scheduling, from order-service's recorded
+// AI-generated (edited by nigeltzy): scheduling, from order-service's recorded
 // scheduled-errand rules (PR #67).
 import {
   fromLocalInput,
@@ -52,7 +52,7 @@ export interface ErrandFormValues {
   deliveryNote: string;
   /** As typed, so a half-typed number can sit in the box. */
   reward: string;
-  // AI-generated (edited by PENDING): scheduling (PR #67).
+  // AI-generated (edited by nigeltzy): scheduling (PR #67).
   /** "later" opens the errand at `scheduledAt`; "now" opens it straight away. */
   schedule: "now" | "later";
   /** As the date-and-time box holds it (device time); kept while "now" is chosen. */
@@ -100,7 +100,7 @@ export function emptyErrandForm(): ErrandFormValues {
 
 /** The form filled from an errand, for editing it. */
 export function formValuesFrom(errand: Errand): ErrandFormValues {
-  // AI-generated (edited by PENDING): only a SCHEDULED errand's time can be
+  // AI-generated (edited by nigeltzy): only a SCHEDULED errand's time can be
   // changed, so only it opens with "later" (PR #67).
   const at = errand.state === "SCHEDULED" && errand.scheduled ? Date.parse(errand.scheduled) : NaN;
   return {
@@ -219,7 +219,7 @@ export function validateErrandForm(
     problems.reward = "The reward must be a whole number of credits, at least 1.";
   }
 
-  // AI-generated (edited by PENDING): PR #67's scheduling window.
+  // AI-generated (edited by nigeltzy): PR #67's scheduling window.
   if (values.schedule === "later") {
     const problem = scheduleProblem(values.scheduledAt, now);
     if (problem) problems.scheduledAt = problem;
@@ -234,7 +234,7 @@ export function validateErrandForm(
  */
 export function toCreateRequest(values: ErrandFormValues): CreateErrandRequest {
   const note = values.deliveryNote.trim();
-  // AI-generated (edited by PENDING): PR #67's optional `scheduled`.
+  // AI-generated (edited by nigeltzy): PR #67's optional `scheduled`.
   const scheduled = values.schedule === "later" ? toScheduled(values.scheduledAt) : null;
   return {
     supplierId: values.supplier?.id ?? "",
@@ -266,7 +266,7 @@ export function errandChanges(errand: Errand, values: ErrandFormValues): ErrandC
   const reward = parseReward(values.reward);
   if (reward !== null && reward !== errand.reward) changes.reward = reward;
 
-  // AI-generated (edited by PENDING): PR #67. Only a SCHEDULED errand's time
+  // AI-generated (edited by nigeltzy): PR #67. Only a SCHEDULED errand's time
   // may change; "now" sends "", which removes the schedule and opens it.
   if (errand.state === "SCHEDULED") {
     if (values.schedule === "now") changes.scheduled = "";
@@ -292,7 +292,7 @@ export function formChanged(initial: ErrandFormValues, values: ErrandFormValues)
     initial.deliveryLocation !== values.deliveryLocation ||
     initial.deliveryNote !== values.deliveryNote ||
     initial.reward !== values.reward ||
-    // AI-generated (edited by PENDING): scheduling (PR #67).
+    // AI-generated (edited by nigeltzy): scheduling (PR #67).
     initial.schedule !== values.schedule ||
     (values.schedule === "later" && initial.scheduledAt !== values.scheduledAt)
   );
@@ -360,7 +360,7 @@ interface ErrandFormProps {
   available: number | null;
   /** A quiet note above the fields. */
   notice?: string;
-  // AI-generated (edited by PENDING): scheduling (PR #67).
+  // AI-generated (edited by nigeltzy): scheduling (PR #67).
   /**
    * Shows "When it opens": on a new errand, and on a SCHEDULED one, the only
    * kind whose time order-service lets the requester change.
@@ -401,7 +401,7 @@ export function ErrandForm({
   feedback,
 }: ErrandFormProps) {
   const id = useId();
-  // AI-generated (edited by PENDING): the device clock, for the scheduling
+  // AI-generated (edited by nigeltzy): the device clock, for the scheduling
   // window's hint and check. UX only: order-service checks against its own.
   const now = useNow(30_000);
   const fieldId = (field: string) => `${id}-${field}`;
@@ -495,7 +495,7 @@ export function ErrandForm({
 
   const choices = locationChoices(locations, initial.deliveryLocation, values.deliveryLocation);
   const problems = validateErrandForm(canSchedule ? values : { ...values, schedule: "now" }, choices.accepted, now);
-  // AI-generated (edited by PENDING): what the schedule controls show (PR #67).
+  // AI-generated (edited by nigeltzy): what the schedule controls show (PR #67).
   const later = canSchedule && values.schedule === "later";
   const laterAt = later ? fromLocalInput(values.scheduledAt) : null;
   const opensNowFromSchedule = canSchedule && initial.schedule === "later" && values.schedule === "now";
@@ -721,7 +721,7 @@ export function ErrandForm({
           )}
           {problemText("reward")}
 
-          {/* AI-generated (edited by PENDING): "When it opens", from
+          {/* AI-generated (edited by nigeltzy): "When it opens", from
               order-service's recorded scheduling rules (PR #67), in the
               Active / History toggle's style. */}
           {canSchedule && (
@@ -795,7 +795,7 @@ export function ErrandForm({
                 <dt>Reward</dt>
                 <dd>{reward === null ? "—" : creditsText(reward)}</dd>
               </div>
-              {/* AI-generated (edited by PENDING): scheduling (PR #67). */}
+              {/* AI-generated (edited by nigeltzy): scheduling (PR #67). */}
               {canSchedule && (
                 <div className="summary-row">
                   <dt>Opens</dt>

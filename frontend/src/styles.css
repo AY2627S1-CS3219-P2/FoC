@@ -465,7 +465,7 @@ input[type="password"],
 input[type="number"],
 /* AI-generated (edited by James Teo): the Profile contact number's field. */
 input[type="tel"],
-/* AI-generated (edited by PENDING): the errand form's "Opens at" box. */
+/* AI-generated (edited by nigeltzy): the errand form's "Opens at" box. */
 input[type="datetime-local"],
 select,
 textarea {
@@ -1528,7 +1528,7 @@ button.service-card:hover {
   margin-bottom: 16px;
 }
 
-/* AI-generated (edited by PENDING): the errand form's Now / Later choice. */
+/* AI-generated (edited by nigeltzy): the errand form's Now / Later choice. */
 .mode-toggle.schedule-choice {
   display: inline-flex;
   margin-bottom: 10px;

@@ -66,7 +66,7 @@ export function NewErrandView({
     setPosting(true);
     setFailure(null);
     let reward: number;
-    // AI-generated (edited by PENDING): the time a scheduled errand opens,
+    // AI-generated (edited by nigeltzy): the time a scheduled errand opens,
     // for the toast (PR #67).
     let opensAt = "";
     try {
@@ -98,7 +98,7 @@ export function NewErrandView({
     <section>
       <div className="page-head">
         <h1>Post an errand</h1>
-        {/* AI-generated (edited by PENDING): says credits are held for a
+        {/* AI-generated (edited by nigeltzy): says credits are held for a
             scheduled errand too (PR #67). */}
         <p className="page-sub">
           Credits are held the moment you post, even for an errand that opens later. They
@@ -114,7 +114,7 @@ export function NewErrandView({
         available={available}
         canSchedule
         submitting={posting}
-        // AI-generated (edited by PENDING): "Schedule errand" when it opens later.
+        // AI-generated (edited by nigeltzy): "Schedule errand" when it opens later.
         submitLabel={(reward, later) => {
           const verb = later ? "Schedule errand" : "Post errand";
           return reward === null ? verb : `${verb} · hold ${creditsText(reward)}`;
