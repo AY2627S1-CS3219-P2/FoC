@@ -14,7 +14,7 @@ import (
 
 // RoutingUserRegistered is the routing key of the event queued when an
 // account is activated. RabbitMQ binds it to credit-service's
-// credit.registration queue on the foc.events exchange.
+// credit.users queue on the foc.events exchange.
 const RoutingUserRegistered = "user.registered"
 
 // UserRegisteredEvent is the JSON body of a user.registered event:

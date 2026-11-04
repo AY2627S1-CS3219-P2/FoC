@@ -4,7 +4,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-16
 // Scope: Integration tests of the outbox relay against real PostgreSQL and
 //   RabbitMQ in testcontainers (claiming under a lock, retries, routing to
-//   credit.registration, an unreachable broker), adapted from
+//   credit.users, an unreachable broker), adapted from
 //   order-service/internal/relay to the standard testing package.
 // Author review: James Teo — reviewed and verified.
 
@@ -40,7 +40,7 @@ const (
 	// The exchange, credit-service queue and binding that
 	// rabbitmq/definitions.json declares for user.registered.
 	eventsExchange    = "foc.events"
-	registrationQueue = "credit.registration"
+	registrationQueue = "credit.users"
 
 	// waitLimit bounds every wait on the database or the broker.
 	waitLimit = 20 * time.Second
@@ -202,7 +202,7 @@ func TestRelayIntegration(t *testing.T) {
 	})
 
 	t.Run("Relay", func(t *testing.T) {
-		t.Run("publishes an activation's user.registered event to credit.registration", func(t *testing.T) {
+		t.Run("publishes an activation's user.registered event to credit.users", func(t *testing.T) {
 			s.reset(t)
 			users := repository.NewPostgresRepository(s.pool)
 			account := &user.User{
