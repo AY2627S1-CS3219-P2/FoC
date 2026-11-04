@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"foc/credit-service/internal/credit"
+	"foc/credit-service/internal/observability"
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -146,6 +147,12 @@ type rewardSetPayload struct {
 
 // Dispatch validates the event payload and delegates to the appropriate domain service method.
 func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body []byte) error {
+	return h.dispatch(ctx, h.logger, routingKey, body)
+}
+
+// dispatch is Dispatch writing its lines to log, which HandleDelivery scopes to
+// the delivery's request id.
+func (h *LifecycleHandler) dispatch(ctx context.Context, log *slog.Logger, routingKey string, body []byte) error {
 	switch routingKey {
 	case RoutingCompleted:
 		var ev completedPayload
@@ -171,7 +178,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 		}
 
-		h.checkClockSkew(ev.EventID, ev.OccurredAt)
+		checkClockSkew(log, ev.EventID, ev.ErrandID, ev.OccurredAt)
 
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
@@ -199,7 +206,7 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 		}
 
-		h.checkClockSkew(ev.EventID, ev.OccurredAt)
+		checkClockSkew(log, ev.EventID, ev.ErrandID, ev.OccurredAt)
 
 		var reason credit.TransactionReason
 		switch routingKey {
@@ -243,15 +250,16 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 		}
 
-		h.checkClockSkew(ev.EventID, ev.OccurredAt)
+		checkClockSkew(log, ev.EventID, ev.ErrandID, ev.OccurredAt)
 
 		if h.service == nil {
 			return errors.New("lifecycle service is required")
 		}
 		err := h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
 		if errors.Is(err, credit.ErrRewardSetStale) {
-			h.logger.Info("errand.reward_set ignored as stale",
+			log.Info("errand.reward_set ignored as stale",
 				"routingKey", routingKey,
+				"eventId", ev.EventID,
 				"errandId", ev.ErrandID,
 				"version", *ev.Version,
 				"amount", ev.Amount,
@@ -261,8 +269,9 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 		if err != nil {
 			return err
 		}
-		h.logger.Info("errand.reward_set applied",
+		log.Info("errand.reward_set applied",
 			"routingKey", routingKey,
+			"eventId", ev.EventID,
 			"errandId", ev.ErrandID,
 			"version", *ev.Version,
 			"amount", ev.Amount,
@@ -276,36 +285,23 @@ func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body
 
 // HandleDelivery processes one AMQP message with transport validation, dispatch, and DLQ/retry rules.
 func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) {
+	log := deliveryLogger(h.logger, d)
+
 	if err := validateTransport(d.RoutingKey, d.ContentType, d.ContentEncoding, d.Body, LifecycleRoutingKeys); err != nil {
-		h.logger.Warn("rejecting message with invalid transport to DLQ", "routingKey", d.RoutingKey, "error", err)
+		log.Warn("rejecting message with invalid transport to DLQ", "error", observability.Sanitize(err.Error()))
 		_ = d.Nack(false, false)
 		return
 	}
+	log = withEventIDs(log, d.Body)
 
-	var meta struct {
-		ErrandID uuid.UUID `json:"errandId"`
-		Version  *int64    `json:"version"`
-	}
-	_ = json.Unmarshal(d.Body, &meta)
-
-	var logAttrs []any
-	logAttrs = append(logAttrs, "routingKey", d.RoutingKey)
-	if meta.ErrandID != uuid.Nil {
-		logAttrs = append(logAttrs, "errandId", meta.ErrandID)
-	}
-	if meta.Version != nil {
-		logAttrs = append(logAttrs, "version", *meta.Version)
-	}
-
-	err := h.Dispatch(ctx, d.RoutingKey, d.Body)
+	err := h.dispatch(ctx, h.logger.With("request_id", d.CorrelationId), d.RoutingKey, d.Body)
 	if err == nil {
-		_ = d.Ack(false)
+		acknowledge(log, d, "lifecycle event acknowledged")
 		return
 	}
 
 	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) || errors.Is(err, credit.ErrRequesterMismatch) {
-		attrs := append(logAttrs, "error", err)
-		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", attrs...)
+		log.Warn("rejecting contract or lifecycle violation to DLQ", "error", observability.Sanitize(err.Error()))
 		_ = d.Nack(false, false)
 		return
 	}
@@ -313,18 +309,15 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	attempt := getDeliveryAttempt(d)
 	if errors.Is(err, credit.ErrReservationNotFound) {
 		if d.RoutingKey == RoutingFailed {
-			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", logAttrs...)
-			_ = d.Ack(false)
+			acknowledge(log, d, "errand.failed for unreserved errand acknowledged as no-op")
 			return
 		}
 		if attempt >= 5 {
-			attrs := append(logAttrs, "attempt", attempt, "error", err)
-			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", attrs...)
+			log.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", "attempt", attempt, "error", observability.Sanitize(err.Error()))
 			_ = d.Nack(false, false)
 			return
 		}
-		attrs := append(logAttrs, "attempt", attempt)
-		h.logger.Warn("reservation not found for lifecycle event, requeuing", attrs...)
+		log.Warn("reservation not found for lifecycle event, requeuing", "attempt", attempt)
 		if !h.waitRetryBackoff(ctx, attempt) {
 			return
 		}
@@ -333,24 +326,23 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	}
 
 	if attempt >= 5 {
-		attrs := append(logAttrs, "attempt", attempt, "error", err)
-		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", attrs...)
+		log.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", "attempt", attempt, "error", observability.Sanitize(err.Error()))
 		_ = d.Nack(false, false)
 		return
 	}
-	attrs := append(logAttrs, "attempt", attempt, "error", err)
-	h.logger.Warn("retrying lifecycle event after temporary error", attrs...)
+	log.Warn("retrying lifecycle event after temporary error", "attempt", attempt, "error", observability.Sanitize(err.Error()))
 	if !h.waitRetryBackoff(ctx, attempt) {
 		return
 	}
 	_ = d.Nack(false, true)
 }
 
-func (h *LifecycleHandler) checkClockSkew(eventID uuid.UUID, occurredAt time.Time) {
+func checkClockSkew(log *slog.Logger, eventID, errandID uuid.UUID, occurredAt time.Time) {
 	skew := time.Since(occurredAt)
 	if math.Abs(skew.Minutes()) > 10 {
-		h.logger.Warn("implausible clock skew detected on event",
+		log.Warn("implausible clock skew detected on event",
 			"eventId", eventID,
+			"errandId", errandID,
 			"occurredAt", occurredAt,
 			"receivedAt", time.Now().UTC(),
 			"skew", skew.String(),

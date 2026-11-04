@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"foc/credit-service/internal/credit"
+	"foc/credit-service/internal/observability"
 
 	"github.com/google/uuid"
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -110,30 +111,33 @@ func (h *RegistrationHandler) Handle(ctx context.Context, body []byte) error {
 
 // HandleDelivery processes an AMQP message, validates transport headers, invokes Handle, and acks/nacks.
 func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) {
+	log := deliveryLogger(h.logger, d)
+
 	if err := validateTransport(d.RoutingKey, d.ContentType, d.ContentEncoding, d.Body, []string{RoutingUserRegistered}); err != nil {
-		h.logger.Warn("rejecting registration message with invalid transport to DLQ", "error", err)
+		log.Warn("rejecting registration message with invalid transport to DLQ", "error", observability.Sanitize(err.Error()))
 		_ = d.Nack(false, false)
 		return
 	}
+	log = withEventIDs(log, d.Body)
 
 	if err := h.Handle(ctx, d.Body); err != nil {
 		if errors.Is(err, ErrMalformedEvent) {
-			h.logger.Warn("dropping malformed user.registered event to DLQ", "error", err)
+			log.Warn("dropping malformed user.registered event to DLQ", "error", observability.Sanitize(err.Error()))
 			_ = d.Nack(false, false)
 			return
 		}
 		attempt := getDeliveryAttempt(d)
 		if attempt >= 5 {
-			h.logger.Error("registration delivery attempts exhausted, dead-lettering to DLQ", "attempt", attempt, "error", err)
+			log.Error("registration delivery attempts exhausted, dead-lettering to DLQ", "attempt", attempt, "error", observability.Sanitize(err.Error()))
 			_ = d.Nack(false, false)
 			return
 		}
-		h.logger.Warn("retrying user.registered event after handler failure", "attempt", attempt, "error", err)
+		log.Warn("retrying user.registered event after handler failure", "attempt", attempt, "error", observability.Sanitize(err.Error()))
 		_ = d.Nack(false, true)
 		return
 	}
 
-	_ = d.Ack(false)
+	acknowledge(log, d, "user.registered event acknowledged")
 }
 
 // RunRegistrationConsumer consumes credit.registration messages until ctx ends.

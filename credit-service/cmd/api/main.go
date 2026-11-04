@@ -21,6 +21,7 @@ import (
 	"foc/credit-service/internal/credit"
 	"foc/credit-service/internal/httpapi"
 	"foc/credit-service/internal/messaging"
+	"foc/credit-service/internal/observability"
 	"foc/credit-service/internal/repository"
 	"foc/credit-service/internal/worker"
 
@@ -38,7 +39,7 @@ func main() {
 	}
 
 	if err := run(context.Background(), cfg, logger); err != nil {
-		logger.Error("credit service stopped with fatal error", "error", err)
+		logger.Error("credit service stopped with fatal error", "error", observability.Sanitize(err.Error()))
 		os.Exit(1)
 	}
 }
@@ -143,7 +144,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	// HTTP Server with Chi Router
 	router := httpapi.NewRouter(healthCheck, verifier, revocations, creditService, logger)
-	server := newHTTPServer(cfg.Addr(), router)
+	server := newHTTPServer(cfg.Addr(), router, logger)
 
 	// First-error Coordination and Intake Context
 	intakeCtx, cancelIntake := context.WithCancel(ctx)
@@ -215,7 +216,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	return coord.firstError()
 }
 
-func newHTTPServer(addr string, handler http.Handler) *http.Server {
+func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http.Server {
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
@@ -223,6 +224,8 @@ func newHTTPServer(addr string, handler http.Handler) *http.Server {
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
 		IdleTimeout:       60 * time.Second,
+		// Without this, net/http writes its own errors as plain text to stderr.
+		ErrorLog: slog.NewLogLogger(logger.With("component", "http_server").Handler(), slog.LevelError),
 	}
 }
 

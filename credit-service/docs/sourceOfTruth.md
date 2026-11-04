@@ -1702,7 +1702,9 @@ queue's DLQ without logging the complete body.
 The payload `eventId` is the sole authoritative event identity and the only
 event identity used for idempotency or ledger operation IDs. AMQP `message_id`
 is neither required nor consulted. Lifecycle and registration events do not
-expect a reply, so any `correlation_id` or `reply_to` property is ignored.
+expect a reply, so any `reply_to` property is ignored. The `correlation_id`
+property is logged as `request_id` on every line about the event and is
+otherwise ignored.
 An AMQP timestamp is optional and audit-only; it never replaces, validates, or
 orders by payload `occurredAt`.
 
@@ -1852,8 +1854,9 @@ Metric labels must have bounded values such as queue, operation type, outcome,
 or error class. UUIDs and other per-user or per-errand identifiers must never be
 metric labels because they create unbounded cardinality.
 
-Structured logs include applicable `eventId`, `operationId`, `errandId`, user
-identity field (`userId`, `requesterId`, or `courierId`), routing key, queue,
+Structured logs include applicable `request_id` (a request's `X-Request-Id`, or
+an event delivery's AMQP `correlation_id`), `eventId`, `operationId`, `errandId`,
+user identity field (`userId`, `requesterId`, or `courierId`), routing key, queue,
 delivery or retry attempt, component, and stable error code. They must never
 include JWTs, authorization headers, RabbitMQ credentials, database URLs,
 passwords, or complete message bodies. Logging an error must use a sanitized
