@@ -20,7 +20,7 @@ type Dependencies struct {
 	TokenVerifier     handlers.TokenVerifier
 	RevocationChecker handlers.RevocationChecker
 
-	// AI-generated (edited by PENDING): the ranking-model store (D-095, D-099).
+	// AI-generated (edited by nigeltzy): the ranking-model store (D-095, D-099).
 	Ranking handlers.RankingDependencies
 }
 
@@ -44,7 +44,7 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
-			// AI-generated (edited by PENDING): each user's own ranking model (D-095, D-099).
+			// AI-generated (edited by nigeltzy): each user's own ranking model (D-095, D-099).
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}/ranking-model", rankingHandler.Get)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}/ranking-model", rankingHandler.Put)
 		})

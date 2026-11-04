@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The NUS shuttle data's types and lookups (D-090, D-097): stops,
 //   routes, straight-line distance, and the stops near a point.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 // Package shuttle is the static NUS Internal Shuttle Bus data errand ranking
 // reads (D-090): every stop with its position, every route's stops in order,

@@ -46,7 +46,7 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, 2, cfg.MaxActive, "K")
 	assert.Equal(t, 24*time.Hour, cfg.ConfirmWindow, "C")
 	assert.Equal(t, "http://localhost:8082", cfg.SupplierBaseURL, "supplier-service's port (root AGENTS.md §3)")
-	assert.Equal(t, "http://localhost:8081", cfg.UserBaseURL, "user-service's port (root AGENTS.md §3)") // AI-generated (edited by PENDING).
+	assert.Equal(t, "http://localhost:8081", cfg.UserBaseURL, "user-service's port (root AGENTS.md §3)") // AI-generated (edited by nigeltzy).
 	assert.Equal(t, "http://localhost:8084", cfg.CreditBaseURL, "credit-service's port (root AGENTS.md §3)")
 	assert.NotEmpty(t, cfg.DatabaseURL)
 	assert.NotEmpty(t, cfg.RabbitMQURL)

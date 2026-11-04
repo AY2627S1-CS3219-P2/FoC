@@ -329,7 +329,7 @@ func TestAcceptStopsAtKActiveAssignments(t *testing.T) {
 				held := f.seed(s)
 				held.CourierID = ptr(other.UserID)
 				f.repo.Put(held)
-				// AI-generated (edited by PENDING): D-093, the other courier
+				// AI-generated (edited by nigeltzy): D-093, the other courier
 				// rated their completed errand too, so may accept.
 				if s == order.StateCompleted {
 					f.rateAsCourier(held)

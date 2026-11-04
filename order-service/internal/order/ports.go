@@ -35,7 +35,7 @@ type Supplier struct {
 	Floor               string
 	LocationDescription string
 	Available           bool
-	// AI-generated (edited by PENDING): kept on the errand for ranking (D-089).
+	// AI-generated (edited by nigeltzy): kept on the errand for ranking (D-089).
 	Type  string
 	Point *shuttle.Point // nil when supplier-service gave no position
 }

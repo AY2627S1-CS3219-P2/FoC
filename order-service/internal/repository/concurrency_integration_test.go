@@ -360,7 +360,7 @@ func (e *env) testConcurrentCreatesRespectTheOpenLimit(t *testing.T) {
 // serviceOn runs the domain service on repo, with ordertest's clock, credit
 // and supplier fakes, T = 2h, K = 2 and C = 24h.
 //
-// AI-generated (edited by PENDING): repo is also the RatingStore (D-093).
+// AI-generated (edited by nigeltzy): repo is also the RatingStore (D-093).
 func serviceOn(repo interface {
 	order.Repository
 	order.RatingStore

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Showing a user's star rating and choosing 1 to 5 stars (D-093).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import { useId } from "react";
 import type { UserRating } from "./orderTypes";

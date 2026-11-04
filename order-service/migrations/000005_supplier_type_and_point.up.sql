@@ -2,7 +2,7 @@
 -- Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 -- Scope: The supplier copy D-052 takes also keeps the supplier's type and
 --   position, for errand ranking (D-089).
--- Author review: PENDING — <reviewer to complete>
+-- Author review: nigeltzy — Checked that the migration was generated according to the requirements set out, and operates in an expected manner.
 
 -- Errands posted before this migration have no type ('') and no position.
 ALTER TABLE orders

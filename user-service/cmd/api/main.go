@@ -66,7 +66,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("ping database: %w", err)
 	}
 
-	// AI-generated (edited by PENDING): the ranking-model database, separate
+	// AI-generated (edited by nigeltzy): the ranking-model database, separate
 	// from the users database (D-095), with its own migrations.
 	if cfg.RankingDBURL == "" {
 		return errors.New("USER_RANKING_DB_URL must be set")
@@ -174,7 +174,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			AdminProfileUpdater: accountService,
 			Logger:              logger,
 		},
-		// AI-generated (edited by PENDING): each user's ranking model (D-095, D-099).
+		// AI-generated (edited by nigeltzy): each user's ranking model (D-095, D-099).
 		Ranking: handlers.RankingDependencies{Models: rankingService, Logger: logger},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,

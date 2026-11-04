@@ -3,7 +3,7 @@
 // Scope: Ratings (D-093): each side of a COMPLETED errand rates the other
 //   once, 1 to 5 stars; a student with an errand left to rate can neither
 //   post nor accept; anyone signed in can read a user's rating.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 package order
 

@@ -135,7 +135,7 @@ type supplierResponse struct {
 	Floor               string `json:"floor"`
 	LocationDescription string `json:"location_description"`
 	IsAvailable         *bool  `json:"is_available"`
-	// AI-generated (edited by PENDING): kept on the errand for ranking (D-089).
+	// AI-generated (edited by nigeltzy): kept on the errand for ranking (D-089).
 	// Pointers, so a supplier without a position is told from one at 0, 0.
 	Type      string   `json:"type"`
 	Latitude  *float64 `json:"latitude"`
@@ -164,7 +164,7 @@ func decodeSupplier(body []byte, want uuid.UUID) (order.Supplier, error) {
 		Available:           *dto.IsAvailable,
 		Type:                dto.Type,
 	}
-	// AI-generated (edited by PENDING): a position only when both halves came (D-089).
+	// AI-generated (edited by nigeltzy): a position only when both halves came (D-089).
 	if dto.Latitude != nil && dto.Longitude != nil {
 		s.Point = &shuttle.Point{Lat: *dto.Latitude, Lon: *dto.Longitude}
 	}

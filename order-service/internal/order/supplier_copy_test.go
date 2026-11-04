@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The supplier copy keeps the supplier's type and position (D-089).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 package order_test
 

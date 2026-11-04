@@ -96,7 +96,7 @@ type SupplierSnapshot struct {
 	ID       uuid.UUID
 	Name     string
 	Location string
-	// AI-generated (edited by PENDING): the supplier's type and position, for
+	// AI-generated (edited by nigeltzy): the supplier's type and position, for
 	// errand ranking (D-089). Empty and nil on errands posted before they were kept.
 	Type  string
 	Point *shuttle.Point

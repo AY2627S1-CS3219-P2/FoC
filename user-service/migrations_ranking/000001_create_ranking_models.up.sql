@@ -3,7 +3,7 @@
 -- Scope: The ranking-model database's one table (D-095, D-099). This folder's
 --   migrations run against USER_RANKING_DB_URL, a database separate from
 --   USER_DB_URL's.
--- Author review: PENDING — <reviewer to complete>
+-- Author review: nigeltzy — Checked that the migration was generated according to the requirements set out, and operates in an expected manner.
 
 -- One row per user: the errand-ranking model order-service last saved for
 -- them, kept as the opaque JSON object it sent.

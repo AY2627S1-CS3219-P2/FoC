@@ -3,7 +3,7 @@
 // Scope: Keeping each courier's saved errand-ranking model (D-095, D-099):
 //   an opaque JSON document order-service trains and reads back, each user
 //   reaching only their own.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 // Package ranking stores each user's errand-ranking model in a database of
 // its own (D-095). The model is order-service's: user-service keeps it as an

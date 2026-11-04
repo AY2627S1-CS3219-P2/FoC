@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The in-house random forest behind errand ranking (D-087, D-088):
 //   training, scoring, per-score explanations and the saved JSON form.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 // Package forest is the small random-forest classifier errand ranking is built
 // on (D-087): CART trees split by Gini impurity, each grown on a bootstrap

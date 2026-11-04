@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The model's inputs (D-088, D-096): every feature, measured for one
 //   errand at one moment from the courier's history before that moment.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 package ranking
 

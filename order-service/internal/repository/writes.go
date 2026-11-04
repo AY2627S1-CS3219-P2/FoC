@@ -364,7 +364,7 @@ func orderArgs(o order.Order) []any {
 	}
 }
 
-// AI-generated (edited by PENDING): the supplier position's halves, NULL when
+// AI-generated (edited by nigeltzy): the supplier position's halves, NULL when
 // there is none (D-089).
 func supplierLat(s order.SupplierSnapshot) *float64 {
 	if s.Point == nil {

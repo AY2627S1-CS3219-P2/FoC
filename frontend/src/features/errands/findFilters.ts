@@ -3,7 +3,7 @@
 // Scope: Find errands' filters (D-092): time left, where an errand is
 //   collected from and where it is delivered to, applied to the open list
 //   in the browser.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import type { CampusLocation, Errand } from "./orderTypes";
 import { msUntil } from "./time";

@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Usernames from user-service and ratings from order-service for the
 //   requesters named on Find errands cards (D-093), fetched once per user.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import { useEffect, useRef, useState } from "react";
 import type { UsersApi } from "../profile/usersApi";

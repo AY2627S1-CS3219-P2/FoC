@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: HTTP tests for the rating routes (D-093) and Find errands' records
 //   (D-092).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 package httpapi_test
 

@@ -376,7 +376,7 @@ describe("newRequestId", () => {
   });
 });
 
-// AI-generated (edited by PENDING): the ratings (D-093) and Find errands'
+// AI-generated (edited by nigeltzy): the ratings (D-093) and Find errands'
 // records (D-092).
 describe("ordersApi ratings and records", () => {
   const RATING = {
@@ -460,7 +460,7 @@ describe("ordersApi ratings and records", () => {
   });
 });
 
-// AI-generated (edited by PENDING): D-094's suggestion on the open list.
+// AI-generated (edited by nigeltzy): D-094's suggestion on the open list.
 describe("ordersApi listOpen suggestion", () => {
   const REC = { errandId: ID, confidence: 0.72, reason: "Suggested because it pays 10 credits." };
 

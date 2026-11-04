@@ -41,7 +41,7 @@ import { useShownTracking, type ShownErrand } from "./shownTracking";
 import { clockOffset, serverNow, useNow } from "./time";
 import { useCourierLocation } from "./useCourierLocation";
 
-// AI-generated (edited by PENDING): what Find errands reports for errand
+// AI-generated (edited by nigeltzy): what Find errands reports for errand
 // ranking (D-092). App passes these once order-service has somewhere to send
 // them; until then nothing is recorded.
 /** An errand whose whole card came into view, with the filters set at the time. */
@@ -59,7 +59,7 @@ interface FindErrandsViewProps {
   onNotify: (message: ToastMessage) => void;
   /** After an action in the detail, so App refreshes the balance. */
   onCreditsChanged: () => void;
-  // AI-generated (edited by PENDING): D-092's two records.
+  // AI-generated (edited by nigeltzy): D-092's two records.
   /** Called once per visit for each errand whose whole card comes into view. */
   onShown?: (shown: ShownRecord) => void;
   /** Called each time the courier changes a filter, with all the filters as set. */
@@ -70,7 +70,7 @@ interface FindErrandsViewProps {
 interface OpenList {
   items: Errand[];
   offset: number;
-  // AI-generated (edited by PENDING): D-094's suggestion, when there is one.
+  // AI-generated (edited by nigeltzy): D-094's suggestion, when there is one.
   recommendation?: Recommendation;
 }
 
@@ -109,7 +109,7 @@ export function FindErrandsView({
   onSearch,
 }: FindErrandsViewProps) {
   const [list, setList] = useState<OpenList | null>(null);
-  // AI-generated (edited by PENDING): the filters (D-092) and the locations their
+  // AI-generated (edited by nigeltzy): the filters (D-092) and the locations their
   // destination choice is grouped by.
   const [filters, setFilters] = useState<FindFilters>(NO_FILTERS);
   const [locations, setLocations] = useState<CampusLocation[]>([]);
@@ -118,7 +118,7 @@ export function FindErrandsView({
   const track = useShownTracking(
     onShown && ((shown) => onShown({ ...shown, filters: filtersRef.current })),
   );
-  // AI-generated (edited by PENDING): D-098's default ranking, nearest pickup
+  // AI-generated (edited by nigeltzy): D-098's default ranking, nearest pickup
   // first, worked out here so the courier's location never leaves the page.
   const { location: courier, request: requestLocation } = useCourierLocation();
   const [sortOrder, setSortOrder] = useState<SortOrder>("nearest");
@@ -135,7 +135,7 @@ export function FindErrandsView({
   // Set when an Accept is refused, cleared once focus is back on that card.
   const refocusAccept = useRef(false);
 
-  // AI-generated (edited by PENDING): D-094's suggestion can be turned off for
+  // AI-generated (edited by nigeltzy): D-094's suggestion can be turned off for
   // this visit, which stops order-service working one out.
   const [suggest, setSuggest] = useState(true);
   const refresh = usePolling(
@@ -184,7 +184,7 @@ export function FindErrandsView({
     }
   }
 
-  // AI-generated (edited by PENDING): the destination filter groups places by
+  // AI-generated (edited by nigeltzy): the destination filter groups places by
   // area. If the list cannot be fetched, that filter offers no choices and
   // the rest of the screen works as before.
   useEffect(() => {
@@ -198,7 +198,7 @@ export function FindErrandsView({
     };
   }, [ordersApi]);
 
-  // AI-generated (edited by PENDING): where each supplier is, from
+  // AI-generated (edited by nigeltzy): where each supplier is, from
   // supplier-service. Without it every errand's distance is unknown and the
   // list stays newest first.
   useEffect(() => {
@@ -225,14 +225,14 @@ export function FindErrandsView({
   // Decided by the server's actions alone, never by a rule worked out here.
   const takeable = others.filter((errand) => buttonsFor(errand).includes("accept"));
   const at = list ? serverNow(list.offset, now) : now;
-  // AI-generated (edited by PENDING): what passes the courier's filters (D-092).
+  // AI-generated (edited by nigeltzy): what passes the courier's filters (D-092).
   const visible = filterErrands(takeable, filters, at, locations);
-  // AI-generated (edited by PENDING): nearest pickup first once located (D-098).
+  // AI-generated (edited by nigeltzy): nearest pickup first once located (D-098).
   const from = sortOrder === "nearest" && courier.kind === "located" ? courier.at : null;
-  // AI-generated (edited by PENDING): the suggested errand goes on top (D-094).
+  // AI-generated (edited by nigeltzy): the suggested errand goes on top (D-094).
   const recommendation = suggest ? list?.recommendation : undefined;
   const placed = withFirst(rankByDistance(visible, from, pickups), recommendation?.errandId);
-  // AI-generated (edited by PENDING): each requester's name and rating for the
+  // AI-generated (edited by nigeltzy): each requester's name and rating for the
   // cards (D-093).
   const people = usePeople(
     visible.flatMap((e) => (e.requesterId ? [e.requesterId] : [])),
@@ -266,7 +266,7 @@ export function FindErrandsView({
           Find errands
         </h1>
         <p className="page-sub">
-          {/* AI-generated (edited by PENDING): the order now depends on D-098. */}
+          {/* AI-generated (edited by nigeltzy): the order now depends on D-098. */}
           Errands other students have posted,{" "}
           {from ? "nearest pickup first" : "newest first"}. Accept one you can collect on a
           walk you&rsquo;re making anyway; its reward is yours once the requester confirms
@@ -274,7 +274,7 @@ export function FindErrandsView({
         </p>
       </div>
 
-      {/* AI-generated (edited by PENDING): asking for the courier's location
+      {/* AI-generated (edited by nigeltzy): asking for the courier's location
           (D-098) only when they tap, and saying why the order is what it is. */}
       {courier.kind === "ask" && (
         <p className="list-note">
@@ -315,7 +315,7 @@ export function FindErrandsView({
         </p>
       )}
 
-      {/* AI-generated (edited by PENDING): D-092's filters, laid out like the
+      {/* AI-generated (edited by nigeltzy): D-092's filters, laid out like the
           Suppliers screen's controls. */}
       {list && takeable.length > 0 && (
         <div className="controls" role="group" aria-label="Order and filter errands">
@@ -492,7 +492,7 @@ export function FindErrandsView({
   );
 }
 
-// AI-generated (edited by PENDING): D-094's flair on the suggested errand.
+// AI-generated (edited by nigeltzy): D-094's flair on the suggested errand.
 /**
  * A shining star, the model's reason and how sure it is, and a way to turn
  * suggestions off. The star is decoration; the words say it all.
@@ -520,7 +520,7 @@ function SuggestionFlair({
   );
 }
 
-// AI-generated (edited by PENDING): D-093's requester line on a card.
+// AI-generated (edited by nigeltzy): D-093's requester line on a card.
 /** "Posted by alice · ★ 4.5 (3 ratings)", while what is known loads in. */
 function Poster({ person }: { person: Person | undefined }) {
   const name = person?.username;
@@ -537,7 +537,7 @@ function Poster({ person }: { person: Person | undefined }) {
   );
 }
 
-// AI-generated (edited by PENDING): the card's line with the pickup's distance (D-098).
+// AI-generated (edited by nigeltzy): the card's line with the pickup's distance (D-098).
 /** The card's status line, with how far the pickup is when that is known. */
 export function withDistance(line: string | null, metres: number | null): string | null {
   if (metres === null) return line;

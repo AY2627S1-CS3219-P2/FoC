@@ -3,7 +3,7 @@
 -- Scope: Tables for ratings (D-093) and Find errands' shown and search
 --   records (D-088, D-092), kept in order-service (D-089). Numbered 000004 to
 --   follow open PR #67's 000002 and 000003.
--- Author review: PENDING — <reviewer to complete>
+-- Author review: nigeltzy — Checked that the migration was generated according to the requirements set out, and operates in an expected manner.
 
 -- One row per side per errand: the requester rates the courier, the courier
 -- the requester. The primary key is what makes a rating impossible to give

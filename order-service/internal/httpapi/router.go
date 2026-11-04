@@ -35,7 +35,7 @@ type Pinger interface {
 // and revocations, and every request logged to log (a nil log falls back to
 // slog.Default()).
 //
-// AI-generated (edited by PENDING): the activity parameter, and recommender
+// AI-generated (edited by nigeltzy): the activity parameter, and recommender
 // for D-094's recommendation on GET /open (nil for none).
 //
 // Each request passes, in order: the request id (D-047), the access log

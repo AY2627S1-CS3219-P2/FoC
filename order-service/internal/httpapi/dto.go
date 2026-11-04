@@ -84,7 +84,7 @@ func toErrand(o order.Order, c order.Caller, now time.Time) gen.Errand {
 		e.RequesterId = ptr(o.RequesterID)
 		e.DeliveryNote = ptr(o.DeliveryNote)
 	}
-	// AI-generated (edited by PENDING): D-093 shows the requester's name and
+	// AI-generated (edited by nigeltzy): D-093 shows the requester's name and
 	// rating on Find errands cards, so an OPEN errand names its requester to
 	// anyone who may see it. The note stays private.
 	if o.State == order.StateOpen {

@@ -101,7 +101,7 @@ type ports struct {
 	credit order.CreditClient
 	// AI-generated (edited by James Teo).
 	revocations httpapi.RevocationChecker
-	// AI-generated (edited by PENDING): D-094's recommender; nil for none.
+	// AI-generated (edited by nigeltzy): D-094's recommender; nil for none.
 	recommender httpapi.Recommender
 }
 

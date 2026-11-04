@@ -188,7 +188,7 @@ func (f *fixture) seed(s order.State) order.Order {
 		o.CourierID = ptr(f.courier.UserID)
 	}
 	f.repo.Put(o)
-	// AI-generated (edited by PENDING): a seeded COMPLETED errand stands for one
+	// AI-generated (edited by nigeltzy): a seeded COMPLETED errand stands for one
 	// finished earlier, which under D-093 both sides have rated, or neither
 	// could post or accept again. seedUnrated leaves it unrated.
 	if s == order.StateCompleted {
@@ -197,7 +197,7 @@ func (f *fixture) seed(s order.State) order.Order {
 	return o
 }
 
-// AI-generated (edited by PENDING): D-093's fixtures.
+// AI-generated (edited by nigeltzy): D-093's fixtures.
 // seedUnrated is seed for a COMPLETED errand that neither side has rated.
 func (f *fixture) seedUnrated() order.Order {
 	f.t.Helper()

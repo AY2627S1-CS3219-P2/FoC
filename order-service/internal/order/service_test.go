@@ -151,7 +151,7 @@ func TestListAssignmentHistoryIncludesReleasedErrands(t *testing.T) {
 		_, err := step()
 		require.NoError(t, err)
 	}
-	// AI-generated (edited by PENDING): D-093, both sides rate the completed
+	// AI-generated (edited by nigeltzy): D-093, both sides rate the completed
 	// errand before the requester posts and the courier accepts the next one.
 	_, err = f.svc.Rate(f.ctx, f.courier, accepted.ID, 4)
 	require.NoError(t, err)

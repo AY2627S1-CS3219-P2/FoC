@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Tests for Find errands' filters (D-092) and the once-per-visit
 //   shown log.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 import { describe, expect, it } from "vitest";
 import {

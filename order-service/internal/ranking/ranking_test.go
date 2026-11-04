@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Unit tests for the features, training, saving and recommending
 //   (D-088, D-094, D-096, D-099, D-100).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 package ranking
 
@@ -273,7 +273,7 @@ func TestNoRecommendation(t *testing.T) {
 		"with too few shown errands to learn from": {courier, foodLover(3), []order.Order{openErrand("Food")}},
 		"when the courier took everything shown":   {courier, onlyTook, []order.Order{openErrand("Food")}},
 		"when the list is empty":                   {courier, foodLover(20), nil},
-		// AI-generated (edited by PENDING): D-101.
+		// AI-generated (edited by nigeltzy): D-101.
 		"when the best errand scores under 40% (D-101)": {courier, foodLover(20), []order.Order{openErrand("Printing")}},
 		"when every errand is the courier's own or withdrawn from": {courier, foodLover(20), func() []order.Order {
 			own, withdrawn := openErrand("Food"), openErrand("Food")

@@ -160,7 +160,7 @@ export function App() {
     };
   }, [tokens]);
 
-  // AI-generated (edited by PENDING): sends Find errands' shown and search
+  // AI-generated (edited by nigeltzy): sends Find errands' shown and search
   // records to order-service (D-092), the shown ones in batches; whatever is
   // queued goes out when the page is hidden or closed.
   const activity = useMemo(() => (orders ? createActivityReporter(orders) : null), [orders]);
@@ -403,7 +403,7 @@ export function App() {
         held={held}
         onLogOut={handleLogOut}
       >
-        {/* AI-generated (edited by PENDING): D-093, a student rates their
+        {/* AI-generated (edited by nigeltzy): D-093, a student rates their
             completed errands before posting or accepting another. Above every
             screen, so it is in view wherever that refusal would come from. */}
         {role === "STUDENT" && orders && (

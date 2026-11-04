@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Asking the browser for the courier's location on Find errands
 //   (D-098), and following it while the screen is open.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { LatLon } from "./nearby";

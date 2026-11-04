@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Noticing when an errand's whole card is in view on Find errands, so
 //   it can be recorded as shown (D-092).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import { useCallback, useEffect, useRef } from "react";
 

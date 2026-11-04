@@ -60,7 +60,7 @@ paths:
     post:
       operationId: createErrand
       summary: Post an errand (F3.1)
-      # AI-generated (edited by PENDING): the last paragraph, D-093's rating gate.
+      # AI-generated (edited by nigeltzy): the last paragraph, D-093's rating gate.
       description: |
         Validates the reward, supplier and delivery location, reserves the reward
         through credit-service, then saves the errand in `OPEN`. A requester who
@@ -137,9 +137,9 @@ paths:
     get:
       operationId: listOpenErrands
       summary: Errands couriers can accept (F3.2)
-      # AI-generated (edited by PENDING): D-094's recommendation and its
+      # AI-generated (edited by nigeltzy): D-094's recommendation and its
       # parameter; trained while the courier opens Find errands (D-099).
-      # AI-generated (edited by PENDING): D-101's 0.4 floor.
+      # AI-generated (edited by nigeltzy): D-101's 0.4 floor.
       description: |
         Only `OPEN` errands that have not passed their deadline, most recent
         first. At most 100.
@@ -468,7 +468,7 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
-  # AI-generated (edited by PENDING): D-093's ratings and D-092's shown and
+  # AI-generated (edited by nigeltzy): D-093's ratings and D-092's shown and
   # search records. Paths and field names were left to the implementation;
   # for Nigeltzy and James Teo to confirm in review.
   /{errandId}/rating:
@@ -753,7 +753,7 @@ components:
         requesterId:
           type: string
           format: uuid
-          # AI-generated (edited by PENDING): D-093 puts the requester's name on Find errands cards.
+          # AI-generated (edited by nigeltzy): D-093 puts the requester's name on Find errands cards.
           description: Present for the requester, the assigned courier and ADMIN, and to any student while the errand is `OPEN` (D-093).
         courierId:
           type: string
@@ -840,7 +840,7 @@ components:
         serverTime:
           type: string
           format: date-time
-        # AI-generated (edited by PENDING): D-094, on GET /open only.
+        # AI-generated (edited by nigeltzy): D-094, on GET /open only.
         recommendation:
           $ref: "#/components/schemas/Recommendation"
 
@@ -1003,7 +1003,7 @@ components:
         version:
           type: integer
 
-    # AI-generated (edited by PENDING): the schemas for D-092 and D-093.
+    # AI-generated (edited by nigeltzy): the schemas for D-092 and D-093.
     RateRequest:
       type: object
       required: [stars]

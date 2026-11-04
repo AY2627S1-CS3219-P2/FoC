@@ -71,7 +71,7 @@ func TestPostgres(t *testing.T) {
 	t.Run("AcceptIsJudgedAtArrival", e.testAcceptIsJudgedAtArrival)
 	t.Run("NoRewardSetBehindASettlement", e.testNoRewardSetBehindASettlement)
 
-	// AI-generated (edited by PENDING): ratings and Find errands' records (D-092, D-093).
+	// AI-generated (edited by nigeltzy): ratings and Find errands' records (D-092, D-093).
 	t.Run("Ratings", e.testRatings)
 	t.Run("Activity", e.testActivity)
 	t.Run("SupplierCopy", e.testSupplierCopy)
@@ -442,7 +442,7 @@ func (e *env) testMigrate(t *testing.T) {
 			dirty   bool
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
-		// AI-generated (edited by PENDING): 000004 adds ratings and Find errands' records; 000005 the supplier's type and position.
+		// AI-generated (edited by nigeltzy): 000004 adds ratings and Find errands' records; 000005 the supplier's type and position.
 		require.Equal(t, 5, version)
 		require.False(t, dirty)
 	})

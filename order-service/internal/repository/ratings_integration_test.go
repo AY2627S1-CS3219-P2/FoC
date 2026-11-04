@@ -4,7 +4,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Integration tests of the PostgreSQL RatingStore and ActivityStore
 //   (D-092, D-093), run from TestPostgres.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate integration tests were generated and according to the required test and expected behaviour.
 
 package repository
 

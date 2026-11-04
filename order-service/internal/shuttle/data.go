@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The NUS shuttle stops and routes, looked up from the public sources
 //   named below on 2026-10-29 (D-090, D-097).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the shuttle data was generated according to the requirements set out, and is used in an expected manner.
 
 package shuttle
 

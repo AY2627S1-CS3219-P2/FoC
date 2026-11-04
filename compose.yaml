@@ -46,7 +46,7 @@ services:
 # The frontend is not in this file: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
 
-  # AI-generated (edited by PENDING): user-service's separate database for
+  # AI-generated (edited by nigeltzy): user-service's separate database for
   # errand-ranking models (D-095), with the same credentials as user-db.
   user-ranking-db:
     image: postgres:16-alpine
@@ -86,7 +86,7 @@ services:
     environment:
       PORT: 8081
       USER_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-db:5432/user?sslmode=disable
-      # AI-generated (edited by PENDING): ranking models (D-095).
+      # AI-generated (edited by nigeltzy): ranking models (D-095).
       USER_RANKING_DB_URL: postgres://${USER_SRV_DB_USER:?USER_SRV_DB_USER must be set}:${USER_SRV_DB_PW:?USER_SRV_DB_PW must be set}@user-ranking-db:5432/user_ranking?sslmode=disable
       REDIS_URL: redis://redis:6379
       # AI-generated (edited by ZI YANG).
@@ -257,7 +257,7 @@ services:
       ORDER_DB_URL: postgres://postgres:postgres@order-db:5432/orders?sslmode=disable
       SUPPLIER_BASE_URL: http://supplier-service:8082
       CREDIT_BASE_URL: http://credit-service:8084
-      # AI-generated (edited by PENDING): where each courier's ranking model is
+      # AI-generated (edited by nigeltzy): where each courier's ranking model is
       # kept (D-095, D-099).
       USER_BASE_URL: http://user-service:8081
       # Must match the foc user in rabbitmq/definitions.json.

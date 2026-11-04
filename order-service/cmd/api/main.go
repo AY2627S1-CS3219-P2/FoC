@@ -94,7 +94,7 @@ func run(log *slog.Logger) error {
 	repo := repository.NewPostgres(pool)
 	svc := order.NewService(
 		repo,
-		repo, // AI-generated (edited by PENDING): the rating store (D-093).
+		repo, // AI-generated (edited by nigeltzy): the rating store (D-093).
 		creditclient.New(cfg.CreditBaseURL, httpClient, log),
 		supplierclient.New(cfg.SupplierBaseURL, httpClient, log),
 		order.SystemClock{},
@@ -139,7 +139,7 @@ func run(log *slog.Logger) error {
 	// AI-generated (edited by James Teo).
 	pingRedis(ctx, rdb, log)
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
-	// AI-generated (edited by PENDING): Find errands' records (D-092), and
+	// AI-generated (edited by nigeltzy): Find errands' records (D-092), and
 	// D-094's recommendation, trained here and saved in user-service (D-099).
 	activity := order.NewActivity(repo, order.SystemClock{})
 	recommender := ranking.NewRecommender(repo, userclient.New(cfg.UserBaseURL, httpClient), order.SystemClock{},

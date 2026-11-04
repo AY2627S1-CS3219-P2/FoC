@@ -299,7 +299,7 @@ func scanOrder(row pgx.Row) (order.Order, error) {
 		o          order.Order
 		state      string
 		requestKey *string
-		// AI-generated (edited by PENDING): the supplier's position (D-089).
+		// AI-generated (edited by nigeltzy): the supplier's position (D-089).
 		lat, lon *float64
 	)
 	err := row.Scan(

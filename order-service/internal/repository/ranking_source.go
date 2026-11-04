@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The PostgreSQL ranking.Source: the errands a courier was shown and
 //   whether they took them, their history, and requesters' ratings (D-088).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 package repository
 

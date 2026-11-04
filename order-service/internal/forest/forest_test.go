@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Unit tests for the random forest (D-087): datasets with known
 //   answers, explanations, determinism, the saved form and every error path.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 package forest_test
 

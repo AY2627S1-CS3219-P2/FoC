@@ -23,7 +23,7 @@ type Config struct {
 	DatabaseURL     string
 	SupplierBaseURL string
 	CreditBaseURL   string
-	// AI-generated (edited by PENDING): user-service, which keeps each
+	// AI-generated (edited by nigeltzy): user-service, which keeps each
 	// courier's ranking model (D-095, D-099).
 	UserBaseURL string
 	RabbitMQURL string
@@ -45,7 +45,7 @@ func Load() (Config, error) {
 		DatabaseURL:     getenv("ORDER_DB_URL", "postgres://postgres:postgres@localhost:5432/orders?sslmode=disable"),
 		SupplierBaseURL: getenv("SUPPLIER_BASE_URL", "http://localhost:8082"),
 		CreditBaseURL:   getenv("CREDIT_BASE_URL", "http://localhost:8084"),
-		UserBaseURL:     getenv("USER_BASE_URL", "http://localhost:8081"), // AI-generated (edited by PENDING).
+		UserBaseURL:     getenv("USER_BASE_URL", "http://localhost:8081"), // AI-generated (edited by nigeltzy).
 		RabbitMQURL:     getenv("RABBITMQ_URL", "amqp://foc:foc-dev-password@localhost:5672/foc"),
 		JWKSURL:         getenv("JWKS_URL", "http://localhost:8081/.well-known/jwks.json"),
 		RedisURL:        getenv("REDIS_URL", "redis://localhost:6379"),

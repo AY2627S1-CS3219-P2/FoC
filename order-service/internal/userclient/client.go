@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: The client for user-service's ranking-model store, forwarding the
 //   courier's own access token (D-095, D-099).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 // Package userclient calls user-service's ranking-model routes,
 // /api/v1/users/{uid}/ranking-model, as the courier whose model it is: the

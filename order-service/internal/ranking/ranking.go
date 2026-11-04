@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Training each courier's model when they open Find errands and
 //   recommending one open errand from it (D-087, D-088, D-094, D-099, D-100).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 // Package ranking trains a courier's random forest (internal/forest) on what
 // they were shown and accepted, and recommends the open errand it scores
@@ -32,7 +32,7 @@ import (
 // a recommendation (D-094).
 const MinCompleted = 2
 
-// AI-generated (edited by PENDING): D-101's threshold.
+// AI-generated (edited by nigeltzy): D-101's threshold.
 // MinConfidence is the lowest score a recommendation is shown at; below it
 // the courier gets none (D-101).
 const MinConfidence = 0.4

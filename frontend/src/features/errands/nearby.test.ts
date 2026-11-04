@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Tests for the default ranking by pickup distance (D-098).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 import { describe, expect, it } from "vitest";
 import { withDistance } from "./FindErrandsView";
@@ -90,7 +90,7 @@ describe("withDistance", () => {
   });
 });
 
-// AI-generated (edited by PENDING): D-094's suggested errand on top.
+// AI-generated (edited by nigeltzy): D-094's suggested errand on top.
 describe("withFirst", () => {
   const placed: Placed[] = ["a", "b", "c"].map((id) => ({ errand: errand(id, "s"), metres: null }));
   const ids = (list: Placed[]) => list.map((p) => p.errand.id);

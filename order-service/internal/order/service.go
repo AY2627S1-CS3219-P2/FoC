@@ -36,7 +36,7 @@ type Service struct {
 	repo      Repository
 	credit    CreditClient
 	suppliers SupplierDirectory
-	// AI-generated (edited by PENDING): ratings and their gate on post and accept (D-093).
+	// AI-generated (edited by nigeltzy): ratings and their gate on post and accept (D-093).
 	ratings RatingStore
 	clock   Clock
 	cfg     Config
@@ -48,7 +48,7 @@ type Service struct {
 
 // NewService returns a ready-to-use Service.
 //
-// AI-generated (edited by PENDING): takes the RatingStore (D-093).
+// AI-generated (edited by nigeltzy): takes the RatingStore (D-093).
 func NewService(repo Repository, ratings RatingStore, credit CreditClient, suppliers SupplierDirectory, clock Clock, cfg Config, log *slog.Logger) *Service {
 	if cfg.RefundDelay <= 0 {
 		cfg.RefundDelay = DefaultRefundDelay
@@ -219,7 +219,7 @@ func (s *Service) supplierSnapshot(ctx context.Context, id uuid.UUID) (SupplierS
 	case !sup.Available:
 		return SupplierSnapshot{}, invalid("that supplier is not taking errands right now")
 	}
-	// AI-generated (edited by PENDING): with the type and position (D-089).
+	// AI-generated (edited by nigeltzy): with the type and position (D-089).
 	return SupplierSnapshot{ID: sup.ID, Name: sup.Name, Location: supplierLocation(sup), Type: sup.Type, Point: sup.Point}, nil
 }
 

@@ -60,7 +60,7 @@ func TestSupplierMapsSupplierServicesAnswer(t *testing.T) {
 				Floor:               "1",
 				LocationDescription: "Opp UHC bus stop",
 				Available:           tc.available,
-				// AI-generated (edited by PENDING): kept for ranking (D-089).
+				// AI-generated (edited by nigeltzy): kept for ranking (D-089).
 				Type:  "Food",
 				Point: &shuttle.Point{Lat: 1.2988, Lon: 103.7756},
 			}, got)
@@ -356,7 +356,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-// AI-generated (edited by PENDING): D-089 keeps a position only when both
+// AI-generated (edited by nigeltzy): D-089 keeps a position only when both
 // halves of it came.
 func TestSupplierWithoutAPositionHasNone(t *testing.T) {
 	for _, drop := range []string{`"latitude":1.2988,`, `"longitude":103.7756,`} {

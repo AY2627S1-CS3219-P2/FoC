@@ -70,7 +70,7 @@ export interface OrdersApi {
   /** OPEN errands before their deadline, newest first (F3.2). */
   /**
    * OPEN errands before their deadline, newest first (F3.2). AI-generated
-   * (edited by PENDING): with the model's recommendation unless `recommend`
+   * (edited by nigeltzy): with the model's recommendation unless `recommend`
    * is false (D-094).
    */
   listOpen(options?: { recommend?: boolean }): Promise<ErrandList>;
@@ -102,7 +102,7 @@ export interface OrdersApi {
   confirm(id: string): Promise<ErrandDetail>;
   cancel(id: string): Promise<ErrandDetail>;
   complete(id: string): Promise<ErrandDetail>;
-  // AI-generated (edited by PENDING): D-093's ratings and D-092's records.
+  // AI-generated (edited by nigeltzy): D-093's ratings and D-092's records.
   /** Rates the other side of a COMPLETED errand, 1 to 5 stars, once. */
   rate(id: string, stars: number): Promise<Rating>;
   /** The caller's COMPLETED errands still to rate; while any remain they can neither post nor accept. */
@@ -183,7 +183,7 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
     },
 
     async listOpen(options) {
-      // AI-generated (edited by PENDING): D-094's switch, sent only when off.
+      // AI-generated (edited by nigeltzy): D-094's switch, sent only when off.
       const query = options?.recommend === false ? queryString({ recommend: "false" }) : "";
       return toErrandList(await call(`${PREFIX}/open${query}`));
     },
@@ -251,7 +251,7 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
       return act(id, "complete");
     },
 
-    // AI-generated (edited by PENDING): D-093's ratings and D-092's records.
+    // AI-generated (edited by nigeltzy): D-093's ratings and D-092's records.
     async rate(id, stars) {
       const body = await call(`${errandPath(id)}/rating`, { method: "POST", body: { stars } });
       if (!isRating(body)) throw unusableResponse();
@@ -292,7 +292,7 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
   };
 }
 
-// AI-generated (edited by PENDING): checks for D-092's and D-093's bodies.
+// AI-generated (edited by nigeltzy): checks for D-092's and D-093's bodies.
 /** The filters with only the contract's fields, since order-service refuses others. */
 function recorded({ timeLeft, from, to }: RecordedFilters): RecordedFilters {
   return { timeLeft, from, to };
@@ -391,7 +391,7 @@ function toErrandList(body: unknown): ErrandList {
     throw unusableResponse();
   }
   const list: ErrandList = { items: body["items"], serverTime: body["serverTime"] };
-  // AI-generated (edited by PENDING): a recommendation that is not what the
+  // AI-generated (edited by nigeltzy): a recommendation that is not what the
   // spec promises is dropped, not fatal: the list still works without it.
   if (isRecommendation(body["recommendation"])) list.recommendation = body["recommendation"];
   return list;

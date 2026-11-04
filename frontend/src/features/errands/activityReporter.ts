@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Sending Find errands' shown and search records to order-service
 //   (D-092), shown ones gathered into batches.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import type { OrdersApi } from "./ordersApi";
 import type { RecordedFilters, ShownItem } from "./orderTypes";

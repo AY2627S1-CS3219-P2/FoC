@@ -32,16 +32,16 @@ const (
 // Recommender suggests one open errand to a courier (D-094);
 // *ranking.Recommender satisfies it.
 //
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 type Recommender interface {
 	Recommend(ctx context.Context, c order.Caller, open []order.Order) (*ranking.Recommendation, error)
 }
 
 type server struct {
 	svc *order.Service
-	// AI-generated (edited by PENDING): Find errands' records (D-092).
+	// AI-generated (edited by nigeltzy): Find errands' records (D-092).
 	activity *order.Activity
-	// AI-generated (edited by PENDING): D-094's recommendation; nil for none.
+	// AI-generated (edited by nigeltzy): D-094's recommendation; nil for none.
 	recommender Recommender
 	db          Pinger
 	log         *slog.Logger
@@ -118,7 +118,7 @@ func (s *server) ListActiveErrands(w http.ResponseWriter, r *http.Request, param
 
 // ListOpenErrands handles GET /open: the errands couriers can accept (F3.2).
 //
-// AI-generated (edited by PENDING): with D-094's recommendation unless
+// AI-generated (edited by nigeltzy): with D-094's recommendation unless
 // recommend=false. A recommender failure is logged and the list sent without
 // one: advice must never cost the courier the list.
 func (s *server) ListOpenErrands(w http.ResponseWriter, r *http.Request, params gen.ListOpenErrandsParams) {

@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Asking a student to rate their completed errands (D-093). Until
 //   they do, order-service refuses their next post or accept, and this says so.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import { useState } from "react";
 import type { ToastMessage } from "../../components/Toast";

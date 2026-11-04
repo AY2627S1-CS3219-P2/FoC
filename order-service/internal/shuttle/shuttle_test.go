@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: Unit tests for the shuttle data and its lookups: the data hangs
 //   together, distances match known values, and lookups sort and filter.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the boilerplate unit tests were generated and according to the required test and expected behaviour.
 
 package shuttle_test
 

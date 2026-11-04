@@ -55,7 +55,7 @@ describe("partiesShown", () => {
     ]);
   });
 
-  // AI-generated (edited by PENDING): D-093 names the requester of an OPEN
+  // AI-generated (edited by nigeltzy): D-093 names the requester of an OPEN
   // errand to anyone browsing it; order-service sends requesterId only then.
   it("shows anyone else the requester when order-service names them, and never the courier", () => {
     expect(partiesShown({ requesterId: REQUESTER }, "none")).toEqual([

@@ -83,7 +83,7 @@ export interface Party {
  * D-093). Contact numbers are shown only here, and only to the parties and an
  * admin.
  *
- * AI-generated (edited by PENDING): the last case, from D-093.
+ * AI-generated (edited by nigeltzy): the last case, from D-093.
  */
 export function partiesShown(
   errand: Pick<Errand, "requesterId" | "courierId">,
@@ -240,7 +240,7 @@ export function ErrandDetail({
   // Kept edits the refreshed form opens with, over the latest errand.
   const [keptValues, setKeptValues] = useState<ErrandFormValues | null>(null);
   const [parties, setParties] = useState<Record<string, UserProfile | "failed">>({});
-  // AI-generated (edited by PENDING): each named person's rating (D-093).
+  // AI-generated (edited by nigeltzy): each named person's rating (D-093).
   const [ratings, setRatings] = useState<Record<string, UserRating | null>>({});
 
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -300,7 +300,7 @@ export function ErrandDetail({
     };
   }, [usersApi, partyKey]);
 
-  // AI-generated (edited by PENDING): their ratings, from order-service (D-093).
+  // AI-generated (edited by nigeltzy): their ratings, from order-service (D-093).
   useEffect(() => {
     if (!partyKey) return;
     let cancelled = false;
@@ -721,7 +721,7 @@ interface PartyDetailsProps {
   party: Party;
   /** Undefined while loading. */
   profile: UserProfile | "failed" | undefined;
-  // AI-generated (edited by PENDING): D-093's rating, and who sees what.
+  // AI-generated (edited by nigeltzy): D-093's rating, and who sees what.
   /** Undefined while loading, null when order-service could not say. */
   rating: UserRating | null | undefined;
   /** False for a student who is not a party: D-093 shows them a name, not a number. */
@@ -756,7 +756,7 @@ function PartyDetails({
   else
     who = (
       <>
-        {/* AI-generated (edited by PENDING): the avatar and stars (D-093). */}
+        {/* AI-generated (edited by nigeltzy): the avatar and stars (D-093). */}
         {showAvatar && profile.username && (
           <span className="avatar" aria-hidden="true">
             {initialsOf(profile.username)}

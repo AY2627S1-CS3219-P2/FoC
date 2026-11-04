@@ -146,12 +146,12 @@ export interface ErrandDetail {
 export interface ErrandList {
   items: Errand[];
   serverTime: string;
-  // AI-generated (edited by PENDING): D-094, on GET /open only (commit ad0653d).
+  // AI-generated (edited by nigeltzy): D-094, on GET /open only (commit ad0653d).
   /** The errand the courier's model suggests, when it has one. */
   recommendation?: Recommendation;
 }
 
-// AI-generated (edited by PENDING): transcribed from order-service's
+// AI-generated (edited by nigeltzy): transcribed from order-service's
 // Recommendation schema (commit ad0653d).
 /** The errand the courier's model suggests (D-094): advice, which they can ignore. */
 export interface Recommendation {
@@ -227,7 +227,7 @@ export interface AmendErrandRequest {
 /** The fields an amendment may change, without the version it is sent with. */
 export type ErrandChanges = Omit<AmendErrandRequest, "version">;
 
-// AI-generated (edited by PENDING): transcribed from order-service's
+// AI-generated (edited by nigeltzy): transcribed from order-service's
 // api/openapi.yaml as changed for D-092 and D-093 (commit 8adab04).
 
 /** Which side of the errand the rater was: a requester rates the courier, a courier the requester. */

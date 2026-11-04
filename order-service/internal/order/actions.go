@@ -37,7 +37,7 @@ func (s *Service) Accept(ctx context.Context, c Caller, id uuid.UUID, version in
 	if o.Version != version {
 		return Order{}, errChanged()
 	}
-	// AI-generated (edited by PENDING): D-093, a completed errand must be rated
+	// AI-generated (edited by nigeltzy): D-093, a completed errand must be rated
 	// before accepting another.
 	if err := s.requireRated(ctx, c); err != nil {
 		return Order{}, err

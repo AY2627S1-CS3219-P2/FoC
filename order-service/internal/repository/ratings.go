@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 // Scope: PostgreSQL adapter for order.RatingStore and order.ActivityStore
 //   (D-092, D-093) over the tables of migration 000004.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 package repository
 

@@ -3,7 +3,7 @@
 // Scope: The default ranking on Find errands (D-086, D-098): distance from
 //   the courier's location to each errand's pickup, worked out in the
 //   browser, nearest first.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy — Checked that the code was generated according to the requirements set out, and operates in an expected manner.
 
 import type { Errand } from "./orderTypes";
 
@@ -66,7 +66,7 @@ export function formatDistance(metres: number): string {
   return `${km < 10 ? km.toFixed(1) : Math.round(km)} km`;
 }
 
-// AI-generated (edited by PENDING): D-094's suggested errand first.
+// AI-generated (edited by nigeltzy): D-094's suggested errand first.
 /** The list with the errand `id` moved to the top, the rest in order; unchanged when `id` is absent or not on it. */
 export function withFirst(placed: Placed[], id: string | undefined): Placed[] {
   const i = id === undefined ? -1 : placed.findIndex((p) => p.errand.id === id);

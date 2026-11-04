@@ -160,7 +160,7 @@ components:
           type: string
           enum: [ACTIVE, SUSPENDED]
 
-    # AI-generated (edited by PENDING): the ranking-model bodies (D-095, D-099).
+    # AI-generated (edited by nigeltzy): the ranking-model bodies (D-095, D-099).
     RankingModelRequest:
       type: object
       required: [model, trained_at]
@@ -727,7 +727,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
-  # AI-generated (edited by PENDING): each user's errand-ranking model, which
+  # AI-generated (edited by nigeltzy): each user's errand-ranking model, which
   # order-service saves and loads with the courier's own token (D-095, D-099, D-100).
   /api/v1/users/{uid}/ranking-model:
     parameters:
