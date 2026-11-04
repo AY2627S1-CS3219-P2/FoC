@@ -2,8 +2,9 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-14
 // Scope: Amending an OPEN errand (F3.7): validation, supplier check on every
 //   amend (D-052), the raise's credit call under the row lock, the
-//   errand.reward_set saved with every reward change, and the release call
-//   after a saved decrease (D-102).
+//   errand.reward_set saved with every reward change, the release call
+//   after a saved decrease (D-102), and the next version saved with its
+//   errand.reward_set when a raise's outcome is unknown (D-139).
 // Author review: James Teo — reviewed and verified.
 
 package order
@@ -11,6 +12,7 @@ package order
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -67,6 +69,11 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 
 	// The reward_set a decrease commits, for the release call after it.
 	var release *OutboxEvent
+	// A raise with an unknown outcome: why, and the reward_set saved instead.
+	var (
+		lostRaise error
+		recovery  *OutboxEvent
+	)
 	amendFn := func(cur Order, openCount int) (*AmendResult, error) {
 		// The deadline is judged again as of now, under the lock: the supplier
 		// lookup and the lock wait may have run past it (D-049, F3.10.2).
@@ -115,18 +122,16 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 					"errand_id", cur.ID, "request_id", in.CorrelationID, "err", err)
 				return nil, unavailable("credits are unavailable right now; please try again", err)
 			default:
-				// Nothing is saved or queued: if credit-service held the extra, it
-				// stays held until the next saved reward change or the errand ends.
-				s.log.WarnContext(ctx, "credit-service's answer to a reward raise is unknown; any extra it held stays held",
-					"errand_id", cur.ID, "request_id", in.CorrelationID, "err", err)
-				return nil, unavailable("credits are unavailable right now; please try again", err)
+				res := unconfirmedRaise(cur, lockedNow, in.CorrelationID)
+				lostRaise, recovery = err, res.Event
+				return res, nil
 			}
 		}
 		next.Version = cur.Version + 1
 		next.UpdatedAt = lockedNow
 		res := &AmendResult{
 			Order: next,
-			History: HistoryEntry{
+			History: &HistoryEntry{
 				OrderID:       cur.ID,
 				Action:        ActionAmend,
 				FromState:     cur.State,
@@ -159,6 +164,16 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 	} else {
 		updated, err = s.repo.Amend(ctx, id, func(cur Order) (*AmendResult, error) { return amendFn(cur, 0) })
 	}
+	if recovery != nil {
+		if err != nil {
+			s.log.WarnContext(ctx, "credit-service's answer to a reward raise is unknown and the errand could not be saved; any extra it held stays held",
+				"errand_id", id, "request_id", in.CorrelationID, "err", lostRaise)
+			return Order{}, unavailable("could not amend the errand; please try again", err)
+		}
+		s.log.WarnContext(ctx, "credit-service's answer to a reward raise is unknown; saved the next version with the reward unchanged, and its errand.reward_set",
+			"errand_id", id, "request_id", in.CorrelationID, "event_id", recovery.EventID, "err", lostRaise)
+		return Order{}, unavailable(fmt.Sprintf("the reward raise could not be confirmed, so nothing was saved and the reward stays at %d; refresh before trying again", updated.Reward), lostRaise)
+	}
 	if err == nil {
 		if release != nil {
 			s.releaseNow(ctx, updated, release)
@@ -172,6 +187,16 @@ func (s *Service) Amend(ctx context.Context, c Caller, id uuid.UUID, in AmendInp
 		return Order{}, err
 	}
 	return Order{}, unavailable("could not amend the errand; please try again", err)
+}
+
+// unconfirmedRaise saves none of the amend, only the errand's next version and
+// an errand.reward_set at the unchanged reward, which returns any extra
+// credit-service held for the raise (D-139).
+func unconfirmedRaise(cur Order, now time.Time, correlationID string) *AmendResult {
+	kept := cur
+	kept.Version = cur.Version + 1
+	kept.UpdatedAt = now
+	return &AmendResult{Order: kept, Event: rewardSetEvent(kept, now, correlationID)}
 }
 
 // releaseNow asks credit-service to release a saved decrease at once, so the

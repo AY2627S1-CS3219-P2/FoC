@@ -18,7 +18,9 @@ implements one the owner has recorded (root §1) and stops.
 - **Credits are not this service's state.** Reserve a reward and hold more
   for a raise through `credit-service`'s API before saving; release a lowered
   reward through that API right after saving, with the saved
-  `errand.reward_set` as the guarantee if that call fails (D-102); settle only
+  `errand.reward_set` as the guarantee if that call fails (D-102); when a
+  raise gets no clear answer, save only the next version, with an
+  `errand.reward_set` at the unchanged reward; settle only
   through the lifecycle events this service
   publishes via its outbox, whose `amount` is the errand's reward at that
   transition and is what settles (D-059). Never read or write its tables, never recompute a balance here, never persist "the
@@ -68,7 +70,7 @@ propose answers; implement the decision the owner recorded. The rows in
   order — D-047;
 - what happens to an errand that stalls after acceptance — D-050;
 - which lifecycle events are published asynchronously, and what they carry —
-  D-048, D-051, D-057, D-059, D-102 (D-042 binds four of the keys, and
+  D-048, D-051, D-057, D-059, D-102, D-139 (D-042 binds four of the keys, and
   `rabbitmq/definitions.json` binds `errand.reward_set` too; D-102 is the
   cross-service row, built in #72 and #73).
 

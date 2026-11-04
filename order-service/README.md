@@ -11,7 +11,9 @@ It holds no credit balances. It reserves an errand's reward through
 credit-service before saving the errand, has credit-service hold more before
 it saves a raised reward, and asks it to release a lowered one right after
 saving. Every reward change also publishes `errand.reward_set`, which releases
-a lowered reward if that call failed, and the service settles by publishing
+a lowered reward if that call failed; so does a raise that gets no clear
+answer from credit-service, at the unchanged reward, which returns anything
+held for it. The service settles by publishing
 lifecycle events to RabbitMQ through the outbox. Each settlement event (`errand.completed`, `errand.cancelled`,
 `errand.expired`, `errand.failed`) carries in `amount` the errand's reward at
 that transition, which is what settles; credit-service returns any hold left
@@ -147,11 +149,14 @@ from `order_history`, which stays the errand's own history (D-107):
 What order-service needs at run time, and what it does while each is down:
 
 - **credit-service**: reserves, raises and releases rewards, and consumes the
-  events order-service publishes. While it is down, posting an errand or
-  raising its reward answers 503 and saves nothing; a failed create leaves
-  only its queued `errand.failed` refund in the outbox. Lowering a reward
-  still succeeds: its release call fails, and the saved `errand.reward_set`
-  releases the credits once credit-service is back.
+  events order-service publishes. While it is down, posting an errand answers
+  503 and saves nothing; a failed create leaves only its queued
+  `errand.failed` refund in the outbox. Raising a reward answers 503 too and
+  saves none of the change, but the errand's version moves on with an
+  `errand.reward_set` at the unchanged reward, so the requester refreshes
+  before trying again. Lowering a reward still succeeds: its release call
+  fails, and the saved `errand.reward_set` releases the credits once
+  credit-service is back.
 - **supplier-service**: checks the supplier on create and amend. While it is
   down, both answer 503.
 - **user-service**: publishes the keys access tokens are verified with
