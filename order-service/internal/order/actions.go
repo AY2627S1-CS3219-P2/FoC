@@ -54,6 +54,7 @@ func (s *Service) Accept(ctx context.Context, c Caller, id uuid.UUID, version in
 			OccurredAt:    now,
 			CorrelationID: correlationID,
 		},
+		Event: newEvent(uuid.New(), RoutingAccepted, o, uuidPtr(c.UserID), now, correlationID),
 	})
 	switch {
 	case err == nil:
@@ -146,14 +147,14 @@ func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID
 			OrderID: cur.ID, FromState: StateScheduled, OccurredAt: openedAt,
 			ActorKind: ActorSystem, CorrelationID: correlationID,
 		}
-		res := &AmendResult{Order: next, History: h}
+		res := &AmendResult{Order: next, History: &h}
 		if openCount >= MaxOpenErrands {
 			next.State = StateCancelled
 			next.ExpiresAt = nil
 			h.Action = ActionCancel
 			h.ToState = StateCancelled
 			res.Order = next
-			res.History = h
+			res.History = &h
 			res.Event = newEvent(uuid.New(), RoutingCancelled, next, nil, openedAt, correlationID)
 		} else {
 			next.State = StateOpen
@@ -162,7 +163,7 @@ func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID
 			h.Action = ActionOpen
 			h.ToState = StateOpen
 			res.Order = next
-			res.History = h
+			res.History = &h
 		}
 		applied = true
 		return res, nil
@@ -289,6 +290,9 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 		t.Event = newEvent(uuid.New(), RoutingCancelled, o, nil, now, correlationID)
 	case StateExpired:
 		t.Event = newEvent(uuid.New(), RoutingExpired, o, nil, now, correlationID)
+	}
+	if a == ActionWithdraw {
+		t.Event = newEvent(uuid.New(), RoutingWithdrawn, o, o.CourierID, now, correlationID)
 	}
 	return t
 }

@@ -154,8 +154,8 @@ func (c *Client) Reserve(ctx context.Context, r order.Reservation) error {
 // order.ErrInsufficientCredits on 422, an error wrapping
 // order.ErrCreditRejected on 400, 401, 403, 404 or 409, and any other error
 // when the outcome is not known. It is never retried: when the outcome is
-// unknown the raise is not saved, and any extra credit-service held stays held
-// until the errand's next saved reward change or its end (D-102).
+// unknown the raise is not saved, and the errand.reward_set the amend saves
+// instead returns any extra credit-service held (D-139).
 //
 // Each call is one reward change, so it sends a new UUID as X-Request-Id,
 // which credit-service keys the change on, never the caller's correlation id:
