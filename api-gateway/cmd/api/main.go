@@ -16,7 +16,8 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,9 +31,12 @@ import (
 )
 
 func main() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("api-gateway: %v", err)
+		logger.Error("api-gateway stopped", "err", err)
+		os.Exit(1)
 	}
 
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
@@ -42,12 +46,14 @@ func main() {
 	// Its error is fixed text: REDIS_URL can carry a password.
 	rdb, err := revocation.NewRedisClient(cfg.RedisURL)
 	if err != nil {
-		log.Fatalf("api-gateway: %v", err)
+		logger.Error("api-gateway stopped", "err", err)
+		os.Exit(1)
 	}
 
-	router, err := httpapi.NewRouter(cfg.Downstream, verifier, revocation.New(rdb), cfg.RefreshTokenTTL)
+	router, err := httpapi.NewRouter(cfg.Downstream, verifier, revocation.New(rdb), cfg.RefreshTokenTTL, logger)
 	if err != nil {
-		log.Fatalf("api-gateway: building router: %v", err)
+		logger.Error("api-gateway stopped", "err", fmt.Errorf("building router: %w", err))
+		os.Exit(1)
 	}
 
 	server := &http.Server{
@@ -57,12 +63,14 @@ func main() {
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		// net/http's own errors, such as a failed accept, as JSON lines too.
+		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}
 
 	// Serve in the background so the main goroutine can wait for a signal.
 	errs := make(chan error, 1)
 	go func() {
-		log.Printf("api-gateway: listening on :%s", cfg.Port)
+		logger.Info("api-gateway listening", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			errs <- err
 		}
@@ -73,16 +81,17 @@ func main() {
 
 	select {
 	case err := <-errs:
-		log.Fatalf("api-gateway: serve: %v", err)
+		logger.Error("api-gateway stopped", "err", fmt.Errorf("serve: %w", err))
+		os.Exit(1)
 	case <-stop:
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		log.Printf("api-gateway: shutdown: %v", err)
+		logger.Warn("http shutdown", "err", err)
 	}
 	if err := rdb.Close(); err != nil {
-		log.Printf("api-gateway: closing Redis client: %v", err)
+		logger.Warn("close Redis client", "err", err)
 	}
 }

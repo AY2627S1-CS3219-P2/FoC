@@ -87,7 +87,8 @@ func validRequestID(v string) bool {
 		utf8.RuneCountInString(v) <= maxRequestKeyLength && len(v) <= maxRequestIDBytes
 }
 
-// accessLog writes one structured line per request (NFR7.1).
+// accessLog writes one structured line per request (NFR7.1): at WARN when the
+// client hung up, at ERROR for a 5xx, otherwise at INFO.
 func accessLog(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,9 +112,24 @@ func accessLog(log *slog.Logger) func(http.Handler) http.Handler {
 			if info.userID != "" {
 				attrs = append(attrs, slog.String("user_id", info.userID))
 			}
-			log.LogAttrs(r.Context(), slog.LevelInfo, "http request", attrs...)
+			level := slog.LevelInfo
+			switch {
+			case clientHungUp(r.Context()):
+				level = slog.LevelWarn
+			case status >= http.StatusInternalServerError:
+				level = slog.LevelError
+			}
+			log.LogAttrs(r.Context(), level, "http request", attrs...)
 		})
 	}
+}
+
+// clientHungUp reports whether ctx ended because the client went away, which
+// is not a fault here: net/http cancels a request's context when its
+// connection closes. The service's own deadlines end a context with
+// context.DeadlineExceeded instead, and those stay errors.
+func clientHungUp(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.Canceled)
 }
 
 // recoverPanics turns a panic into a 500 and an ERROR log line, so one bad
@@ -228,8 +244,10 @@ func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func
 			}
 			claims, err := v.Verify(ctx, token)
 			if errors.Is(err, auth.ErrKeysUnavailable) {
-				log.ErrorContext(ctx, "cannot load user-service's signing keys; refusing the request",
-					"request_id", order.CorrelationID(ctx), "err", err)
+				if !clientHungUp(ctx) {
+					log.ErrorContext(ctx, "cannot load user-service's signing keys; refusing the request",
+						"request_id", order.CorrelationID(ctx), "err", err)
+				}
 				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
 				return
 			}
@@ -242,9 +260,13 @@ func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func
 			// AI-generated (edited by James Teo).
 			switch {
 			case err != nil && ctx.Err() != nil:
-				// The request ended during the lookup, most often because the
-				// client hung up: nothing is wrong with Redis, so nothing is
-				// logged beyond the access log line. Still refused.
+				// The request ended during the lookup, so nothing is wrong with
+				// Redis. Still refused. A client that hung up is logged only by
+				// the access log line; the request's own deadline is an error.
+				if !clientHungUp(ctx) {
+					log.ErrorContext(ctx, "the request's deadline passed during the revocation check; refusing the request",
+						"request_id", order.CorrelationID(ctx), "user_id", claims.UserID.String(), "err", err)
+				}
 				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
 				return
 			case errors.Is(err, auth.ErrRedisUnreachable):

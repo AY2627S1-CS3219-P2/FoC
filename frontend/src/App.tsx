@@ -29,7 +29,7 @@ import type { AuthResult } from "./features/auth/authApi";
 import { LoginPage } from "./features/auth/LoginPage";
 import type { ActingMode, Session } from "./features/auth/types";
 import { config } from "./lib/config";
-import { createTokenStore } from "./lib/tokens";
+import type { TokenStore } from "./lib/tokens";
 // AI-generated (edited by James Teo): the remembered acting mode, and polling.
 import {
   clearLastView,
@@ -48,6 +48,8 @@ import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
 import { NeedsService } from "./components/NeedsService";
 import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
+import { createChatApi } from "./features/chat/chatApi";
+import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
@@ -88,7 +90,12 @@ const authClient = usingGateway
       logOut: (_accessToken: string | null) => authApi.logOut(),
     };
 
-export function App() {
+interface AppProps {
+  /** The page's one TokenStore, made in main.tsx and never replaced. */
+  tokens: TokenStore;
+}
+
+export function App({ tokens }: AppProps) {
   const [session, setSession] = useState<Session | null>(null);
 
   // AI-generated (edited by James Teo): true when the app ended the session
@@ -106,10 +113,6 @@ export function App() {
   // even when the restore succeeds.
   const [restoring, setRestoring] = useState(usingGateway);
 
-  // Created once and never replaced. The access token lives in the store's
-  // closure, not in component state.
-  const [tokens] = useState(createTokenStore);
-
   /**
    * The authorized transport and the clients built over it, made once per
    * TokenStore so concurrent requests share one in-flight refresh.
@@ -117,7 +120,7 @@ export function App() {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi, orders, creditAccounts } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts, chatApi } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
@@ -131,6 +134,7 @@ export function App() {
         usersApi: null,
         orders: null,
         creditAccounts: null,
+        chatApi: null,
       };
     }
     const authorizedSend = createAuthorizedSend({
@@ -157,6 +161,7 @@ export function App() {
       // AI-generated (edited by James Teo).
       orders: createOrdersApi(authorizedSend),
       creditAccounts: createCreditAccountsApi(authorizedSend),
+      chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
     };
   }, [tokens]);
 
@@ -380,10 +385,7 @@ export function App() {
     navigate("my-errands");
   };
 
-  return (
-    <>
-      {/* AI-generated (edited by James Teo): navigate, changeMode and the
-          balance's figures. */}
+  const shell = (
       <AppShell
         session={session}
         view={shownView}
@@ -496,6 +498,21 @@ export function App() {
           />
         )}
       </AppShell>
+  );
+
+  return (
+    <>
+      {chatApi ? (
+        <ChatSocketProvider
+          chatApi={chatApi}
+          isAuthenticated={session !== null}
+          accessToken={tokens.getAccessToken()}
+        >
+          {shell}
+        </ChatSocketProvider>
+      ) : (
+        shell
+      )}
 
       <Toast message={toast} onDismiss={dismissToast} />
     </>

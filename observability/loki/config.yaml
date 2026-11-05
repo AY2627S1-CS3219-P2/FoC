@@ -1,0 +1,34 @@
+# One Loki process on the local filesystem. Chunks, the TSDB index and the
+# ingester's WAL all live under /loki, the loki-data volume.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+limits_config:
+  # Keeps the labels to the service and level Alloy sets. By default Loki also
+  # adds a service_name label and guesses a detected_level for every line.
+  discover_service_name: []
+  discover_log_levels: false
+
+schema_config:
+  configs:
+    - from: 2024-04-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h

@@ -270,7 +270,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.ErrorIs(t, env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 10, 2, now), credit.ErrRewardSetStale)
 	})
 
-	t.Run("ApplyRewardSet forward recovery heals ghost holds and strict OCC rejects ghost arrivals", func(t *testing.T) {
+	t.Run("ApplyRewardSet forward recovery heals ghost holds and OCC rejects ghost arrivals", func(t *testing.T) {
 		userID := uuid.New()
 		errandID := uuid.New()
 		now := time.Now().UTC()
@@ -279,11 +279,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
 		require.NoError(t, err)
 
-		// 1. Strict OCC rejects skipped future version (currVersion 5 when stored is 1)
-		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 5, uuid.New())
-		require.ErrorIs(t, err, credit.ErrReservationConflict)
-
-		// 2. Legitimate raise: 20 -> 50 with currVersion 1
+		// 1. Legitimate raise: 20 -> 50 with currVersion 1
 		raiseOp := uuid.New()
 		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, raiseOp)
 		require.NoError(t, err)
@@ -295,11 +291,11 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(50), acc.AvailableCredits)
 		require.Equal(t, int64(50), acc.ReservedCredits)
 
-		// 3. Strict OCC rejects stale request (currVersion 1 when stored is 2)
+		// 2. OCC rejects stale request (currVersion 1 when stored is 2)
 		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, uuid.New())
 		require.ErrorIs(t, err, credit.ErrReservationConflict)
 
-		// 4. Forward recovery: Order Service timed out, kept reward at 20, advanced order to version 2,
+		// 3. Forward recovery: Order Service timed out, kept reward at 20, advanced order to version 2,
 		// and sent errand.reward_set {amount: 20, version: 2}.
 		timeoutEventID := uuid.New()
 		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, timeoutEventID, 20, 2, now))
@@ -317,8 +313,8 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(20), healedAmt)
 		require.Equal(t, int64(2), healedVer)
 
-		// 5. Ghost Arrival: A lagging HTTP request (currVersion 1) arrives late.
-		// Strict OCC immediately rejects it because Credit Service is at Version 2.
+		// 4. Ghost Arrival: A lagging HTTP request (currVersion 1) arrives late.
+		// OCC immediately rejects it because Credit Service is at Version 2.
 		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, uuid.New())
 		require.ErrorIs(t, err, credit.ErrReservationConflict)
 
@@ -328,7 +324,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(80), accPostGhost.AvailableCredits)
 		require.Equal(t, int64(20), accPostGhost.ReservedCredits)
 
-		// 6. Zero-Delta Forward Recovery: Suppose an errand is created at 20 (V1). An HTTP raise to 50
+		// 5. Zero-Delta Forward Recovery: Suppose an errand is created at 20 (V1). An HTTP raise to 50
 		// died on the wire before reaching Credit Service. Order Service times out and emits
 		// errand.reward_set {amount: 20, version: 2}.
 		errandID2 := uuid.New()
@@ -342,9 +338,52 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, env.pool.QueryRow(ctx, `SELECT version FROM credit_reservations WHERE errand_id = $1`, errandID2).Scan(&zVer))
 		require.Equal(t, int64(2), zVer)
 
-		// Lagging HTTP request for errandID2 with currVersion 1 is rejected by strict OCC
+		// Lagging HTTP request for errandID2 with currVersion 1 is rejected by OCC
 		_, _, err = env.repo.AdjustReservationReward(ctx, errandID2, userID, 50, 1, uuid.New())
 		require.ErrorIs(t, err, credit.ErrReservationConflict)
+	})
+
+	t.Run("AdjustReservationReward allows raises after non-credit edits while rejecting stale requests", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, now))
+		res, _, err := env.repo.CreateReservation(ctx, errandID, userID, 20)
+		require.NoError(t, err)
+		require.Equal(t, int64(1), res.Version)
+
+		// 1. Raise after non-credit edits: order version advanced from 1 to 4 on errand edits without credit change.
+		// When raising reward to 40, order-service passes currVersion = 4 (currVersion > reservation.Version).
+		raiseOp := uuid.New()
+		_, resUpdated, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 40, 4, raiseOp)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), resUpdated.Amount)
+		require.Equal(t, int64(5), resUpdated.Version) // targetVersion is currVersion + 1 = 5
+
+		acc, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(60), acc.AvailableCredits)
+		require.Equal(t, int64(40), acc.ReservedCredits)
+
+		// 2. Stale request from an older version (currVersion < reservation.Version) is rejected.
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 4, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationConflict)
+
+		// 3. Subsequent raise after more non-credit edits: order version advanced to 7.
+		raiseOp2 := uuid.New()
+		_, resUpdated2, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 60, 7, raiseOp2)
+		require.NoError(t, err)
+		require.Equal(t, int64(60), resUpdated2.Amount)
+		require.Equal(t, int64(8), resUpdated2.Version) // 7 + 1 = 8
+
+		acc2, err := env.repo.GetAccount(ctx, userID)
+		require.NoError(t, err)
+		require.Equal(t, int64(40), acc2.AvailableCredits)
+		require.Equal(t, int64(60), acc2.ReservedCredits)
 	})
 
 	t.Run("RefundReservation settles cancelled and expired errands atomically", func(t *testing.T) {

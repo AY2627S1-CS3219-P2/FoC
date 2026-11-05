@@ -18,7 +18,7 @@
  * gateway sets. After a reload the store is empty until that cookie is
  * exchanged for a new access token.
  *
- * Created once in App.tsx and passed down, never held in a module variable.
+ * Created once in main.tsx and passed down, never held in a module variable.
  */
 
 /**

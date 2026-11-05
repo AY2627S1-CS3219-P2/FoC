@@ -220,6 +220,22 @@ func withHeader(name, value string) reqOption {
 	return func(r *http.Request) { r.Header.Add(name, value) }
 }
 
+// hungUp sends the request on a context that is already canceled, as net/http
+// leaves a request's context once its client has hung up.
+func hungUp(t *testing.T) reqOption {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return func(r *http.Request) { *r = *r.WithContext(ctx) }
+}
+
+// pastDeadline sends the request on a context whose deadline has passed, as
+// one of the service's own deadlines, such as a write's, leaves it.
+func pastDeadline(t *testing.T) reqOption {
+	ctx, cancel := context.WithDeadline(t.Context(), time.Now())
+	t.Cleanup(cancel)
+	return func(r *http.Request) { *r = *r.WithContext(ctx) }
+}
+
 // do sends one request through h.router. body is nil, a string sent as is, an
 // io.Reader, or a value marshalled to JSON.
 func (h *harness) do(t *testing.T, method, target string, body any, opts ...reqOption) *httptest.ResponseRecorder {
@@ -371,6 +387,18 @@ func (h *harness) accessLine(t *testing.T, requestID string) map[string]any {
 	return h.findLog(t, func(l map[string]any) bool {
 		return l["msg"] == "http request" && l["request_id"] == requestID
 	})
+}
+
+// causesAtError returns every line logged at ERROR other than access lines.
+func (h *harness) causesAtError(t *testing.T) []map[string]any {
+	t.Helper()
+	var out []map[string]any
+	for _, line := range h.logLines(t) {
+		if line["level"] == "ERROR" && line["msg"] != "http request" {
+			out = append(out, line)
+		}
+	}
+	return out
 }
 
 // syncBuffer is a bytes.Buffer safe for the logger to write while a test reads.

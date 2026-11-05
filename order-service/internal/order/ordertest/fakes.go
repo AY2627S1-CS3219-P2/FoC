@@ -625,6 +625,9 @@ func (r *Repository) Accept(_ context.Context, c order.AcceptCommand) (order.Ord
 	o.Version++
 	r.orders[o.ID] = o
 	r.appendHistory(c.History)
+	if c.Event != nil {
+		r.outbox[c.Event.EventID] = &outboxRow{event: *c.Event}
+	}
 	// AI-generated (edited by James Teo).
 	return r.withHistory(o), nil
 }
