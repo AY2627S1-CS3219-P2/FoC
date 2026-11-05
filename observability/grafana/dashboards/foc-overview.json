@@ -159,7 +159,7 @@
       "id": 5,
       "type": "timeseries",
       "title": "RabbitMQ queue depth",
-      "description": "Messages in each credit-service queue, the dead-letter queues included, from RabbitMQ's own metrics.",
+      "description": "Messages in each queue, ready or unacknowledged, the dead-letter queues included, from RabbitMQ's own metrics.",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 30 },
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "targets": [
