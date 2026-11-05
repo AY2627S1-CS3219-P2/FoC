@@ -24,3 +24,18 @@ func IdentityFrom(ctx context.Context) (Identity, bool) {
 	id, ok := ctx.Value(contextKey{}).(Identity)
 	return id, ok
 }
+
+type requestIDKey struct{}
+
+// WithRequestID returns a context carrying the request's id, the value the
+// gateway forwards and returns as HeaderRequestID. The proxy logs it with
+// every line about the request, so the line can be joined to the services'.
+func WithRequestID(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, id)
+}
+
+// RequestIDFrom returns the request's id, or "" when none was set.
+func RequestIDFrom(ctx context.Context) string {
+	id, _ := ctx.Value(requestIDKey{}).(string)
+	return id
+}

@@ -29,6 +29,7 @@ remembered view and acting mode, the nav's role and mode rule (`views.ts`),
 the user-service profile client (`usersApi.ts`) with the contact and
 new-password checks, the order-service and credit-service clients
 (`ordersApi.ts`, `creditAccountsApi.ts`), the poller (`lib/polling.ts`), the
+error reporter (`lib/errorReporter.ts`), the
 errand countdowns, labels and error messages (`time.ts`, `format.ts`), the
 errand form's checks and amend changes, the detail's parties and buttons, and
 the Credits screen's paging. There is no component testing
@@ -96,10 +97,11 @@ src/
 ├── components/        shared only — AppShell, Modal, Toast, MockBadge,
 │                      NeedsService, icons
 ├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
-│                      tokens.ts (AT store), jwt.ts, lastView.ts, polling.ts
+│                      tokens.ts (AT store), jwt.ts, lastView.ts, polling.ts,
+│                      errorReporter.ts (uncaught errors to the gateway)
 ├── App.tsx            session gate, view switching, acting mode, balance
 ├── views.ts           view names + the nav model, until a router is chosen
-└── main.tsx
+└── main.tsx           creates the TokenStore and the error reporter once
 ```
 
 Every feature folder maps to one backend service; `auth/`, `profile/` and
@@ -253,7 +255,7 @@ the login screen is credit-service's figure, copied by hand.
   could be derived from the real session instead of toggled by hand. Do not
   build real UI on `isAdmin` or present it as access control.
 - **Tokens never go in component state or storage.** `lib/tokens.ts` keeps the
-  access token in a closure created once in `App.tsx`, and nothing writes it
+  access token in a closure created once in `main.tsx`, and nothing writes it
   to `localStorage`, `sessionStorage` or a cookie. The refresh token is an
   HttpOnly cookie the gateway sets (D-033), so no code here can read it, and a
   page reload restores the session by exchanging that cookie.

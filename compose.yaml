@@ -38,10 +38,10 @@ services:
       retries: 5
 
 # Only services with a `ports:` key are reachable from the host; api-gateway
-# (host port 8080) is the only one other machines can reach, and rabbitmq
-# listens on 127.0.0.1 only. supplier-service verifies the bearer token on its
-# own admin writes (D-041, D-054), but it holds no ports: key all the same
-# (D-010 in ai/decisions.md).
+# (host port 8080) is the only one other machines can reach, and rabbitmq,
+# loki and grafana listen on 127.0.0.1 only. supplier-service verifies the
+# bearer token on its own admin writes (D-041, D-054), but it holds no ports:
+# key all the same (D-010 in ai/decisions.md).
 #
 # The frontend is not in this file: `npm run dev` in frontend/ serves
 # it on 3001 and forwards /auth and /api to the gateway here.
@@ -95,6 +95,14 @@ services:
       # AI-generated (edited by ZI YANG).
       - ./user-service/keys.json:/run/secrets/keys.json:ro
     restart: on-failure
+    # A GET on the service's health endpoint. The five Go services share these
+    # settings; start_period covers credit-service's wait for RabbitMQ.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   # ---- API gateway ------------------------------------------------------
   api-gateway:
@@ -117,12 +125,19 @@ services:
       SUPPLIER_BASE_URL: http://supplier-service:8082
       ORDER_BASE_URL: http://order-service:8083
       CREDIT_BASE_URL: http://credit-service:8084
+      CHAT_BASE_URL: http://chat-service:8085
       # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
       # (default 168h) so it matches user-service's refresh-token lifetime.
       REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
     # Host port 8080 maps to the gateway's container port 8080 (PORT above).
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   # ---- Supplier service and its database -------------------------------
   supplier-db:
@@ -153,6 +168,12 @@ services:
       JWKS_URL: http://user-service:8081/.well-known/jwks.json
       REDIS_URL: redis://redis:6379
     # No `ports:` key: reachable only through the gateway, at /api/suppliers.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   # ---- Credit service and its database ---------------------------------
   credit-db:
@@ -176,6 +197,10 @@ services:
     depends_on:
       credit-db:
         condition: service_healthy
+      # Its readiness includes the RabbitMQ consumers, so starting first only
+      # fails health probes while it retries.
+      rabbitmq:
+        condition: service_healthy
     environment:
       PORT: 8084
       CREDIT_DB_URL: postgres://${CREDIT_DB_USER:-credit}:${CREDIT_DB_PASSWORD:-credit}@credit-db:5432/credit?sslmode=disable
@@ -186,6 +211,12 @@ services:
     restart: on-failure
     stop_grace_period: 25s
     # No `ports:` key: reachable only through the gateway, at /api/credits.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8084/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   rabbitmq:
     image: rabbitmq:3.13-management
@@ -249,7 +280,148 @@ services:
     # Above cmd/api's 20s shutdown budget, so Docker doesn't kill a request mid-write.
     stop_grace_period: 25s
     # No `ports:` key: reachable only through the gateway, at /api/orders.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
+
+  # ---- Chat service, its database, dedicated Redis and media volume ---
+  chat-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CHAT_DB_USER:-chat}
+      POSTGRES_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      POSTGRES_DB: chat
+    volumes:
+      - chat-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHAT_DB_USER:-chat} -d chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chat-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - chat-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chat-service:
+    build:
+      context: ./chat-service
+      dockerfile: Dockerfile
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      chat-redis:
+        condition: service_healthy
+    environment:
+      PORT: 8085
+      CHAT_DB_URL: postgres://${CHAT_DB_USER:-chat}:${CHAT_DB_PASSWORD:-chat}@chat-db:5432/chat?sslmode=disable
+      CHAT_REDIS_URL: redis://chat-redis:6379
+      AUTH_REDIS_URL: redis://redis:6379
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      MEDIA_STORAGE_PATH: /var/lib/foc/chat-media
+    volumes:
+      - chat-media-data:/var/lib/foc/chat-media
+    restart: on-failure
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/chat.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
+  # ---- Observability (opt-in) -------------------------------------------
+  # Started only with `docker compose --profile observability up`; config is
+  # in observability/. Alloy reads every container's log through the Docker
+  # socket and sends it to Loki, and probes each health endpoint for
+  # Prometheus. Grafana shows both.
+  loki:
+    image: grafana/loki:3.7.9
+    profiles: [observability]
+    command: ["-config.file=/etc/loki/config.yaml"]
+    volumes:
+      - ./observability/loki/config.yaml:/etc/loki/config.yaml:ro
+      - loki-data:/loki
+    # Loopback only, for the e2e suite's log check. The image has no shell or
+    # HTTP client, so it has no healthcheck; Alloy probes its /ready.
+    ports:
+      - "127.0.0.1:${LOKI_PORT:-3100}:3100"
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    profiles: [observability]
+    command:
+      - run
+      - --storage.path=/var/lib/alloy/data
+      - /etc/alloy/config.alloy
+    environment:
+      # Alloy collects only the containers of this Compose project.
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
+    volumes:
+      - ./observability/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - alloy-data:/var/lib/alloy/data
+    # Time to finish sending what it holds to Loki before Docker kills it.
+    stop_grace_period: 30s
+    healthcheck:
+      # The image has bash but neither wget nor curl.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/12345 && printf 'GET /-/ready HTTP/1.0\\r\\n\\r\\n' >&3 && head -n 1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    profiles: [observability]
+    # Alloy remote-writes the health probe results here.
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-remote-write-receiver
+    volumes:
+      - ./observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/foc-overview.json
+    volumes:
+      - ./observability/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./observability/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./observability/grafana/provisioning/alerting:/etc/grafana/provisioning/alerting:ro
+      - ./observability/grafana/dashboards:/etc/grafana/dashboards:ro
+    # Loopback only.
+    ports:
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
 
 volumes:
   user-db-data:
@@ -258,3 +430,8 @@ volumes:
   rabbitmq-data:
   order-db-data:
   credit-db-data:
+  chat-db-data:
+  chat-redis-data:
+  chat-media-data:
+  loki-data:
+  alloy-data:

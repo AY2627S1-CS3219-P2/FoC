@@ -243,6 +243,11 @@ func (p *Postgres) Accept(ctx context.Context, c order.AcceptCommand) (order.Ord
 		if err := insertHistory(ctx, tx, o.ID, c.History); err != nil {
 			return err
 		}
+		if c.Event != nil {
+			if err := insertEvent(ctx, tx, *c.Event); err != nil {
+				return err
+			}
+		}
 		accepted = o
 		return nil
 	})
@@ -283,8 +288,10 @@ func (p *Postgres) Amend(ctx context.Context, id uuid.UUID, fn func(current orde
 		if err != nil {
 			return fmt.Errorf("amend errand %s: %w", id, err)
 		}
-		if err := insertHistory(ctx, tx, id, res.History); err != nil {
-			return err
+		if res.History != nil {
+			if err := insertHistory(ctx, tx, id, *res.History); err != nil {
+				return err
+			}
 		}
 		if res.Event != nil {
 			if err := insertEvent(ctx, tx, *res.Event); err != nil {
@@ -334,8 +341,10 @@ func (p *Postgres) AmendScheduled(ctx context.Context, id uuid.UUID, now time.Ti
 		if err != nil {
 			return fmt.Errorf("amend scheduled errand %s: %w", id, err)
 		}
-		if err := insertHistory(ctx, tx, id, res.History); err != nil {
-			return err
+		if res.History != nil {
+			if err := insertHistory(ctx, tx, id, *res.History); err != nil {
+				return err
+			}
 		}
 		if res.Event != nil {
 			if err := insertEvent(ctx, tx, *res.Event); err != nil {

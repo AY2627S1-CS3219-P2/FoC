@@ -24,6 +24,7 @@ import (
 
 	"foc/order-service/internal/auth"
 	"foc/order-service/internal/gen"
+	"foc/order-service/internal/httpapi"
 	"foc/order-service/internal/order"
 	"foc/order-service/internal/order/ordertest"
 )
@@ -201,6 +202,60 @@ func TestUnavailableKeysAreA503(t *testing.T) {
 	assert.Equal(t, http.StatusOK, h.do(t, http.MethodGet, "/health", nil).Code, "health needs no keys")
 }
 
+func TestAuthenticationRefusalsLogTheirCauseUnlessTheClientHungUp(t *testing.T) {
+	// A 503 from authentication logs its cause once at ERROR. A client that
+	// hung up is not a fault here, so its 503 logs no ERROR; the request's own
+	// deadline passing is one.
+	t.Parallel()
+	cases := []struct {
+		name        string
+		keysDown    bool
+		revocations httpapi.RevocationChecker
+		end         func(*testing.T) reqOption // ends the request's context first; nil leaves it running
+		cause       string                     // part of the cause line's message; empty when nothing is logged at ERROR
+		access      string                     // the access line's level
+	}{
+		{name: "keys unavailable", keysDown: true, cause: "signing keys", access: "ERROR"},
+		{name: "keys unavailable to a client that hung up", keysDown: true, end: hungUp, access: "WARN"},
+		{name: "a client that hung up during the revocation lookup", revocations: lookupUntilDone{}, end: hungUp, access: "WARN"},
+		{name: "the request's deadline passing during the revocation lookup", revocations: lookupUntilDone{}, end: pastDeadline,
+			cause: "deadline passed during the revocation check", access: "ERROR"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.tokens.keysDown.Store(tc.keysDown)
+			router := h.routerWith(ports{revocations: tc.revocations})
+			opts := []reqOption{as(student()), withRequestID("refused")}
+			if tc.end != nil {
+				opts = append(opts, tc.end(t))
+			}
+
+			rec := serve(t, router, http.MethodPost, "/"+uuid.NewString()+"/cancel", nil, opts...)
+
+			requireError(t, rec, http.StatusServiceUnavailable, "sign-in cannot be checked right now; please try again")
+			assert.Equal(t, tc.access, h.accessLine(t, "refused")["level"])
+			causes := h.causesAtError(t)
+			if tc.cause == "" {
+				assert.Empty(t, causes)
+				return
+			}
+			require.Len(t, causes, 1, "the cause is logged once")
+			assert.Contains(t, causes[0]["msg"], tc.cause)
+			assert.Equal(t, "refused", causes[0]["request_id"])
+		})
+	}
+}
+
+// lookupUntilDone holds the revocation lookup until the request's context
+// ends, then fails it with the context's error, as go-redis does.
+type lookupUntilDone struct{}
+
+func (lookupUntilDone) Revoked(ctx context.Context, _ auth.Claims) (bool, error) {
+	<-ctx.Done()
+	return false, ctx.Err()
+}
+
 func TestTheTokenReachesCreditCalls(t *testing.T) {
 	// D-056: a create forwards the requester's own token to credit-service.
 	t.Parallel()
@@ -239,28 +294,47 @@ func (c *tokenCredit) seen() []string {
 }
 
 func TestHealth(t *testing.T) {
+	// A failed ping is a 503 whose cause is logged once at ERROR, unless the
+	// client hung up during it.
 	t.Parallel()
 	cases := []struct {
 		name    string
 		pingErr error
+		end     func(*testing.T) reqOption // ends the request's context first; nil leaves it running
 		status  int
 		want    gen.HealthStatus
+		cause   bool
 	}{
 		{name: "database answers", status: http.StatusOK, want: gen.Ok},
-		{name: "database down", pingErr: errors.New("connection refused"), status: http.StatusServiceUnavailable, want: gen.Unhealthy},
+		{name: "database down", pingErr: errors.New("connection refused"), status: http.StatusServiceUnavailable, want: gen.Unhealthy, cause: true},
+		{name: "ping runs out of time", pingErr: context.DeadlineExceeded, status: http.StatusServiceUnavailable, want: gen.Unhealthy, cause: true},
+		{name: "client hangs up during the ping", pingErr: context.Canceled, end: hungUp, status: http.StatusServiceUnavailable, want: gen.Unhealthy},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
 			h.db.setErr(tc.pingErr)
+			opts := []reqOption{withRequestID("health")}
+			if tc.end != nil {
+				opts = append(opts, tc.end(t))
+			}
 
-			rec := h.do(t, http.MethodGet, "/health", nil)
+			rec := h.do(t, http.MethodGet, "/health", nil, opts...)
 
 			require.Equal(t, tc.status, rec.Code, rec.Body.String())
 			assert.Equal(t, gen.Health{Status: tc.want}, decodeAs[gen.Health](t, rec))
 			left := h.db.lastTimeLeft()
 			assert.Greater(t, left, time.Duration(0), "the ping must run under a deadline")
 			assert.LessOrEqual(t, left, 2*time.Second)
+			causes := h.causesAtError(t)
+			if !tc.cause {
+				assert.Empty(t, causes)
+				return
+			}
+			require.Len(t, causes, 1, "the failed ping is logged once")
+			assert.Equal(t, "health check: database did not answer", causes[0]["msg"])
+			assert.Equal(t, "health", causes[0]["request_id"])
+			assert.Contains(t, causes[0]["err"], tc.pingErr.Error())
 		})
 	}
 }
@@ -413,6 +487,47 @@ func TestAccessLog(t *testing.T) {
 	})
 }
 
+func TestAccessLogLevel(t *testing.T) {
+	// INFO, or ERROR for a 5xx. A client that hung up is WARN whatever the
+	// status, since that is not a fault here; the service's own deadline is not
+	// a hang-up.
+	t.Parallel()
+	cases := []struct {
+		name    string
+		target  string
+		pingErr error                      // GET /health's database ping
+		end     func(*testing.T) reqOption // ends the request's context first; nil leaves it running
+		status  int
+		level   string
+	}{
+		{name: "a 2xx", target: "/health", status: http.StatusOK, level: "INFO"},
+		{name: "a 4xx", target: "/open", status: http.StatusUnauthorized, level: "INFO"},
+		{name: "a 5xx", target: "/health", pingErr: errors.New("connection refused"), status: http.StatusServiceUnavailable, level: "ERROR"},
+		{name: "a 5xx past the service's own deadline", target: "/health", pingErr: context.DeadlineExceeded, end: pastDeadline,
+			status: http.StatusServiceUnavailable, level: "ERROR"},
+		{name: "a 5xx whose client hung up", target: "/health", pingErr: context.Canceled, end: hungUp,
+			status: http.StatusServiceUnavailable, level: "WARN"},
+		{name: "a 2xx whose client hung up", target: "/health", end: hungUp, status: http.StatusOK, level: "WARN"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			h.db.setErr(tc.pingErr)
+			opts := []reqOption{withRequestID("log-level")}
+			if tc.end != nil {
+				opts = append(opts, tc.end(t))
+			}
+
+			rec := h.do(t, http.MethodGet, tc.target, nil, opts...)
+
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+			line := h.accessLine(t, "log-level")
+			assert.Equal(t, tc.level, line["level"])
+			assert.Equal(t, float64(tc.status), line["status"])
+		})
+	}
+}
+
 func TestPanicBecomesA500(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
@@ -422,10 +537,17 @@ func TestPanicBecomesA500(t *testing.T) {
 
 	requireError(t, rec, http.StatusInternalServerError, "internal error")
 	assert.Equal(t, "panic-1", rec.Header().Get("X-Request-Id"))
-	line := h.findLog(t, func(l map[string]any) bool { return l["level"] == "ERROR" })
+	// Every line decodes as one JSON object, so the stack is inside a field.
+	causes := h.causesAtError(t)
+	require.Len(t, causes, 1, "the panic is logged once")
+	line := causes[0]
+	assert.Equal(t, "panic serving request", line["msg"])
 	assert.Equal(t, "panic-1", line["request_id"])
 	assert.Contains(t, line["panic"], "database driver exploded")
-	assert.Equal(t, float64(http.StatusInternalServerError), h.accessLine(t, "panic-1")["status"])
+	assert.Contains(t, line["stack"], "panicPinger.Ping")
+	access := h.accessLine(t, "panic-1")
+	assert.Equal(t, float64(http.StatusInternalServerError), access["status"])
+	assert.Equal(t, "ERROR", access["level"])
 }
 
 func TestBodyLimit(t *testing.T) {
