@@ -323,7 +323,7 @@ export function ChatBox({
       {/* Read-Only Notice */}
       {isReadOnly && (
         <div className="chat-banner readonly" role="alert">
-          🔒 {!isParticipant ? "Admin audit view: Requester (Left, Blue) • Courier (Right, White)" : "This conversation is read-only."}
+          🔒 {!isParticipant ? "Admin audit view (read-only)." : "This conversation is read-only."}
         </div>
       )}
 
