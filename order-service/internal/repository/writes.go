@@ -49,7 +49,8 @@ const (
 	// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — includes scheduled_time
 	// in the persisted order row.
 	insertOrderSQL = `INSERT INTO orders (` + orderColumns + `)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
+			$19, $20, $21, $22)`
 
 	insertHistorySQL = `INSERT INTO order_history (order_id, action, from_state, to_state,
 			actor_id, actor_kind, courier_id, changes, occurred_at, correlation_id)
@@ -112,15 +113,19 @@ const (
 	amendSQL = `UPDATE orders
 		SET supplier_id = $2, supplier_name = $3, supplier_location = $4,
 			item_description = $5, delivery_location = $6, delivery_note = $7,
-			reward = $8, version = $9, updated_at = $10
+			reward = $8, version = $9, updated_at = $10,
+			supplier_type = $11, supplier_lat = $12, supplier_lon = $13
 		WHERE id = $1
 		RETURNING ` + orderSelect
 
+	// AI-generated (edited by PENDING): keeps the supplier's type and position,
+	// as amendSQL does, when a scheduled errand moves to another supplier (D-089).
 	amendScheduledSQL = `UPDATE orders
 		SET supplier_id = $2, supplier_name = $3, supplier_location = $4,
 			item_description = $5, delivery_location = $6, delivery_note = $7,
 			reward = $8, state = $9, scheduled_time = $10, expires_at = $11,
-			state_changed_at = $12, version = $13, updated_at = $14
+			state_changed_at = $12, version = $13, updated_at = $14,
+			supplier_type = $15, supplier_lat = $16, supplier_lon = $17
 		WHERE id = $1
 		RETURNING ` + orderSelect
 )
@@ -280,6 +285,7 @@ func (p *Postgres) Amend(ctx context.Context, id uuid.UUID, fn func(current orde
 			next.Supplier.ID, next.Supplier.Name, next.Supplier.Location,
 			next.ItemDescription, next.DeliveryLocation, next.DeliveryNote,
 			next.Reward, next.Version, next.UpdatedAt,
+			next.Supplier.Type, supplierLat(next.Supplier), supplierLon(next.Supplier),
 		))
 		if errors.Is(err, pgx.ErrNoRows) {
 			// Unreachable while the row lock is held; mapped so pgx's error never escapes.
@@ -334,7 +340,8 @@ func (p *Postgres) AmendScheduled(ctx context.Context, id uuid.UUID, now time.Ti
 		next := res.Order
 		o, err := scanOrder(tx.QueryRow(ctx, amendScheduledSQL, id, next.Supplier.ID, next.Supplier.Name, next.Supplier.Location,
 			next.ItemDescription, next.DeliveryLocation, next.DeliveryNote, next.Reward, next.State, next.ScheduledAt,
-			next.ExpiresAt, next.StateChangedAt, next.Version, next.UpdatedAt))
+			next.ExpiresAt, next.StateChangedAt, next.Version, next.UpdatedAt,
+			next.Supplier.Type, supplierLat(next.Supplier), supplierLon(next.Supplier)))
 		if errors.Is(err, pgx.ErrNoRows) {
 			return order.ErrNotFound
 		}
@@ -416,7 +423,24 @@ func orderArgs(o order.Order) []any {
 		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — nullable
 		// SCHEDULED_TIME value follows confirm_by in orderColumns.
 		o.ScheduledAt,
+		o.Supplier.Type, supplierLat(o.Supplier), supplierLon(o.Supplier),
 	}
+}
+
+// AI-generated (edited by nigeltzy): the supplier position's halves, NULL when
+// there is none (D-089).
+func supplierLat(s order.SupplierSnapshot) *float64 {
+	if s.Point == nil {
+		return nil
+	}
+	return &s.Point.Lat
+}
+
+func supplierLon(s order.SupplierSnapshot) *float64 {
+	if s.Point == nil {
+		return nil
+	}
+	return &s.Point.Lon
 }
 
 // isUniqueViolation reports whether err is PostgreSQL rejecting a duplicate
