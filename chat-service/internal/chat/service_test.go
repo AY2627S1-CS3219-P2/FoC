@@ -323,3 +323,18 @@ func TestService_ValidateUnicodeMessageLength(t *testing.T) {
 	text251 := strings.Repeat("🎉", 251)
 	assert.ErrorIs(t, ValidateTextMessage(text251), ErrTextTooLong)
 }
+
+func TestService_ListConversations_AdminCanViewAllConversations(t *testing.T) {
+	repo := newInMemoryRepo()
+	baseTime := time.Date(2026, 11, 5, 12, 0, 0, 0, time.UTC)
+	svc := NewService(repo, nil, fixedClock{now: baseTime})
+
+	errandID := uuid.New()
+	_, err := svc.CreateOrResumeConversation(context.Background(), errandID, uuid.New(), uuid.New(), baseTime)
+	require.NoError(t, err)
+
+	admin := Caller{UserID: uuid.New(), Role: RoleAdmin}
+	convs, err := svc.ListConversations(context.Background(), admin, &errandID)
+	require.NoError(t, err)
+	assert.Len(t, convs, 1)
+}

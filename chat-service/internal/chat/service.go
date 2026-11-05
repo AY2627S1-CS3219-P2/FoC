@@ -117,6 +117,9 @@ func (s *Service) GetConversation(ctx context.Context, caller Caller, convID uui
 }
 
 func (s *Service) ListConversations(ctx context.Context, caller Caller, errandIDFilter *uuid.UUID) ([]*Conversation, error) {
+	if caller.Role == RoleAdmin {
+		return s.repo.ListAllConversationsAdmin(ctx, errandIDFilter, 50)
+	}
 	return s.repo.ListConversationsByUser(ctx, caller.UserID, errandIDFilter)
 }
 
