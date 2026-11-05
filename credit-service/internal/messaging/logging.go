@@ -7,6 +7,7 @@
 package messaging
 
 import (
+	"context"
 	"encoding/json"
 	"log/slog"
 
@@ -22,33 +23,62 @@ func deliveryLogger(log *slog.Logger, d amqp.Delivery) *slog.Logger {
 	return log.With("request_id", d.CorrelationId, "routingKey", d.RoutingKey)
 }
 
+type requestIDKey struct{}
+
+// contextWithRequestID carries a delivery's request id through the EventRouter
+// to the errand handlers, which receive only a context, routing key and body.
+func contextWithRequestID(ctx context.Context, requestID string) context.Context {
+	return context.WithValue(ctx, requestIDKey{}, requestID)
+}
+
+// requestLogger scopes log to the request id ctx carries, if any.
+func requestLogger(ctx context.Context, log *slog.Logger) *slog.Logger {
+	if requestID, ok := ctx.Value(requestIDKey{}).(string); ok {
+		return log.With("request_id", requestID)
+	}
+	return log
+}
+
 // withEventIDs adds whichever of eventId, errandId, userId and version body
-// holds as valid values, read leniently so a line about a malformed event still
-// names what it can. It decodes the body, so it runs only once the delivery has
-// passed transport validation.
+// holds as valid values, so a line about a malformed event still names what it
+// can. Each id is parsed on its own: decoding straight into uuid.UUID would
+// stop at the first malformed one and drop the rest. It decodes the body, so
+// it runs only once the delivery has passed transport validation.
 func withEventIDs(log *slog.Logger, body []byte) *slog.Logger {
 	var ids struct {
-		EventID  uuid.UUID `json:"eventId"`
-		ErrandID uuid.UUID `json:"errandId"`
-		UserID   uuid.UUID `json:"userId"`
-		Version  *int64    `json:"version"`
+		EventID  json.RawMessage `json:"eventId"`
+		ErrandID json.RawMessage `json:"errandId"`
+		UserID   json.RawMessage `json:"userId"`
+		Version  *int64          `json:"version"`
 	}
 	_ = json.Unmarshal(body, &ids)
 
 	var attrs []any
-	if ids.EventID != uuid.Nil {
-		attrs = append(attrs, "eventId", ids.EventID)
-	}
-	if ids.ErrandID != uuid.Nil {
-		attrs = append(attrs, "errandId", ids.ErrandID)
-	}
-	if ids.UserID != uuid.Nil {
-		attrs = append(attrs, "userId", ids.UserID)
+	for _, field := range []struct {
+		key string
+		raw json.RawMessage
+	}{{"eventId", ids.EventID}, {"errandId", ids.ErrandID}, {"userId", ids.UserID}} {
+		if id, ok := parseID(field.raw); ok {
+			attrs = append(attrs, field.key, id)
+		}
 	}
 	if ids.Version != nil {
 		attrs = append(attrs, "version", *ids.Version)
 	}
 	return log.With(attrs...)
+}
+
+// parseID reports the non-nil UUID raw holds as a JSON string, if it holds one.
+func parseID(raw json.RawMessage) (uuid.UUID, bool) {
+	var s string
+	if json.Unmarshal(raw, &s) != nil {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(s)
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 // acknowledge acks d and writes the event's one INFO line once the broker has

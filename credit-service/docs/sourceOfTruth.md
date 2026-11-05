@@ -6,7 +6,7 @@
 >
 > **Key Superseded & Inaccurate Information in this Document:**
 > 1. **Database Schema**: This document describes a 6-table database schema with `credit_operation_results`, `pending_refunds`, and `pending_payouts`. The database schema has been consolidated down to **3 core domain tables in Migration 1**: `credit_accounts`, `credit_reservations`, and `credit_transactions`.
-> 2. **Database-as-a-Queue Anti-Pattern**: All sections describing `pending_refunds`, `pending_payouts`, `pending_work.go`, `internal/worker/pending_refund.go`, and `internal/worker/pending_payout.go` have been completely removed. Retries and dead-letter handling are handled natively by RabbitMQ Quorum Queues and DLQ (`credit.errand.lifecycle.dlq`).
+> 2. **Database-as-a-Queue Anti-Pattern**: All sections describing `pending_refunds`, `pending_payouts`, `pending_work.go`, `internal/worker/pending_refund.go`, and `internal/worker/pending_payout.go` have been completely removed. Retries and dead-letter handling are handled natively by RabbitMQ Quorum Queues and DLQ (`credit.errands.dlq`).
 > 3. **Operation Results Cache**: All sections describing the `credit_operation_results` table for caching `PATCH` responses have been removed; idempotency is derived directly from `credit_transactions` and reservation versions.
 > 4. **Lazy Wallet Initialization**: Mentions of `ErrWalletNotReady` delaying payouts/refunds into database queues are superseded. The service uses **Universal Lazy Wallet Initialization ("Materialize on First Touch")** across reads, reservations, and settlements.
 >
@@ -425,14 +425,14 @@ and availability must be monitored.
 The dead-letter topology will be:
 
 - Direct exchange: `foc.dlx`.
-- Queue: `credit.registration.dlq`, bound with
-  `credit.registration.failed`.
-- Queue: `credit.errand.lifecycle.dlq`, bound with
-  `credit.errand.lifecycle.failed`.
+- Queue: `credit.users.dlq`, bound with
+  `credit.users.failed`.
+- Queue: `credit.errands.dlq`, bound with
+  `credit.errands.failed`.
 
 The registration source queue sets its dead-letter routing key to
-`credit.registration.failed`; the lifecycle source queue uses
-`credit.errand.lifecycle.failed`. RabbitMQ's `x-death` metadata retains source
+`credit.users.failed`; the lifecycle source queue uses
+`credit.errands.failed`. RabbitMQ's `x-death` metadata retains source
 routing information for investigation. Source queues and DLQs use
 `max-length=100000`, `max-length-bytes=268435456` (256 MiB), and
 `overflow=reject-publish`. These are operational safeguards, not business
@@ -805,7 +805,7 @@ is generated and tested against the decisions actually made.
    and `errand.failed`; names such as `errand.lifecycle.completed` are not part
    of the contract.
 7. Document unidirectional event consumption for initial allocation. The event
-   is consumed from `credit.registration`, allocating 100 credits idempotently by
+   is consumed from `credit.users`, allocating 100 credits idempotently by
    `userId` and committing wallet and ledger atomically before acknowledging.
 8. Record the new pending-refund, pending-payout, retry, dead-letter, and reconciliation
    decisions in the requirements so `sourceOfTruth.md` is not the only record.
@@ -1673,11 +1673,11 @@ exact routing keys from `foc.events`:
 
 | Queue | Routing key | Meaning |
 | --- | --- | --- |
-| `credit.registration` | `user.registered` | Request initial wallet allocation. |
-| `credit.errand.lifecycle` | `errand.completed` | Settle the reservation to the courier. |
-| `credit.errand.lifecycle` | `errand.cancelled` | Refund the reservation after cancellation. |
-| `credit.errand.lifecycle` | `errand.expired` | Refund the reservation after expiry. |
-| `credit.errand.lifecycle` | `errand.failed` | Refund the reservation after a terminal failure. |
+| `credit.users` | `user.registered` | Request initial wallet allocation. |
+| `credit.errands` | `errand.completed` | Settle the reservation to the courier. |
+| `credit.errands` | `errand.cancelled` | Refund the reservation after cancellation. |
+| `credit.errands` | `errand.expired` | Refund the reservation after expiry. |
+| `credit.errands` | `errand.failed` | Refund the reservation after a terminal failure. |
 
 Credit Service must reject an unsupported routing key without requeue so it is
 preserved in the lifecycle DLQ. Tests and broker bindings must use the exact
@@ -1709,7 +1709,7 @@ An AMQP timestamp is optional and audit-only; it never replaces, validates, or
 orders by payload `occurredAt`.
 
 The registration consumer consumes `user.registered` events from the durable
-`credit.registration` queue as a standard unidirectional event stream:
+`credit.users` queue as a standard unidirectional event stream:
 
 1. Allocate idempotently by `userId`, using the event's `eventId` as the ledger
    `operationId` when the wallet is first created.
@@ -1717,14 +1717,14 @@ The registration consumer consumes `user.registered` events from the durable
 3. Acknowledge the message (`d.Ack(false)`) only after successful database commit.
 4. On transient errors (such as database connectivity issues), negatively acknowledge
    with requeue (`d.Nack(false, true)`).
-5. If delivery attempts reach 5, dead-letter the message to `credit.registration.dlq`
+5. If delivery attempts reach 5, dead-letter the message to `credit.users.dlq`
    (`d.Nack(false, false)`).
 
 Direct Reply-to is not used; `user.registered` is consumed as an asynchronous event
 matching the platform's transactional outbox architecture. Duplicate redeliveries
 remain harmless and are handled idempotently via the unique constraint on `user_id`.
 
-Add one lifecycle consumer for `credit.errand.lifecycle`. It dispatches by the
+Add one lifecycle consumer for `credit.errands`. It dispatches by the
 received routing key, rejects unknown keys, and uses the common retry policy.
 Consumers require `occurredAt` to be a syntactically valid timestamp. They log
 the local receipt time and emit a structured warning for implausible clock skew,
@@ -2289,7 +2289,7 @@ registration event. User Service treats user UUIDs as permanent identities and
 never reassigns a deleted user's UUID to another person. Events declare JSON/UTF-8
 metadata and stay within 16 KiB.
 
-A registration allocation message in `credit.registration.dlq` must not be
+A registration allocation message in `credit.users.dlq` must not be
 republished through the lifecycle replay procedure. Recovery for quarantined or lost
 events is owned by User Service via outbox event replay or database backfill
 migrations (such as `000006_backfill_user_registered_events.up.sql`).

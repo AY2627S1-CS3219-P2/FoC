@@ -44,7 +44,7 @@ const (
 	// The exchange and credit-service queue that
 	// rabbitmq/definitions.json declares.
 	eventsExchange = "foc.events"
-	lifecycleQueue = "credit.errand.lifecycle"
+	lifecycleQueue = "credit.errands"
 
 	// waitLimit bounds every wait on the database or the broker.
 	waitLimit = 20 * time.Second

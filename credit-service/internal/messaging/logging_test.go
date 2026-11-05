@@ -29,6 +29,9 @@ import (
 // leakyErr quotes a connection string, as a database driver's error can.
 var leakyErr = errors.New("dial postgres://credit:hunter2@credit-db:5432/credit: connection refused")
 
+// sanitizedLeak is leakyErr as a log line may carry it.
+const sanitizedLeak = "dial postgres://REDACTED@credit-db:5432/credit: connection refused"
+
 func TestLifecycleDeliveryLogFields(t *testing.T) {
 	cases := []struct {
 		name        string
@@ -39,28 +42,36 @@ func TestLifecycleDeliveryLogFields(t *testing.T) {
 		wantOutcome string
 		wantLevel   string
 		wantMsg     string
+		wantError   string
 		wantNoIDs   bool
 	}{
 		{name: "a settled event is acknowledged", routingKey: messaging.RoutingCancelled,
+			wantOutcome: "ack", wantLevel: "INFO", wantMsg: "lifecycle event acknowledged"},
+		{name: "a completed errand is acknowledged", routingKey: messaging.RoutingCompleted,
 			wantOutcome: "ack", wantLevel: "INFO", wantMsg: "lifecycle event acknowledged"},
 		{name: "an applied reward change is acknowledged", routingKey: messaging.RoutingRewardSet,
 			wantOutcome: "ack", wantLevel: "INFO", wantMsg: "lifecycle event acknowledged"},
 		{name: "an unreserved errand.failed is acknowledged", routingKey: messaging.RoutingFailed, serviceErr: credit.ErrReservationNotFound,
 			wantOutcome: "ack", wantLevel: "INFO", wantMsg: "errand.failed for unreserved errand acknowledged as no-op"},
 		{name: "a temporary error is retried", routingKey: messaging.RoutingCompleted, serviceErr: leakyErr, attempt: 1,
-			wantOutcome: "requeue", wantLevel: "WARN", wantMsg: "retrying lifecycle event after temporary error"},
+			wantOutcome: "requeue", wantLevel: "WARN", wantMsg: "retrying lifecycle event after temporary error", wantError: sanitizedLeak},
 		{name: "a missing reservation is retried", routingKey: messaging.RoutingExpired, serviceErr: credit.ErrReservationNotFound, attempt: 2,
 			wantOutcome: "requeue", wantLevel: "WARN", wantMsg: "reservation not found for lifecycle event, requeuing"},
 		{name: "a temporary error is dead-lettered on the fifth attempt", routingKey: messaging.RoutingCancelled, serviceErr: leakyErr, attempt: 5,
-			wantOutcome: "dead-letter", wantLevel: "ERROR", wantMsg: "temporary error retry attempts exhausted, dead-lettering to DLQ"},
-		{name: "a missing reservation is dead-lettered on the fifth attempt", routingKey: messaging.RoutingCompleted, serviceErr: credit.ErrReservationNotFound, attempt: 5,
-			wantOutcome: "dead-letter", wantLevel: "ERROR", wantMsg: "reservation not found retry attempts exhausted, dead-lettering to DLQ"},
-		{name: "a contract violation is dead-lettered", routingKey: messaging.RoutingCancelled, serviceErr: credit.ErrRequesterMismatch,
-			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting contract or lifecycle violation to DLQ"},
+			wantOutcome: "dead-letter", wantLevel: "ERROR", wantMsg: "temporary error retry attempts exhausted, dead-lettering to DLQ", wantError: sanitizedLeak},
+		{name: "a missing reservation is dead-lettered on the fifth attempt", routingKey: messaging.RoutingCompleted,
+			serviceErr: fmt.Errorf("%w: %v", credit.ErrReservationNotFound, leakyErr), attempt: 5,
+			wantOutcome: "dead-letter", wantLevel: "ERROR", wantMsg: "reservation not found retry attempts exhausted, dead-lettering to DLQ",
+			wantError: credit.ErrReservationNotFound.Error() + ": " + sanitizedLeak},
+		{name: "a contract violation is dead-lettered", routingKey: messaging.RoutingCancelled,
+			serviceErr:  fmt.Errorf("%w: %v", credit.ErrRequesterMismatch, leakyErr),
+			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting contract or lifecycle violation to DLQ",
+			wantError: credit.ErrRequesterMismatch.Error() + ": " + sanitizedLeak},
 		// Transport validation precedes any decoding of the body, so this line
 		// names the delivery but not the event's identifiers.
 		{name: "an invalid transport is dead-lettered", routingKey: messaging.RoutingCancelled, contentType: "text/plain",
-			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting message with invalid transport to DLQ", wantNoIDs: true},
+			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting message with invalid transport to DLQ",
+			wantError: `messaging: malformed event: invalid content_type "text/plain", want application/json`, wantNoIDs: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -92,17 +103,134 @@ func TestLifecycleDeliveryLogFields(t *testing.T) {
 			wantFields := map[string]any{"request_id": d.CorrelationId, "eventId": eventID.String(), "errandId": errandID.String()}
 			if tc.wantNoIDs {
 				wantFields = map[string]any{"request_id": d.CorrelationId, "routingKey": tc.routingKey}
-				for _, line := range lines {
-					if _, ok := line["eventId"]; ok {
-						t.Errorf("line %q names eventId from a body that failed transport validation", line["msg"])
-					}
-				}
+				requireNoEventIDs(t, lines)
 			}
 			requireFieldsOnEveryLine(t, lines, wantFields)
 			requireOneLine(t, lines, tc.wantLevel, tc.wantMsg)
+			if tc.wantError != "" {
+				requireLineError(t, lines, tc.wantMsg, tc.wantError)
+			}
 			if strings.Contains(logs.String(), "hunter2") {
 				t.Errorf("a credential was logged: %s", logs.String())
 			}
+		})
+	}
+}
+
+// A malformed eventId must not hide the identifiers after it in the body.
+func TestAMalformedEventIDHidesNoOtherField(t *testing.T) {
+	for _, eventID := range []string{"", "not-a-uuid"} {
+		t.Run(fmt.Sprintf("eventId %q", eventID), func(t *testing.T) {
+			var logs bytes.Buffer
+			svc := &mockLifecycleService{
+				refundFn: func(context.Context, uuid.UUID, *uuid.UUID, uuid.UUID, credit.TransactionReason, time.Time) error {
+					return nil
+				},
+			}
+			h := messaging.NewLifecycleHandler(svc, slog.New(slog.NewJSONHandler(&logs, nil)))
+			errandID := uuid.New()
+			d, acker := delivery(messaging.RoutingCancelled, "", 0, fmt.Sprintf(`{
+				"schemaVersion": 1, "eventId": %q, "errandId": %q, "version": 3, "occurredAt": %q
+			}`, eventID, errandID, time.Now().UTC().Format(time.RFC3339Nano)))
+
+			h.HandleDelivery(context.Background(), d)
+
+			if acker.outcome != "dead-letter" {
+				t.Fatalf("outcome = %q, want dead-letter", acker.outcome)
+			}
+			lines := decodeLines(t, &logs)
+			requireFieldsOnEveryLine(t, lines, map[string]any{
+				"request_id": d.CorrelationId, "errandId": errandID.String(), "version": float64(3),
+			})
+			for _, line := range lines {
+				if _, ok := line["eventId"]; ok {
+					t.Errorf("line %q names the malformed eventId", line["msg"])
+				}
+			}
+		})
+	}
+}
+
+// When the broker refuses the ack, the event is not acknowledged, so its line
+// is a sanitised warning and never the acknowledged line.
+func TestAFailedAckLogsAWarningAndNoAckLine(t *testing.T) {
+	var logs bytes.Buffer
+	svc := &mockLifecycleService{
+		refundFn: func(context.Context, uuid.UUID, *uuid.UUID, uuid.UUID, credit.TransactionReason, time.Time) error {
+			return nil
+		},
+	}
+	h := messaging.NewLifecycleHandler(svc, slog.New(slog.NewJSONHandler(&logs, nil)))
+	d, acker := delivery(messaging.RoutingCancelled, "", 0, fmt.Sprintf(`{
+		"schemaVersion": 1, "eventId": %q, "errandId": %q, "version": 2, "occurredAt": %q
+	}`, uuid.New(), uuid.New(), time.Now().UTC().Format(time.RFC3339Nano)))
+	acker.ackErr = leakyErr
+
+	h.HandleDelivery(context.Background(), d)
+
+	lines := decodeLines(t, &logs)
+	const msg = "could not acknowledge event; the broker will redeliver it"
+	requireOneLine(t, lines, "WARN", msg)
+	requireLineError(t, lines, msg, sanitizedLeak)
+	for _, line := range lines {
+		if line["msg"] == "lifecycle event acknowledged" {
+			t.Error("a failed ack still logged the acknowledged line")
+		}
+	}
+	if strings.Contains(logs.String(), "hunter2") {
+		t.Errorf("a credential was logged: %s", logs.String())
+	}
+}
+
+// The errand handlers write their own lines behind the EventRouter, which hands
+// them only the context, routing key and body.
+func TestErrandHandlerLogFields(t *testing.T) {
+	skewed := time.Now().UTC().Add(-2 * time.Hour)
+	cases := []struct {
+		name       string
+		routingKey string
+		occurredAt time.Time
+		rewardErr  error
+		wantLevel  string
+		wantMsg    string
+	}{
+		{name: "a completed errand's clock skew is logged", routingKey: messaging.RoutingCompleted, occurredAt: skewed,
+			wantLevel: "WARN", wantMsg: "implausible clock skew detected on event"},
+		{name: "a refunded errand's clock skew is logged", routingKey: messaging.RoutingExpired, occurredAt: skewed,
+			wantLevel: "WARN", wantMsg: "implausible clock skew detected on event"},
+		{name: "a reward change's clock skew is logged", routingKey: messaging.RoutingRewardSet, occurredAt: skewed,
+			wantLevel: "WARN", wantMsg: "implausible clock skew detected on event"},
+		{name: "an applied reward change is logged", routingKey: messaging.RoutingRewardSet,
+			wantLevel: "INFO", wantMsg: "errand.reward_set applied"},
+		{name: "a stale reward change is logged", routingKey: messaging.RoutingRewardSet, rewardErr: credit.ErrRewardSetStale,
+			wantLevel: "INFO", wantMsg: "errand.reward_set ignored as stale"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var logs bytes.Buffer
+			svc := &mockLifecycleService{
+				rewardSetFn: func(context.Context, uuid.UUID, uuid.UUID, int64, int64, time.Time) error { return tc.rewardErr },
+			}
+			h := messaging.NewLifecycleHandler(svc, slog.New(slog.NewJSONHandler(&logs, nil)))
+			occurredAt := tc.occurredAt
+			if occurredAt.IsZero() {
+				occurredAt = time.Now().UTC()
+			}
+			eventID, errandID := uuid.New(), uuid.New()
+			d, acker := delivery(tc.routingKey, "", 0, fmt.Sprintf(`{
+				"schemaVersion": 1, "eventId": %q, "errandId": %q, "courierId": %q,
+				"amount": 30, "version": 2, "occurredAt": %q
+			}`, eventID, errandID, uuid.New(), occurredAt.Format(time.RFC3339Nano)))
+
+			h.HandleDelivery(context.Background(), d)
+
+			if acker.outcome != "ack" {
+				t.Fatalf("outcome = %q, want ack", acker.outcome)
+			}
+			lines := decodeLines(t, &logs)
+			requireFieldsOnEveryLine(t, lines, map[string]any{"request_id": d.CorrelationId, "eventId": eventID.String(), "errandId": errandID.String()})
+			requireOneLine(t, lines, tc.wantLevel, tc.wantMsg)
+			requireOneLine(t, lines, "INFO", "lifecycle event acknowledged")
 		})
 	}
 }
@@ -112,19 +240,28 @@ func TestRegistrationDeliveryLogFields(t *testing.T) {
 		name        string
 		allocErr    error
 		dropField   string
+		contentType string
 		attempt     int64
 		wantOutcome string
 		wantLevel   string
 		wantMsg     string
+		wantError   string // <eventId> stands for the event's id
+		wantNoIDs   bool
 	}{
 		{name: "an allocation is acknowledged",
 			wantOutcome: "ack", wantLevel: "INFO", wantMsg: "user.registered event acknowledged"},
 		{name: "a failed allocation is retried", allocErr: leakyErr, attempt: 1,
-			wantOutcome: "requeue", wantLevel: "WARN", wantMsg: "retrying user.registered event after handler failure"},
+			wantOutcome: "requeue", wantLevel: "WARN", wantMsg: "retrying user.registered event after handler failure",
+			wantError: "handle user.registered <eventId>: " + sanitizedLeak},
 		{name: "a failed allocation is dead-lettered on the fifth attempt", allocErr: leakyErr, attempt: 5,
-			wantOutcome: "dead-letter", wantLevel: "ERROR", wantMsg: "registration delivery attempts exhausted, dead-lettering to DLQ"},
+			wantOutcome: "dead-letter", wantLevel: "ERROR", wantMsg: "registration delivery attempts exhausted, dead-lettering to DLQ",
+			wantError: "handle user.registered <eventId>: " + sanitizedLeak},
 		{name: "a malformed event is dead-lettered", dropField: "occurredAt",
-			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "dropping malformed user.registered event to DLQ"},
+			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "dropping malformed user.registered event to DLQ",
+			wantError: "messaging: malformed event: occurredAt is required"},
+		{name: "an invalid transport is dead-lettered", contentType: "text/plain",
+			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting registration message with invalid transport to DLQ",
+			wantError: `messaging: malformed event: invalid content_type "text/plain", want application/json`, wantNoIDs: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -138,7 +275,7 @@ func TestRegistrationDeliveryLogFields(t *testing.T) {
 			if err != nil {
 				t.Fatalf("marshal event: %v", err)
 			}
-			d, acker := delivery(messaging.RoutingUserRegistered, "", tc.attempt, string(body))
+			d, acker := delivery(messaging.RoutingUserRegistered, tc.contentType, tc.attempt, string(body))
 
 			h.HandleDelivery(context.Background(), d)
 
@@ -146,8 +283,16 @@ func TestRegistrationDeliveryLogFields(t *testing.T) {
 				t.Fatalf("outcome = %q, want %q", acker.outcome, tc.wantOutcome)
 			}
 			lines := decodeLines(t, &logs)
-			requireFieldsOnEveryLine(t, lines, map[string]any{"request_id": d.CorrelationId, "eventId": eventID.String(), "userId": userID.String()})
+			wantFields := map[string]any{"request_id": d.CorrelationId, "eventId": eventID.String(), "userId": userID.String()}
+			if tc.wantNoIDs {
+				wantFields = map[string]any{"request_id": d.CorrelationId, "routingKey": messaging.RoutingUserRegistered}
+				requireNoEventIDs(t, lines)
+			}
+			requireFieldsOnEveryLine(t, lines, wantFields)
 			requireOneLine(t, lines, tc.wantLevel, tc.wantMsg)
+			if tc.wantError != "" {
+				requireLineError(t, lines, tc.wantMsg, strings.ReplaceAll(tc.wantError, "<eventId>", eventID.String()))
+			}
 			if strings.Contains(logs.String(), "hunter2") {
 				t.Errorf("a credential was logged: %s", logs.String())
 			}
@@ -171,7 +316,7 @@ func TestReconnectLineCarriesNoCredentials(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			logs := &firstWrite{wrote: make(chan struct{})}
-			s := messaging.NewSupervisor("amqp://foc:"+tc.password+"@rabbitmq:5672/foc", nil, nil, 1, slog.New(slog.NewJSONHandler(logs, nil)))
+			s := messaging.NewSupervisor("amqp://foc:"+tc.password+"@rabbitmq:5672/foc", 1, slog.New(slog.NewJSONHandler(logs, nil)))
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 			stopped := make(chan error, 1)
@@ -224,14 +369,15 @@ func delivery(routingKey, contentType string, attempt int64, body string) (amqp.
 	return d, acker
 }
 
-// fakeAcker records how a delivery was settled.
+// fakeAcker records how a delivery was settled. Ack answers ackErr.
 type fakeAcker struct {
 	outcome string
+	ackErr  error
 }
 
 func (a *fakeAcker) Ack(uint64, bool) error {
 	a.outcome = "ack"
-	return nil
+	return a.ackErr
 }
 
 func (a *fakeAcker) Nack(_ uint64, _ bool, requeue bool) error {
@@ -314,5 +460,29 @@ func requireOneLine(t *testing.T, lines []map[string]any, level, msg string) {
 	}
 	if count != 1 {
 		t.Errorf("%q logged %d times, want once", msg, count)
+	}
+}
+
+// requireLineError fails unless the line logged as msg carries want as its
+// error.
+func requireLineError(t *testing.T, lines []map[string]any, msg, want string) {
+	t.Helper()
+	for _, line := range lines {
+		if line["msg"] == msg && line["error"] != want {
+			t.Errorf("%q: error = %v, want %q", msg, line["error"], want)
+		}
+	}
+}
+
+// requireNoEventIDs fails if any line names an identifier from a body that
+// failed transport validation, which is never decoded.
+func requireNoEventIDs(t *testing.T, lines []map[string]any) {
+	t.Helper()
+	for _, line := range lines {
+		for _, key := range []string{"eventId", "errandId", "userId"} {
+			if _, ok := line[key]; ok {
+				t.Errorf("line %q names %s from a body that failed transport validation", line["msg"], key)
+			}
+		}
 	}
 }

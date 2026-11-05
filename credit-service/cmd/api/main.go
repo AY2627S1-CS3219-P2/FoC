@@ -114,10 +114,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	lifeHandler := messaging.NewLifecycleHandler(creditService, logger.With("component", "lifecycle_handler"))
 	supervisor := messaging.NewSupervisor(
 		cfg.RabbitMQURL,
-		regHandler,
-		lifeHandler,
 		cfg.WorkerConcurrency,
 		logger.With("component", "messaging_supervisor"),
+		regHandler,
+		lifeHandler,
 	)
 
 	// Background Workers
