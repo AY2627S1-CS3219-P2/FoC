@@ -125,6 +125,7 @@ services:
       SUPPLIER_BASE_URL: http://supplier-service:8082
       ORDER_BASE_URL: http://order-service:8083
       CREDIT_BASE_URL: http://credit-service:8084
+      CHAT_BASE_URL: http://chat-service:8085
       # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
       # (default 168h) so it matches user-service's refresh-token lifetime.
       REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
@@ -286,6 +287,56 @@ services:
       retries: 3
       start_period: 90s
 
+
+  # ---- Chat service, its database, dedicated Redis and media volume ---
+  chat-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${CHAT_DB_USER:-chat}
+      POSTGRES_PASSWORD: ${CHAT_DB_PASSWORD:-chat}
+      POSTGRES_DB: chat
+    volumes:
+      - chat-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${CHAT_DB_USER:-chat} -d chat"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chat-redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - chat-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  chat-service:
+    build:
+      context: ./chat-service
+      dockerfile: Dockerfile
+    depends_on:
+      chat-db:
+        condition: service_healthy
+      chat-redis:
+        condition: service_healthy
+    environment:
+      PORT: 8085
+      CHAT_DB_URL: postgres://${CHAT_DB_USER:-chat}:${CHAT_DB_PASSWORD:-chat}@chat-db:5432/chat?sslmode=disable
+      CHAT_REDIS_URL: redis://chat-redis:6379
+      AUTH_REDIS_URL: redis://redis:6379
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      MEDIA_STORAGE_PATH: /var/lib/foc/chat-media
+    volumes:
+      - chat-media-data:/var/lib/foc/chat-media
+    restart: on-failure
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/chat.
+
   # ---- Observability (opt-in) -------------------------------------------
   # Started only with `docker compose --profile observability up`; config is
   # in observability/. Alloy reads every container's log through the Docker
@@ -366,7 +417,6 @@ services:
       retries: 3
       start_period: 30s
 
-
 volumes:
   user-db-data:
   redis-data:
@@ -374,5 +424,8 @@ volumes:
   rabbitmq-data:
   order-db-data:
   credit-db-data:
+  chat-db-data:
+  chat-redis-data:
+  chat-media-data:
   loki-data:
   alloy-data:

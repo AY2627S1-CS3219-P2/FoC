@@ -122,6 +122,7 @@ state its own port but must not restate this table.
 | `supplier-service` | 8082 | `SUPPLIER_DB_URL` |
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
+| `chat-service` | 8085 | `CHAT_DB_URL` |
 | `frontend` | 3001: where `npm run dev` serves the app; in production a static host serves it (D-033) | — |
 | `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of its own; it reads the shared Redis revocation keys, §4.1) |
 | `observability` | Grafana 3000 and Loki 3100, published on 127.0.0.1 only (`GRAFANA_PORT`, `LOKI_PORT`) | — |
@@ -272,7 +273,8 @@ make up / make down       # full stack via Compose
 What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
 and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
 carries Redis, RabbitMQ, the API Gateway, and user-service, supplier-service,
-order-service and credit-service with their databases. Loki, Grafana Alloy,
+order-service, credit-service and chat-service with their databases, plus
+chat-service's own Redis. Loki, Grafana Alloy,
 Prometheus and Grafana sit under the `observability` profile, so `docker compose
 up` and `down` reach them only with `--profile observability`; Grafana is on
 `http://127.0.0.1:3000`. A service

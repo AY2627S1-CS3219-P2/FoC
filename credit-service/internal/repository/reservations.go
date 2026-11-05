@@ -228,9 +228,9 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		if reservation.Status != credit.ReservationStatusReserved {
 			return credit.ErrReservationConflict
 		}
-		// Optimistic concurrency control: currVersion must strictly match reservation.Version.
-		// Stale requests and skipped versions are rejected.
-		if reservation.Version != currVersion {
+		// Reject stale requests from an earlier order state.
+		// Requests where currVersion >= reservation.Version are accepted, allowing raises after non-credit edits.
+		if currVersion < reservation.Version {
 			return credit.ErrReservationConflict
 		}
 

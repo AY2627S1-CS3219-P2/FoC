@@ -53,6 +53,7 @@ type Downstream struct {
 	Supplier string
 	Order    string
 	Credit   string
+	Chat     string
 }
 
 // Load reads the environment and returns an error naming every required
@@ -76,6 +77,7 @@ func Load() (Config, error) {
 			Supplier: os.Getenv("SUPPLIER_BASE_URL"),
 			Order:    os.Getenv("ORDER_BASE_URL"),
 			Credit:   os.Getenv("CREDIT_BASE_URL"),
+			Chat:     os.Getenv("CHAT_BASE_URL"),
 		},
 	}
 
@@ -87,6 +89,7 @@ func Load() (Config, error) {
 		"SUPPLIER_BASE_URL": cfg.Downstream.Supplier,
 		"ORDER_BASE_URL":    cfg.Downstream.Order,
 		"CREDIT_BASE_URL":   cfg.Downstream.Credit,
+		"CHAT_BASE_URL":     cfg.Downstream.Chat,
 		"REFRESH_TOKEN_TTL": rawTTL,
 	}
 
