@@ -75,8 +75,25 @@ func (s *Service) Get(ctx context.Context, id string) (*Supplier, error) {
 	return sup, nil
 }
 
-// Create validates and inserts a new supplier (FR F2.2, F2.2.1, F2.2.2).
+// Create validates and inserts a new supplier (FR F2.2, F2.2.1, F2.2.2). It
+// writes no audit row: it is for the first-boot seed, which is nobody's admin
+// action. An admin's create goes through AdminCreate.
 func (s *Service) Create(ctx context.Context, in *Supplier) (*Supplier, error) {
+	return s.create(ctx, in, nil)
+}
+
+// AdminCreate is Create for an admin: the supplier and its audit row are saved
+// together, and a refused or failed attempt is logged too (D-106, D-108, D-109).
+func (s *Service) AdminCreate(ctx context.Context, ac AuditContext, in *Supplier) (*Supplier, error) {
+	created, err := s.create(ctx, in, &ac)
+	if err != nil {
+		s.recordAttempt(ctx, ac, ActionCreate, "", attemptedFields(in), err)
+		return nil, err
+	}
+	return created, nil
+}
+
+func (s *Service) create(ctx context.Context, in *Supplier, ac *AuditContext) (*Supplier, error) {
 	if err := validate(in); err != nil {
 		return nil, err
 	}
@@ -94,15 +111,58 @@ func (s *Service) Create(ctx context.Context, in *Supplier) (*Supplier, error) {
 	in.CreatedAt = now
 	in.UpdatedAt = now
 
-	if err := s.repo.Create(ctx, in); err != nil {
+	if ac == nil {
+		if err := s.repo.Create(ctx, in); err != nil {
+			return nil, err
+		}
+		return in, nil
+	}
+	e := ac.entry(ActionCreate, in.ID, OutcomeSucceeded, "")
+	e.AdditionalComments = supplierFields(in)
+	if err := s.repo.CreateAudited(ctx, in, e); err != nil {
 		return nil, err
 	}
 	return in, nil
 }
 
+// attemptedFields is what an attempted create or update asked for, so a refused
+// attempt's log row shows it. in may be a half-filled body.
+func attemptedFields(in *Supplier) map[string]any {
+	if in == nil {
+		return nil
+	}
+	return supplierFields(in)
+}
+
 // Update validates and applies changes to an existing supplier (FR F2.2,
 // F2.2.1, F2.2.2).
 func (s *Service) Update(ctx context.Context, id string, in *Supplier) (*Supplier, error) {
+	return s.update(ctx, id, in, nil)
+}
+
+// AdminUpdate is Update for an admin: the change and its audit row are saved
+// together, and a refused or failed attempt is logged too (D-106, D-108, D-109).
+// The row holds the new value of every field the edit changed (D-112).
+func (s *Service) AdminUpdate(ctx context.Context, ac AuditContext, id string, in *Supplier) (*Supplier, error) {
+	updated, err := s.update(ctx, id, in, &ac)
+	if err != nil {
+		s.recordAttempt(ctx, ac, ActionUpdate, auditTargetID(id), attemptedFields(in), err)
+		return nil, err
+	}
+	return updated, nil
+}
+
+// auditTargetID is the id an attempt names, in canonical form when it is a
+// UUID and as typed otherwise, so a refused attempt on a bad id is still found
+// by what the admin sent.
+func auditTargetID(id string) string {
+	if canonical, err := parseID(id); err == nil {
+		return canonical
+	}
+	return id
+}
+
+func (s *Service) update(ctx context.Context, id string, in *Supplier, ac *AuditContext) (*Supplier, error) {
 	id, err := parseID(id)
 	if err != nil {
 		return nil, err
@@ -124,6 +184,7 @@ func (s *Service) Update(ctx context.Context, id string, in *Supplier) (*Supplie
 		return nil, ErrDuplicate
 	}
 
+	before := *existing
 	existing.Name = in.Name
 	existing.Type = in.Type
 	existing.Building = in.Building
@@ -138,7 +199,15 @@ func (s *Service) Update(ctx context.Context, id string, in *Supplier) (*Supplie
 	existing.IsAvailable = in.IsAvailable
 	existing.UpdatedAt = time.Now().UTC()
 
-	if err := s.repo.Update(ctx, existing); err != nil {
+	if ac == nil {
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return nil, err
+		}
+		return existing, nil
+	}
+	e := ac.entry(ActionUpdate, existing.ID, OutcomeSucceeded, "")
+	e.AdditionalComments = changedFields(&before, existing)
+	if err := s.repo.UpdateAudited(ctx, existing, e); err != nil {
 		return nil, err
 	}
 	return existing, nil
@@ -156,11 +225,26 @@ func (s *Service) Update(ctx context.Context, id string, in *Supplier) (*Supplie
 // DeletedAt) instead of removing the row, so no data referenced by a
 // historical order is ever lost.
 func (s *Service) Delete(ctx context.Context, id string) error {
+	return s.deleteSupplier(ctx, id, nil)
+}
+
+// AdminDelete is Delete for an admin: the delete and its audit row are saved
+// together, and a refused or failed attempt is logged too (D-106, D-108, D-109).
+func (s *Service) AdminDelete(ctx context.Context, ac AuditContext, id string) error {
+	if err := s.deleteSupplier(ctx, id, &ac); err != nil {
+		s.recordAttempt(ctx, ac, ActionDelete, auditTargetID(id), nil, err)
+		return err
+	}
+	return nil
+}
+
+func (s *Service) deleteSupplier(ctx context.Context, id string, ac *AuditContext) error {
 	id, err := parseID(id)
 	if err != nil {
 		return err
 	}
-	if _, err := s.Get(ctx, id); err != nil {
+	existing, err := s.Get(ctx, id)
+	if err != nil {
 		return err
 	}
 	n, err := s.errands.ActiveErrands(ctx, id)
@@ -170,7 +254,12 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	if n > 0 {
 		return ErrInUse
 	}
-	return s.repo.SoftDelete(ctx, id)
+	if ac == nil {
+		return s.repo.SoftDelete(ctx, id)
+	}
+	e := ac.entry(ActionDelete, id, OutcomeSucceeded, "")
+	e.AdditionalComments = map[string]any{"name": existing.Name, "building": existing.Building}
+	return s.repo.SoftDeleteAudited(ctx, id, e)
 }
 
 func validate(in *Supplier) error {

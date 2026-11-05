@@ -69,6 +69,9 @@ func main() {
 
 	router := httpapi.NewRouter(svc, verifier, auth.NewRevocations(rdb))
 
+	// D-115: entries older than 6 months are removed by a scheduled job.
+	go svc.RunAuditPurge(ctx, supplier.PurgeInterval)
+
 	log.Printf("supplier-service listening on :%s", cfg.Port)
 	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
 		log.Fatalf("server error: %v", err)

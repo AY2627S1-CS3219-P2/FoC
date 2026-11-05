@@ -28,6 +28,7 @@ type stubRepository struct {
 	mu     sync.Mutex
 	byID   map[string]*supplier.Supplier
 	writes int
+	audits []*supplier.AuditEntry
 }
 
 func newStubRepository() *stubRepository {
@@ -75,6 +76,40 @@ func (m *stubRepository) ExistsDuplicate(context.Context, string, string, string
 }
 
 func (m *stubRepository) Count(context.Context) (int, error) { return len(m.byID), nil }
+
+func (m *stubRepository) CreateAudited(ctx context.Context, s *supplier.Supplier, e *supplier.AuditEntry) error {
+	if err := m.Create(ctx, s); err != nil {
+		return err
+	}
+	return m.RecordAudit(ctx, e)
+}
+
+func (m *stubRepository) UpdateAudited(ctx context.Context, s *supplier.Supplier, e *supplier.AuditEntry) error {
+	if err := m.Update(ctx, s); err != nil {
+		return err
+	}
+	return m.RecordAudit(ctx, e)
+}
+
+func (m *stubRepository) SoftDeleteAudited(ctx context.Context, id string, e *supplier.AuditEntry) error {
+	if err := m.SoftDelete(ctx, id); err != nil {
+		return err
+	}
+	return m.RecordAudit(ctx, e)
+}
+
+func (m *stubRepository) RecordAudit(_ context.Context, e *supplier.AuditEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.audits = append(m.audits, e)
+	return nil
+}
+
+func (m *stubRepository) ListAudit(_ context.Context, f supplier.AuditFilter) (*supplier.AuditPage, error) {
+	return &supplier.AuditPage{Items: m.audits, Total: len(m.audits), Limit: f.Limit, Offset: f.Offset}, nil
+}
+
+func (m *stubRepository) PurgeAudit(context.Context) (int64, error) { return 0, nil }
 
 const validBody = `{"name":"Test Stall","type":"cafe","building":"COM1","location_description":"Level 2","latitude":1.29,"longitude":103.77`
 

@@ -36,6 +36,8 @@ type memRepository struct {
 	mu     sync.Mutex
 	byID   map[string]*supplier.Supplier
 	writes int
+	// audits are the audit rows saved, in order.
+	audits []*supplier.AuditEntry
 }
 
 func newMemRepository() *memRepository {
@@ -89,6 +91,42 @@ func (m *memRepository) ExistsDuplicate(context.Context, string, string, string,
 }
 
 func (m *memRepository) Count(context.Context) (int, error) { return len(m.byID), nil }
+
+func (m *memRepository) CreateAudited(ctx context.Context, s *supplier.Supplier, e *supplier.AuditEntry) error {
+	if err := m.Create(ctx, s); err != nil {
+		return err
+	}
+	return m.RecordAudit(ctx, e)
+}
+
+func (m *memRepository) UpdateAudited(ctx context.Context, s *supplier.Supplier, e *supplier.AuditEntry) error {
+	if err := m.Update(ctx, s); err != nil {
+		return err
+	}
+	return m.RecordAudit(ctx, e)
+}
+
+func (m *memRepository) SoftDeleteAudited(ctx context.Context, id string, e *supplier.AuditEntry) error {
+	if err := m.SoftDelete(ctx, id); err != nil {
+		return err
+	}
+	return m.RecordAudit(ctx, e)
+}
+
+func (m *memRepository) RecordAudit(_ context.Context, e *supplier.AuditEntry) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.audits = append(m.audits, e)
+	return nil
+}
+
+func (m *memRepository) ListAudit(_ context.Context, f supplier.AuditFilter) (*supplier.AuditPage, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return &supplier.AuditPage{Items: append([]*supplier.AuditEntry(nil), m.audits...), Total: len(m.audits), Limit: f.Limit, Offset: f.Offset}, nil
+}
+
+func (m *memRepository) PurgeAudit(context.Context) (int64, error) { return 0, nil }
 
 type zeroErrands struct{ asked int }
 

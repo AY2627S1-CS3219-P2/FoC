@@ -52,7 +52,7 @@ type Reservation struct {
 }
 
 // CreditClient calls credit-service synchronously. Settlement is by events
-// only (D-048), so these are the only two calls.
+// only (D-048), so these are the only calls.
 type CreditClient interface {
 	// AI-generated (edited by James Teo).
 	// Reserve returns nil once the credits are held, ErrInsufficientCredits on
@@ -61,12 +61,22 @@ type CreditClient interface {
 	// retry included. After a retry even ErrCreditRejected cannot prove
 	// nothing was held, so callers rely on D-047's queued refund either way.
 	Reserve(ctx context.Context, r Reservation) error
-	// Adjust sets the held amount for an errand to newReward (an absolute
-	// amount, D-057). It returns nil when applied, ErrInsufficientCredits on
-	// 422, ErrCreditRejected on another definite refusal, and any other error
-	// when the outcome is not known. Calls are made as the errand's requester:
-	// ctx carries their own access token, which the adapter forwards (D-056).
-	Adjust(ctx context.Context, errandID, requesterID uuid.UUID, newReward int, correlationID string) error
+	// Adjust asks credit-service to hold newReward for an errand before a
+	// raise is saved (D-102). currVersion is the errand's version before the
+	// raise: credit-service records currVersion + 1, so an older
+	// errand.reward_set can't undo the raise. It returns nil when held,
+	// ErrInsufficientCredits on 422, ErrCreditRejected on another definite
+	// refusal, and any other error when the outcome is not known. Calls are
+	// made as the errand's requester: ctx carries their own access token,
+	// which the adapter forwards (D-056).
+	Adjust(ctx context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, correlationID string) error
+	// Release asks credit-service to lower the hold to newReward right after
+	// a decrease is saved, so the requester's credits come back before the
+	// reply (D-102). operationID is the eventId of the errand.reward_set saved
+	// with the decrease: credit-service keys the change on it, so the event
+	// is then a duplicate and moves nothing. Any error means the release did
+	// not happen as far as the caller can tell; the event releases it later.
+	Release(ctx context.Context, errandID, requesterID uuid.UUID, newReward, currVersion int, operationID uuid.UUID, correlationID string) error
 }
 
 // OutboxEvent is one row of the outbox (D-051). AvailableAt delays publishing;
@@ -103,6 +113,9 @@ type Transition struct {
 	Now          time.Time
 	History      HistoryEntry
 	Event        *OutboxEvent
+	// Audit, when set, is the admin's audit row; it is saved in the same
+	// transaction as the transition (D-108).
+	Audit *AuditEntry
 }
 
 // AcceptCommand is D-046's accept: one conditional write, with a per-courier
@@ -114,15 +127,19 @@ type AcceptCommand struct {
 	Now             time.Time
 	MaxActive       int
 	History         HistoryEntry
+	Event           *OutboxEvent
 }
 
 // AmendResult is what an amend writes under the row lock. A nil *AmendResult
 // means nothing changed and nothing is written.
 type AmendResult struct {
-	Order   Order // the full row after the amendment; Version already incremented
-	History HistoryEntry
-	// Event is D-057's errand.reward_set when the reward changed, written in
-	// the same transaction; nil otherwise.
+	Order Order // the full row after the amendment; Version already incremented
+	// History is nil when nothing the requester sent is saved: a raise with
+	// an unknown outcome only moves the version on (D-139).
+	History *HistoryEntry
+	// Event is written in the same transaction: errand.cancelled when the
+	// amend cancels the errand, errand.reward_set when the reward changed
+	// (D-102) or a raise's outcome is unknown (D-139); nil otherwise.
 	Event *OutboxEvent
 }
 
@@ -202,20 +219,26 @@ type Repository interface {
 	// longer OPEN, has expired, belongs to the courier, or its version moved.
 	Accept(ctx context.Context, c AcceptCommand) (Order, error)
 	// Amend locks the row (SELECT ... FOR UPDATE), calls fn with it while the
-	// lock is held, then writes fn's result and history row in the same
-	// transaction, with fn's event when it has one (D-057). fn's error
+	// lock is held, then writes fn's result in the same transaction, with its
+	// history row and event when it has them (D-102). fn's error
 	// rolls back and is returned unchanged. It returns ErrNotFound for an
 	// unknown id, and the unchanged row when fn returns a nil result.
 	Amend(ctx context.Context, id uuid.UUID, fn func(current Order) (*AmendResult, error)) (Order, error)
 	// AmendScheduled also serializes changes that open an errand against creates
 	// for the same requester, passing the transactional OPEN count to fn.
 	AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current Order, openCount int) (*AmendResult, error)) (Order, error)
-	// QueueLocked locks the row, calls fn with it as committed, and inserts
-	// the outbox event fn returns in the same transaction, so the event reflects
-	// the row no later write has yet changed (D-057). It returns ErrNotFound for
-	// an unknown id and fn's error unchanged.
-	//
-	// AI-generated (edited by James Teo).
-	// A nil event from fn inserts nothing.
-	QueueLocked(ctx context.Context, id uuid.UUID, fn func(current Order) (*OutboxEvent, error)) error
+
+	// ListAdminErrands is the admin's filtered, sorted, paged errand list
+	// (D-105, D-117); Total is how many matched before paging.
+	ListAdminErrands(ctx context.Context, f AdminErrandFilter) (AdminErrandPage, error)
+	// CountByUser counts a user's errands by state, as requester and as the
+	// courier now assigned (D-117).
+	CountByUser(ctx context.Context, userID uuid.UUID) (ErrandCounts, error)
+	// RecordAudit writes one audit row on its own, for an attempt that did not
+	// commit and so had no transaction to share (D-109).
+	RecordAudit(ctx context.Context, e *AuditEntry) error
+	ListAudit(ctx context.Context, f AuditFilter) (*AuditPage, error)
+	// PurgeAudit deletes the audit rows older than 6 months and returns how many
+	// it removed (D-115).
+	PurgeAudit(ctx context.Context) (int64, error)
 }

@@ -68,9 +68,9 @@ the original row through nullable `reversesTransactionId`.
 | **F4.4** | Release reserved credits upon receiving cancellation or expiry notification for an errand. | Async broker (`errand.lifecycle.cancelled` / `.expired`) | High |
 | **F4.4.1** | Deduct reserved amount from requester reserved balance and add back to available balance. | Async broker | High |
 | **F4.4.2** | Ensure duplicate cancellation/expiry notifications have no additional financial effect; reject and flag release when the reservation has already been paid out. | Async broker | High |
-| **F4.5** | Adjust requester reserved credits when reward for an open errand is modified. | REST (`PATCH /reservations/:errand_id`) | Medium |
+| **F4.5** | Adjust requester reserved credits when reward for an open errand is modified. | REST (`PATCH /reservations/:errand_id`) / Async broker (`errand.reward_set`) | Medium |
 | **F4.5.1** | Reserve additional credits from available balance when reward increases. | REST | Medium |
-| **F4.5.2** | Release difference to available balance when reward decreases. | REST | Medium |
+| **F4.5.2** | Release difference to available balance when reward decreases. | REST / Async broker (`errand.reward_set`) | Medium |
 | **F4.5.3** | Reject reward modification if requester has insufficient available credits for an increase. | REST | Medium |
 | **F4.6** | Record comprehensive audit trail for every credit balance modification. | Database Ledger | Medium |
 | **F4.6.1** | Record the reason for each balance change. | Database Ledger | Medium |
@@ -284,7 +284,7 @@ Section 3.
 - `ErrorResponse`: `error` string.
 - `AccountResponse`: `userId` UUID, `availableCredits` integer, `reservedCredits` integer, `updatedAt` date-time.
 - `CreateReservationRequest`: `errandId` UUID, `amount` integer with minimum `1`.
-- `AdjustRewardRequest`: `newReward` integer with minimum `1`.
+- `AdjustRewardRequest`: `newReward` integer with minimum `1`, `currVersion` integer with minimum `1`.
 - `ReservationResponse`: `id` UUID, `errandId` UUID, `requesterId` UUID, `amount` integer, `status` enum (`RESERVED`, `PAID_OUT`, `REFUNDED`), `createdAt` date-time, `updatedAt` date-time.
 - `TransactionReason`: enum (`REGISTRATION_ALLOCATION`, `ERRAND_RESERVATION`, `ERRAND_CREATION_FAILED`, `ERRAND_COMPLETED_PAYOUT`, `ERRAND_COMPLETED_DEDUCTION`, `ERRAND_CANCELLED`, `ERRAND_EXPIRED`, `REWARD_INCREASED`, `REWARD_DECREASED`).
 - `TransactionItem`: `id` UUID, `userId` UUID, nullable `errandId` UUID, `operationId` UUID, `balanceBucket` (`AVAILABLE` or `RESERVED`), `amount` integer, `reason` `TransactionReason`, `createdAt` date-time.

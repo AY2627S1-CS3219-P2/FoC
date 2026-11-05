@@ -107,18 +107,70 @@ paths:
           $ref: "#/components/responses/Unavailable"
     get:
       operationId: listActiveErrands
-      summary: Every errand that is not final (ADMIN only)
-      description: Oldest state change first, so stalled errands come first. At most 100.
+      # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — D-105 and
+      # D-117: past errands for an admin, filters, sorting, offset paging and a
+      # by-user filter. The shapes are proposed in ai/decisions/admin-dashboard-design.md.
+      summary: Every errand that is not final, or the past ones (ADMIN only)
+      description: |
+        `scope=active` lists every errand that is not final, oldest state change
+        first, so stalled errands come first; at most 100 unless a filter or
+        `limit` is given. `scope=history` lists the completed, cancelled and
+        expired errands, most recent first (D-105). Either scope takes the filters
+        below and pages by offset, at most 50 a page (D-104). `user_id` matches
+        errands where that user is the requester or the courier (D-117).
       parameters:
         - name: scope
           in: query
           required: true
           schema:
             type: string
-            enum: [active]
+            enum: [active, history]
+        - name: state
+          in: query
+          description: Only errands in this state; it must be a final state for `history` and not final for `active`.
+          schema:
+            $ref: "#/components/schemas/ErrandState"
+        - name: from
+          in: query
+          description: Only errands that reached their state at or after this time (RFC 3339 or YYYY-MM-DD).
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: Only errands that reached their state before this time (RFC 3339 or YYYY-MM-DD).
+          schema:
+            type: string
+        - name: supplier_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: user_id
+          in: query
+          description: Only errands this user requested or was assigned.
+          schema:
+            type: string
+            format: uuid
+        - name: sort
+          in: query
+          description: "`recent` (the default for history), `supplier_name` (A to Z) or `oldest` (the default for active)."
+          schema:
+            type: string
+            enum: [recent, supplier_name, oldest]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
       responses:
         "200":
-          description: Errands
+          description: Errands, with the total that matched when a filter or paging was used
           content:
             application/json:
               schema:
@@ -204,6 +256,96 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — D-106 to
+  # D-115 and D-117: the admin audit log and an account's errand counts.
+  /audit-log:
+    get:
+      operationId: listAuditLog
+      summary: The admin audit log, newest first (ADMIN only)
+      description: |
+        Every admin cancel or complete of an errand, and every refused or failed
+        attempt (D-106, D-109). Any admin reads the whole log (D-110). Rows are
+        immutable and kept 6 months (D-114). At most 50 a page (D-104).
+      parameters:
+        - name: action
+          in: query
+          schema:
+            type: string
+            enum: [errand.cancel, errand.complete]
+        - name: outcome
+          in: query
+          schema:
+            type: string
+            enum: [succeeded, refused, failed]
+        - name: actor_id
+          in: query
+          schema:
+            type: string
+        - name: target_id
+          in: query
+          schema:
+            type: string
+        - name: from
+          in: query
+          description: RFC 3339 time or YYYY-MM-DD; inclusive.
+          schema:
+            type: string
+        - name: to
+          in: query
+          description: RFC 3339 time or YYYY-MM-DD; exclusive.
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: One page of audit rows
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /users/{userId}/errand-counts:
+    get:
+      operationId: getUserErrandCounts
+      summary: How many errands a user has in each state (ADMIN only)
+      description: For the admin's account review (D-117), as requester and as the courier now assigned.
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The counts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrandCounts"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /suppliers/{supplierId}/active-errands:
     get:
       operationId: countSupplierActiveErrands
@@ -256,8 +398,18 @@ paths:
       operationId: amendErrand
       summary: Amend an `OPEN` errand (requester only, F3.7)
       description: |
-        Send `version` plus only the fields to change. A reward change adjusts the
-        credit reservation. The deadline does not move (F3.7.6).
+        Send `version` plus only the fields to change. A raised reward is held by
+        credit-service before the change is saved. If credit-service gives no
+        clear answer (none, a timeout or a 5xx), the answer is 503 and none of
+        the change is saved, but the errand's `version` moves on, so fetch the
+        errand again before amending it; anything credit-service held for the
+        raise returns to the requester shortly after. If the save fails after
+        credit-service held the extra, nothing is saved, and the extra stays
+        held until the next saved reward change or the errand ends. A lowered
+        reward is saved first and then released, so the difference is normally
+        back in the requester's balance before this response; if
+        credit-service doesn't answer, it returns shortly after. The deadline
+        does not move (F3.7.6).
       requestBody:
         required: true
         content:
@@ -523,7 +675,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     Unavailable:
-      description: supplier-service or credit-service did not answer; nothing was changed
+      description: supplier-service or credit-service did not answer, or the change could not be saved; none of the change was saved
       content:
         application/json:
           schema:
@@ -693,6 +845,86 @@ components:
         serverTime:
           type: string
           format: date-time
+        # Set only when an admin's list was filtered or paged (D-104, D-105).
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+
+    ErrandCounts:
+      description: "How many errands a user has in each state, as requester and as the courier now assigned (D-117). A state with none is left out."
+      type: object
+      required: [requested, assigned]
+      properties:
+        requested:
+          type: object
+          additionalProperties:
+            type: integer
+        assigned:
+          type: object
+          additionalProperties:
+            type: integer
+
+    AuditEntry:
+      description: One row of the admin audit log (D-107, D-113).
+      type: object
+      required: [id, occurredAt, actorId, actorRole, action, targetType, targetId, outcome, refusalReason, reason, correlationId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        actorId:
+          type: string
+          format: uuid
+        actorRole:
+          type: string
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        outcome:
+          type: string
+          enum: [succeeded, refused, failed]
+        refusalReason:
+          type: string
+        reason:
+          type: string
+        beforeState:
+          type: object
+          nullable: true
+          additionalProperties: true
+        afterState:
+          type: object
+          nullable: true
+          additionalProperties: true
+        additionalComments:
+          type: object
+          nullable: true
+          additionalProperties: true
+        correlationId:
+          type: string
+
+    AuditLogPage:
+      type: object
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
 
     AssignmentRecord:
       description: "One ended assignment: how and when it ended, with the errand's current supplier, item, location and reward."

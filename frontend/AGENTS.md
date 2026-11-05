@@ -82,14 +82,19 @@ src/
 │   ├── suppliers/     view + components + suppliersApi.ts + types.ts,
 │   │                  suppliersFixture.ts (fixture builds only)
 │   ├── errands/       NewErrandView, MyErrandsView, FindErrandsView,
-│   │                  AllErrandsView, ErrandForm, ErrandCard, ErrandDetail,
+│   │                  AllErrandsView (the dashboard's Active errands tab),
+│   │                  ErrandForm, ErrandCard, ErrandDetail,
 │   │                  ordersApi.ts + orderTypes.ts (order-service),
 │   │                  time.ts (countdowns), format.ts (labels, messages)
 │   ├── credits/       CreditsView, creditAccountsApi.ts + creditTypes.ts
 │   │                  (credit-service)
 │   ├── profile/       ProfileView, ProfileEditForms (one modal per
 │   │                  field), usersApi.ts (user-service /api/users/{uid})
-│   └── admin/         AdminView (ADMIN sessions only; uses profile's usersApi)
+│   └── admin/         DashboardView (ADMIN sessions only; four tabs: active
+│                      errands, past errands, accounts, audit log), PastErrandsView,
+│                      AccountsPanel, AccountReview, AuditLogView, AuditList,
+│                      auditTypes.ts (audit record, paging, merging), AdminView
+│                      (an account's actions; uses profile's usersApi)
 ├── components/        shared only — AppShell, Modal, Toast, MockBadge,
 │                      NeedsService, icons
 ├── lib/               config.ts (env), http.ts (transport), mock.ts (fixtures),
@@ -155,6 +160,15 @@ users). Same thing with the admin resetting user's password".
   user-service change for its owner.
 - Lookup is by account ID because user-service has no endpoint to list or
   search users.
+
+**Update (2026-11-03, D-104 to D-124).** The Admin and All errands screens are
+now one **Dashboard** (nav item `admin`) with four tabs. user-service now lists
+and searches accounts (`GET /api/users`), and each service serves its own admin
+audit log (`/api/users/audit-log`, `/api/orders/audit-log`,
+`/api/suppliers/audit-log`), which the Audit log tab merges by time; the
+shapes are in `ai/decisions/admin-dashboard-design.md`. An account's review is
+composed here from four calls to two services (D-117). The "no endpoint to list
+or search users" note above is out of date.
 
 ## Mock services — read before touching them
 

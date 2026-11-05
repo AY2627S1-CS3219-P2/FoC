@@ -28,6 +28,7 @@ import {
   actionDoneText,
   adminCancelDoneText,
   adminCancelStep,
+  amendDoneText,
   confirmStepFor,
   creditsText,
   describeChange,
@@ -49,6 +50,7 @@ import {
   type HistoryEntry,
 } from "./orderTypes";
 import { clockOffset, formatDateTime, serverNow, useNow } from "./time";
+import { ChatBox } from "../chat/ChatBox";
 
 /** The modal's heading id, for its aria-labelledby. One detail is open at a time. */
 export const ERRAND_DETAIL_TITLE_ID = "errand-detail-title";
@@ -153,6 +155,12 @@ interface ErrandDetailProps {
   available: number | null;
   /** After any action succeeds: the list and the balance refetch. */
   onChanged: () => void;
+  /**
+   * After the requester lowers the reward: credit-service releases the
+   * difference a moment after the save, so the balance is fetched again until
+   * it shows (D-103).
+   */
+  onRewardLowered?: () => void;
   /** The errand answered 404: the modal closes with this message. */
   onGone: (message: string) => void;
   /**
@@ -201,6 +209,7 @@ export function ErrandDetail({
   viewerRole,
   available,
   onChanged,
+  onRewardLowered,
   onGone,
   initialNotice,
   onLookUpAccount,
@@ -412,8 +421,11 @@ export function ErrandDetail({
     setEditFailure(null);
     setEditNote(null);
     setNotice(null);
+    let saved: Pick<Errand, "reward"> = editBase;
     try {
-      apply(await ordersApi.amendErrand(editBase.id, editBase.version, changes));
+      const detail = await ordersApi.amendErrand(editBase.id, editBase.version, changes);
+      apply(detail);
+      saved = detail.errand;
     } catch (err) {
       setBusy(null);
       if (isErrandGone(err)) {
@@ -433,8 +445,9 @@ export function ErrandDetail({
     refresh();
     setBusy(null);
     setEditBase(null);
-    setNotice(actionDoneText("amend", editBase));
+    setNotice(amendDoneText(editBase, saved));
     onChanged();
+    if (saved.reward < editBase.reward) onRewardLowered?.();
     titleRef.current?.focus();
   }
 
@@ -651,6 +664,15 @@ export function ErrandDetail({
               </div>
             )
           )}
+
+          {relationship !== "none" &&
+            (errand.courierId != null || relationship === "admin" || errand.state !== "OPEN") && (
+              <ChatBox
+                errandId={errand.id}
+                currentUserId={viewerId}
+                isRequester={relationship === "requester"}
+              />
+            )}
 
           <h3 className="section-label">History</h3>
           {loaded.history === null ? (

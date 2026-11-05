@@ -1,7 +1,7 @@
 # AI Assistance Disclosure:
 # Tool: Antigravity, date: 2026-10-20
 # Scope: Mounted /api/v1/credits/reservations routes, updated AdjustRewardRequest to target-state newReward, and removed obsolete CAS error schemas per requirements.md and sourceOfTruth.md.
-# Author review: PENDING - reviewer to complete
+# Author review: Reviewed by Seth
 
 openapi: 3.1.0
 info:
@@ -82,8 +82,12 @@ components:
     AdjustRewardRequest:
       type: object
       additionalProperties: false
-      required: [newReward]
+      required: [newReward, currVersion]
       properties:
+        currVersion:
+          type: integer
+          format: int64
+          minimum: 1
         newReward:
           type: integer
           format: int64
@@ -266,7 +270,6 @@ paths:
     patch:
       summary: Adjust the reward secured by a reservation.
       operationId: adjustReservationReward
-      # AI-generated (edited by choppyback).
       description: >-
         Retry idempotency is guaranteed only when the caller supplies a valid
         UUID in X-Request-Id and reuses that same value for retries of the same

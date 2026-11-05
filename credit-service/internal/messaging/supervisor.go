@@ -18,18 +18,25 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// Supervisor coordinates RabbitMQ connection, consumer workers, and readiness status.
-type Supervisor struct {
-	amqpURL             string
-	registrationHandler *RegistrationHandler
-	lifecycleHandler    *LifecycleHandler
-	workerConcurrency   int
-	logger              *slog.Logger
-	ready               atomic.Bool
+// Consumer is an abstraction for any queue consumer managed by the supervisor.
+type Consumer interface {
+	QueueName() string
+	DLQName() string
+	ConsumerTag(workerID int) string
+	HandleDelivery(ctx context.Context, d amqp.Delivery)
 }
 
-// NewSupervisor constructs a new RabbitMQ connection supervisor.
-func NewSupervisor(amqpURL string, regHandler *RegistrationHandler, lifeHandler *LifecycleHandler, workerConcurrency int, logger *slog.Logger) *Supervisor {
+// Supervisor coordinates RabbitMQ connection, consumer workers, and readiness status.
+type Supervisor struct {
+	amqpURL           string
+	consumers         []Consumer
+	workerConcurrency int
+	logger            *slog.Logger
+	ready             atomic.Bool
+}
+
+// NewSupervisor constructs a new RabbitMQ connection supervisor over any number of consumers.
+func NewSupervisor(amqpURL string, workerConcurrency int, logger *slog.Logger, consumers ...Consumer) *Supervisor {
 	if workerConcurrency <= 0 {
 		workerConcurrency = 2
 	}
@@ -37,11 +44,10 @@ func NewSupervisor(amqpURL string, regHandler *RegistrationHandler, lifeHandler 
 		logger = slog.Default()
 	}
 	return &Supervisor{
-		amqpURL:             amqpURL,
-		registrationHandler: regHandler,
-		lifecycleHandler:    lifeHandler,
-		workerConcurrency:   workerConcurrency,
-		logger:              logger,
+		amqpURL:           amqpURL,
+		consumers:         consumers,
+		workerConcurrency: workerConcurrency,
+		logger:            logger,
 	}
 }
 
@@ -67,7 +73,9 @@ func (s *Supervisor) Run(ctx context.Context) error {
 			return ctx.Err()
 		}
 
-		err := s.connectAndConsume(ctx)
+		err := s.connectAndConsume(ctx, func() {
+			stepIdx = 0
+		})
 		s.ready.Store(false)
 
 		if ctx.Err() != nil {
@@ -96,7 +104,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 }
 
-func (s *Supervisor) connectAndConsume(ctx context.Context) error {
+func (s *Supervisor) connectAndConsume(ctx context.Context, onReady func()) error {
 	conn, err := amqp.Dial(s.amqpURL)
 	if err != nil {
 		return fmt.Errorf("dial RabbitMQ: %w", err)
@@ -122,62 +130,41 @@ func (s *Supervisor) connectAndConsume(ctx context.Context) error {
 
 	var wg sync.WaitGroup
 
-	// Start Registration Consumers
-	for i := 0; i < s.workerConcurrency; i++ {
-		ch, err := conn.Channel()
-		if err != nil {
-			return fmt.Errorf("open registration channel: %w", err)
-		}
-		defer func() { _ = ch.Close() }()
-
-		if err := ch.Qos(1, 0, false); err != nil {
-			return fmt.Errorf("set qos on registration channel: %w", err)
-		}
-
-		consumerTag := fmt.Sprintf("%s-%d", RegistrationConsumer, i)
-		deliveries, err := ch.ConsumeWithContext(consumerCtx, RegistrationQueue, consumerTag, false, false, false, false, nil)
-		if err != nil {
-			return fmt.Errorf("consume registration: %w", err)
-		}
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for d := range deliveries {
-				s.registrationHandler.HandleDelivery(consumerCtx, d)
+	// Start consumers dynamically for each registered Consumer
+	for _, c := range s.consumers {
+		consumer := c
+		for i := 0; i < s.workerConcurrency; i++ {
+			ch, err := conn.Channel()
+			if err != nil {
+				return fmt.Errorf("open channel for %s: %w", consumer.QueueName(), err)
 			}
-		}()
-	}
+			defer func() { _ = ch.Close() }()
 
-	// Start Lifecycle Consumers
-	for i := 0; i < s.workerConcurrency; i++ {
-		ch, err := conn.Channel()
-		if err != nil {
-			return fmt.Errorf("open lifecycle channel: %w", err)
-		}
-		defer func() { _ = ch.Close() }()
-
-		if err := ch.Qos(1, 0, false); err != nil {
-			return fmt.Errorf("set qos on lifecycle channel: %w", err)
-		}
-
-		consumerTag := fmt.Sprintf("%s-%d", LifecycleConsumer, i)
-		deliveries, err := ch.ConsumeWithContext(consumerCtx, LifecycleQueue, consumerTag, false, false, false, false, nil)
-		if err != nil {
-			return fmt.Errorf("consume lifecycle: %w", err)
-		}
-
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for d := range deliveries {
-				s.lifecycleHandler.HandleDelivery(consumerCtx, d)
+			if err := ch.Qos(1, 0, false); err != nil {
+				return fmt.Errorf("set qos on channel for %s: %w", consumer.QueueName(), err)
 			}
-		}()
+
+			consumerTag := consumer.ConsumerTag(i)
+			deliveries, err := ch.ConsumeWithContext(consumerCtx, consumer.QueueName(), consumerTag, false, false, false, false, nil)
+			if err != nil {
+				return fmt.Errorf("consume %s: %w", consumer.QueueName(), err)
+			}
+
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for d := range deliveries {
+					consumer.HandleDelivery(consumerCtx, d)
+				}
+			}()
+		}
 	}
 
 	// Mark supervisor ready once all consumers are running
 	s.ready.Store(true)
+	if onReady != nil {
+		onReady()
+	}
 	s.logger.Info("RabbitMQ supervisor active with verified topology and active consumers")
 
 	select {
@@ -204,18 +191,25 @@ func (s *Supervisor) verifyTopology(ch *amqp.Channel) error {
 		return fmt.Errorf("passive exchange foc.dlx: %w", err)
 	}
 
-	// Passively declare queues
-	queues := []string{
-		RegistrationQueue,
-		"credit.registration.dlq",
-		LifecycleQueue,
-		"credit.errand.lifecycle.dlq",
-	}
-	for _, q := range queues {
+	for _, c := range s.consumers {
+		q := c.QueueName()
 		if _, err := ch.QueueDeclarePassive(q, true, false, false, false, nil); err != nil {
 			return fmt.Errorf("passive queue %s: %w", q, err)
 		}
-	}
 
+		dlq := c.DLQName()
+		if dlq != "" {
+			qState, err := ch.QueueDeclarePassive(dlq, true, false, false, false, nil)
+			if err != nil {
+				return fmt.Errorf("passive queue %s: %w", dlq, err)
+			}
+			if qState.Messages > 0 {
+				s.logger.Warn("dead letter queue is not empty, manual investigation or replay required",
+					"queue", dlq,
+					"messageCount", qState.Messages,
+				)
+			}
+		}
+	}
 	return nil
 }

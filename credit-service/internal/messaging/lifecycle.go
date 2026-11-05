@@ -6,14 +6,12 @@
 package messaging
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
-	"math"
+	"math/rand"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -25,8 +23,14 @@ import (
 )
 
 const (
-	LifecycleQueue    = "credit.errand.lifecycle"
-	LifecycleConsumer = "credit-service.lifecycle"
+	ErrandsQueue     = "credit.errands"
+	ErrandsConsumer  = "credit-service.errands"
+	ErrandsDLQ       = "credit.errands.dlq"
+
+	// Backward compatibility aliases
+	LifecycleQueue    = ErrandsQueue
+	LifecycleConsumer = ErrandsConsumer
+	LifecycleDLQ      = ErrandsDLQ
 
 	RoutingCompleted = "errand.completed"
 	RoutingCancelled = "errand.cancelled"
@@ -45,162 +49,112 @@ var LifecycleRoutingKeys = []string{
 
 // LifecycleService declares the domain actions needed by lifecycle consumers.
 type LifecycleService interface {
-	RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
-	PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
+	RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
+	PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID uuid.UUID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
 	ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
-// LifecycleHandler processes errand lifecycle events.
+// LifecycleOption configures optional behavior of a LifecycleHandler.
+type LifecycleOption func(*LifecycleHandler)
+
+// WithLifecycleBackoff configures a custom retry backoff function.
+func WithLifecycleBackoff(fn func(ctx context.Context, attempt int) bool) LifecycleOption {
+	return func(h *LifecycleHandler) {
+		h.backoffFn = fn
+	}
+}
+
+// LifecycleHandler processes errand events using an EventRouter.
 type LifecycleHandler struct {
-	service LifecycleService
-	logger  *slog.Logger
+	service   LifecycleService
+	logger    *slog.Logger
+	router    *EventRouter
+	backoffFn func(ctx context.Context, attempt int) bool
 }
 
 // NewLifecycleHandler constructs a new LifecycleHandler.
-func NewLifecycleHandler(service LifecycleService, logger *slog.Logger) *LifecycleHandler {
+func NewLifecycleHandler(service LifecycleService, logger *slog.Logger, opts ...LifecycleOption) *LifecycleHandler {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &LifecycleHandler{
+
+	router := NewEventRouter(logger)
+	if service != nil {
+		payoutHandler := NewPayoutHandler(service, logger)
+		refundHandler := NewRefundHandler(service, logger)
+		rewardSetHandler := NewRewardSetHandler(service, logger)
+
+		router.Register(RoutingCompleted, payoutHandler)
+		router.Register(RoutingCancelled, refundHandler)
+		router.Register(RoutingExpired, refundHandler)
+		router.Register(RoutingFailed, refundHandler)
+		router.Register(RoutingRewardSet, rewardSetHandler)
+	}
+
+	h := &LifecycleHandler{
 		service: service,
 		logger:  logger,
+		router:  router,
 	}
+	for _, opt := range opts {
+		opt(h)
+	}
+	return h
 }
 
-type completedPayload struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	EventID       uuid.UUID  `json:"eventId"`
-	ErrandID      uuid.UUID  `json:"errandId"`
-	CourierID     *uuid.UUID `json:"courierId"`
-	RequesterID   *uuid.UUID `json:"requesterId,omitempty"`
-	Amount        *int64     `json:"amount,omitempty"`
-	OccurredAt    time.Time  `json:"occurredAt"`
+// QueueName returns the primary queue name for errand events.
+func (h *LifecycleHandler) QueueName() string {
+	return ErrandsQueue
 }
 
-type refundPayload struct {
-	SchemaVersion int       `json:"schemaVersion"`
-	EventID       uuid.UUID `json:"eventId"`
-	ErrandID      uuid.UUID `json:"errandId"`
-	Amount        *int64    `json:"amount,omitempty"`
-	OccurredAt    time.Time `json:"occurredAt"`
+// DLQName returns the dead letter queue name for errand events.
+func (h *LifecycleHandler) DLQName() string {
+	return ErrandsDLQ
 }
 
-type rewardSetPayload struct {
-	SchemaVersion int        `json:"schemaVersion"`
-	EventID       uuid.UUID  `json:"eventId"`
-	ErrandID      uuid.UUID  `json:"errandId"`
-	RequesterID   *uuid.UUID `json:"requesterId,omitempty"`
-	Amount        int64      `json:"amount"`
-	Version       *int64     `json:"version"`
-	OccurredAt    time.Time  `json:"occurredAt"`
+// ConsumerTag returns the AMQP consumer tag for the given worker.
+func (h *LifecycleHandler) ConsumerTag(workerID int) string {
+	return fmt.Sprintf("%s-%d", ErrandsConsumer, workerID)
 }
 
-// Dispatch validates the event payload and delegates to the appropriate domain service method.
-func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body []byte) error {
-	switch routingKey {
-	case RoutingCompleted:
-		var ev completedPayload
-		dec := json.NewDecoder(bytes.NewReader(body))
-		if err := dec.Decode(&ev); err != nil {
-			return fmt.Errorf("%w: decode %s: %v", ErrMalformedEvent, routingKey, err)
-		}
-		var trailing struct{}
-		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
-			return fmt.Errorf("%w: trailing characters in JSON payload", ErrMalformedEvent)
-		}
-
-		if ev.SchemaVersion != 0 && ev.SchemaVersion != 1 {
-			return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, ev.SchemaVersion)
-		}
-		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil || ev.CourierID == nil || *ev.CourierID == uuid.Nil {
-			return fmt.Errorf("%w: missing required UUIDs", ErrMalformedEvent)
-		}
-		if ev.OccurredAt.IsZero() {
-			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
-		}
-
-		h.checkClockSkew(ev.EventID, ev.OccurredAt)
-
-		if h.service == nil {
-			return errors.New("lifecycle service is required")
-		}
-		return h.service.PayoutReservation(ctx, ev.ErrandID, *ev.CourierID, ev.EventID, ev.Amount, ev.OccurredAt)
-
-	case RoutingCancelled, RoutingExpired, RoutingFailed:
-		var ev refundPayload
-		dec := json.NewDecoder(bytes.NewReader(body))
-		if err := dec.Decode(&ev); err != nil {
-			return fmt.Errorf("%w: decode %s: %v", ErrMalformedEvent, routingKey, err)
-		}
-		var trailing struct{}
-		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
-			return fmt.Errorf("%w: trailing characters in JSON payload", ErrMalformedEvent)
-		}
-
-		if ev.SchemaVersion != 0 && ev.SchemaVersion != 1 {
-			return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, ev.SchemaVersion)
-		}
-		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil {
-			return fmt.Errorf("%w: missing required UUIDs", ErrMalformedEvent)
-		}
-		if ev.OccurredAt.IsZero() {
-			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
-		}
-
-		h.checkClockSkew(ev.EventID, ev.OccurredAt)
-
-		var reason credit.TransactionReason
-		switch routingKey {
-		case RoutingCancelled:
-			reason = credit.TransactionReasonErrandCancelled
-		case RoutingExpired:
-			reason = credit.TransactionReasonErrandExpired
-		case RoutingFailed:
-			reason = credit.TransactionReasonErrandFailed
-		}
-
-		if h.service == nil {
-			return errors.New("lifecycle service is required")
-		}
-		return h.service.RefundReservation(ctx, ev.ErrandID, ev.EventID, reason, ev.OccurredAt)
-
-	case RoutingRewardSet:
-		var ev rewardSetPayload
-		dec := json.NewDecoder(bytes.NewReader(body))
-		if err := dec.Decode(&ev); err != nil {
-			return fmt.Errorf("%w: decode %s: %v", ErrMalformedEvent, routingKey, err)
-		}
-		var trailing struct{}
-		if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
-			return fmt.Errorf("%w: trailing characters in JSON payload", ErrMalformedEvent)
-		}
-
-		if ev.SchemaVersion != 0 && ev.SchemaVersion != 1 {
-			return fmt.Errorf("%w: unsupported schemaVersion %d (want 1)", ErrMalformedEvent, ev.SchemaVersion)
-		}
-		if ev.EventID == uuid.Nil || ev.ErrandID == uuid.Nil {
-			return fmt.Errorf("%w: missing required UUIDs", ErrMalformedEvent)
-		}
-		if ev.Amount <= 0 {
-			return fmt.Errorf("%w: amount must be positive", ErrMalformedEvent)
-		}
-		if ev.Version == nil || *ev.Version <= 0 {
-			return fmt.Errorf("%w: version must be positive", ErrMalformedEvent)
-		}
-		if ev.OccurredAt.IsZero() {
-			return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
-		}
-
-		h.checkClockSkew(ev.EventID, ev.OccurredAt)
-
-		if h.service == nil {
-			return errors.New("lifecycle service is required")
-		}
-		return h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
-
+// CalculateLifecycleRetryBackoff computes nominal 1, 2, 4, 8s backoff with +/-20% random jitter.
+func CalculateLifecycleRetryBackoff(attempt int) time.Duration {
+	var nominal time.Duration
+	switch attempt {
+	case 1:
+		nominal = 1 * time.Second
+	case 2:
+		nominal = 2 * time.Second
+	case 3:
+		nominal = 4 * time.Second
+	case 4:
+		nominal = 8 * time.Second
 	default:
-		return fmt.Errorf("%w: unsupported routing key %s", ErrMalformedEvent, routingKey)
+		nominal = 8 * time.Second
 	}
+	jitterFactor := 0.8 + rand.Float64()*0.4
+	return time.Duration(float64(nominal) * jitterFactor)
+}
+
+func (h *LifecycleHandler) waitRetryBackoff(ctx context.Context, attempt int) bool {
+	if h.backoffFn != nil {
+		return h.backoffFn(ctx, attempt)
+	}
+	delay := CalculateLifecycleRetryBackoff(attempt)
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(delay):
+		return true
+	}
+}
+
+// Dispatch validates the event payload and delegates to the appropriate domain service method via router.
+func (h *LifecycleHandler) Dispatch(ctx context.Context, routingKey string, body []byte) error {
+	if h.service == nil {
+		return errors.New("lifecycle service is required")
+	}
+	return h.router.Dispatch(ctx, routingKey, body)
 }
 
 // HandleDelivery processes one AMQP message with transport validation, dispatch, and DLQ/retry rules.
@@ -211,14 +165,30 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 		return
 	}
 
+	var meta struct {
+		ErrandID uuid.UUID `json:"errandId"`
+		Version  *int64    `json:"version"`
+	}
+	_ = json.Unmarshal(d.Body, &meta)
+
+	var logAttrs []any
+	logAttrs = append(logAttrs, "routingKey", d.RoutingKey)
+	if meta.ErrandID != uuid.Nil {
+		logAttrs = append(logAttrs, "errandId", meta.ErrandID)
+	}
+	if meta.Version != nil {
+		logAttrs = append(logAttrs, "version", *meta.Version)
+	}
+
 	err := h.Dispatch(ctx, d.RoutingKey, d.Body)
 	if err == nil {
 		_ = d.Ack(false)
 		return
 	}
 
-	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) {
-		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", "routingKey", d.RoutingKey, "error", err)
+	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) || errors.Is(err, credit.ErrRequesterMismatch) {
+		attrs := append(logAttrs, "error", err)
+		h.logger.Warn("rejecting contract or lifecycle violation to DLQ", attrs...)
 		_ = d.Nack(false, false)
 		return
 	}
@@ -226,39 +196,41 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 	attempt := getDeliveryAttempt(d)
 	if errors.Is(err, credit.ErrReservationNotFound) {
 		if d.RoutingKey == RoutingFailed {
-			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", "routingKey", d.RoutingKey)
+			h.logger.Info("errand.failed for unreserved errand acknowledged as no-op", logAttrs...)
 			_ = d.Ack(false)
 			return
 		}
 		if attempt >= 5 {
-			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+			attrs := append(logAttrs, "attempt", attempt, "error", err)
+			h.logger.Error("reservation not found retry attempts exhausted, dead-lettering to DLQ", attrs...)
 			_ = d.Nack(false, false)
 			return
 		}
-		h.logger.Warn("reservation not found for lifecycle event, requeuing", "routingKey", d.RoutingKey, "attempt", attempt)
+		attrs := append(logAttrs, "attempt", attempt)
+		h.logger.Warn("reservation not found for lifecycle event, requeuing", attrs...)
+		if !h.waitRetryBackoff(ctx, attempt) {
+			return
+		}
 		_ = d.Nack(false, true)
 		return
 	}
 
 	if attempt >= 5 {
-		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+		attrs := append(logAttrs, "attempt", attempt, "error", err)
+		h.logger.Error("temporary error retry attempts exhausted, dead-lettering to DLQ", attrs...)
 		_ = d.Nack(false, false)
 		return
 	}
-	h.logger.Warn("retrying lifecycle event after temporary error", "routingKey", d.RoutingKey, "attempt", attempt, "error", err)
+	attrs := append(logAttrs, "attempt", attempt, "error", err)
+	h.logger.Warn("retrying lifecycle event after temporary error", attrs...)
+	if !h.waitRetryBackoff(ctx, attempt) {
+		return
+	}
 	_ = d.Nack(false, true)
 }
 
 func (h *LifecycleHandler) checkClockSkew(eventID uuid.UUID, occurredAt time.Time) {
-	skew := time.Since(occurredAt)
-	if math.Abs(skew.Minutes()) > 10 {
-		h.logger.Warn("implausible clock skew detected on event",
-			"eventId", eventID,
-			"occurredAt", occurredAt,
-			"receivedAt", time.Now().UTC(),
-			"skew", skew.String(),
-		)
-	}
+	checkClockSkew(h.logger, eventID, occurredAt)
 }
 
 func validateTransport(routingKey, contentType, contentEncoding string, body []byte, allowedRoutingKeys []string) error {

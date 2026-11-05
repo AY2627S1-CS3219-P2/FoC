@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Completed Credit Service domain models, enums, limits, and checked arithmetic helpers per sourceOfTruth.md Phase 3.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit
 
@@ -145,6 +145,7 @@ type OperationResult struct {
 	OperationType       CreditOperationType
 	ErrandID            uuid.UUID
 	CurrentAmount       int64
+	CurrVersion         int64
 	NewAmount           int64
 	OutcomeCode         CreditOperationOutcome
 	ResultingAmount     *int64

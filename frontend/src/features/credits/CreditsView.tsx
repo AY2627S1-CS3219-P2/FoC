@@ -413,7 +413,7 @@ function formatWhen(iso: string): string {
   const time = date.toLocaleTimeString("en-SG", {
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   });
   return `${day}, ${time}`;
 }

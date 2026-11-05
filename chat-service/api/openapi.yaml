@@ -1,0 +1,452 @@
+openapi: 3.0.3
+info:
+  title: Friend on Campus - Chat Service API
+  version: 1.0.0
+  description: Errand-scoped real-time messaging between requesters and couriers.
+paths:
+  /ws-ticket:
+    post:
+      summary: Obtain single-use handshake ticket for WebSocket connection
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Ephemeral 30s ticket generated
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ticket
+                properties:
+                  ticket:
+                    type: string
+                    format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /conversations:
+    get:
+      summary: List conversations for caller (or filter by errandId)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: errandId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /conversations/{conversationId}:
+    get:
+      summary: Get details of a single conversation
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Conversation details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /conversations/{conversationId}/messages:
+    get:
+      summary: Fetch paginated message history
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: cursor
+          in: query
+          required: false
+          description: Composite cursor (timestamp_id) for pagination
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          description: Reconnect catch-up timestamp (ISO8601)
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+            maximum: 100
+      responses:
+        '200':
+          description: Message page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessagePage'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    post:
+      summary: Send text or image message
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - client_message_id
+                - text
+              properties:
+                client_message_id:
+                  type: string
+                  format: uuid
+                text:
+                  type: string
+                  maxLength: 250
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - client_message_id
+                - image
+              properties:
+                client_message_id:
+                  type: string
+                  format: uuid
+                image:
+                  type: string
+                  format: binary
+      responses:
+        '200':
+          description: Message created or existing message returned (idempotent)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '413':
+          description: File size exceeds 10MB
+        '423':
+          description: Conversation is read-only
+
+  /images/{imageId}:
+    get:
+      summary: Download image binary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: imageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Raw image bytes
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/png:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /conversations/{conversationId}/read:
+    post:
+      summary: Mark conversation as read up to current time
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Read timestamp updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  last_read_at:
+                    type: string
+                    format: date-time
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /unread-summary:
+    get:
+      summary: Get unread status for current caller
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Unread summary
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - has_unread
+                  - unread_errand_ids
+                properties:
+                  has_unread:
+                    type: boolean
+                  unread_errand_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /ws:
+    get:
+      summary: WebSocket connection upgrade endpoint
+      parameters:
+        - name: ticket
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '101':
+          description: Switching Protocols to WebSocket
+
+  /admin/conversations:
+    get:
+      summary: Admin-only inspection of all conversations (audited)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: errandId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: List of conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Conversation'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Conversation:
+      type: object
+      required:
+        - id
+        - errand_id
+        - requester_id
+        - courier_id
+        - status
+        - read_only
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        errand_id:
+          type: string
+          format: uuid
+        requester_id:
+          type: string
+          format: uuid
+        courier_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [ACTIVE, FROZEN]
+        read_only:
+          type: boolean
+        errand_completed_at:
+          type: string
+          format: date-time
+          nullable: true
+        has_unread:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      required:
+        - id
+        - conversation_id
+        - sender_id
+        - message_type
+        - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        sender_id:
+          type: string
+          format: uuid
+        message_type:
+          type: string
+          enum: [TEXT, IMAGE]
+        text_content:
+          type: string
+          nullable: true
+        media_id:
+          type: string
+          format: uuid
+          nullable: true
+        media_url:
+          type: string
+          nullable: true
+        client_message_id:
+          type: string
+          format: uuid
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    MessagePage:
+      type: object
+      required:
+        - messages
+        - has_more
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/ChatMessage'
+        next_cursor:
+          type: string
+          nullable: true
+        has_more:
+          type: boolean
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Missing or invalid token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Access forbidden
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

@@ -14,8 +14,20 @@ import (
 	"foc/user-service/internal/user"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
+
+// auditContext says who the admin action on r is attributed to: the verified
+// principal (D-041, never a header) and the request id, which ties the audit row
+// to the access log.
+func auditContext(r *http.Request, p Principal) user.AuditContext {
+	return user.AuditContext{
+		ActorID:       p.UserID.String(),
+		ActorRole:     string(p.Role),
+		CorrelationID: middleware.GetReqID(r.Context()),
+	}
+}
 
 // AI-generated (edited by ZI YANG): avoids describing the domain account as a
 // public response, because it includes fields selected later by the handler.
@@ -24,9 +36,10 @@ type ProfileGetter interface {
 	GetByID(context.Context, uuid.UUID) (*user.User, error)
 }
 
-// AccountStatusUpdater changes an account status.
+// AccountStatusUpdater changes an account status for an admin; the audit
+// context says which admin, and the change is logged with it (D-106).
 type AccountStatusUpdater interface {
-	UpdateAccountStatus(context.Context, uuid.UUID, user.AccountStatus) error
+	AdminUpdateAccountStatus(context.Context, user.AuditContext, uuid.UUID, user.AccountStatus) error
 }
 
 // ProfileUpdater changes mutable profile fields.
@@ -34,9 +47,10 @@ type ProfileUpdater interface {
 	UpdateProfile(context.Context, uuid.UUID, string, string, string, string) (*user.User, error)
 }
 
-// AdminProfileUpdater changes another account's mutable profile fields.
+// AdminProfileUpdater changes another account's mutable profile fields for an
+// admin, and logs the change under the audit context (D-106).
 type AdminProfileUpdater interface {
-	UpdateProfileAsAdmin(context.Context, uuid.UUID, string, string, string) (*user.User, error)
+	AdminUpdateProfile(context.Context, user.AuditContext, uuid.UUID, string, string, string) (*user.User, error)
 }
 
 // ProfileDependencies contains only the operations required by ProfileHandler.
@@ -115,11 +129,16 @@ func (h ProfileHandler) UpdateStatus(w http.ResponseWriter, r *http.Request) {
 		writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("account status updater is required"), "account status unavailable")
 		return
 	}
-	if err := h.deps.StatusUpdater.UpdateAccountStatus(r.Context(), uid, request.Status); err != nil {
+	if err := h.deps.StatusUpdater.AdminUpdateAccountStatus(r.Context(), auditContext(r, p), uid, request.Status); err != nil {
 		// AI-generated (edited by ZI YANG): expose a missing account as the recorded 404 response.
 		if errors.Is(err, user.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, map[string]string{"error": "user not found"})
 			// AI-generated (edited by ZI YANG): maps the recorded last-active-admin guard to its public conflict response.
+			// D-118 and D-119: no admin account is suspended, by another admin or by its owner.
+		} else if errors.Is(err, user.ErrCannotSuspendSelf) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "you cannot suspend your own account"})
+		} else if errors.Is(err, user.ErrCannotSuspendAdmin) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "an admin account cannot be suspended"})
 		} else if errors.Is(err, user.ErrLastAdmin) {
 			writeJSON(w, http.StatusConflict, map[string]string{"error": "cannot suspend the last active admin"})
 		} else if errors.Is(err, user.ErrAccountUnverified) {
@@ -162,7 +181,7 @@ func (h ProfileHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 			writeError(r.Context(), w, h.deps.Logger, http.StatusInternalServerError, errors.New("admin profile updater is required"), "profile unavailable")
 			return
 		}
-		account, err = h.deps.AdminProfileUpdater.UpdateProfileAsAdmin(r.Context(), uid, request.Username, request.PhoneNum, request.NewPassword)
+		account, err = h.deps.AdminProfileUpdater.AdminUpdateProfile(r.Context(), auditContext(r, p), uid, request.Username, request.PhoneNum, request.NewPassword)
 	} else {
 		account, err = h.deps.ProfileUpdater.UpdateProfile(r.Context(), uid, request.Username, request.PhoneNum, request.CurrentPassword, request.NewPassword)
 	}

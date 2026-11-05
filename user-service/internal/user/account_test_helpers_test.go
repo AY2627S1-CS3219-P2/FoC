@@ -13,6 +13,16 @@ import (
 )
 
 type fakeAccountRepository struct {
+	// What the admin tests read and steer (see admin_test.go).
+	audits                 []*AuditEntry
+	auditedStatus          *AuditEntry
+	adminEntries           []*AuditEntry
+	auditedErr             error
+	recordAuditErr         error
+	searchPage             *UserPage
+	searched               UserFilter
+	purged                 chan struct{}
+	purgeErr               error
 	user                   *User
 	hasAdmin               bool
 	activeAdmins           int

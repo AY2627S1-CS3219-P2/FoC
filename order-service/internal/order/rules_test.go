@@ -136,9 +136,9 @@ func effectOf(a order.APIAction, p party) effect {
 	case order.APIAmend:
 		return effect{order.StateOpen, order.ActionAmend, order.ActorRequester, ""}
 	case order.APIAccept:
-		return effect{order.StateAccepted, order.ActionAccept, order.ActorCourier, ""}
+		return effect{order.StateAccepted, order.ActionAccept, order.ActorCourier, order.RoutingAccepted}
 	case order.APIWithdraw:
-		return effect{order.StateOpen, order.ActionWithdraw, order.ActorCourier, ""}
+		return effect{order.StateOpen, order.ActionWithdraw, order.ActorCourier, order.RoutingWithdrawn}
 	case order.APIPickUp:
 		return effect{order.StatePickedUp, order.ActionPickUp, order.ActorCourier, ""}
 	case order.APIDeliver:

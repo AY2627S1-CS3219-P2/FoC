@@ -1,6 +1,5 @@
-// AI Assistance Disclosure:
-// Tool: Antigravity, date: 2026-10-19
-// Scope: Composition root, first-error coordinator, and graceful shutdown wiring per sourceOfTruth.md Phase 12.
+// Package main provides the entrypoint for the credit-service daemon.
+//
 // Author review: PENDING - reviewer to complete
 
 package main
@@ -114,27 +113,13 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	lifeHandler := messaging.NewLifecycleHandler(creditService, logger.With("component", "lifecycle_handler"))
 	supervisor := messaging.NewSupervisor(
 		cfg.RabbitMQURL,
-		regHandler,
-		lifeHandler,
 		cfg.WorkerConcurrency,
 		logger.With("component", "messaging_supervisor"),
+		regHandler,
+		lifeHandler,
 	)
 
 	// Background Workers
-	payoutWorker := worker.NewPendingPayoutWorker(
-		creditRepo,
-		cfg.PayoutRetryInterval,
-		cfg.PayoutAlertAfter,
-		cfg.PayoutBatchSize,
-		logger.With("component", "pending_payout_worker"),
-	)
-	refundWorker := worker.NewPendingRefundWorker(
-		creditRepo,
-		cfg.RefundRetryInterval,
-		cfg.RefundAlertAfter,
-		cfg.RefundBatchSize,
-		logger.With("component", "pending_refund_worker"),
-	)
 	reconciliationWorker := worker.NewReconciliationWorker(
 		creditRepo,
 		cfg.ReconciliationInterval,
@@ -181,24 +166,6 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Info("starting messaging supervisor")
 		if err := supervisor.Run(intakeCtx); err != nil && !errors.Is(err, context.Canceled) {
 			coord.report("messaging_supervisor", fmt.Errorf("messaging supervisor: %w", err))
-		}
-	}()
-
-	coord.wg.Add(1)
-	go func() {
-		defer coord.wg.Done()
-		logger.Info("starting pending payout worker")
-		if err := payoutWorker.Run(intakeCtx); err != nil && !errors.Is(err, context.Canceled) {
-			coord.report("pending_payout_worker", fmt.Errorf("pending payout worker: %w", err))
-		}
-	}()
-
-	coord.wg.Add(1)
-	go func() {
-		defer coord.wg.Done()
-		logger.Info("starting pending refund worker")
-		if err := refundWorker.Run(intakeCtx); err != nil && !errors.Is(err, context.Canceled) {
-			coord.report("pending_refund_worker", fmt.Errorf("pending refund worker: %w", err))
 		}
 	}()
 

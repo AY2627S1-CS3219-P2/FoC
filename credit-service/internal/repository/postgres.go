@@ -1,6 +1,6 @@
 // AI Assistance Disclosure:
 // Tool: Codex (model: GPT-5), date: 2026-10-12
-// Scope: Generated F4.1 PostgreSQL adapter for idempotent initial credit allocation.
+// Scope: Generated F4.1 PostgreSQL adapter for idempotent initial credit allocation and universal lazy wallet initialization.
 // Author review: choppyback - rejected fetching and locking the existing account
 // on duplicate registration events; changed duplicate handling to close the DB
 // transaction and return success without inserting another transaction record.
@@ -31,30 +31,24 @@ func NewPostgresRepository(pool *pgxpool.Pool) *PostgresRepository {
 
 // AllocateInitialCredits creates an account and registration-allocation ledger entry once.
 func (r *PostgresRepository) AllocateInitialCredits(ctx context.Context, userID uuid.UUID, amount int64, occurredAt time.Time) error {
-	tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
-	if err != nil {
-		return fmt.Errorf("begin initial allocation transaction: %w", err)
-	}
-	defer func() {
-		_ = tx.Rollback(ctx)
-	}()
+	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
+		return ensureWalletInitialized(txCtx, tx, userID, amount, occurredAt)
+	})
+}
 
+// ensureWalletInitialized atomically inserts a starting wallet with initial credits and ledger entry if absent.
+func ensureWalletInitialized(ctx context.Context, tx pgx.Tx, userID uuid.UUID, amount int64, occurredAt time.Time) error {
+	if amount <= 0 {
+		amount = credit.InitialAllocationCredits
+	}
 	inserted, err := insertInitialAccount(ctx, tx, userID, amount, occurredAt)
 	if err != nil {
 		return err
 	}
-	if !inserted {
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("commit initial allocation transaction (duplicate): %w", err)
+	if inserted {
+		if err := insertInitialAllocationTransaction(ctx, tx, userID, amount, occurredAt); err != nil {
+			return err
 		}
-		return nil
-	}
-
-	if err := insertInitialAllocationTransaction(ctx, tx, userID, amount, occurredAt); err != nil {
-		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit initial allocation transaction: %w", err)
 	}
 	return nil
 }

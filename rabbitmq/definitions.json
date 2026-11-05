@@ -46,7 +46,7 @@
   ],
   "queues": [
     {
-      "name": "credit.registration",
+      "name": "credit.users",
       "vhost": "foc",
       "durable": true,
       "auto_delete": false,
@@ -54,7 +54,7 @@
         "x-queue-type": "quorum",
         "x-delivery-limit": 5,
         "x-dead-letter-exchange": "foc.dlx",
-        "x-dead-letter-routing-key": "credit.registration.failed",
+        "x-dead-letter-routing-key": "credit.users.failed",
         "x-dead-letter-strategy": "at-least-once",
         "x-overflow": "reject-publish",
         "x-max-length": 100000,
@@ -62,7 +62,7 @@
       }
     },
     {
-      "name": "credit.errand.lifecycle",
+      "name": "credit.errands",
       "vhost": "foc",
       "durable": true,
       "auto_delete": false,
@@ -70,7 +70,7 @@
         "x-queue-type": "quorum",
         "x-delivery-limit": 5,
         "x-dead-letter-exchange": "foc.dlx",
-        "x-dead-letter-routing-key": "credit.errand.lifecycle.failed",
+        "x-dead-letter-routing-key": "credit.errands.failed",
         "x-dead-letter-strategy": "at-least-once",
         "x-overflow": "reject-publish",
         "x-max-length": 100000,
@@ -78,7 +78,7 @@
       }
     },
     {
-      "name": "credit.registration.dlq",
+      "name": "credit.users.dlq",
       "vhost": "foc",
       "durable": true,
       "auto_delete": false,
@@ -90,7 +90,35 @@
       }
     },
     {
-      "name": "credit.errand.lifecycle.dlq",
+      "name": "credit.errands.dlq",
+      "vhost": "foc",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-overflow": "reject-publish",
+        "x-max-length": 100000,
+        "x-max-length-bytes": 268435456
+      }
+    },
+    {
+      "name": "chat.errands",
+      "vhost": "foc",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-delivery-limit": 5,
+        "x-dead-letter-exchange": "foc.dlx",
+        "x-dead-letter-routing-key": "chat.errands.failed",
+        "x-dead-letter-strategy": "at-least-once",
+        "x-overflow": "reject-publish",
+        "x-max-length": 100000,
+        "x-max-length-bytes": 268435456
+      }
+    },
+    {
+      "name": "chat.errands.dlq",
       "vhost": "foc",
       "durable": true,
       "auto_delete": false,
@@ -106,7 +134,7 @@
     {
       "source": "foc.events",
       "vhost": "foc",
-      "destination": "credit.registration",
+      "destination": "credit.users",
       "destination_type": "queue",
       "routing_key": "user.registered",
       "arguments": {}
@@ -114,7 +142,7 @@
     {
       "source": "foc.events",
       "vhost": "foc",
-      "destination": "credit.errand.lifecycle",
+      "destination": "credit.errands",
       "destination_type": "queue",
       "routing_key": "errand.completed",
       "arguments": {}
@@ -122,7 +150,7 @@
     {
       "source": "foc.events",
       "vhost": "foc",
-      "destination": "credit.errand.lifecycle",
+      "destination": "credit.errands",
       "destination_type": "queue",
       "routing_key": "errand.cancelled",
       "arguments": {}
@@ -130,7 +158,7 @@
     {
       "source": "foc.events",
       "vhost": "foc",
-      "destination": "credit.errand.lifecycle",
+      "destination": "credit.errands",
       "destination_type": "queue",
       "routing_key": "errand.expired",
       "arguments": {}
@@ -138,7 +166,7 @@
     {
       "source": "foc.events",
       "vhost": "foc",
-      "destination": "credit.errand.lifecycle",
+      "destination": "credit.errands",
       "destination_type": "queue",
       "routing_key": "errand.failed",
       "arguments": {}
@@ -146,7 +174,7 @@
     {
       "source": "foc.events",
       "vhost": "foc",
-      "destination": "credit.errand.lifecycle",
+      "destination": "credit.errands",
       "destination_type": "queue",
       "routing_key": "errand.reward_set",
       "arguments": {}
@@ -154,17 +182,65 @@
     {
       "source": "foc.dlx",
       "vhost": "foc",
-      "destination": "credit.registration.dlq",
+      "destination": "credit.users.dlq",
       "destination_type": "queue",
-      "routing_key": "credit.registration.failed",
+      "routing_key": "credit.users.failed",
       "arguments": {}
     },
     {
       "source": "foc.dlx",
       "vhost": "foc",
-      "destination": "credit.errand.lifecycle.dlq",
+      "destination": "credit.errands.dlq",
       "destination_type": "queue",
-      "routing_key": "credit.errand.lifecycle.failed",
+      "routing_key": "credit.errands.failed",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "chat.errands",
+      "destination_type": "queue",
+      "routing_key": "errand.accepted",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "chat.errands",
+      "destination_type": "queue",
+      "routing_key": "errand.withdrawn",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "chat.errands",
+      "destination_type": "queue",
+      "routing_key": "errand.completed",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "chat.errands",
+      "destination_type": "queue",
+      "routing_key": "errand.cancelled",
+      "arguments": {}
+    },
+    {
+      "source": "foc.events",
+      "vhost": "foc",
+      "destination": "chat.errands",
+      "destination_type": "queue",
+      "routing_key": "errand.expired",
+      "arguments": {}
+    },
+    {
+      "source": "foc.dlx",
+      "vhost": "foc",
+      "destination": "chat.errands.dlq",
+      "destination_type": "queue",
+      "routing_key": "chat.errands.failed",
       "arguments": {}
     }
   ]

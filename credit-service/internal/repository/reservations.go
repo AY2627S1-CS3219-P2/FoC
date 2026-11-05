@@ -1,57 +1,62 @@
 // AI Assistance Disclosure:
-// Tool: Antigravity, date: 2026-10-19
-// Scope: Implemented PostgreSQL reservation creation and reward adjustment transactions per sourceOfTruth.md Phases 4 & 5.
-// Author review: PENDING - reviewer to complete
+// Tool: Antigravity, date: 2026-11-03
+// Scope: Removed credit_operation_results dependency; reward adjustment and reward_set idempotency backed by credit_transactions ledger and reservation version. Lazy wallet initialization on reservation creation.
+// Author review: Reviewed by Seth
 
 package repository
 
-// AI-generated (edited by choppyback).
 import (
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"foc/credit-service/internal/credit"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
-var _ credit.ReservationRepository = (*PostgresRepository)(nil)
-
-var errReservationRaceLost = errors.New("concurrent reservation creation race lost")
-
-// advisoryLockKey converts a UUID into a deterministic int64 for PostgreSQL transaction advisory locking.
-func advisoryLockKey(id uuid.UUID) int64 {
-	return int64(binary.BigEndian.Uint64(id[0:8]) ^ binary.BigEndian.Uint64(id[8:16]))
-}
-
-// CreateReservation executes the idempotent reservation creation transaction described in Phase 4.
-func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error) {
-	var result *credit.Reservation
-	var created bool
+// CreateReservation executes the idempotent reservation transaction described in Phase 4.
+func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error) {
+	var (
+		res     *credit.Reservation
+		created bool
+	)
 
 	err := r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		// 1. Read by errandId. If a committed reservation already exists, classify it without locking requester account.
+		// 1. Transaction-scoped PostgreSQL advisory lock derived from errandId.
+		if _, err := tx.Exec(txCtx, "SELECT pg_advisory_xact_lock($1)", advisoryLockKey(errandID)); err != nil {
+			return fmt.Errorf("acquire advisory lock: %w", err)
+		}
+
+		// 2. Look up reservation by errandId.
 		existing, err := findReservationByErrandID(txCtx, tx, errandID)
 		if err != nil {
 			return err
 		}
+
+		// 3. If row exists:
 		if existing != nil {
-			if existing.Status == credit.ReservationStatusReserved {
-				if existing.RequesterID == requesterID && existing.Amount == amount {
-					result = existing
-					created = false
-					return nil
-				}
+			if existing.RequesterID != requesterID || existing.Amount != amount {
 				return credit.ErrReservationConflict
 			}
-			return credit.ErrReservationStateConflict
+			if existing.Status != credit.ReservationStatusReserved {
+				return credit.ErrReservationConflict
+			}
+			res = existing
+			created = false
+			return nil
 		}
 
-		// 2. If no reservation exists, lock the requester account first.
+		// 4. Ensure requester wallet exists (lazy initialization) and lock it.
+		if err := ensureWalletInitialized(txCtx, tx, requesterID, credit.InitialAllocationCredits, time.Now().UTC()); err != nil {
+			return fmt.Errorf("ensure requester wallet initialized: %w", err)
+		}
+
 		var (
 			availableCredits int64
 			reservedCredits  int64
@@ -66,45 +71,21 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID uui
 			requesterID,
 		).Scan(&availableCredits, &reservedCredits, &version, &integrityStatus)
 		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return credit.ErrWalletNotReady
-			}
 			return fmt.Errorf("lock requester account: %w", err)
 		}
 
-		// 3. Reject a FLAGGED account as an integrity failure.
+		// 5. Account integrity checks.
 		if integrityStatus == credit.IntegrityFlagged {
 			return credit.ErrAccountIntegrityFlagged
 		}
-
-		// 4. Insert the RESERVED reservation with ON CONFLICT (errand_id) DO NOTHING RETURNING ...
-		var res credit.Reservation
-		err = tx.QueryRow(txCtx, `
-			INSERT INTO credit_reservations (
-				errand_id, requester_id, amount, status, version, created_at, updated_at
-			)
-			VALUES ($1, $2, $3, 'RESERVED', 1, NOW(), NOW())
-			ON CONFLICT (errand_id) DO NOTHING
-			RETURNING id, errand_id, requester_id, amount, status, version, created_at, updated_at`,
-			errandID, requesterID, amount,
-		).Scan(
-			&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
-			&res.Status, &res.Version, &res.CreatedAt, &res.UpdatedAt,
-		)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				// 5. If the insert loses a concurrent race, roll back this attempt.
-				return errReservationRaceLost
-			}
-			return fmt.Errorf("insert reservation: %w", err)
-		}
-
-		// 6. Use a conditional check to ensure available credits are at least requested amount.
 		if availableCredits < amount {
 			return credit.ErrInsufficientCredits
 		}
+		if reservedCredits+amount > credit.MaxBalanceCredits {
+			return credit.ErrCreditLimitExceeded
+		}
 
-		// 7. Move the amount from available to reserved and increment account version.
+		// 6. Update credit_accounts.
 		cmdTag, err := tx.Exec(txCtx, `
 			UPDATE credit_accounts
 			SET available_credits = available_credits - $1,
@@ -115,13 +96,34 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID uui
 			amount, requesterID,
 		)
 		if err != nil {
-			return fmt.Errorf("update requester balances: %w", err)
+			return fmt.Errorf("update credit account balances: %w", err)
 		}
 		if cmdTag.RowsAffected() != 1 {
 			return credit.ErrInsufficientCredits
 		}
 
-		// 8. Generate one internal operation ID and insert the AVAILABLE negative and RESERVED positive ledger rows under it.
+		// 7. Insert credit_reservations row.
+		var newRes credit.Reservation
+		err = tx.QueryRow(txCtx, `
+			INSERT INTO credit_reservations (
+				errand_id, requester_id, amount, status, version, created_at, updated_at
+			)
+			VALUES ($1, $2, $3, 'RESERVED', 1, NOW(), NOW())
+			RETURNING id, errand_id, requester_id, amount, status, version, created_at, updated_at`,
+			errandID, requesterID, amount,
+		).Scan(
+			&newRes.ID, &newRes.ErrandID, &newRes.RequesterID, &newRes.Amount,
+			&newRes.Status, &newRes.Version, &newRes.CreatedAt, &newRes.UpdatedAt,
+		)
+		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return credit.ErrReservationConflict
+			}
+			return fmt.Errorf("insert reservation: %w", err)
+		}
+
+		// 8. Generate new operationId and append two balanced ledger rows.
 		opID := uuid.New()
 		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
@@ -133,118 +135,69 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID uui
 			requesterID, errandID, opID, amount,
 		)
 		if err != nil {
-			return fmt.Errorf("insert reservation transactions: %w", err)
+			return fmt.Errorf("insert reservation ledger entries: %w", err)
 		}
 
-		result = &res
+		res = &newRes
 		created = true
 		return nil
 	})
 
-	// If concurrent race was lost, classify the winner in a fresh read transaction
-	if errors.Is(err, errReservationRaceLost) {
-		return r.classifyCommittedReservation(ctx, errandID, requesterID, amount)
-	}
 	if err != nil {
 		return nil, false, err
 	}
-	return result, created, nil
+	return res, created, nil
 }
 
-func (r *PostgresRepository) classifyCommittedReservation(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, amount int64) (*credit.Reservation, bool, error) {
-	var result *credit.Reservation
-	err := r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		existing, err := findReservationByErrandID(txCtx, tx, errandID)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return fmt.Errorf("%w: concurrent reservation rolled back", credit.ErrServiceUnavailable)
-		}
-		if existing.Status == credit.ReservationStatusReserved {
-			if existing.RequesterID == requesterID && existing.Amount == amount {
-				result = existing
-				return nil
-			}
-			return credit.ErrReservationConflict
-		}
-		return credit.ErrReservationStateConflict
-	})
-	if err != nil {
-		return nil, false, err
+// AdjustReservationReward executes the reward adjustment transaction.
+// Idempotency is backed by the immutable credit_transactions ledger and reservation version.
+func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+	if currVersion < 1 || currVersion == math.MaxInt64 {
+		return nil, nil, fmt.Errorf("%w: currVersion cannot advance", credit.ErrInvalidRequest)
 	}
-	return result, false, nil
-}
-
-func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUID) (*credit.Reservation, error) {
-	var res credit.Reservation
-	err := tx.QueryRow(ctx, `
-		SELECT id, errand_id, requester_id, amount, status, version, created_at, updated_at
-		FROM credit_reservations
-		WHERE errand_id = $1`,
-		errandID,
-	).Scan(
-		&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
-		&res.Status, &res.Version, &res.CreatedAt, &res.UpdatedAt,
-	)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("find reservation by errand ID: %w", err)
-	}
-	return &res, nil
-}
-
-// AdjustReservationReward executes the reward adjustment transaction described in Phase 5.
-func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errandID uuid.UUID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
-	var resOp *credit.OperationResult
+	targetVersion := currVersion + 1
 	var resRev *credit.Reservation
-	var businessErr error
 
 	err := r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
-		// The transaction runner may retry this callback, so discard values from
-		// any attempt that did not commit.
-		resOp, resRev, businessErr = nil, nil, nil
+		resRev = nil
 
 		// 1. Transaction-scoped PostgreSQL advisory lock derived from operationId.
 		if _, err := tx.Exec(txCtx, "SELECT pg_advisory_xact_lock($1)", advisoryLockKey(operationID)); err != nil {
 			return fmt.Errorf("acquire advisory lock: %w", err)
 		}
 
-		// 2. Look up operationId.
-		var op credit.OperationResult
-		err := tx.QueryRow(txCtx, `
-			SELECT operation_id, operation_type, errand_id, current_amount, new_amount,
-			       outcome_code, resulting_amount, authoritative_amount, created_at
-			FROM credit_operation_results
-			WHERE operation_id = $1`,
-			operationID,
-		).Scan(
-			&op.OperationID, &op.OperationType, &op.ErrandID, &op.CurrentAmount, &op.NewAmount,
-			&op.OutcomeCode, &op.ResultingAmount, &op.AuthoritativeAmount, &op.CreatedAt,
+		// 2. Check if this operationId was already committed in the ledger.
+		var (
+			existingErrandID   uuid.UUID
+			existingUserID     uuid.UUID
+			existingResVersion *int64
 		)
+		err := tx.QueryRow(txCtx, `
+			SELECT errand_id, user_id, reservation_version
+			FROM credit_transactions
+			WHERE operation_id = $1 AND balance_bucket = 'RESERVED'
+			LIMIT 1`,
+			operationID,
+		).Scan(&existingErrandID, &existingUserID, &existingResVersion)
 		if err == nil {
-			// Row exists. Compare stored fields directly.
-			if op.OperationType != credit.OperationTypeRewardAdjustment || op.ErrandID != errandID || op.NewAmount != newReward {
+			// Operation already committed. Verify it was for the exact same errand, requester, and target version.
+			if existingErrandID != errandID || existingUserID != requesterID {
+				return credit.ErrIdempotencyConflict
+			}
+			if existingResVersion != nil && *existingResVersion != targetVersion {
 				return credit.ErrIdempotencyConflict
 			}
 			existing, err := findReservationByErrandID(txCtx, tx, errandID)
 			if err != nil {
 				return err
 			}
-			if existing == nil || existing.RequesterID != requesterID {
+			if existing == nil {
 				return credit.ErrReservationNotFound
 			}
-			resOp = &op
-			if op.OutcomeCode == credit.OutcomeSuccess {
-				resRev = existing
-				return nil
-			}
-			businessErr = mapOutcomeToError(op.OutcomeCode, op.AuthoritativeAmount)
+			resRev = existing
 			return nil
 		} else if !errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("lookup operation result: %w", err)
+			return fmt.Errorf("lookup operation in ledger: %w", err)
 		}
 
 		// 3. Lock the reservation by errandId.
@@ -262,7 +215,6 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				// Reservation not found is not persisted as an operation result.
 				return credit.ErrReservationNotFound
 			}
 			return fmt.Errorf("lock reservation for adjust: %w", err)
@@ -271,34 +223,28 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			return credit.ErrReservationNotFound
 		}
 		currentAmount := reservation.Amount
-		persistFailure := func(outcome credit.CreditOperationOutcome) error {
-			opRecord, persistErr := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, outcome, nil, nil)
-			if persistErr != nil {
-				return persistErr
-			}
-			resOp = opRecord
-			businessErr = mapOutcomeToError(outcome, nil)
-			return nil
-		}
 
 		// 4. Require reservation status RESERVED.
 		if reservation.Status != credit.ReservationStatusReserved {
-			return persistFailure(credit.OutcomeReservationStateConflict)
+			return credit.ErrReservationConflict
+		}
+		// Reject stale requests from an earlier order state.
+		// Requests where currVersion >= reservation.Version are accepted, allowing raises after non-credit edits.
+		if currVersion < reservation.Version {
+			return credit.ErrReservationConflict
 		}
 
-		// 5. If currentAmount == newAmount, persist successful result and return unchanged reservation (validated idempotent no-op).
+		// 5. If currentAmount == newAmount, update version and return unchanged reservation (validated idempotent no-op).
 		if currentAmount == newAmount {
-			resulting := currentAmount
-			opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeSuccess, &resulting, nil)
-			if err != nil {
-				return err
+			if _, err := tx.Exec(txCtx, `UPDATE credit_reservations SET version = $1, updated_at = NOW() WHERE id = $2`, targetVersion, reservation.ID); err != nil {
+				return fmt.Errorf("update reservation version: %w", err)
 			}
-			resOp = opRecord
+			reservation.Version = targetVersion
 			resRev = &reservation
 			return nil
 		}
 
-		// 7. Otherwise, lock and verify the requester account.
+		// 6. Otherwise, lock and verify the requester account.
 		var (
 			availableCredits int64
 			reservedCredits  int64
@@ -314,13 +260,13 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		).Scan(&availableCredits, &reservedCredits, &version, &integrityStatus)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return persistFailure(credit.OutcomeWalletNotReady)
+				return credit.ErrWalletNotReady
 			}
 			return fmt.Errorf("lock requester account for adjust: %w", err)
 		}
 
 		if integrityStatus == credit.IntegrityFlagged {
-			return persistFailure(credit.OutcomeAccountIntegrityFailure)
+			return credit.ErrAccountIntegrityFlagged
 		}
 
 		diff := newAmount - currentAmount
@@ -329,10 +275,10 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 		if diff > 0 {
 			// Increase: move positive diff from available to reserved
 			if availableCredits < diff {
-				return persistFailure(credit.OutcomeInsufficientCredits)
+				return credit.ErrInsufficientCredits
 			}
 			if reservedCredits+diff > credit.MaxBalanceCredits {
-				return persistFailure(credit.OutcomeCreditLimitExceeded)
+				return credit.ErrCreditLimitExceeded
 			}
 
 			cmdTag, err := tx.Exec(txCtx, `
@@ -352,7 +298,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			// Decrease: move positive difference from reserved to available
 			absDiff := -diff
 			if availableCredits+absDiff > credit.MaxBalanceCredits {
-				return persistFailure(credit.OutcomeCreditLimitExceeded)
+				return credit.ErrCreditLimitExceeded
 			}
 
 			cmdTag, err := tx.Exec(txCtx, `
@@ -370,14 +316,15 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			ledgerReason = credit.TransactionReasonRewardDecreased
 		}
 
-		// 10. Update the same reservation row's amount and updated_at.
+		// 7. Update the same reservation row's amount and version.
 		err = tx.QueryRow(txCtx, `
 			UPDATE credit_reservations
 			SET amount = $1,
+			    version = $3,
 			    updated_at = NOW()
 			WHERE id = $2
 			RETURNING id, errand_id, requester_id, amount, status, version, created_at, updated_at`,
-			newAmount, reservation.ID,
+			newAmount, reservation.ID, targetVersion,
 		).Scan(
 			&reservation.ID, &reservation.ErrandID, &reservation.RequesterID, &reservation.Amount,
 			&reservation.Status, &reservation.Version, &reservation.CreatedAt, &reservation.UpdatedAt,
@@ -386,7 +333,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			return fmt.Errorf("update reservation amount: %w", err)
 		}
 
-		// 11. Append two new ledger entries under operationId.
+		// 8. Append two new ledger entries under operationId.
 		var availDelta, resDelta int64
 		if diff > 0 {
 			availDelta = -diff
@@ -398,88 +345,37 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 
 		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				user_id, errand_id, operation_id, balance_bucket, amount, reason, reservation_version, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'AVAILABLE', $4, $6, NULL, NOW()),
-				($1, $2, $3, 'RESERVED', $5, $6, NULL, NOW())`,
-			reservation.RequesterID, errandID, operationID, availDelta, resDelta, ledgerReason,
+				($1, $2, $3, 'AVAILABLE', $4, $6, $7, NULL, NOW()),
+				($1, $2, $3, 'RESERVED', $5, $6, $7, NULL, NOW())`,
+			reservation.RequesterID, errandID, operationID, availDelta, resDelta, ledgerReason, targetVersion,
 		)
 		if err != nil {
 			return fmt.Errorf("insert adjustment ledger entries: %w", err)
 		}
 
-		// 12. Persist the successful operation result.
-		resulting := newAmount
-		opRecord, err := persistOperationResult(txCtx, tx, operationID, errandID, currentAmount, newAmount, credit.OutcomeSuccess, &resulting, nil)
-		if err != nil {
-			return err
-		}
-
-		resOp = opRecord
 		resRev = &reservation
 		return nil
 	})
 
 	if err != nil {
-		return resOp, nil, err
+		return nil, nil, err
 	}
-	if businessErr != nil {
-		return resOp, nil, businessErr
-	}
-	return resOp, resRev, nil
+	return nil, resRev, nil
 }
 
-func persistOperationResult(ctx context.Context, tx pgx.Tx, operationID uuid.UUID, errandID uuid.UUID, currentAmount, newAmount int64, outcome credit.CreditOperationOutcome, resulting, authoritative *int64) (*credit.OperationResult, error) {
-	var op credit.OperationResult
-	err := tx.QueryRow(ctx, `
-		INSERT INTO credit_operation_results (
-			operation_id, operation_type, errand_id, current_amount, new_amount,
-			outcome_code, resulting_amount, authoritative_amount, created_at
-		)
-		VALUES ($1, 'REWARD_ADJUSTMENT', $2, $3, $4, $5, $6, $7, NOW())
-		RETURNING operation_id, operation_type, errand_id, current_amount, new_amount,
-		          outcome_code, resulting_amount, authoritative_amount, created_at`,
-		operationID, errandID, currentAmount, newAmount, outcome, resulting, authoritative,
-	).Scan(
-		&op.OperationID, &op.OperationType, &op.ErrandID, &op.CurrentAmount, &op.NewAmount,
-		&op.OutcomeCode, &op.ResultingAmount, &op.AuthoritativeAmount, &op.CreatedAt,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("persist operation result: %w", err)
-	}
-	return &op, nil
-}
-
-func mapOutcomeToError(outcome credit.CreditOperationOutcome, authoritativeAmount *int64) error {
-	switch outcome {
-	case credit.OutcomeSuccess:
-		return nil
-	case credit.OutcomeWalletNotReady:
-		return credit.ErrWalletNotReady
-	case credit.OutcomeInsufficientCredits:
-		return credit.ErrInsufficientCredits
-	case credit.OutcomeReservationStateConflict:
-		return credit.ErrReservationStateConflict
-	case credit.OutcomeAccountIntegrityFailure:
-		return credit.ErrAccountIntegrityFlagged
-	case credit.OutcomeCreditLimitExceeded:
-		return credit.ErrCreditLimitExceeded
-	default:
-		return fmt.Errorf("stored operation failure: %s", outcome)
-	}
-}
-
-// ApplyRewardSet reconciles an existing reservation's reward amount with an errand.reward_set event (D-057).
-func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+// ApplyRewardSet applies an outbox errand.reward_set event to reconcile hold with committed decreases (D-057, D-102).
+func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
+		// Lock the reservation
 		var reservation credit.Reservation
 		err := tx.QueryRow(txCtx, `
 			SELECT id, errand_id, requester_id, amount, status, version, created_at, updated_at
 			FROM credit_reservations
 			WHERE errand_id = $1
-			FOR UPDATE`,
-			errandID,
+			FOR UPDATE`, errandID,
 		).Scan(
 			&reservation.ID, &reservation.ErrandID, &reservation.RequesterID, &reservation.Amount,
 			&reservation.Status, &reservation.Version, &reservation.CreatedAt, &reservation.UpdatedAt,
@@ -496,14 +392,26 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return nil
 		}
 
-		// AI-generated (edited by choppyback).
-		// D-057: Ignore only events older than the saved Order Service version.
-		// An equal-version event may be recovery for a PATCH whose response was lost.
-		if version < reservation.Version {
+		// A successful PATCH with this eventID already made the financial move in the ledger.
+		var appliedCount int
+		err = tx.QueryRow(txCtx, `
+			SELECT COUNT(*)
+			FROM credit_transactions
+			WHERE operation_id = $1 AND errand_id = $2`, eventID, errandID,
+		).Scan(&appliedCount)
+		if err == nil && appliedCount > 0 {
 			return nil
 		}
 
+		// Older events cannot change a hold already set for a newer order state.
+		if version < reservation.Version {
+			return credit.ErrRewardSetStale
+		}
+
 		diff := newReward - reservation.Amount
+		if diff > 0 {
+			return credit.ErrLifecycleViolation
+		}
 		if diff == 0 {
 			_, err := tx.Exec(txCtx, `
 				UPDATE credit_reservations
@@ -539,59 +447,29 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return credit.ErrAccountIntegrityFlagged
 		}
 
-		var ledgerReason credit.TransactionReason
-		if diff > 0 {
-			if availableCredits < diff {
-				_, _ = tx.Exec(txCtx, `
-					UPDATE credit_accounts
-					SET integrity_status = 'FLAGGED',
-					    integrity_flagged_at = COALESCE(integrity_flagged_at, NOW()),
-					    integrity_reason_code = 'REWARD_RESTORATION_DEFICIT',
-					    integrity_detail = 'insufficient available balance to apply errand.reward_set',
-					    updated_at = NOW()
-					WHERE user_id = $1`,
-					reservation.RequesterID,
-				)
-				return credit.ErrInsufficientCredits
-			}
-			if reservedCredits+diff > credit.MaxBalanceCredits {
-				return credit.ErrCreditLimitExceeded
-			}
-
-			cmdTag, err := tx.Exec(txCtx, `
-				UPDATE credit_accounts
-				SET available_credits = available_credits - $1,
-				    reserved_credits = reserved_credits + $1,
-				    version = version + 1,
-				    updated_at = NOW()
-				WHERE user_id = $2 AND available_credits >= $1`,
-				diff, reservation.RequesterID,
-			)
-			if err != nil || cmdTag.RowsAffected() != 1 {
-				return fmt.Errorf("debit requester available for reward_set increase: %w", err)
-			}
-			ledgerReason = credit.TransactionReasonRewardIncreased
-		} else {
-			absDiff := -diff
-			if availableCredits+absDiff > credit.MaxBalanceCredits {
-				return credit.ErrCreditLimitExceeded
-			}
-
-			cmdTag, err := tx.Exec(txCtx, `
-				UPDATE credit_accounts
-				SET available_credits = available_credits + $1,
-				    reserved_credits = reserved_credits - $1,
-				    version = version + 1,
-				    updated_at = NOW()
-				WHERE user_id = $2 AND reserved_credits >= $1`,
-				absDiff, reservation.RequesterID,
-			)
-			if err != nil || cmdTag.RowsAffected() != 1 {
-				return fmt.Errorf("release requester reserved for reward_set decrease: %w", err)
-			}
-			ledgerReason = credit.TransactionReasonRewardDecreased
+		absDiff := -diff
+		if reservedCredits < absDiff {
+			return credit.ErrInsufficientCredits
+		}
+		if availableCredits+absDiff > credit.MaxBalanceCredits {
+			return credit.ErrCreditLimitExceeded
 		}
 
+		// Move absDiff from reserved to available
+		cmdTag, err := tx.Exec(txCtx, `
+			UPDATE credit_accounts
+			SET available_credits = available_credits + $1,
+			    reserved_credits = reserved_credits - $1,
+			    version = version + 1,
+			    updated_at = NOW()
+			WHERE user_id = $2 AND reserved_credits >= $1`,
+			absDiff, reservation.RequesterID,
+		)
+		if err != nil || cmdTag.RowsAffected() != 1 {
+			return fmt.Errorf("release requester reserved credits for reward_set: %w", err)
+		}
+
+		// Update reservation amount and version
 		_, err = tx.Exec(txCtx, `
 			UPDATE credit_reservations
 			SET amount = $1,
@@ -604,35 +482,44 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.U
 			return fmt.Errorf("update reservation for reward_set: %w", err)
 		}
 
-		var availDelta, resDelta int64
-		if diff > 0 {
-			availDelta = -diff
-			resDelta = diff
-		} else {
-			availDelta = -diff
-			resDelta = diff
-		}
-
-		var occ *time.Time
-		if !occurredAt.IsZero() {
-			utc := occurredAt.UTC()
-			occ = &utc
-		}
-
+		// Append balanced ledger entries
 		_, err = tx.Exec(txCtx, `
 			INSERT INTO credit_transactions (
-				user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
+				user_id, errand_id, operation_id, balance_bucket, amount, reason, reservation_version, occurred_at, created_at
 			)
 			VALUES
-				($1, $2, $3, 'AVAILABLE', $4, $6, $7, NOW()),
-				($1, $2, $3, 'RESERVED', $5, $6, $7, NOW())`,
-			reservation.RequesterID, errandID, eventID,
-			availDelta, resDelta, ledgerReason, occ,
+				($1, $2, $3, 'AVAILABLE', $4, 'REWARD_DECREASED', $6, $5, NOW()),
+				($1, $2, $3, 'RESERVED', -($4::bigint), 'REWARD_DECREASED', $6, $5, NOW())`,
+			reservation.RequesterID, errandID, eventID, absDiff, occurredAt.UTC(), version,
 		)
 		if err != nil {
-			return fmt.Errorf("insert ledger entries for reward_set: %w", err)
+			return fmt.Errorf("insert reward_set ledger entries: %w", err)
 		}
 
 		return nil
 	})
+}
+
+func findReservationByErrandID(ctx context.Context, tx pgx.Tx, errandID uuid.UUID) (*credit.Reservation, error) {
+	var res credit.Reservation
+	err := tx.QueryRow(ctx, `
+		SELECT id, errand_id, requester_id, amount, status, version, created_at, updated_at
+		FROM credit_reservations
+		WHERE errand_id = $1`,
+		errandID,
+	).Scan(
+		&res.ID, &res.ErrandID, &res.RequesterID, &res.Amount,
+		&res.Status, &res.Version, &res.CreatedAt, &res.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("find reservation by errand ID: %w", err)
+	}
+	return &res, nil
+}
+
+func advisoryLockKey(id uuid.UUID) int64 {
+	return int64(binary.BigEndian.Uint64(id[:8]))
 }

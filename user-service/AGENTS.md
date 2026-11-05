@@ -205,6 +205,9 @@ Use Go Chi router for handling API calls. The API should handle these calls:
    <!-- AI Assistance Disclosure: Codex (GPT-5), 2026-10-19 — records D-078's status-route rules. -->
    - must reject any attempt to suspend an admin if they are the last ACTIVE admin in the system.
    - Errors: 409 conflict if attempting to suspend the last remaining active admin ({"error": "cannot suspend the last active admin"}) or transition an UNVERIFIED account ({"error": "account is not verified"})
+   <!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-03 — records D-118 and D-119 and the audit rows of D-106 to D-115. -->
+   - Must refuse suspending any admin account (D-118) or the caller's own account (D-119) with 403 ({"error": "an admin account cannot be suspended"} or {"error": "you cannot suspend your own account"}), before any Redis or session side effect.
+   - Every change, and every refused or failed attempt, is recorded in `admin_audit` (migration `000007`); the change and its row share one transaction. `GET /api/v1/users` (account search and list, D-121 to D-123) and `GET /api/v1/users/audit-log` (D-110) are admin-only reads, 50 rows a page at most.
 7. POST /api/v1/users/refresh : Accepts a valid refresh token. Issues a new access/refresh token pair and rotates the old refresh token in the database (uses `RotateSession` of the Session Repository's interface)
    - Request: JSON body {"refreshToken": "string"}. No HTTP Authorization header required.
    - Response: 200 OK with JSON {"accessToken": "string", "refreshToken": "string"}.

@@ -50,11 +50,9 @@ const dbReadyTimeout = 60 * time.Second
 const redisPingTimeout = 2 * time.Second
 
 // shutdownTimeout bounds graceful shutdown. It is longer than a write's 10s
-// deadline (internal/httpapi's writeTimeout) plus the 5s a failed amend may
-// spend queueing D-057's errand.reward_set (internal/order's queueTimeout), so
-// an amend in flight at SIGTERM queues it before the database pool closes.
-// compose.yaml's stop_grace_period for order-service must stay above it, or
-// Docker kills the process first.
+// deadline (internal/httpapi's writeTimeout), so a write in flight at SIGTERM
+// finishes before the database pool closes. compose.yaml's stop_grace_period
+// for order-service must stay above it, or Docker kills the process first.
 const shutdownTimeout = 20 * time.Second
 
 func main() {
@@ -109,13 +107,18 @@ func run(log *slog.Logger) error {
 		}
 	}()
 
-	done := make(chan struct{}, 2)
+	done := make(chan struct{}, 3)
 	go func() {
 		sweeper.New(repo, svc, order.SystemClock{}, log, sweepInterval).Run(ctx)
 		done <- struct{}{}
 	}()
 	go func() {
 		relay.New(relay.NewPostgresStore(pool), publisher, log, relay.Options{}).Run(ctx)
+		done <- struct{}{}
+	}()
+	// D-115: admin audit entries older than 6 months are removed by a scheduled job.
+	go func() {
+		svc.RunAuditPurge(ctx, order.PurgeInterval)
 		done <- struct{}{}
 	}()
 
@@ -167,7 +170,7 @@ func run(log *slog.Logger) error {
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Warn("http shutdown", "err", err)
 	}
-	for range 2 {
+	for range 3 {
 		select {
 		case <-done:
 		case <-shutdownCtx.Done():

@@ -10,12 +10,16 @@
 import type { AuthorizedSend } from "../auth/session";
 import { config } from "../../lib/config";
 import { NetworkError, queryString, type HttpResponse } from "../../lib/http";
+import { parseAuditPage, type AuditEntry, type AuditFilter, type Page } from "../admin/auditTypes";
+import { auditQuery } from "../profile/usersApi";
 import type {
+  AdminErrandQuery,
   AssignedList,
   CampusLocation,
   CreateErrandRequest,
   Errand,
   ErrandChanges,
+  ErrandCounts,
   ErrandDetail,
   ErrandList,
   HistoryEntry,
@@ -69,6 +73,15 @@ export interface OrdersApi {
   listAssigned(scope: ListScope): Promise<AssignedList>;
   /** Every errand that is not final, oldest state change first. ADMIN only. */
   listActiveForAdmin(): Promise<ErrandList>;
+  /**
+   * Active or past errands for an admin, filtered, sorted and paged (D-104,
+   * D-105, D-117). ADMIN only.
+   */
+  listErrandsAsAdmin(query: AdminErrandQuery): Promise<ErrandList>;
+  /** How many errands a user has in each state (D-117). ADMIN only. */
+  getUserErrandCounts(userId: string): Promise<ErrandCounts>;
+  /** The errands half of the admin audit log, newest first (D-110). ADMIN only. */
+  listAuditLog(filter?: AuditFilter): Promise<Page<AuditEntry>>;
   getErrand(id: string): Promise<ErrandDetail>;
   /**
    * Posts an errand (F3.1). `requestId` is the duplicate-submission key
@@ -178,6 +191,41 @@ export function createOrdersApi(authorizedSend: AuthorizedSend): OrdersApi {
 
     async listActiveForAdmin() {
       return toErrandList(await call(`${PREFIX}${queryString({ scope: "active" })}`));
+    },
+
+    async listErrandsAsAdmin(query) {
+      return toErrandList(
+        await call(
+          `${PREFIX}${queryString({
+            scope: query.scope,
+            state: query.state,
+            from: query.from,
+            to: query.to,
+            supplier_id: query.supplierId,
+            user_id: query.userId,
+            sort: query.sort,
+            limit: query.limit === undefined ? undefined : String(query.limit),
+            offset: query.offset ? String(query.offset) : undefined,
+          })}`,
+        ),
+      );
+    },
+
+    async getUserErrandCounts(userId) {
+      const body = await call(`${PREFIX}/users/${encodeURIComponent(userId)}/errand-counts`);
+      if (!isRecord(body) || !isRecord(body["requested"]) || !isRecord(body["assigned"])) {
+        throw unusableResponse();
+      }
+      return {
+        requested: body["requested"] as ErrandCounts["requested"],
+        assigned: body["assigned"] as ErrandCounts["assigned"],
+      };
+    },
+
+    async listAuditLog(filter = {}) {
+      const page = parseAuditPage(await call(`${PREFIX}/audit-log${auditQuery(filter)}`), "errands", true);
+      if (!page) throw unusableResponse();
+      return page;
     },
 
     async getErrand(id) {
@@ -298,7 +346,11 @@ function toErrandList(body: unknown): ErrandList {
   if (!isRecord(body) || !isErrandArray(body["items"]) || typeof body["serverTime"] !== "string") {
     throw unusableResponse();
   }
-  return { items: body["items"], serverTime: body["serverTime"] };
+  const list: ErrandList = { items: body["items"], serverTime: body["serverTime"] };
+  if (typeof body["total"] === "number") list.total = body["total"];
+  if (typeof body["limit"] === "number") list.limit = body["limit"];
+  if (typeof body["offset"] === "number") list.offset = body["offset"];
+  return list;
 }
 
 function toAssignedList(body: unknown): AssignedList {

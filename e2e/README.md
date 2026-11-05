@@ -94,8 +94,14 @@ instead of every test timing out on its own.
 | `TestStudentCannotWriteSuppliers` | a student's create, update and delete are each 403, also with `X-User-Role: ADMIN` and `X-User-Id` forged; the admin's read shows the supplier unchanged |
 | `TestSupplierWithUnfinishedErrandIsKept` | with an unfinished errand naming the supplier, `DELETE` is 409 and the supplier is still readable; after the requester cancels, `DELETE` is 204 and the errand still carries the supplier's name (D-052) |
 | `TestLoggedOutAdminCannotWriteSuppliers` | after `POST /auth/logout`, the admin's access token, not yet expired, gets 401 on `POST /api/suppliers`, and the write created nothing |
+| `TestSupplierWritesAreAudited` | an ADMIN's supplier create, update and delete each leave a row in `GET /api/suppliers/audit-log?target_id=`, newest first, with the admin's id from the token and a correlation id |
+| `TestRefusedSupplierDeleteIsAudited` | a delete the unfinished-errand rule refuses (409) is logged as `refused` with a reason, beside the `succeeded` create |
+| `TestAccountStatusChangesAreAudited` | an ADMIN's suspend and reactivate of a student appear in `GET /api/users/audit-log`; the admin suspending themself is 403, logged as `refused`, and leaves the admin active |
+| `TestAdminErrandCancelIsAudited` | an ADMIN's cancel of an accepted errand appears in `GET /api/orders/audit-log` as `errand.cancel` |
+| `TestOnlyAnAdminReadsTheAuditLog` | each of the three audit logs answers a student 403 and a request with no token 401 |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
+<!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-03 — documents the admin audit log e2e tests. -->
 
 ## Notes
 
