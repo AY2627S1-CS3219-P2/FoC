@@ -2,7 +2,7 @@ package sweeper
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -12,17 +12,19 @@ import (
 type Sweeper struct {
 	service  *chat.Service
 	interval time.Duration
+	log      *slog.Logger
 	stopCh   chan struct{}
 	wg       sync.WaitGroup
 }
 
-func NewSweeper(service *chat.Service, interval time.Duration) *Sweeper {
+func NewSweeper(service *chat.Service, interval time.Duration, log *slog.Logger) *Sweeper {
 	if interval <= 0 {
 		interval = 60 * time.Second
 	}
 	return &Sweeper{
 		service:  service,
 		interval: interval,
+		log:      log,
 		stopCh:   make(chan struct{}),
 	}
 }
@@ -56,11 +58,14 @@ func (s *Sweeper) sweep(ctx context.Context) {
 
 	affected, err := s.service.FreezeExpiredCompletedConversations(sweepCtx)
 	if err != nil {
-		log.Printf("expiry sweeper error: %v", err)
+		// Shutting down cancels a sweep in flight; that is not a failure.
+		if ctx.Err() == nil {
+			s.log.Error("expiry sweeper error", "err", err)
+		}
 		return
 	}
 	if affected > 0 {
-		log.Printf("expiry sweeper froze %d completed conversation(s) past 24h cutoff", affected)
+		s.log.Info("expiry sweeper froze completed conversations past 24h cutoff", "count", affected)
 	}
 }
 

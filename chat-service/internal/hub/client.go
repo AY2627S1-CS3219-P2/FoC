@@ -3,12 +3,14 @@ package hub
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"errors"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
+
+var errTokenOfAnotherUser = errors.New("token belongs to another user")
 
 const (
 	writeWait      = 10 * time.Second
@@ -55,8 +57,11 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("websocket read error: %v", err)
+			// A browser's ws.close() with no code arrives as 1005, so 1000 and
+			// 1005 are routine closes too.
+			if ce, ok := err.(*websocket.CloseError); ok && websocket.IsUnexpectedCloseError(ce, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				// The code only: the close reason is whatever text the client sent.
+				c.hub.log.Warn("websocket read error", "user_id", c.userID.String(), "close_code", ce.Code)
 			}
 			break
 		}
@@ -67,8 +72,11 @@ func (c *Client) ReadPump() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				tokenUserID, err := c.hub.verifyToken(ctx, clientMsg.Token)
 				cancel()
-				if err != nil || tokenUserID != c.userID {
-					log.Printf("mid-session auth_refresh failed for user %s: %v", c.userID, err)
+				if err == nil && tokenUserID != c.userID {
+					err = errTokenOfAnotherUser
+				}
+				if err != nil {
+					c.hub.log.Warn("mid-session auth_refresh failed", "user_id", c.userID.String(), "err", err)
 					break
 				}
 				// Verified: token is valid and belongs to this user.
@@ -118,7 +126,7 @@ func (c *Client) WritePump() {
 				suspended, err := c.hub.isSuspended(ctx, c.userID)
 				cancel()
 				if err == nil && suspended {
-					log.Printf("terminating websocket for suspended user %s", c.userID)
+					c.hub.log.Info("terminating websocket for suspended user", "user_id", c.userID.String())
 					_ = c.conn.WriteControl(
 						websocket.CloseMessage,
 						websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "user account suspended"),

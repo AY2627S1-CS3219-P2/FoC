@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -41,9 +42,10 @@ type Hub struct {
 	redisClient redis.UniversalClient
 	isSuspended SuspensionChecker
 	verifyToken TokenVerifier
+	log         *slog.Logger
 }
 
-func NewHub(redisClient redis.UniversalClient, isSuspended SuspensionChecker, verifyToken TokenVerifier) *Hub {
+func NewHub(redisClient redis.UniversalClient, isSuspended SuspensionChecker, verifyToken TokenVerifier, log *slog.Logger) *Hub {
 	return &Hub{
 		clients:     make(map[uuid.UUID]map[*Client]bool),
 		register:    make(chan *Client),
@@ -51,6 +53,7 @@ func NewHub(redisClient redis.UniversalClient, isSuspended SuspensionChecker, ve
 		redisClient: redisClient,
 		isSuspended: isSuspended,
 		verifyToken: verifyToken,
+		log:         log,
 	}
 }
 
