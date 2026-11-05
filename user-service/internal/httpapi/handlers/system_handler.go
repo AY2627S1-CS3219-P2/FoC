@@ -10,6 +10,8 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+
+	"github.com/go-chi/chi/v5/middleware"
 )
 
 // JWKSProvider returns the public JSON Web Key Set for the API gateway.
@@ -33,9 +35,15 @@ func NewSystemHandler(deps SystemDependencies) SystemHandler { return SystemHand
 
 // Health handles the service health endpoint.
 func (h SystemHandler) Health(w http.ResponseWriter, r *http.Request) {
-	if h.deps.HealthCheck != nil && h.deps.HealthCheck(r.Context()) != nil {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
-		return
+	if h.deps.HealthCheck != nil {
+		if err := h.deps.HealthCheck(r.Context()); err != nil {
+			if h.deps.Logger != nil {
+				h.deps.Logger.Log(r.Context(), causeLevel(r.Context()), "health check failed",
+					"request_id", middleware.GetReqID(r.Context()), "error", err.Error())
+			}
+			writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
+			return
+		}
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
