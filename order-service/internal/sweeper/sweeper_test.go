@@ -182,9 +182,13 @@ func TestSweepOnceAutoConfirmsDueDeliveredErrands(t *testing.T) {
 	assert.Equal(t, courier.UserID, *got.CourierID)
 
 	events := e.repo.EventsFor(o.ID)
-	require.Len(t, events, 2)
+	// AI-generated (edited by PENDING).
+	// errand.picked_up and errand.delivered are staged too (D-142).
+	require.Len(t, events, 4)
 	assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
-	ev := events[1]
+	assert.Equal(t, order.RoutingPickedUp, events[1].RoutingKey)
+	assert.Equal(t, order.RoutingDelivered, events[2].RoutingKey)
+	ev := events[3]
 	assert.Equal(t, order.RoutingCompleted, ev.RoutingKey)
 	assert.Equal(t, order.RoutingCompleted, ev.Payload.EventType)
 	require.NotNil(t, ev.Payload.CourierID, "errand.completed names the courier to pay")
@@ -306,10 +310,10 @@ func TestSweepOnceDoesNotCompleteAnErrandTheRequesterConfirmedFirst(t *testing.T
 			assert.Zero(t, confirmed, "the sweeper must not count an errand it did not move")
 			assert.Equal(t, order.StateCompleted, e.get(t, o.ID).State)
 			events := e.repo.EventsFor(o.ID)
-			require.Len(t, events, 2, "accepted and completed events")
+			require.Len(t, events, 4, "accepted, picked up, delivered and completed events")
 			assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
-			assert.Equal(t, order.RoutingCompleted, events[1].RoutingKey)
-			assert.Equal(t, requestID, events[1].CorrelationID, "the requester's confirm emitted it")
+			assert.Equal(t, order.RoutingCompleted, events[3].RoutingKey)
+			assert.Equal(t, requestID, events[3].CorrelationID, "the requester's confirm emitted it")
 			assert.Equal(t,
 				[]order.Action{order.ActionCreate, order.ActionAccept, order.ActionPickUp, order.ActionDeliver, order.ActionConfirm},
 				e.actionsOf(t, o.ID))
@@ -369,12 +373,12 @@ func TestConcurrentSweepersMoveEachErrandOnce(t *testing.T) {
 		assert.Equal(t, order.StateCompleted, e.get(t, id).State)
 		assert.Equal(t, 1, count(e.actionsOf(t, id), order.ActionAutoConfirm))
 		events := e.repo.EventsFor(id)
-		if assert.Len(t, events, 2) {
+		if assert.Len(t, events, 4) {
 			assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
-			assert.Equal(t, order.RoutingCompleted, events[1].RoutingKey)
+			assert.Equal(t, order.RoutingCompleted, events[3].RoutingKey)
 		}
 	}
-	assert.Len(t, e.repo.Events(), len(openIDs)+2*len(deliveredIDs), "open errands have 1 expire event; delivered errands have 1 accepted + 1 completed event")
+	assert.Len(t, e.repo.Events(), len(openIDs)+4*len(deliveredIDs), "open errands have 1 expire event; delivered errands have accepted, picked up, delivered and completed events")
 }
 
 func TestSweepOnceCarriesOnPastAFailedErrand(t *testing.T) {
