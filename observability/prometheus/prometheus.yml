@@ -1,0 +1,14 @@
+# Health probe results arrive by remote write from Alloy. The one scrape here
+# is RabbitMQ's queue depth.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  # The plain /metrics endpoint sums every queue; this one reports each queue,
+  # the dead-letter queues included, on its own.
+  - job_name: rabbitmq
+    metrics_path: /metrics/detailed
+    params:
+      family: [queue_coarse_metrics]
+    static_configs:
+      - targets: ["rabbitmq:15692"]

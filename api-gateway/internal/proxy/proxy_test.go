@@ -8,12 +8,18 @@
 package proxy_test
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"foc/api-gateway/internal/proxy"
 )
+
+// quietLog is the logger for tests that do not read what the proxy logs.
+func quietLog() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
 
 func TestRewritePath(t *testing.T) {
 	t.Parallel()
@@ -81,7 +87,7 @@ func TestStripsClientSuppliedClaimHeaders(t *testing.T) {
 	}))
 	defer downstream.Close()
 
-	p, err := proxy.New(proxy.Route{BaseURL: downstream.URL, StripPrefix: "/api/suppliers"})
+	p, err := proxy.New(proxy.Route{BaseURL: downstream.URL, StripPrefix: "/api/suppliers"}, quietLog())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -122,7 +128,7 @@ func TestUnauthenticatedRequestGetsNoClaimHeaders(t *testing.T) {
 	}))
 	defer downstream.Close()
 
-	p, err := proxy.New(proxy.Route{BaseURL: downstream.URL, StripPrefix: "/api/suppliers"})
+	p, err := proxy.New(proxy.Route{BaseURL: downstream.URL, StripPrefix: "/api/suppliers"}, quietLog())
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -153,7 +159,7 @@ func TestPassthroughPreservesAuthorization(t *testing.T) {
 		BaseURL:     downstream.URL,
 		StripPrefix: "/auth",
 		AddPrefix:   "/api/v1/users",
-	})
+	}, quietLog())
 	if err != nil {
 		t.Fatalf("NewPassthrough: %v", err)
 	}
@@ -176,9 +182,17 @@ func TestNewRejectsUnusableBaseURL(t *testing.T) {
 	t.Parallel()
 
 	for _, bad := range []string{"", "not-a-url", "/relative/only"} {
-		if _, err := proxy.New(proxy.Route{BaseURL: bad}); err == nil {
+		if _, err := proxy.New(proxy.Route{BaseURL: bad}, quietLog()); err == nil {
 			t.Errorf("New(%q) returned no error, want one", bad)
 		}
+	}
+}
+
+func TestNewNeedsALogger(t *testing.T) {
+	t.Parallel()
+
+	if _, err := proxy.New(proxy.Route{BaseURL: "http://order-service:8083"}, nil); err == nil {
+		t.Error("New with a nil logger returned no error, want one")
 	}
 }
 
@@ -197,7 +211,7 @@ func TestRetainingTokenKeepsAuthorizationAndStillInjects(t *testing.T) {
 		BaseURL:     downstream.URL,
 		StripPrefix: "/api/users",
 		AddPrefix:   "/api/v1/users",
-	})
+	}, quietLog())
 	if err != nil {
 		t.Fatalf("NewRetainingToken: %v", err)
 	}

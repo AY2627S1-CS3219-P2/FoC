@@ -64,8 +64,9 @@ Module path `foc/supplier-service`. The per-file detail the other services
 mirror:
 
 ```
-cmd/api/             wiring only — config, pool, migrate, order client, token
-                     verifier, Redis client, seed, router, listen
+cmd/api/             wiring only — JSON logger (built here, passed down), config,
+                     pool, migrate, order client, token verifier, Redis client,
+                     seed, router, listen
 internal/supplier/   the domain: model.go, service.go (business rules),
                      repository.go (the Repository *interface*), errors.go
                      (sentinel errors the transport layer maps to status codes),
@@ -75,7 +76,8 @@ internal/orderclient/ order-service client for the delete check, implementing
                       supplier.ErrandCounter
 internal/httpapi/    router.go, handlers.go, dto.go — JSON shapes live in dto.go;
                      auth.go — the token check and the admin-role guard on the
-                     write routes
+                     write routes; logging.go — the access line every request
+                     gets and the panic recoverer
 internal/auth/       verifies access tokens against user-service's keys and
                      checks D-054's revocation keys; a copy of order-service's
                      package, not an import (root §4.2)

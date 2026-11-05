@@ -80,6 +80,7 @@ func RequireJWT(verifier TokenVerifier, revocationChecker RevocationChecker, log
 				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 				return
 			}
+			recordCaller(r.Context(), principal.UserID)
 			next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalContextKey{}, principal)))
 		})
 	}

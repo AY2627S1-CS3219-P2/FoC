@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/mail"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ type AccountService struct {
 	otpDeliverer     OTPDeliverer
 	suspensionTTL    time.Duration
 	now              func() time.Time
+	logger           *slog.Logger
 }
 
 const (
@@ -53,26 +55,31 @@ func NewAccountServiceWithClock(repository UserRepository, suspensionWriter Susp
 // NewAccountServiceWithOTP constructs an account service with the recorded
 // OTP Redis boundary for pending registrations.
 func NewAccountServiceWithOTP(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, otpStore OTPStore) *AccountService {
-	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore, nil)
+	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore, nil, nil)
 }
 
 // NewAccountServiceWithClockAndOTP constructs an account service with injected
 // clock and OTP storage dependencies.
 func NewAccountServiceWithClockAndOTP(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time, otpStore OTPStore) *AccountService {
-	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, now, otpStore, nil)
+	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, now, otpStore, nil, nil)
 }
 
 // NewAccountServiceWithOTPAndDelivery constructs an account service with the
-// recorded OTP storage and delivery boundaries.
-func NewAccountServiceWithOTPAndDelivery(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, otpStore OTPStore, otpDeliverer OTPDeliverer) *AccountService {
-	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore, otpDeliverer)
+// recorded OTP storage and delivery boundaries. A nil logger discards the
+// service's logs.
+func NewAccountServiceWithOTPAndDelivery(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, otpStore OTPStore, otpDeliverer OTPDeliverer, logger *slog.Logger) *AccountService {
+	return NewAccountServiceWithClockAndOTPAndDelivery(repository, suspensionWriter, sessions, suspensionTTL, time.Now, otpStore, otpDeliverer, logger)
 }
 
 // NewAccountServiceWithClockAndOTPAndDelivery constructs an account service
-// with injected clock, OTP storage, and OTP delivery dependencies.
-func NewAccountServiceWithClockAndOTPAndDelivery(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time, otpStore OTPStore, otpDeliverer OTPDeliverer) *AccountService {
+// with injected clock, OTP storage, and OTP delivery dependencies. A nil
+// logger discards the service's logs.
+func NewAccountServiceWithClockAndOTPAndDelivery(repository UserRepository, suspensionWriter SuspensionWriter, sessions SessionRepository, suspensionTTL time.Duration, now func() time.Time, otpStore OTPStore, otpDeliverer OTPDeliverer, logger *slog.Logger) *AccountService {
 	if now == nil {
 		now = time.Now
+	}
+	if logger == nil {
+		logger = slog.New(slog.DiscardHandler)
 	}
 	return &AccountService{
 		repository:       repository,
@@ -82,6 +89,7 @@ func NewAccountServiceWithClockAndOTPAndDelivery(repository UserRepository, susp
 		otpDeliverer:     otpDeliverer,
 		suspensionTTL:    suspensionTTL,
 		now:              now,
+		logger:           logger,
 	}
 }
 

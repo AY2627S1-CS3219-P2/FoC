@@ -236,6 +236,7 @@ func (h AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "authentication required"})
 		return
 	}
+	recordCaller(r.Context(), accessClaims.UserID)
 	var request LogoutRequest
 	if !decodeJSONBody(w, r, &request) {
 		return

@@ -14,6 +14,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"net"
 	"sync"
 	"testing"
@@ -50,7 +51,7 @@ func TestRepositoryOverPostgres(t *testing.T) {
 	t.Parallel()
 	pool := openDatabase(t)
 	repo := repository.NewPostgresRepository(pool)
-	svc := supplier.NewService(repo, noErrands{})
+	svc := supplier.NewService(repo, noErrands{}, slog.New(slog.DiscardHandler))
 	ctx := context.Background()
 
 	t.Run("ten concurrent inserts of one supplier give one success and nine ErrDuplicate", func(t *testing.T) {

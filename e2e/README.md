@@ -21,8 +21,8 @@ seconds and runs the suite:
 ORDER_EXPIRY_PERIOD=20s ORDER_CONFIRMATION_WINDOW=20s docker compose up --build --wait && go -C e2e test -tags=e2e -count=1 ./...
 ```
 
-`--wait` returns once every container is up, and stops the command if one fails
-to start. `-count=1` stops Go from replaying a cached pass against a stack that
+`--wait` returns once every container is up and every healthcheck passes, and
+stops the command if one fails to start or turns unhealthy. `-count=1` stops Go from replaying a cached pass against a stack that
 may have changed. Most of the run is spent waiting out T and C, which is why the
 stack runs with them in seconds; the tests run in parallel, so the waits
 overlap.
@@ -36,6 +36,29 @@ To run one test against a stack that is already up:
 go -C e2e test -tags=e2e -count=1 -run TestFullFlowPaysTheCourier ./...
 ```
 
+## The 30-second logging check
+
+`TestOrderServiceErrorReachesLokiWithin30Seconds` is the evidence that a
+high-severity error reaches the centralised logging view within 30 seconds
+(NFR7.1). It stops supplier-service, posts an errand through the gateway with
+its own `X-Request-Id`, and expects order-service's 503. It then polls Loki for
+an order-service line at `ERROR` that carries the id, logs how long after the
+503 the line arrived, and fails if it has not arrived within 30 seconds. When it
+ends, it starts supplier-service again and waits until its healthcheck passes.
+
+A second build tag, `observability`, keeps it out of the run above, and it runs
+on its own: while supplier-service is stopped, no errand can be posted. It needs
+the stack started with the `observability` profile, which publishes Loki on
+`127.0.0.1:3100`:
+
+```bash
+docker compose --profile observability up --build --wait && go -C e2e test -tags=e2e,observability -count=1 -v -run TestOrderServiceErrorReachesLokiWithin30Seconds ./...
+```
+
+`-v` prints the measured time on a pass. Before it stops anything, the test
+waits up to 30 seconds for Loki's `/ready`, and if Loki does not answer it fails
+with a message to start the stack with that profile.
+
 ## Settings
 
 | Variable | Default | Meaning |
@@ -45,6 +68,7 @@ go -C e2e test -tags=e2e -count=1 -run TestFullFlowPaysTheCourier ./...
 | `E2E_ADMIN_PASSWORD` | `AdminDemo123` | Its password |
 | `E2E_EXPIRY_PERIOD` | `20s` | The `ORDER_EXPIRY_PERIOD` (T) the stack runs with |
 | `E2E_CONFIRMATION_WINDOW` | `20s` | The `ORDER_CONFIRMATION_WINDOW` (C) the stack runs with |
+| `E2E_LOKI_URL` | `http://127.0.0.1:3100` | The Loki the logging check queries |
 
 The two timer settings only tell the suite what to expect. The expiry and
 auto-confirm tests read T and C off the errands they create, and fail at once,
@@ -107,6 +131,8 @@ instead of every test timing out on its own.
 
 - Every test registers its own students (`e2e<random>@u.nus.edu`) and runs in
   parallel with the others; no test reads another's data or depends on order.
+  The logging check is the exception: it stops supplier-service, so it runs on
+  its own under its extra build tag.
 - The supplier tests make their own suppliers, named `e2e-<random hex>` with a
   random location, and delete them as an admin when they finish (a 404 there is
   fine). `availableSupplier` skips names starting `e2e-`, so an errand test never
