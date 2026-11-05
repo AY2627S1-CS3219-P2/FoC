@@ -139,10 +139,12 @@ func effectOf(a order.APIAction, p party) effect {
 		return effect{order.StateAccepted, order.ActionAccept, order.ActorCourier, order.RoutingAccepted}
 	case order.APIWithdraw:
 		return effect{order.StateOpen, order.ActionWithdraw, order.ActorCourier, order.RoutingWithdrawn}
+	// AI-generated (edited by PENDING).
+	// D-142: these two emit events for notification-service.
 	case order.APIPickUp:
-		return effect{order.StatePickedUp, order.ActionPickUp, order.ActorCourier, ""}
+		return effect{order.StatePickedUp, order.ActionPickUp, order.ActorCourier, order.RoutingPickedUp}
 	case order.APIDeliver:
-		return effect{order.StateDelivered, order.ActionDeliver, order.ActorCourier, ""}
+		return effect{order.StateDelivered, order.ActionDeliver, order.ActorCourier, order.RoutingDelivered}
 	case order.APIConfirm:
 		return effect{order.StateCompleted, order.ActionConfirm, order.ActorRequester, order.RoutingCompleted}
 	case order.APICancel:
@@ -214,7 +216,7 @@ func TestEveryActionInEveryStateForEveryParty(t *testing.T) {
 					assert.Equal(t, ptr(f.as(p).UserID), h.ActorID)
 
 					if e.event == "" {
-						assert.Empty(t, after.events, "only a settlement emits an event")
+						assert.Empty(t, after.events, "this action emits no event")
 					} else {
 						require.Len(t, after.events, 1)
 						assert.Equal(t, e.event, after.events[0].RoutingKey)

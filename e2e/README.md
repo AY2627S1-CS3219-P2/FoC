@@ -99,9 +99,25 @@ instead of every test timing out on its own.
 | `TestAccountStatusChangesAreAudited` | an ADMIN's suspend and reactivate of a student appear in `GET /api/users/audit-log`; the admin suspending themself is 403, logged as `refused`, and leaves the admin active |
 | `TestAdminErrandCancelIsAudited` | an ADMIN's cancel of an accepted errand appears in `GET /api/orders/audit-log` as `errand.cancel` |
 | `TestOnlyAnAdminReadsTheAuditLog` | each of the three audit logs answers a student 403 and a request with no token 401 |
+| `TestNotificationsFollowAnErrandToCompletion` | the requester is told of accepted, picked up, delivered (stating C) and completed, once each, newest first; the courier is told of their credits |
+| `TestNotificationOfAWithdrawalReachesTheRequester` | a courier's withdrawal notifies the requester |
+| `TestNotificationOfAnExpiryReachesTheRequester` | an errand that expires notifies the requester |
+| `TestNotificationOfAnAdminCancelReachesBothParties` | an ADMIN's cancel of an accepted errand notifies the requester and the courier, in neutral wording |
+| `TestNotificationsAreTheirOwnersAlone` | a stranger sees none of a user's notifications and gets 404 marking one; the owner marks it read; no token is 401; paging works |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 <!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-03 — documents the admin audit log e2e tests. -->
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), date: 2026-11-05 — documents the notification e2e tests and the run without the service. -->
+
+## With notification-service stopped
+
+Nothing else depends on notification-service (D-140), so preflight does not check
+it and the rest of the suite passes without it. Its own tests are all named
+`TestNotification*`:
+
+```bash
+docker compose stop notification-service && go -C e2e test -tags=e2e -count=1 -skip TestNotification ./...
+```
 
 ## Notes
 

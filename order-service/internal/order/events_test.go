@@ -234,10 +234,13 @@ func TestEventPayloadUsesCreditServiceFieldNames(t *testing.T) {
 func TestOnlySettlementsEmitEvents(t *testing.T) {
 	// D-048: the steps between posting and settling write no settlement event.
 	// The reward amend writes only its reward_set (D-102).
+	// AI-generated (edited by PENDING).
+	// errand.picked_up and errand.delivered settle nothing (D-142).
 	f := newFixture(t)
 	settlements := func() []order.OutboxEvent {
 		return slices.DeleteFunc(f.repo.Events(), func(e order.OutboxEvent) bool {
-			return e.RoutingKey == order.RoutingRewardSet || e.RoutingKey == order.RoutingAccepted || e.RoutingKey == order.RoutingWithdrawn
+			return e.RoutingKey == order.RoutingRewardSet || e.RoutingKey == order.RoutingAccepted || e.RoutingKey == order.RoutingWithdrawn ||
+				e.RoutingKey == order.RoutingPickedUp || e.RoutingKey == order.RoutingDelivered
 		})
 	}
 	o := f.post()
@@ -262,7 +265,7 @@ func TestOnlySettlementsEmitEvents(t *testing.T) {
 		version = got.Version
 		assert.Empty(t, settlements(), "after %s", step.name)
 	}
-	assert.Len(t, f.repo.Events(), 4, "the amend's reward_set, two accepts, and one withdraw")
+	assert.Len(t, f.repo.Events(), 6, "the amend's reward_set, two accepts, one withdraw, one pick up and one delivery")
 
 	done, err := f.svc.Confirm(f.ctx, f.requester, o.ID, "corr-confirm")
 	require.NoError(t, err)

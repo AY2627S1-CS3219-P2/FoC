@@ -338,7 +338,7 @@ Refreshed 2026-10-20.
 | `user-service` | **Working.** RS256/JWKS issuer, register with email OTP, login/refresh/logout, profile, suspension, default admin, `user.registered` events | `main` |
 | `order-service` | **Working.** The errand lifecycle; verifies tokens and the revocation keys itself | `main` |
 | `credit-service` | Scaffold on `main`; the service is in PR #44 | `feat/initial-credit` |
-| `notification-service` | No folder, no owner, no decision row | — |
+| `notification-service` | **Working.** Consumes lifecycle events on its own queue and serves each user's list (D-140 to D-146) | `main` once merged |
 | Redis | In `compose.yaml`; written by `user-service`, read by the gateway, `order-service`, `supplier-service` and `user-service`'s own routes (§6) | `main` |
 
 ## 8. What this picture assumes, and does not yet have
@@ -351,3 +351,5 @@ Refreshed 2026-10-20.
   the `e2e/` suite runs it against the real `user-service`.
 - **AWS deployment is undecided** (D-009). The private VPC this trust model
   assumes has no decision and no code behind it.
+
+<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service status row updated (D-140 to D-146). -->

@@ -2446,3 +2446,12 @@ button.service-card:hover {
   font-size: 24px;
   cursor: pointer;
 }
+
+/* AI-generated (edited by PENDING): an unread notification (F5.1.4). */
+.notification-unread .ledger-label {
+  font-weight: 600;
+}
+
+.notification-unread {
+  background: var(--primary-soft);
+}

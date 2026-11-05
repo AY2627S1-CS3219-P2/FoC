@@ -52,6 +52,11 @@ const supplierServiceAPIPrefix = "/suppliers"
 // routes; the public /api/credits/accounts/* path is rewritten onto it.
 const creditServiceAccountsPrefix = "/api/v1/credits/accounts"
 
+// AI-generated (edited by PENDING).
+// notificationServicePrefix is where notification-service mounts its routes;
+// the public /api/notifications path is rewritten onto it (D-144).
+const notificationServicePrefix = "/notifications"
+
 // authRoute is one of the six public /auth routes. They carry credentials,
 // not a verified identity, so they are registered outside RequireToken and
 // user-service authenticates them. newProxy sets the route's refresh-cookie
@@ -147,6 +152,10 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		// under /api/credits is routed and it gets the JSON 404 below.
 		{"/api/credits/accounts", downstream.Credit, creditServiceAccountsPrefix, proxy.NewRetainingToken},
 		{"/api/chat", downstream.Chat, "", proxy.NewRetainingToken},
+		// AI-generated (edited by PENDING).
+		// notification-service verifies the token itself and serves its routes
+		// under /notifications (D-144).
+		{"/api/notifications", downstream.Notification, notificationServicePrefix, proxy.NewRetainingToken},
 	}
 
 	// WebSocket upgrade endpoint: authenticates downstream via single-use ticket
@@ -159,7 +168,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 	if err != nil {
 		return nil, fmt.Errorf("httpapi: route /api/chat/ws: %w", err)
 	}
-		r.Handle("/api/chat/ws", chatWSProxy)
+	r.Handle("/api/chat/ws", chatWSProxy)
 
 	// Media and image downloads: browser <img> tags load without Authorization headers.
 	chatMediaProxy, err := proxy.NewRetainingToken(proxy.Route{

@@ -54,6 +54,8 @@ type Downstream struct {
 	Order    string
 	Credit   string
 	Chat     string
+	// AI-generated (edited by PENDING).
+	Notification string
 }
 
 // Load reads the environment and returns an error naming every required
@@ -78,6 +80,8 @@ func Load() (Config, error) {
 			Order:    os.Getenv("ORDER_BASE_URL"),
 			Credit:   os.Getenv("CREDIT_BASE_URL"),
 			Chat:     os.Getenv("CHAT_BASE_URL"),
+			// AI-generated (edited by PENDING).
+			Notification: os.Getenv("NOTIFICATION_BASE_URL"),
 		},
 	}
 
@@ -90,7 +94,9 @@ func Load() (Config, error) {
 		"ORDER_BASE_URL":    cfg.Downstream.Order,
 		"CREDIT_BASE_URL":   cfg.Downstream.Credit,
 		"CHAT_BASE_URL":     cfg.Downstream.Chat,
-		"REFRESH_TOKEN_TTL": rawTTL,
+		// AI-generated (edited by PENDING).
+		"NOTIFICATION_BASE_URL": cfg.Downstream.Notification,
+		"REFRESH_TOKEN_TTL":     rawTTL,
 	}
 
 	var missing []string

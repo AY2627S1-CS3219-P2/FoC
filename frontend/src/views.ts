@@ -86,8 +86,8 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "suppliers", label: "Suppliers", enabled: true },
   { view: "credits", label: "Credits", enabled: true, audience: "STUDENT" },
   { view: "profile", label: "Profile", enabled: true },
-  // Disabled: nothing publishes notifications yet.
-  { view: "notifications", label: "Notifications", enabled: false },
+  // AI-generated (edited by PENDING): notification-service serves it (D-145).
+  { view: "notifications", label: "Notifications", enabled: true },
 ];
 
 // AI-generated (edited by James Teo): one rule for both the nav and App's view

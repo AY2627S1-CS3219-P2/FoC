@@ -18,18 +18,21 @@ import (
 // ones they want missing.
 func all() map[string]string {
 	return map[string]string{
-		"PORT":              "8080",
-		"JWKS_URL":          "http://user-service:8081/.well-known/jwks.json",
-		"REDIS_URL":         "redis://redis:6379",
-		"USER_BASE_URL":     "http://user-service:8081",
-		"SUPPLIER_BASE_URL": "http://supplier-service:8082",
-		"ORDER_BASE_URL":    "http://order-service:8083",
-		"CREDIT_BASE_URL":   "http://credit-service:8084",
-		"CHAT_BASE_URL":     "http://chat-service:8085",
-		"REFRESH_TOKEN_TTL": "168h",
+		"PORT":                  "8080",
+		"JWKS_URL":              "http://user-service:8081/.well-known/jwks.json",
+		"REDIS_URL":             "redis://redis:6379",
+		"USER_BASE_URL":         "http://user-service:8081",
+		"SUPPLIER_BASE_URL":     "http://supplier-service:8082",
+		"ORDER_BASE_URL":        "http://order-service:8083",
+		"CREDIT_BASE_URL":       "http://credit-service:8084",
+		"CHAT_BASE_URL":         "http://chat-service:8085",
+		"NOTIFICATION_BASE_URL": "http://notification-service:8086",
+		"REFRESH_TOKEN_TTL":     "168h",
 	}
 }
 
+// AI-generated (edited by PENDING).
+// NOTIFICATION_BASE_URL is in validEnv and in the list below (D-144).
 func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()
 	// t.Setenv restores each variable when the test ends and panics under
@@ -37,7 +40,7 @@ func setEnv(t *testing.T, vars map[string]string) {
 	for _, name := range []string{
 		"PORT", "JWKS_URL", "REDIS_URL", "USER_BASE_URL",
 		"SUPPLIER_BASE_URL", "ORDER_BASE_URL", "CREDIT_BASE_URL",
-		"CHAT_BASE_URL", "REFRESH_TOKEN_TTL",
+		"CHAT_BASE_URL", "NOTIFICATION_BASE_URL", "REFRESH_TOKEN_TTL",
 	} {
 		t.Setenv(name, vars[name])
 	}

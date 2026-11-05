@@ -49,6 +49,14 @@ import { NeedsService } from "./components/NeedsService";
 import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
 import { createChatApi } from "./features/chat/chatApi";
+// AI-generated (edited by PENDING): the Notifications screen (D-145).
+import { pollOutcome } from "./features/notifications/newNotifications";
+import { createNotificationsApi } from "./features/notifications/notificationsApi";
+import {
+  NOTIFICATIONS_POLL_MS,
+  NotificationsView,
+  PAGE_SIZE,
+} from "./features/notifications/NotificationsView";
 import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
@@ -119,7 +127,7 @@ export function App() {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi, orders, creditAccounts, chatApi } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts, chatApi, notifications } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
@@ -134,6 +142,7 @@ export function App() {
         orders: null,
         creditAccounts: null,
         chatApi: null,
+        notifications: null,
       };
     }
     const authorizedSend = createAuthorizedSend({
@@ -161,6 +170,7 @@ export function App() {
       orders: createOrdersApi(authorizedSend),
       creditAccounts: createCreditAccountsApi(authorizedSend),
       chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
+      notifications: createNotificationsApi(authorizedSend),
     };
   }, [tokens]);
 
@@ -222,6 +232,29 @@ export function App() {
   // at once after the user's own errand actions. An ADMIN session has no
   // credit account and polls nothing. "No account yet" keeps polling, so a
   // new student's account appears without a reload.
+  // AI-generated (edited by PENDING): tells the user when a poll finds a new
+  // notification, on whichever screen they are (F7.6.1). A failed poll says
+  // nothing here: notifications are an add-on, and their screen shows failures.
+  const seenNotifications = useRef<Set<string> | null>(null);
+  // Before the poller below starts: another account's ids mean nothing here,
+  // and the next session's first poll must not announce what is already there.
+  useEffect(() => {
+    seenNotifications.current = null;
+  }, [session?.userId]);
+  usePolling(
+    session && notifications
+      ? async (isActive) => {
+          const latest = await notifications.list(PAGE_SIZE, 0);
+          if (!isActive()) return;
+          const outcome = pollOutcome(seenNotifications.current, latest.notifications);
+          seenNotifications.current = outcome.seen;
+          if (outcome.message) setToast({ text: outcome.message, kind: "success" });
+        }
+      : null,
+    NOTIFICATIONS_POLL_MS,
+    [notifications, session?.userId],
+  );
+
   const refreshBalance = usePolling(
     session?.role === "STUDENT" && creditAccounts
       ? async (isActive) => {
@@ -482,6 +515,20 @@ export function App() {
             onLogOut={handleLogOut}
           />
         )}
+
+        {/* AI-generated (edited by PENDING): the empty state's button goes to
+            where this session follows its errands (F7.3.1). */}
+        {shownView === "notifications" &&
+          (notifications ? (
+            <NotificationsView
+              api={notifications}
+              primaryView={session.role === "STUDENT" ? "my-errands" : "admin"}
+              primaryLabel={session.role === "STUDENT" ? "Go to My errands" : "Go to Dashboard"}
+              onNavigate={navigate}
+            />
+          ) : (
+            <NeedsService title="Notifications" service="notification-service" />
+          ))}
 
         {/* AI-generated (edited by nigeltzy). */}
         {/* AI-generated (edited by James Teo): keyed by the handed-over account,
