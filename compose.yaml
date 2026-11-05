@@ -336,6 +336,12 @@ services:
     restart: on-failure
     stop_grace_period: 25s
     # No `ports:` key: reachable only through the gateway, at /api/chat.
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8085/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
 
   # ---- Observability (opt-in) -------------------------------------------
   # Started only with `docker compose --profile observability up`; config is

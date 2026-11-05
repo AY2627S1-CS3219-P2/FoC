@@ -46,7 +46,7 @@ loki.process "compose" {
 	// The Go services. Postgres, Redis and RabbitMQ lines pass through as they
 	// are.
 	stage.match {
-		selector = `{service=~"api-gateway|user-service|supplier-service|order-service|credit-service"}`
+		selector = `{service=~"api-gateway|user-service|supplier-service|order-service|credit-service|chat-service"}`
 
 		// A panic prints its stack trace over many lines. Every other line these
 		// services write starts a new entry: JSON, a stdlib log timestamp, or
@@ -81,7 +81,7 @@ loki.process "compose" {
 		}
 
 		stage.match {
-			selector            = `{service=~"order-service|supplier-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/health\"" |= "\"status\":"`
+			selector            = `{service=~"order-service|supplier-service|chat-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/health\"" |= "\"status\":"`
 			action              = "drop"
 			drop_counter_reason = "health_check"
 		}
@@ -92,8 +92,8 @@ loki.process "compose" {
 			drop_counter_reason = "health_check"
 		}
 
-		// ... and as chi's text access log, which the gateway and supplier-service
-		// write until they log JSON.
+		// ... and as chi's text access log, which the gateway, supplier-service
+		// and chat-service write until they log JSON.
 		stage.match {
 			selector            = `{service="api-gateway"} |~ "\"GET https?://[^/ ]+/healthz HTTP/[0-9.]+\" from "`
 			action              = "drop"
@@ -101,7 +101,7 @@ loki.process "compose" {
 		}
 
 		stage.match {
-			selector            = `{service="supplier-service"} |~ "\"GET https?://[^/ ]+/health HTTP/[0-9.]+\" from "`
+			selector            = `{service=~"supplier-service|chat-service"} |~ "\"GET https?://[^/ ]+/health HTTP/[0-9.]+\" from "`
 			action              = "drop"
 			drop_counter_reason = "health_check"
 		}
@@ -170,6 +170,13 @@ prometheus.exporter.blackbox "health" {
 		address = "http://credit-service:8084/api/v1/health"
 		module  = "http_2xx"
 		labels  = {service = "credit-service"}
+	}
+
+	target {
+		name    = "chat-service"
+		address = "http://chat-service:8085/health"
+		module  = "http_2xx"
+		labels  = {service = "chat-service"}
 	}
 
 	target {
