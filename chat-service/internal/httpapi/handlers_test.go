@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -98,7 +99,7 @@ func setupTestServer(t *testing.T, repo chat.Repository) (*Handler, func()) {
 	require.NoError(t, err)
 
 	svc := chat.NewService(repo, nil, nil)
-	handler := NewHandler(svc, nil, mediaStore)
+	handler := NewHandler(svc, nil, mediaStore, slog.New(slog.DiscardHandler))
 
 	cleanup := func() {
 		_ = os.RemoveAll(tmpDir)
