@@ -26,6 +26,12 @@ func NewRouter(h *Handler, wsHub *hub.Hub, verifier *auth.Verifier) http.Handler
 	r.Get("/ws", h.ServeWS(wsHub))
 	r.Get("/api/chat/ws", h.ServeWS(wsHub))
 
+	// Media/image downloads (loaded directly by browser <img> tags without auth headers)
+	r.Get("/images/{imageId}", h.DownloadImage)
+	r.Get("/media/{mediaId}", h.DownloadImage)
+	r.Get("/api/chat/images/{imageId}", h.DownloadImage)
+	r.Get("/api/chat/media/{mediaId}", h.DownloadImage)
+
 	// Routes helper that registers protected endpoints on a router
 	registerProtected := func(sub chi.Router) {
 		sub.Post("/ws-ticket", h.IssueWSTicket)
@@ -35,8 +41,6 @@ func NewRouter(h *Handler, wsHub *hub.Hub, verifier *auth.Verifier) http.Handler
 		sub.Post("/conversations/{conversationId}/messages", h.SendMessage)
 		sub.Post("/conversations/{conversationId}/read", h.MarkRead)
 		sub.Get("/unread-summary", h.GetUnreadSummary)
-		sub.Get("/images/{imageId}", h.DownloadImage)
-		sub.Get("/media/{mediaId}", h.DownloadImage)
 		sub.Get("/admin/conversations", h.AdminListConversations)
 	}
 
