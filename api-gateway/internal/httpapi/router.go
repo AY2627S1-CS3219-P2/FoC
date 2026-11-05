@@ -159,7 +159,19 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 	if err != nil {
 		return nil, fmt.Errorf("httpapi: route /api/chat/ws: %w", err)
 	}
-	r.Handle("/api/chat/ws", chatWSProxy)
+		r.Handle("/api/chat/ws", chatWSProxy)
+
+	// Media and image downloads: browser <img> tags load without Authorization headers.
+	chatMediaProxy, err := proxy.NewRetainingToken(proxy.Route{
+		BaseURL:     downstream.Chat,
+		StripPrefix: "/api/chat",
+		AddPrefix:   "",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("httpapi: route /api/chat/images: %w", err)
+	}
+	r.Handle("/api/chat/images/*", chatMediaProxy)
+	r.Handle("/api/chat/media/*", chatMediaProxy)
 
 	for _, route := range serviceRoutes {
 		p, err := route.newProxy(proxy.Route{

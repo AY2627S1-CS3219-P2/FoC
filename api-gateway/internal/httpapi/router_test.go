@@ -1045,3 +1045,16 @@ func TestChatWSRoutePassesThroughWithoutAuthorizationHeader(t *testing.T) {
 		t.Errorf("query = %q, want %q", h.chatRec.query, "ticket=test-ticket-xyz")
 	}
 }
+
+func TestChatImagesRoutePassesThroughWithoutAuthorizationHeader(t *testing.T) {
+	h := newHarness(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/images/ee337867-10c6-4539-8256-bad7a2e95e8b", nil)
+
+	res := h.do(req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if h.chatRec.path != "/images/ee337867-10c6-4539-8256-bad7a2e95e8b" {
+		t.Errorf("path = %q, want %q", h.chatRec.path, "/images/ee337867-10c6-4539-8256-bad7a2e95e8b")
+	}
+}
