@@ -14,6 +14,7 @@ package repository_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ func TestAdminWritesAndTheirAuditRowsShareOneTransaction(t *testing.T) {
 	t.Parallel()
 	pool := openDatabase(t)
 	repo := repository.NewPostgresRepository(pool)
-	svc := supplier.NewService(repo, noErrands{})
+	svc := supplier.NewService(repo, noErrands{}, slog.New(slog.DiscardHandler))
 	ctx := context.Background()
 
 	t.Run("create, edit and delete each leave one succeeded row", func(t *testing.T) {

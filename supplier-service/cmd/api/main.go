@@ -9,7 +9,8 @@ package main
 import (
 	"context"
 	"database/sql"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -32,30 +33,38 @@ import (
 )
 
 func main() {
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	if err := run(log); err != nil {
+		log.Error("supplier-service stopped", "err", err)
+		os.Exit(1)
+	}
+}
+
+func run(log *slog.Logger) error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatalf("load config: %v", err)
+		return fmt.Errorf("load config: %w", err)
 	}
 	ctx := context.Background()
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		log.Fatalf("connect to database: %v", err)
+		return fmt.Errorf("connect to database: %w", err)
 	}
 	defer pool.Close()
 
 	if err := runMigrations(cfg.DatabaseURL); err != nil {
-		log.Fatalf("run migrations: %v", err)
+		return fmt.Errorf("run migrations: %w", err)
 	}
 
 	repo := repository.NewPostgresRepository(pool)
 	// AI-generated (edited by James Teo).
 	errands := orderclient.New(cfg.OrderBaseURL)
-	svc := supplier.NewService(repo, errands)
+	svc := supplier.NewService(repo, errands, log)
 
 	// AI-generated (edited by James Teo).
 	if err := seed.EnsureSeeded(ctx, repo, svc, cfg.SeedCSVPath); err != nil {
-		log.Fatalf("seed suppliers: %v", err)
+		return fmt.Errorf("seed suppliers: %w", err)
 	}
 
 	// Neither user-service nor Redis is waited for here: the keys are fetched
@@ -63,18 +72,30 @@ func main() {
 	verifier := auth.NewVerifier(cfg.JWKSURL, &http.Client{Timeout: 5 * time.Second})
 	rdb, err := auth.NewRedisClient(cfg.RedisURL)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 	defer rdb.Close()
 
-	router := httpapi.NewRouter(svc, verifier, auth.NewRevocations(rdb))
+	server := newHTTPServer(":"+cfg.Port, httpapi.NewRouter(svc, verifier, auth.NewRevocations(rdb), log), log)
 
 	// D-115: entries older than 6 months are removed by a scheduled job.
 	go svc.RunAuditPurge(ctx, supplier.PurgeInterval)
 
-	log.Printf("supplier-service listening on :%s", cfg.Port)
-	if err := http.ListenAndServe(":"+cfg.Port, router); err != nil {
-		log.Fatalf("server error: %v", err)
+	log.Info("supplier-service listening", "port", cfg.Port)
+	if err := server.ListenAndServe(); err != nil {
+		return fmt.Errorf("server error: %w", err)
+	}
+	return nil
+}
+
+// newHTTPServer serves handler on addr, with net/http's own errors written to
+// log at ERROR; they would otherwise go out as text through the standard log
+// package.
+func newHTTPServer(addr string, handler http.Handler, log *slog.Logger) *http.Server {
+	return &http.Server{
+		Addr:     addr,
+		Handler:  handler,
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
 	}
 }
 

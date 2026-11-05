@@ -118,8 +118,8 @@ const validBody = `{"name":"Test Stall","type":"cafe","building":"COM1","locatio
 func send(t *testing.T, repo *stubRepository, method, path, body string) (*httptest.ResponseRecorder, []seenRequest) {
 	t.Helper()
 	orders, srv := startOrderService(t, http.StatusOK, activeErrands(0))
-	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)),
-		startKeySet(t, http.StatusOK), &fakeRevocations{})
+	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL), discardLog()),
+		startKeySet(t, http.StatusOK), &fakeRevocations{}, discardLog())
 	req := httptest.NewRequest(method, path, strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+mintToken(t, tokenSpec{}))
 	rec := httptest.NewRecorder()
