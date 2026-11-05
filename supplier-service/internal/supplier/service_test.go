@@ -10,12 +10,16 @@ package supplier
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+// discardLog is the logger for tests that do not read the log.
+func discardLog() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 type fakeRepository struct {
 	byID       map[string]*Supplier
@@ -113,7 +117,7 @@ func validSupplier() *Supplier {
 func TestCreate_Success(t *testing.T) {
 	repo := newFakeRepository()
 	// AI-generated (edited by James Teo).
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 
 	created, err := svc.Create(context.Background(), validSupplier())
 
@@ -126,7 +130,7 @@ func TestCreate_Success(t *testing.T) {
 // it is given instead of overriding false with true.
 func TestCreate_KeepsAnExplicitIsAvailableFalse(t *testing.T) {
 	repo := newFakeRepository()
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 	in := validSupplier()
 	in.IsAvailable = false
 
@@ -140,7 +144,7 @@ func TestCreate_KeepsAnExplicitIsAvailableFalse(t *testing.T) {
 func TestCreate_MissingRequiredField(t *testing.T) {
 	repo := newFakeRepository()
 	// AI-generated (edited by James Teo).
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 
 	in := validSupplier()
 	in.Name = ""
@@ -154,7 +158,7 @@ func TestCreate_MissingRequiredField(t *testing.T) {
 func TestCreate_InvalidLatitude(t *testing.T) {
 	repo := newFakeRepository()
 	// AI-generated (edited by James Teo).
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 
 	in := validSupplier()
 	in.Latitude = 200
@@ -169,7 +173,7 @@ func TestCreate_DuplicateRejected(t *testing.T) {
 	repo := newFakeRepository()
 	repo.duplicates["Cool Spot|Com2|Opp LT16"] = true
 	// AI-generated (edited by James Teo).
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 
 	_, err := svc.Create(context.Background(), validSupplier())
 
@@ -180,7 +184,7 @@ func TestCreate_DuplicateRejected(t *testing.T) {
 func TestGet_NotFound(t *testing.T) {
 	repo := newFakeRepository()
 	// AI-generated (edited by James Teo).
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 
 	_, err := svc.Get(context.Background(), "missing-id")
 
@@ -191,7 +195,7 @@ func TestGet_NotFound(t *testing.T) {
 func TestDelete_SoftDeletesAndRemovesFromActiveSet(t *testing.T) {
 	repo := newFakeRepository()
 	// AI-generated (edited by James Teo).
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 	created, err := svc.Create(context.Background(), validSupplier())
 	require.NoError(t, err)
 
@@ -206,7 +210,7 @@ func TestDelete_NotFound(t *testing.T) {
 	repo := newFakeRepository()
 	// AI-generated (edited by James Teo).
 	errands := &fakeErrandCounter{}
-	svc := NewService(repo, errands)
+	svc := NewService(repo, errands, discardLog())
 
 	err := svc.Delete(context.Background(), "missing-id")
 
@@ -236,7 +240,7 @@ func TestDelete_ChecksForUnfinishedErrands(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newFakeRepository()
 			errands := &fakeErrandCounter{count: tc.count, err: tc.countErr}
-			svc := NewService(repo, errands)
+			svc := NewService(repo, errands, discardLog())
 			created, err := svc.Create(context.Background(), validSupplier())
 			require.NoError(t, err)
 
@@ -273,7 +277,7 @@ type ctxMarker struct{}
 func TestDelete_GivesTheCounterTheCallersContextAndID(t *testing.T) {
 	repo := newFakeRepository()
 	errands := &fakeErrandCounter{}
-	svc := NewService(repo, errands)
+	svc := NewService(repo, errands, discardLog())
 	created, err := svc.Create(context.Background(), validSupplier())
 	require.NoError(t, err)
 
@@ -322,7 +326,7 @@ func TestAMalformedIDIsNotFoundWithoutTouchingTheRepositoryOrOrderService(t *tes
 		t.Run("id="+id, func(t *testing.T) {
 			repo := &recordingRepository{fakeRepository: newFakeRepository()}
 			errands := &fakeErrandCounter{}
-			svc := NewService(repo, errands)
+			svc := NewService(repo, errands, discardLog())
 			ctx := context.Background()
 
 			_, getErr := svc.Get(ctx, id)
@@ -341,7 +345,7 @@ func TestAMalformedIDIsNotFoundWithoutTouchingTheRepositoryOrOrderService(t *tes
 func TestAnUpperCaseIDReachesTheRepositoryAndTheCounterInLowerCase(t *testing.T) {
 	repo := &recordingRepository{fakeRepository: newFakeRepository()}
 	errands := &fakeErrandCounter{}
-	svc := NewService(repo, errands)
+	svc := NewService(repo, errands, discardLog())
 	created, err := svc.Create(context.Background(), validSupplier())
 	require.NoError(t, err)
 	upper := strings.ToUpper(created.ID)
@@ -367,7 +371,7 @@ func TestAnUpperCaseIDReachesTheRepositoryAndTheCounterInLowerCase(t *testing.T)
 func TestAURNPrefixedIDIsPassedOnAsTheCanonicalString(t *testing.T) {
 	// uuid.Parse accepts "urn:uuid:<uuid>", which Postgres would reject.
 	repo := &recordingRepository{fakeRepository: newFakeRepository()}
-	svc := NewService(repo, &fakeErrandCounter{})
+	svc := NewService(repo, &fakeErrandCounter{}, discardLog())
 	created, err := svc.Create(context.Background(), validSupplier())
 	require.NoError(t, err)
 	repo.calls = nil

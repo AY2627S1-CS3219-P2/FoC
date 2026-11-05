@@ -26,7 +26,7 @@ func auditRouter(t *testing.T) (http.Handler, *memRepository) {
 	t.Helper()
 	repo := newMemRepository()
 	rev := &fakeRevocations{revokedJTIs: map[string]bool{}}
-	return httpapi.NewRouter(supplier.NewService(repo, &zeroErrands{}), startKeySet(t, http.StatusOK), rev), repo
+	return httpapi.NewRouter(supplier.NewService(repo, &zeroErrands{}, discardLog()), startKeySet(t, http.StatusOK), rev, discardLog()), repo
 }
 
 func do(router http.Handler, method, path, body, token string, headers map[string]string) *httptest.ResponseRecorder {

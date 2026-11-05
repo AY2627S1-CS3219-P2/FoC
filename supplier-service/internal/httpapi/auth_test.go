@@ -243,7 +243,7 @@ func TestWritesNeedAnAdminToken(t *testing.T) {
 				if tc.revokedJTI != "" {
 					rev.revokedJTIs[tc.revokedJTI] = true
 				}
-				router := httpapi.NewRouter(supplier.NewService(repo, errands), startKeySet(t, status), rev)
+				router := httpapi.NewRouter(supplier.NewService(repo, errands, discardLog()), startKeySet(t, status), rev, discardLog())
 
 				req := httptest.NewRequest(m.method, m.path, strings.NewReader(m.body))
 				req.Header.Set("Content-Type", "application/json")
@@ -284,7 +284,7 @@ func TestReadsAndHealthNeedNoToken(t *testing.T) {
 				// Keys that cannot be loaded and a Redis that is down: neither
 				// is consulted for a read.
 				rev := &fakeRevocations{err: auth.ErrRedisUnreachable}
-				router := httpapi.NewRouter(supplier.NewService(newMemRepository(), &zeroErrands{}), startKeySet(t, http.StatusBadGateway), rev)
+				router := httpapi.NewRouter(supplier.NewService(newMemRepository(), &zeroErrands{}, discardLog()), startKeySet(t, http.StatusBadGateway), rev, discardLog())
 
 				req := httptest.NewRequest(http.MethodGet, path, nil)
 				if authorization != "" {
@@ -306,7 +306,7 @@ func TestAnAdminWriteForwardsTheVerifiedTokenAndCallerIsNeverTakenFromHeaders(t 
 	admin := mintToken(t, tokenSpec{})
 	repo := newMemRepository()
 	orders, srv := startOrderService(t, http.StatusOK, activeErrands(0))
-	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL)), startKeySet(t, http.StatusOK), &fakeRevocations{})
+	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(srv.URL), discardLog()), startKeySet(t, http.StatusOK), &fakeRevocations{}, discardLog())
 
 	req := httptest.NewRequest(http.MethodDelete, "/suppliers/"+storedID, nil)
 	req.Header.Set("Authorization", "bEaReR "+admin)

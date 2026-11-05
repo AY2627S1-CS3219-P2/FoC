@@ -11,7 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 )
 
@@ -161,8 +161,8 @@ func classify(err error) (outcome, reason string) {
 
 // recordAttempt writes the audit row for an attempt that did not commit
 // (D-109). It cannot share the action's transaction, which rolled back, so it
-// is a write of its own; if that write fails too the attempt is logged to
-// stderr and the original error still reaches the caller. The write ignores the
+// is a write of its own; if that write fails too the attempt is logged at
+// ERROR and the original error still reaches the caller. The write ignores the
 // request's cancellation, so a client that hangs up does not lose the row.
 func (s *Service) recordAttempt(ctx context.Context, ac AuditContext, action, targetID string, comments map[string]any, cause error) {
 	outcome, reason := classify(cause)
@@ -172,7 +172,14 @@ func (s *Service) recordAttempt(ctx context.Context, ac AuditContext, action, ta
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.repo.RecordAudit(ctx, e); err != nil {
-		log.Printf("audit: could not record %s %s of %q by %s (%s): %v", action, outcome, targetID, ac.ActorID, reason, err)
+		s.log.LogAttrs(ctx, slog.LevelError, "could not record an audit row",
+			slog.String("request_id", ac.CorrelationID),
+			slog.String("action", action),
+			slog.String("outcome", outcome),
+			slog.String("target_id", targetID),
+			slog.String("user_id", ac.ActorID),
+			slog.String("reason", reason),
+			slog.String("err", err.Error()))
 	}
 }
 
@@ -206,11 +213,11 @@ func (s *Service) RunAuditPurge(ctx context.Context, interval time.Duration) {
 	run := func() {
 		n, err := s.PurgeAudit(ctx)
 		if err != nil {
-			log.Printf("audit: purge failed: %v", err)
+			s.log.Error("audit purge failed", "err", err)
 			return
 		}
 		if n > 0 {
-			log.Printf("audit: purged %d entries older than 6 months", n)
+			s.log.Info("audit purge removed entries older than 6 months", "removed", n)
 		}
 	}
 	run()

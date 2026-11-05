@@ -153,7 +153,7 @@ func TestHistoryReturnsOpenActionForScheduledOpening(t *testing.T) {
 		next.ExpiresAt = &expiresAt
 		next.StateChangedAt, next.UpdatedAt = now, now
 		next.Version++
-		return &order.AmendResult{Order: next, History: order.HistoryEntry{
+		return &order.AmendResult{Order: next, History: &order.HistoryEntry{
 			OrderID: cur.ID, Action: order.ActionOpen, FromState: order.StateScheduled,
 			ToState: order.StateOpen, ActorKind: order.ActorSystem, OccurredAt: now,
 		}}, nil
@@ -380,6 +380,17 @@ func TestServiceErrorsMapToStatusCodes(t *testing.T) {
 			status: http.StatusUnprocessableEntity, msg: "not enough available credits for this reward",
 		},
 		{
+			name: "a reward raise whose answer from credit-service was lost",
+			run: func(t *testing.T, h *harness) *httptest.ResponseRecorder {
+				requester := student()
+				d := h.create(t, requester)
+				h.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
+				return h.do(t, http.MethodPatch, "/"+d.Errand.Id.String(), map[string]any{"version": d.Errand.Version, "reward": 9}, as(requester))
+			},
+			status: http.StatusServiceUnavailable,
+			msg:    "the reward raise could not be confirmed, so nothing was saved and the reward stays at 5; refresh before trying again",
+		},
+		{
 			name: "supplier-service down",
 			run: func(t *testing.T, h *harness) *httptest.ResponseRecorder {
 				h.suppliers.FailWith(ordertest.ErrInjected)
@@ -420,6 +431,119 @@ func TestUnexpectedErrorIsLoggedWithTheRequestIDNotSent(t *testing.T) {
 	line := h.findLog(t, func(l map[string]any) bool { return l["level"] == "ERROR" })
 	assert.Equal(t, "boom-1", line["request_id"])
 	assert.Contains(t, line["err"], "injected failure")
+}
+
+func TestA5xxLogsItsCauseOnceAtError(t *testing.T) {
+	// One failure is one cause line beside its access line, carrying the
+	// request id. A client that hung up is not a fault here, so its request
+	// logs nothing at ERROR; the service's own deadline passing is a fault.
+	t.Parallel()
+	type run func(t *testing.T, h *harness, opts []reqOption) *httptest.ResponseRecorder
+	getFails := func(err error) run {
+		return func(t *testing.T, h *harness, opts []reqOption) *httptest.ResponseRecorder {
+			caller := student()
+			o := h.put(order.StateOpen, caller, nil)
+			h.repo.FailNext("Get", err)
+			return h.do(t, http.MethodGet, "/"+o.ID.String(), nil, append(opts, as(caller))...)
+		}
+	}
+	// No X-Request-Id, so no duplicate-submission key: the create reaches the
+	// supplier lookup even on a context that has already ended.
+	createFails := func(err error) run {
+		return func(t *testing.T, h *harness, opts []reqOption) *httptest.ResponseRecorder {
+			h.suppliers.FailWith(err)
+			return h.do(t, http.MethodPost, "/", h.createBody(), append(opts, as(student()))...)
+		}
+	}
+	const unavailable = "request failed: a dependency is unavailable"
+	cases := []struct {
+		name   string
+		run    run
+		end    func(*testing.T) reqOption // ends the request's context first; nil leaves it running
+		status int
+		cause  string // the cause line's message; empty when nothing is logged at ERROR
+		err    string // part of the cause line's err
+		warn   string // the WARN line that adds the errand, when the service logs one
+		access string // the access line's level
+	}{
+		{
+			name: "a 4xx",
+			run: func(t *testing.T, h *harness, opts []reqOption) *httptest.ResponseRecorder {
+				return h.do(t, http.MethodGet, "/"+uuid.NewString(), nil, append(opts, as(student()))...)
+			},
+			status: http.StatusNotFound, access: "INFO",
+		},
+		{
+			name: "a 500", run: getFails(ordertest.ErrInjected),
+			status: http.StatusInternalServerError, cause: "request failed", err: "injected failure", access: "ERROR",
+		},
+		{
+			name: "a 503", run: createFails(ordertest.ErrInjected),
+			status: http.StatusServiceUnavailable, cause: unavailable, err: "injected failure", access: "ERROR",
+		},
+		{
+			name: "a reservation credit-service refuses",
+			run: func(t *testing.T, h *harness, opts []reqOption) *httptest.ResponseRecorder {
+				h.credit.ReserveHook = func(order.Reservation) (bool, error) { return false, order.ErrCreditRejected }
+				return h.do(t, http.MethodPost, "/", h.createBody(), append(opts, as(student()))...)
+			},
+			status: http.StatusServiceUnavailable, cause: unavailable, err: "credit-service rejected the request",
+			warn: "credit-service refused a reservation; queued refund will release any hold", access: "ERROR",
+		},
+		{
+			name: "a raise credit-service refuses",
+			run: func(t *testing.T, h *harness, opts []reqOption) *httptest.ResponseRecorder {
+				requester := student()
+				d := h.create(t, requester)
+				h.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return false, order.ErrCreditRejected }
+				body := map[string]any{"version": d.Errand.Version, "reward": d.Errand.Reward + 1}
+				return h.do(t, http.MethodPatch, "/"+d.Errand.Id.String(), body, append(opts, as(requester))...)
+			},
+			status: http.StatusServiceUnavailable, cause: unavailable, err: "credit-service rejected the request",
+			warn: "credit-service refused a reward raise", access: "ERROR",
+		},
+		{
+			name: "a 500 whose client hung up", run: getFails(context.Canceled), end: hungUp,
+			status: http.StatusInternalServerError, access: "WARN",
+		},
+		{
+			name: "a 503 whose client hung up", run: createFails(context.Canceled), end: hungUp,
+			status: http.StatusServiceUnavailable, access: "WARN",
+		},
+		{
+			name: "a 503 past the service's own deadline", run: createFails(context.DeadlineExceeded), end: pastDeadline,
+			status: http.StatusServiceUnavailable, cause: unavailable, err: "context deadline exceeded", access: "ERROR",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newHarness(t)
+			var opts []reqOption
+			if tc.end != nil {
+				opts = append(opts, tc.end(t))
+			}
+
+			rec := tc.run(t, h, opts)
+
+			require.Equal(t, tc.status, rec.Code, rec.Body.String())
+			id := rec.Header().Get("X-Request-Id")
+			assert.Equal(t, tc.access, h.accessLine(t, id)["level"])
+			causes := h.causesAtError(t)
+			if tc.cause == "" {
+				assert.Empty(t, causes)
+				return
+			}
+			require.Len(t, causes, 1, "the cause is logged once at ERROR")
+			assert.Equal(t, tc.cause, causes[0]["msg"])
+			assert.Equal(t, id, causes[0]["request_id"])
+			assert.Contains(t, causes[0]["err"], tc.err)
+			if tc.warn != "" {
+				line := h.findLog(t, func(l map[string]any) bool { return l["level"] == "WARN" && l["msg"] == tc.warn })
+				assert.Equal(t, id, line["request_id"])
+				assert.NotEmpty(t, line["errand_id"])
+			}
+		})
+	}
 }
 
 func TestACommittedActionIsNotReportedAsFailedWhenTheReReadFails(t *testing.T) {

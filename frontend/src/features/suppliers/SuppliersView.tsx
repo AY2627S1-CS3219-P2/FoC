@@ -25,7 +25,7 @@ import { SupplierForm } from "./SupplierForm";
 import type { ToastMessage } from "../../components/Toast";
 
 interface SuppliersViewProps {
-  /** Injected by App, which owns the token store the transport reads. */
+  /** Injected by App. main.tsx creates the token store the transport reads and passes it to App. */
   api: SuppliersApi;
   // AI-generated (edited by nigeltzy).
   /** True when `api` is the fixture rather than supplier-service. */

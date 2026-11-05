@@ -8,6 +8,7 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -16,15 +17,17 @@ import (
 	"foc/supplier-service/internal/supplier"
 )
 
-// NewRouter serves the supplier API. Reads need no token. POST, PUT and DELETE
-// need an ADMIN's access token, which v verifies and rev checks for revocation
-// (D-041, D-054).
-func NewRouter(svc *supplier.Service, v TokenVerifier, rev RevocationChecker) http.Handler {
-	h := NewHandler(svc)
+// NewRouter serves the supplier API and logs every request to log. Reads need
+// no token. POST, PUT and DELETE need an ADMIN's access token, which v verifies
+// and rev checks for revocation (D-041, D-054).
+func NewRouter(svc *supplier.Service, v TokenVerifier, rev RevocationChecker, log *slog.Logger) http.Handler {
+	h := NewHandler(svc, log)
 	r := chi.NewRouter()
+	// The request id is outermost so every line about the request carries it;
+	// the access log wraps recovery so it records the 500 a panic becomes.
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(accessLog(log))
+	r.Use(recoverPanics(log))
 
 	r.Get("/health", h.Health)
 
@@ -33,8 +36,8 @@ func NewRouter(svc *supplier.Service, v TokenVerifier, rev RevocationChecker) ht
 		r.Get("/{id}", h.Get)
 
 		r.Group(func(r chi.Router) {
-			r.Use(authenticate(v, rev))
-			r.Use(requireAdmin)
+			r.Use(authenticate(v, rev, log))
+			r.Use(requireAdmin(log))
 			r.Get("/audit-log", h.AuditLog)
 			r.Post("/", h.Create)
 			r.Put("/{id}", h.Update)

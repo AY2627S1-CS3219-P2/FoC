@@ -1,0 +1,42 @@
+# The one alert rule. No contact point is set up for it; it shows as firing on
+# the FoC overview dashboard.
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: service-health
+    folder: FoC
+    interval: 10s
+    rules:
+      - uid: foc-service-down
+        title: Service down
+        condition: B
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: probe_success
+              instant: true
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [1]
+        for: 1m
+        # No probe results at all, as when Alloy is down, fires too.
+        noDataState: Alerting
+        execErrState: Error
+        annotations:
+          summary: "{{ with $labels.service }}{{ . }} has failed its health check for at least 1 minute{{ else }}No health check results for at least 1 minute{{ end }}"
+          # Shows the rule's state on the dashboard's Service health panel.
+          __dashboardUid__: foc-overview
+          __panelId__: "1"
