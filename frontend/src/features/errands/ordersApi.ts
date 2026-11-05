@@ -122,6 +122,8 @@ const CREATE_FIELDS = [
   "deliveryLocation",
   "deliveryNote",
   "reward",
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — forwards the optional scheduled contract field.
+  "scheduled",
 ] as const satisfies readonly (keyof CreateErrandRequest)[];
 
 /** The fields of AmendErrandRequest besides `version`. */
@@ -131,6 +133,8 @@ const AMEND_FIELDS = [
   "deliveryLocation",
   "deliveryNote",
   "reward",
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — forwards scheduled changes from the API contract.
+  "scheduled",
 ] as const satisfies readonly (keyof ErrandChanges)[];
 
 /**

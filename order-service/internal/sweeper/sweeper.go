@@ -5,8 +5,9 @@
 // Author review: James Teo — reviewed and verified.
 
 // Package sweeper runs order-service's background deadline check (D-049):
-// every interval it expires the OPEN errands whose deadline has passed and
-// auto-confirms the DELIVERED errands whose confirmation window has closed.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — adds due-scheduled opening to the existing sweep.
+// every interval it opens due scheduled errands, expires OPEN errands whose
+// deadline has passed, and auto-confirms DELIVERED errands past their window.
 // It decides nothing itself. Each due id goes through the order service, which
 // re-checks the errand under its conditional write (F3.14.1), so a user action
 // or a second sweeper racing this one cannot move an errand twice.
@@ -31,9 +32,10 @@ const DefaultInterval = 5 * time.Second
 // event line caused by a sweep is told apart from one caused by a request.
 const correlationPrefix = "sweep-"
 
-// Source lists the errands whose deadline has passed, oldest deadline first.
-// order.Repository satisfies it.
+// Source lists scheduled errands and lifecycle deadlines that are due, oldest
+// first. order.Repository satisfies it.
 type Source interface {
+	DueForScheduled(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	DueForExpiry(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 	DueForAutoConfirm(ctx context.Context, now time.Time, limit int) ([]uuid.UUID, error)
 }
@@ -42,11 +44,12 @@ type Source interface {
 // reports applied=false when the errand was no longer due or had already been
 // moved by someone else.
 type Actions interface {
+	OpenScheduled(ctx context.Context, id uuid.UUID, correlationID string) (bool, error)
 	Expire(ctx context.Context, id uuid.UUID, correlationID string) (bool, error)
 	AutoConfirm(ctx context.Context, id uuid.UUID, correlationID string) (bool, error)
 }
 
-// Sweeper expires and auto-confirms due errands. It holds no state between
+// Sweeper opens, expires and auto-confirms due errands. It holds no state between
 // sweeps, so it is safe to run more than one, in one process or in several:
 // the order service's conditional writes let exactly one of them move each
 // errand.
@@ -89,9 +92,9 @@ func (s *Sweeper) Run(ctx context.Context) {
 	}
 }
 
-// SweepOnce expires the errands due for expiry, then auto-confirms the errands
-// due for confirmation, up to order.SweepBatchLimit of each; anything beyond
-// that waits for the next sweep. It returns how many errands it moved.
+// SweepOnce expires and auto-confirms due errands, then opens due scheduled
+// errands, up to order.SweepBatchLimit of each; anything beyond that waits for
+// the next sweep. It returns expiry and auto-confirm counts.
 //
 // err reports a due list that could not be read, or ctx ending mid-sweep. An
 // error on one errand is logged, not returned, and does not stop the sweep:
@@ -103,7 +106,11 @@ func (s *Sweeper) SweepOnce(ctx context.Context) (expired, confirmed int, err er
 		return expired, 0, expireErr
 	}
 	confirmed, confirmErr := s.sweep(ctx, now, "auto-confirm", s.src.DueForAutoConfirm, s.actions.AutoConfirm)
-	return expired, confirmed, errors.Join(expireErr, confirmErr)
+	if ctx.Err() != nil {
+		return expired, confirmed, errors.Join(expireErr, confirmErr)
+	}
+	_, scheduledErr := s.sweep(ctx, now, "open-scheduled", s.src.DueForScheduled, s.actions.OpenScheduled)
+	return expired, confirmed, errors.Join(expireErr, confirmErr, scheduledErr)
 }
 
 // sweep lists one kind of due errand and runs act on each. action names the

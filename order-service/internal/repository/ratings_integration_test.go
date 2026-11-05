@@ -210,6 +210,30 @@ func (e *env) testSupplierCopy(t *testing.T) {
 		assert.Nil(t, got.Supplier.Point, "no position: both columns NULL")
 	})
 
+	// AI-generated (edited by PENDING): AmendScheduled writes its own UPDATE, which
+	// must keep them as Amend's does.
+	t.Run("type and position follow a scheduled errand's new supplier", func(t *testing.T) {
+		e.reset(t)
+		o := openErrand(uuid.New(), at(0))
+		o.State, o.ExpiresAt, o.ScheduledAt = order.StateScheduled, nil, ptr(at(time.Hour))
+		e.insert(t, o)
+
+		now := at(time.Minute)
+		next := o
+		next.Supplier = order.SupplierSnapshot{ID: uuid.New(), Name: "Print Hub", Location: "AS7", Type: "Printing",
+			Point: &shuttle.Point{Lat: 1.2949, Lon: 103.7737}}
+		next.Version = o.Version + 1
+		next.UpdatedAt = now
+		got, err := e.repo.AmendScheduled(t.Context(), o.ID, now, func(order.Order, int) (*order.AmendResult, error) {
+			return &order.AmendResult{Order: next, History: amendEntry(o, now, []order.FieldChange{
+				{Field: order.FieldSupplier, From: o.Supplier.Name, To: "Print Hub"},
+			})}, nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, next, got)
+		assert.Equal(t, next, e.get(t, o.ID))
+	})
+
 	t.Run("an errand saved without them has an empty type and no position", func(t *testing.T) {
 		e.reset(t)
 		o := openErrand(uuid.New(), at(0))

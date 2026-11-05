@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Added CreateReservation, AdjustReservationReward, RefundReservation, PayoutReservation, GetAccount, and ListTransactions service orchestration per sourceOfTruth.md.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit
 
@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/google/uuid"
@@ -98,7 +99,7 @@ func (s *Service) CreateReservation(ctx context.Context, errandID, requesterID u
 }
 
 // AdjustReservationReward validates parameters and requests reward adjustment from the repository.
-func (s *Service) AdjustReservationReward(ctx context.Context, errandID, requesterID uuid.UUID, newReward int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
+func (s *Service) AdjustReservationReward(ctx context.Context, errandID, requesterID uuid.UUID, newReward int64, currVersion int64, operationID uuid.UUID) (*OperationResult, *Reservation, error) {
 	if errandID == uuid.Nil {
 		return nil, nil, ErrInvalidErrandID
 	}
@@ -108,6 +109,9 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID, request
 	if operationID == uuid.Nil {
 		return nil, nil, ErrInvalidOperationID
 	}
+	if currVersion < 1 || currVersion == math.MaxInt64 {
+		return nil, nil, fmt.Errorf("%w: currVersion must be positive", ErrInvalidRequest)
+	}
 	if err := ValidateRewardAmount(newReward); err != nil {
 		return nil, nil, err
 	}
@@ -115,7 +119,7 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID, request
 		return nil, nil, errors.New("reservation repository is required")
 	}
 
-	return s.reservationRepo.AdjustReservationReward(ctx, errandID, requesterID, newReward, operationID)
+	return s.reservationRepo.AdjustReservationReward(ctx, errandID, requesterID, newReward, currVersion, operationID)
 }
 
 // ApplyRewardSet reconciles an existing reservation's reward amount with an errand.reward_set event (D-057).
@@ -143,7 +147,7 @@ func (s *Service) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUI
 }
 
 // RefundReservation validates refund parameters and requests refund settlement from the repository.
-func (s *Service) RefundReservation(ctx context.Context, errandID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
+func (s *Service) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason TransactionReason, occurredAt time.Time) error {
 	if errandID == uuid.Nil {
 		return ErrInvalidErrandID
 	}
@@ -162,11 +166,11 @@ func (s *Service) RefundReservation(ctx context.Context, errandID, eventID uuid.
 		return errors.New("settlement repository is required")
 	}
 
-	return s.settlementRepo.RefundReservation(ctx, errandID, eventID, reason, occurredAt)
+	return s.settlementRepo.RefundReservation(ctx, errandID, requesterID, eventID, reason, occurredAt)
 }
 
 // PayoutReservation validates completion payout parameters and requests payout settlement from the repository.
-func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
+func (s *Service) PayoutReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error {
 	if errandID == uuid.Nil {
 		return ErrInvalidErrandID
 	}
@@ -176,6 +180,9 @@ func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, ev
 	if eventID == uuid.Nil {
 		return ErrInvalidOperationID
 	}
+	if amount == nil || *amount < 1 || *amount > MaxErrandReward {
+		return ErrLifecycleViolation
+	}
 	if occurredAt.IsZero() {
 		return errors.New("completion event occurredAt is required")
 	}
@@ -183,7 +190,7 @@ func (s *Service) PayoutReservation(ctx context.Context, errandID, courierID, ev
 		return errors.New("settlement repository is required")
 	}
 
-	return s.settlementRepo.PayoutReservation(ctx, errandID, courierID, eventID, amount, occurredAt)
+	return s.settlementRepo.PayoutReservation(ctx, errandID, requesterID, courierID, eventID, amount, occurredAt)
 }
 
 // GetAccount retrieves the account projection for a user.

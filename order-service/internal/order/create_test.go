@@ -94,6 +94,62 @@ func TestCreatePostsAnOpenErrand(t *testing.T) {
 	assert.Equal(t, "corr-create", h[0].CorrelationID)
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — covers the recorded
+// scheduled-create behavior, timestamp window, credit reservation and limit.
+func TestCreatePostsScheduledErrandWithoutStartingExpiry(t *testing.T) {
+	f := newFixture(t)
+	for range order.MaxOpenErrands {
+		f.seed(order.StateOpen)
+	}
+	scheduledAt := startTime().Add(29 * time.Hour)
+	in := f.createInput()
+	in.ScheduledAt = &scheduledAt
+
+	o, replayed, err := f.svc.Create(f.ctx, f.requester, in)
+
+	require.NoError(t, err)
+	assert.False(t, replayed)
+	assert.Equal(t, order.StateScheduled, o.State)
+	assert.Equal(t, &scheduledAt, o.ScheduledAt)
+	assert.Nil(t, o.ExpiresAt, "expiry begins only when the errand becomes OPEN")
+	assert.Equal(t, []order.Reservation{{ErrandID: o.ID, RequesterID: f.requester.UserID, Amount: 5, CorrelationID: "corr-create"}}, f.credit.Reserves())
+	require.Len(t, f.history(o.ID), 1)
+	assert.Equal(t, order.StateScheduled, f.history(o.ID)[0].ToState)
+}
+
+func TestCreateValidatesScheduledTimeAndAcceptsTheEarliestBoundary(t *testing.T) {
+	cases := []struct {
+		name       string
+		clockDelta time.Duration
+		schedule   time.Time
+		valid      bool
+	}{
+		{name: "at current time", schedule: startTime(), valid: false},
+		{name: "before current time", schedule: startTime().Add(-time.Second), valid: false},
+		{name: "before previous-day midnight boundary", clockDelta: -9*time.Hour - time.Nanosecond, schedule: startTime().Add(29 * time.Hour), valid: false},
+		{name: "exactly previous-day midnight boundary", clockDelta: -9 * time.Hour, schedule: startTime().Add(15 * time.Hour), valid: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t)
+			f.clock.Advance(tc.clockDelta)
+			in := f.createInput()
+			in.ScheduledAt = &tc.schedule
+
+			o, _, err := f.svc.Create(f.ctx, f.requester, in)
+
+			if !tc.valid {
+				requireKind(t, err, order.KindValidation)
+				f.requireNoWrite()
+				assert.Empty(t, f.credit.Reserves())
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, &tc.schedule, o.ScheduledAt)
+		})
+	}
+}
+
 func TestCreateIsForStudentsOnly(t *testing.T) {
 	// D-045: create is open to any STUDENT and to nobody else, refused before
 	// supplier-service, credit or the outbox is touched.

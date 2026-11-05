@@ -122,6 +122,27 @@ func TestAnUnratedErrandBlocksPostingAndAccepting(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// AI-generated (edited by PENDING): the gate covers scheduling an errand, which
+// takes the same create path (D-093).
+// TestAnUnratedErrandBlocksScheduling refuses a scheduled post until its
+// requester has rated their completed errand.
+func TestAnUnratedErrandBlocksScheduling(t *testing.T) {
+	f := newFixture(t)
+	done := f.seedUnrated()
+	scheduledAt := startTime().Add(29 * time.Hour)
+	in := f.createInput()
+	in.ScheduledAt = &scheduledAt
+
+	_, _, err := f.svc.Create(f.ctx, f.requester, in)
+	requireKind(t, err, order.KindConflict)
+
+	_, err = f.svc.Rate(f.ctx, f.requester, done.ID, 5)
+	require.NoError(t, err)
+	o, _, err := f.svc.Create(f.ctx, f.requester, in)
+	require.NoError(t, err)
+	assert.Equal(t, order.StateScheduled, o.State)
+}
+
 func TestARetriedCreateThatAlreadyWentThroughIsNotBlocked(t *testing.T) {
 	// The gate comes after the duplicate-submission replay (D-047): a retry of
 	// a create that succeeded returns its errand, even if a rating became due

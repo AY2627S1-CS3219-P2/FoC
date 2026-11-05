@@ -94,6 +94,75 @@ func TestSweepOnceExpiresDueOpenErrands(t *testing.T) {
 	}
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies due schedules
+// become OPEN with a fresh expiry window, then expire only after that window.
+func TestSweepOnceOpensScheduledErrandAndStartsExpiryAtOpening(t *testing.T) {
+	e := newEnv(t)
+	requester := student()
+	scheduledAt := e.clock.Now().Add(time.Hour)
+	o := e.postScheduled(t, requester, 8, scheduledAt)
+	e.clock.Advance(time.Hour)
+
+	expired, confirmed, err := e.newSweeper().SweepOnce(context.Background())
+
+	require.NoError(t, err)
+	assert.Zero(t, expired)
+	assert.Zero(t, confirmed)
+	opened := e.get(t, o.ID)
+	assert.Equal(t, order.StateOpen, opened.State)
+	assert.Nil(t, opened.ScheduledAt)
+	assert.Equal(t, e.clock.Now().Add(expiryPeriod), *opened.ExpiresAt)
+	assert.Equal(t, order.ActionOpen, e.lastHistory(t, o.ID).Action)
+	assert.Equal(t, order.ActorSystem, e.lastHistory(t, o.ID).ActorKind)
+	assert.Empty(t, e.repo.EventsFor(o.ID))
+
+	e.clock.Advance(expiryPeriod)
+	expired, _, err = e.newSweeper().SweepOnce(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, 1, expired)
+	assert.Equal(t, order.StateExpired, e.get(t, o.ID).State)
+}
+
+func TestSweepOnceCancelsDueScheduledErrandAtOpenLimit(t *testing.T) {
+	e := newEnv(t)
+	requester := student()
+	for i := 0; i < order.MaxOpenErrands; i++ {
+		e.post(t, requester, i+1)
+	}
+	scheduledAt := e.clock.Now().Add(time.Hour)
+	o := e.postScheduled(t, requester, 12, scheduledAt)
+	e.clock.Advance(time.Hour)
+
+	_, _, err := e.newSweeper().SweepOnce(context.Background())
+	require.NoError(t, err)
+	got := e.get(t, o.ID)
+	assert.Equal(t, order.StateCancelled, got.State)
+	assert.Nil(t, got.ExpiresAt)
+	events := e.repo.EventsFor(o.ID)
+	require.Len(t, events, 1)
+	assert.Equal(t, order.RoutingCancelled, events[0].RoutingKey)
+	assert.Equal(t, 12, events[0].Payload.Amount)
+	assert.Equal(t, order.ActionCancel, e.lastHistory(t, o.ID).Action)
+}
+
+func TestSweepOnceRetriesScheduledErrandAfterStorageFailure(t *testing.T) {
+	e := newEnv(t)
+	requester := student()
+	o := e.postScheduled(t, requester, 8, e.clock.Now().Add(time.Hour))
+	e.clock.Advance(time.Hour)
+	e.repo.AfterAmendFn = errors.New("temporary database failure")
+
+	_, _, err := e.newSweeper().SweepOnce(context.Background())
+	require.NoError(t, err, "a per-errand failure is logged and left due")
+	assert.Equal(t, order.StateScheduled, e.get(t, o.ID).State)
+	assert.Empty(t, e.repo.EventsFor(o.ID))
+
+	_, _, err = e.newSweeper().SweepOnce(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, order.StateOpen, e.get(t, o.ID).State)
+	assert.Equal(t, order.ActionOpen, e.lastHistory(t, o.ID).Action)
+}
+
 func TestSweepOnceAutoConfirmsDueDeliveredErrands(t *testing.T) {
 	e := newEnv(t)
 	requester, courier := student(), student()
@@ -387,7 +456,8 @@ func TestSweepOnceGivesEachErrandItsOwnCorrelationID(t *testing.T) {
 	assert.Equal(t, []listCall{
 		{list: "expiry", now: clock.Now(), limit: order.SweepBatchLimit},
 		{list: "auto-confirm", now: clock.Now(), limit: order.SweepBatchLimit},
-	}, src.callsSoFar(), "both lists are read as of the sweep's clock, one batch each")
+		{list: "scheduled", now: clock.Now(), limit: order.SweepBatchLimit},
+	}, src.callsSoFar(), "all lists are read as of the sweep's clock, one batch each")
 
 	calls := acts.callsSoFar()
 	assert.Equal(t, slices.Concat(expiry, confirm), acts.ids())
@@ -563,6 +633,18 @@ func (e *env) post(t *testing.T, requester order.Caller, reward int) order.Order
 	return o
 }
 
+func (e *env) postScheduled(t *testing.T, requester order.Caller, reward int, scheduledAt time.Time) order.Order {
+	t.Helper()
+	o, _, err := e.svc.Create(context.Background(), requester, order.CreateInput{
+		SupplierID: e.supplier, ItemDescription: "Iced milo, less sugar",
+		DeliveryLocation: "COM3 Lobby", Reward: reward, ScheduledAt: &scheduledAt,
+		CorrelationID: "req-scheduled-" + uuid.NewString(),
+	})
+	require.NoError(t, err)
+	require.Equal(t, order.StateScheduled, o.State)
+	return o
+}
+
 // accept has courier accept o.
 func (e *env) accept(t *testing.T, o order.Order, courier order.Caller) order.Order {
 	t.Helper()
@@ -734,11 +816,18 @@ type listCall struct {
 // stubSource answers with fixed ids or errors and records each call. swept,
 // when set, gets a value at the start of every sweep.
 type stubSource struct {
-	mu                    sync.Mutex
-	expiry, confirm       []uuid.UUID
-	expiryErr, confirmErr error
-	calls                 []listCall
-	swept                 chan struct{}
+	mu                                  sync.Mutex
+	expiry, confirm, scheduled          []uuid.UUID
+	expiryErr, confirmErr, scheduledErr error
+	calls                               []listCall
+	swept                               chan struct{}
+}
+
+func (s *stubSource) DueForScheduled(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls = append(s.calls, listCall{list: "scheduled", now: now, limit: limit})
+	return slices.Clone(s.scheduled), s.scheduledErr
 }
 
 func (s *stubSource) DueForExpiry(_ context.Context, now time.Time, limit int) ([]uuid.UUID, error) {
@@ -785,6 +874,10 @@ type stubActions struct {
 
 func (a *stubActions) Expire(ctx context.Context, id uuid.UUID, correlationID string) (bool, error) {
 	return a.record(ctx, "expire", id, correlationID)
+}
+
+func (a *stubActions) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID string) (bool, error) {
+	return a.record(ctx, "open-scheduled", id, correlationID)
 }
 
 func (a *stubActions) AutoConfirm(ctx context.Context, id uuid.UUID, correlationID string) (bool, error) {

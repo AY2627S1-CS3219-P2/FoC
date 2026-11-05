@@ -1,7 +1,7 @@
 -- AI Assistance Disclosure:
--- Tool: Antigravity, date: 2026-10-19
--- Scope: Finalized initial database schema migration with 6 tables, 5 enums, 64-bit bounds, integrity fields, and append-only trigger.
--- Author review: PENDING - reviewer to complete
+-- Tool: Antigravity, date: 2026-11-03
+-- Scope: Compact schema migration to 3 core tables (credit_accounts, credit_reservations, credit_transactions), reservation versioning, and immutable ledger trigger.
+-- Author review: Reviewed by Seth
 
 -- 1. Enums
 CREATE TYPE reservation_status AS ENUM (
@@ -25,20 +25,6 @@ CREATE TYPE transaction_reason AS ENUM (
 CREATE TYPE account_integrity_status AS ENUM (
     'CONSISTENT',
     'FLAGGED'
-);
-
-CREATE TYPE credit_operation_type AS ENUM (
-    'REWARD_ADJUSTMENT'
-);
-
-CREATE TYPE credit_operation_outcome AS ENUM (
-    'SUCCESS',
-    'WALLET_NOT_READY',
-    'INSUFFICIENT_CREDITS',
-    'RESERVATION_STATE_CONFLICT',
-    'RESERVATION_AMOUNT_MISMATCH',
-    'ACCOUNT_INTEGRITY_FAILURE',
-    'CREDIT_LIMIT_EXCEEDED'
 );
 
 -- 2. Credit Accounts (User Aggregate)
@@ -75,10 +61,12 @@ CREATE TABLE credit_reservations (
     requester_id UUID NOT NULL REFERENCES credit_accounts(user_id),
     amount BIGINT NOT NULL,
     status reservation_status NOT NULL DEFAULT 'RESERVED',
+    version BIGINT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT chk_reservations_amount_range CHECK (amount >= 1 AND amount <= 1000000)
+    CONSTRAINT chk_reservations_amount_range CHECK (amount >= 1 AND amount <= 1000000),
+    CONSTRAINT chk_reservations_version_positive CHECK (version > 0)
 );
 
 CREATE INDEX idx_reservations_requester ON credit_reservations(requester_id);
@@ -92,6 +80,7 @@ CREATE TABLE credit_transactions (
     balance_bucket TEXT NOT NULL CHECK (balance_bucket IN ('AVAILABLE', 'RESERVED')),
     amount BIGINT NOT NULL,
     reason transaction_reason NOT NULL,
+    reservation_version BIGINT NULL,
     occurred_at TIMESTAMPTZ NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -115,73 +104,3 @@ CREATE TRIGGER credit_transactions_immutable
 BEFORE UPDATE OR DELETE ON credit_transactions
 FOR EACH ROW
 EXECUTE FUNCTION prevent_credit_transaction_changes();
-
--- 5. Credit Operation Results (Adjustment Idempotency)
-CREATE TABLE credit_operation_results (
-    operation_id UUID PRIMARY KEY,
-    operation_type credit_operation_type NOT NULL,
-    errand_id UUID NOT NULL REFERENCES credit_reservations(errand_id) ON DELETE RESTRICT,
-    current_amount BIGINT NOT NULL,
-    new_amount BIGINT NOT NULL,
-    outcome_code credit_operation_outcome NOT NULL,
-    resulting_amount BIGINT NULL,
-    authoritative_amount BIGINT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-
-    CONSTRAINT chk_operation_results_current_amount CHECK (current_amount >= 1 AND current_amount <= 1000000),
-    CONSTRAINT chk_operation_results_new_amount CHECK (new_amount >= 1 AND new_amount <= 1000000),
-    CONSTRAINT chk_operation_results_resulting_amount CHECK (resulting_amount IS NULL OR (resulting_amount >= 1 AND resulting_amount <= 1000000)),
-    CONSTRAINT chk_operation_results_authoritative_amount CHECK (authoritative_amount IS NULL OR (authoritative_amount >= 1 AND authoritative_amount <= 1000000)),
-    CONSTRAINT chk_operation_results_amounts CHECK (
-        (outcome_code = 'SUCCESS' AND resulting_amount IS NOT NULL AND authoritative_amount IS NULL)
-        OR
-        (outcome_code = 'RESERVATION_AMOUNT_MISMATCH' AND resulting_amount IS NULL AND authoritative_amount IS NOT NULL)
-        OR
-        (outcome_code NOT IN ('SUCCESS', 'RESERVATION_AMOUNT_MISMATCH') AND resulting_amount IS NULL AND authoritative_amount IS NULL)
-    )
-);
-
-CREATE INDEX idx_operation_results_errand ON credit_operation_results(errand_id);
-
--- 6. Pending Refunds (Durable Blocked Refunds)
-CREATE TABLE pending_refunds (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    errand_id UUID NOT NULL UNIQUE REFERENCES credit_reservations(errand_id) ON DELETE RESTRICT,
-    event_id UUID NOT NULL UNIQUE,
-    reason transaction_reason NOT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL,
-    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    attempt_count BIGINT NOT NULL DEFAULT 0,
-    last_attempt_at TIMESTAMPTZ NULL,
-    last_error VARCHAR(512) NULL,
-    overdue_alerted_at TIMESTAMPTZ NULL,
-
-    CONSTRAINT chk_pending_refunds_reason CHECK (reason IN ('ERRAND_CANCELLED', 'ERRAND_EXPIRED', 'ERRAND_FAILED')),
-    CONSTRAINT chk_pending_refunds_attempt_count CHECK (attempt_count >= 0)
-);
-
-CREATE INDEX idx_pending_refunds_next_attempt ON pending_refunds(next_attempt_at);
-
--- 7. Pending Payouts (Durable Delayed Payouts)
-CREATE TABLE pending_payouts (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    errand_id UUID NOT NULL UNIQUE REFERENCES credit_reservations(errand_id) ON DELETE RESTRICT,
-    event_id UUID NOT NULL UNIQUE,
-    courier_id UUID NOT NULL,
-    payout_amount BIGINT NOT NULL,
-    occurred_at TIMESTAMPTZ NOT NULL,
-    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    attempt_count BIGINT NOT NULL DEFAULT 0,
-    last_attempt_at TIMESTAMPTZ NULL,
-    blocked_reason TEXT NOT NULL,
-    last_error VARCHAR(512) NULL,
-    overdue_alerted_at TIMESTAMPTZ NULL,
-
-    CONSTRAINT chk_pending_payouts_blocked_reason CHECK (blocked_reason IN ('MISSING_WALLET', 'ACCOUNT_FLAGGED', 'AVAILABLE_LIMIT_EXCEEDED')),
-    CONSTRAINT chk_pending_payouts_payout_amount CHECK (payout_amount >= 1 AND payout_amount <= 1000000),
-    CONSTRAINT chk_pending_payouts_attempt_count CHECK (attempt_count >= 0)
-);
-
-CREATE INDEX idx_pending_payouts_next_attempt ON pending_payouts(next_attempt_at);

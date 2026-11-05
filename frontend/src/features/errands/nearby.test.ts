@@ -20,6 +20,7 @@ function errand(id: string, supplierId: string): Errand {
     createdAt: "2026-10-29T09:00:00Z",
     updatedAt: "2026-10-29T09:00:00Z",
     stateChangedAt: "2026-10-29T09:00:00Z",
+    scheduled: "",
     actions: ["accept"],
   };
 }

@@ -32,6 +32,7 @@ function errand(id: string, over: Partial<Errand> = {}): Errand {
     updatedAt: "2026-10-29T09:00:00Z",
     stateChangedAt: "2026-10-29T09:00:00Z",
     expiresAt: new Date(NOW + 45 * MIN).toISOString(),
+    scheduled: "",
     actions: ["accept"],
     ...over,
   };

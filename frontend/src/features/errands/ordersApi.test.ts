@@ -26,6 +26,8 @@ const ERRAND: Errand = {
   deliveryLocation: "COM3 Lobby",
   deliveryNote: "Grey backpack",
   reward: 10,
+  // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — normal-errand response includes the required empty schedule.
+  scheduled: "",
   requesterId: "3f2b8c1e-1d2a-4b5c-8d9e-0a1b2c3d4e5f",
   createdAt: "2026-10-18T08:30:00Z",
   updatedAt: "2026-10-18T08:30:00Z",
