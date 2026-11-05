@@ -2191,8 +2191,38 @@ button.service-card:hover {
   justify-content: flex-start;
 }
 
-.chat-bubble {
+.chat-bubble-container {
+  display: flex;
+  flex-direction: column;
   max-width: 75%;
+}
+
+.chat-bubble-container.align-right {
+  align-items: flex-end;
+}
+
+.chat-bubble-container.align-left {
+  align-items: flex-start;
+}
+
+.chat-sender-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+  padding: 0 4px;
+}
+
+.chat-bubble-container.align-right .chat-sender-label {
+  text-align: right;
+}
+
+.chat-bubble-container.align-left .chat-sender-label {
+  text-align: left;
+}
+
+.chat-bubble {
+  max-width: 100%;
   padding: 10px 14px;
   border-radius: var(--radius-lg);
   position: relative;
@@ -2210,6 +2240,29 @@ button.service-card:hover {
   color: var(--text);
   border: 1px solid var(--border);
   border-bottom-left-radius: 2px;
+}
+
+.bubble-admin-requester {
+  background: var(--primary);
+  color: var(--text-inverse);
+  border-bottom-left-radius: 2px;
+}
+
+.bubble-admin-requester .chat-meta {
+  color: rgba(255, 255, 255, 0.75);
+  justify-content: flex-start;
+}
+
+.bubble-admin-courier {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-bottom-right-radius: 2px;
+}
+
+.bubble-admin-courier .chat-meta {
+  color: var(--text-muted);
+  justify-content: flex-end;
 }
 
 .chat-text {

@@ -323,7 +323,7 @@ export function ChatBox({
       {/* Read-Only Notice */}
       {isReadOnly && (
         <div className="chat-banner readonly" role="alert">
-          🔒 {!isParticipant ? "Admin audit view (read-only)." : "This conversation is read-only."}
+          🔒 {!isParticipant ? "Admin audit view: Requester (Left, Blue) • Courier (Right, White)" : "This conversation is read-only."}
         </div>
       )}
 
@@ -333,9 +333,27 @@ export function ChatBox({
           <div className="chat-messages-empty">No messages yet. Say hello! 👋</div>
         ) : (
           messages.map((msg) => {
-            const isMine = msg.sender_id === currentUserId;
-            const isRequesterMsg = conversation != null && msg.sender_id === conversation.requester_id;
-            const senderRole = isRequesterMsg ? "Requester" : "Courier";
+            let isRightAligned: boolean;
+            let bubbleClass: string;
+            let senderLabel: string | null = null;
+
+            if (isParticipant) {
+              const isMine = msg.sender_id === currentUserId;
+              isRightAligned = isMine;
+              bubbleClass = isMine ? "bubble-mine" : "bubble-theirs";
+            } else {
+              const isRequesterMsg = conversation != null && msg.sender_id === conversation.requester_id;
+              if (isRequesterMsg) {
+                isRightAligned = false;
+                bubbleClass = "bubble-admin-requester";
+                senderLabel = "Requester";
+              } else {
+                isRightAligned = true;
+                bubbleClass = "bubble-admin-courier";
+                senderLabel = "Courier";
+              }
+            }
+
             const timeStr = new Date(msg.created_at).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
@@ -344,59 +362,54 @@ export function ChatBox({
             return (
               <div
                 key={msg.id}
-                className={`chat-bubble-row ${isMine ? "mine" : "theirs"}`}
+                className={`chat-bubble-row ${isRightAligned ? "mine" : "theirs"}`}
               >
-                {!isParticipant && (
-                  <span
-                    className="chat-sender-tag"
-                    style={{ fontSize: "0.75rem", color: "#666", marginBottom: "2px", display: "block" }}
-                  >
-                    {senderRole}
-                  </span>
-                )}
-                <div className={`chat-bubble ${isMine ? "bubble-mine" : "bubble-theirs"}`}>
-                  {msg.message_type === "IMAGE" && msg.media_url && (
-                    <div className="chat-image-wrapper">
-                      <img
-                        src={
-                          msg.media_url.startsWith("blob:")
-                            ? msg.media_url
-                            : `${config.gatewayBaseUrl}${msg.media_url}`
-                        }
-                        alt="Shared image"
-                        className="chat-image-thumbnail"
-                        onClick={() =>
-                          setPreviewImage(
-                            msg.media_url!.startsWith("blob:")
-                              ? msg.media_url!
-                              : `${config.gatewayBaseUrl}${msg.media_url}`,
-                          )
-                        }
-                      />
+                <div className={`chat-bubble-container ${isRightAligned ? "align-right" : "align-left"}`}>
+                  {senderLabel && <span className="chat-sender-label">{senderLabel}</span>}
+                  <div className={`chat-bubble ${bubbleClass}`}>
+                    {msg.message_type === "IMAGE" && msg.media_url && (
+                      <div className="chat-image-wrapper">
+                        <img
+                          src={
+                            msg.media_url.startsWith("blob:")
+                              ? msg.media_url
+                              : `${config.gatewayBaseUrl}${msg.media_url}`
+                          }
+                          alt="Shared image"
+                          className="chat-image-thumbnail"
+                          onClick={() =>
+                            setPreviewImage(
+                              msg.media_url!.startsWith("blob:")
+                                ? msg.media_url!
+                                : `${config.gatewayBaseUrl}${msg.media_url}`,
+                            )
+                          }
+                        />
+                      </div>
+                    )}
+
+                    {msg.text_content && (
+                      <p className="chat-text">{msg.text_content}</p>
+                    )}
+
+                    <div className="chat-meta">
+                      <span className="chat-time">{timeStr}</span>
+                      {msg.status === "pending" && (
+                        <span className="chat-status sending">Sending…</span>
+                      )}
+                      {msg.status === "failed" && (
+                        <span className="chat-status failed">
+                          Not sent.{" "}
+                          <button
+                            type="button"
+                            className="retry-btn"
+                            onClick={() => handleRetry(msg)}
+                          >
+                            Retry
+                          </button>
+                        </span>
+                      )}
                     </div>
-                  )}
-
-                  {msg.text_content && (
-                    <p className="chat-text">{msg.text_content}</p>
-                  )}
-
-                  <div className="chat-meta">
-                    <span className="chat-time">{timeStr}</span>
-                    {msg.status === "pending" && (
-                      <span className="chat-status sending">Sending…</span>
-                    )}
-                    {msg.status === "failed" && (
-                      <span className="chat-status failed">
-                        Not sent.{" "}
-                        <button
-                          type="button"
-                          className="retry-btn"
-                          onClick={() => handleRetry(msg)}
-                        >
-                          Retry
-                        </button>
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
