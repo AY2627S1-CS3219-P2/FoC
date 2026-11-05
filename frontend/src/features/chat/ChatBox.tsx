@@ -59,9 +59,11 @@ export function ChatBox({
           );
           setMessages(sorted);
 
-          // Mark as read
-          void chatApi.markConversationRead(conv.id);
-          markErrandRead(errandId);
+          // Mark as read only if current user is participant
+          if (conv.requester_id === currentUserId || conv.courier_id === currentUserId) {
+            void chatApi.markConversationRead(conv.id);
+            markErrandRead(errandId);
+          }
         }
       } catch (e) {
         console.error("Failed to load conversation:", e);
@@ -75,7 +77,7 @@ export function ChatBox({
     return () => {
       active = false;
     };
-  }, [errandId, chatApi, markErrandRead]);
+  }, [errandId, currentUserId, chatApi, markErrandRead]);
 
   // Real-time WebSocket events listener
   useEffect(() => {
@@ -91,9 +93,11 @@ export function ChatBox({
             }
             return [...prev, msg];
           });
-          // Mark read
-          void chatApi.markConversationRead(conversation.id);
-          markErrandRead(errandId);
+          // Mark read only if current user is participant
+          if (conversation.requester_id === currentUserId || conversation.courier_id === currentUserId) {
+            void chatApi.markConversationRead(conversation.id);
+            markErrandRead(errandId);
+          }
           setTimeout(scrollToBottom, 50);
         }
       } else if (event.type === "conversation.read_only") {
@@ -105,7 +109,7 @@ export function ChatBox({
     });
 
     return unsubscribe;
-  }, [conversation, errandId, subscribeToEvents, chatApi, markErrandRead]);
+  }, [conversation, currentUserId, errandId, subscribeToEvents, chatApi, markErrandRead]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -151,7 +155,12 @@ export function ChatBox({
     return () => clearInterval(timer);
   }, [conversation]);
 
+  const isParticipant =
+    conversation != null &&
+    (currentUserId === conversation.requester_id || currentUserId === conversation.courier_id);
+
   const isReadOnly =
+    !isParticipant ||
     isExpired ||
     conversation?.status === "FROZEN" ||
     (conversation?.errand_completed_at != null &&
@@ -263,17 +272,17 @@ export function ChatBox({
   };
 
   const handleRetry = async (failedMsg: ChatMessage) => {
-    if (!conversation || !failedMsg.text_content || isReadOnly) return;
+    if (!conversation || isReadOnly) return;
 
     setMessages((prev) =>
       prev.map((m) => (m.id === failedMsg.id ? { ...m, status: "pending" } : m)),
     );
 
     try {
-      const clientMsgId = failedMsg.client_message_id || crypto.randomUUID();
+      const clientMsgId = failedMsg.client_message_id || failedMsg.id;
       const saved = await chatApi.sendTextMessage(
         conversation.id,
-        failedMsg.text_content,
+        failedMsg.text_content || "",
         clientMsgId,
       );
       setMessages((prev) =>
@@ -314,7 +323,7 @@ export function ChatBox({
       {/* Read-Only Notice */}
       {isReadOnly && (
         <div className="chat-banner readonly" role="alert">
-          🔒 This conversation is read-only.
+          🔒 {!isParticipant ? "Admin audit view (read-only)." : "This conversation is read-only."}
         </div>
       )}
 
@@ -325,6 +334,8 @@ export function ChatBox({
         ) : (
           messages.map((msg) => {
             const isMine = msg.sender_id === currentUserId;
+            const isRequesterMsg = conversation != null && msg.sender_id === conversation.requester_id;
+            const senderRole = isRequesterMsg ? "Requester" : "Courier";
             const timeStr = new Date(msg.created_at).toLocaleTimeString([], {
               hour: "2-digit",
               minute: "2-digit",
@@ -335,6 +346,14 @@ export function ChatBox({
                 key={msg.id}
                 className={`chat-bubble-row ${isMine ? "mine" : "theirs"}`}
               >
+                {!isParticipant && (
+                  <span
+                    className="chat-sender-tag"
+                    style={{ fontSize: "0.75rem", color: "#666", marginBottom: "2px", display: "block" }}
+                  >
+                    {senderRole}
+                  </span>
+                )}
                 <div className={`chat-bubble ${isMine ? "bubble-mine" : "bubble-theirs"}`}>
                   {msg.message_type === "IMAGE" && msg.media_url && (
                     <div className="chat-image-wrapper">
@@ -475,7 +494,7 @@ export function ChatBox({
         </div>
       ) : (
         <div className="chat-disabled-bar">
-          <span>Messaging is disabled for this conversation.</span>
+          <span>{!isParticipant ? "Admin audit view: message sending is disabled." : "Messaging is disabled for this conversation."}</span>
         </div>
       )}
     </div>
