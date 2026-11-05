@@ -201,9 +201,9 @@ func (e *env) testSupplierCopy(t *testing.T) {
 		next.Version = 2
 		next.UpdatedAt = at(time.Minute)
 		got, err := e.repo.Amend(t.Context(), o.ID, func(order.Order) (*order.AmendResult, error) {
-			return &order.AmendResult{Order: next, History: amendEntry(o, at(time.Minute), []order.FieldChange{
+			return &order.AmendResult{Order: next, History: ptr(amendEntry(o, at(time.Minute), []order.FieldChange{
 				{Field: order.FieldSupplier, From: o.Supplier.Name, To: "Print Hub"},
-			})}, nil
+			}))}, nil
 		})
 		require.NoError(t, err)
 		assert.Equal(t, next, got)
@@ -225,9 +225,9 @@ func (e *env) testSupplierCopy(t *testing.T) {
 		next.Version = o.Version + 1
 		next.UpdatedAt = now
 		got, err := e.repo.AmendScheduled(t.Context(), o.ID, now, func(order.Order, int) (*order.AmendResult, error) {
-			return &order.AmendResult{Order: next, History: amendEntry(o, now, []order.FieldChange{
+			return &order.AmendResult{Order: next, History: ptr(amendEntry(o, now, []order.FieldChange{
 				{Field: order.FieldSupplier, From: o.Supplier.Name, To: "Print Hub"},
-			})}, nil
+			}))}, nil
 		})
 		require.NoError(t, err)
 		assert.Equal(t, next, got)
