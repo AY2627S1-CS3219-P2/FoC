@@ -53,6 +53,7 @@ import {
   type UserRating,
 } from "./orderTypes";
 import { clockOffset, formatDateTime, serverNow, useNow } from "./time";
+import { ChatBox } from "../chat/ChatBox";
 
 /** The modal's heading id, for its aria-labelledby. One detail is open at a time. */
 export const ERRAND_DETAIL_TITLE_ID = "errand-detail-title";
@@ -681,6 +682,15 @@ export function ErrandDetail({
               </div>
             )
           )}
+
+          {relationship !== "none" &&
+            (errand.courierId != null || relationship === "admin" || errand.state !== "OPEN") && (
+              <ChatBox
+                errandId={errand.id}
+                currentUserId={viewerId}
+                isRequester={relationship === "requester"}
+              />
+            )}
 
           <h3 className="section-label">History</h3>
           {loaded.history === null ? (

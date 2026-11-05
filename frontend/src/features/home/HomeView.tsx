@@ -30,17 +30,13 @@ interface Shortcut {
 // AI-generated (edited by James Teo): in the nav's order, the admin's two
 // screens first.
 const SHORTCUTS: Shortcut[] = [
-  {
-    view: "all-errands",
-    icon: "📋",
-    title: "All errands",
-    desc: "Every errand in progress, the longest-stalled first",
-  },
+  // AI-generated (edited by Claude Code, 2026-11-03): one dashboard in place of
+  // the two admin screens.
   {
     view: "admin",
     icon: "🛡️",
-    title: "Admin",
-    desc: "Look up an account by its ID",
+    title: "Dashboard",
+    desc: "Errands in progress and past, accounts, and the admin audit log",
   },
   // AI-generated (edited by James Teo): "Post", keeping "request" for HTTP.
   {
@@ -87,7 +83,7 @@ export function HomeView({ mode, role, onNavigate }: HomeViewProps) {
         {/* AI-generated (edited by James Teo): an admin's line. */}
         <p className="hero-sub">
           {role === "ADMIN"
-            ? "Keep errands moving: settle the ones that have stalled, and look up the accounts behind them."
+            ? "Keep errands moving: settle the ones that have stalled, review the accounts behind them, and see what admins have done."
             : mode === "requesting"
               ? "Someone is already walking past. Ask them to collect it for you, and hold a few credits until it arrives."
               : "Pick up an errand on a walk you were making anyway, and earn the credits held against it."}

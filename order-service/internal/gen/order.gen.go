@@ -35,6 +35,27 @@ func (e AssignmentRecordOutcome) Valid() bool {
 	}
 }
 
+// Defines values for AuditEntryOutcome.
+const (
+	AuditEntryOutcomeFailed    AuditEntryOutcome = "failed"
+	AuditEntryOutcomeRefused   AuditEntryOutcome = "refused"
+	AuditEntryOutcomeSucceeded AuditEntryOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the AuditEntryOutcome enum.
+func (e AuditEntryOutcome) Valid() bool {
+	switch e {
+	case AuditEntryOutcomeFailed:
+		return true
+	case AuditEntryOutcomeRefused:
+		return true
+	case AuditEntryOutcomeSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ErrandAction.
 const (
 	Accept   ErrandAction = "accept"
@@ -268,13 +289,37 @@ func (e Scope) Valid() bool {
 
 // Defines values for ListActiveErrandsParamsScope.
 const (
-	ListActiveErrandsParamsScopeActive ListActiveErrandsParamsScope = "active"
+	ListActiveErrandsParamsScopeActive  ListActiveErrandsParamsScope = "active"
+	ListActiveErrandsParamsScopeHistory ListActiveErrandsParamsScope = "history"
 )
 
 // Valid indicates whether the value is a known member of the ListActiveErrandsParamsScope enum.
 func (e ListActiveErrandsParamsScope) Valid() bool {
 	switch e {
 	case ListActiveErrandsParamsScopeActive:
+		return true
+	case ListActiveErrandsParamsScopeHistory:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListActiveErrandsParamsSort.
+const (
+	Oldest       ListActiveErrandsParamsSort = "oldest"
+	Recent       ListActiveErrandsParamsSort = "recent"
+	SupplierName ListActiveErrandsParamsSort = "supplier_name"
+)
+
+// Valid indicates whether the value is a known member of the ListActiveErrandsParamsSort enum.
+func (e ListActiveErrandsParamsSort) Valid() bool {
+	switch e {
+	case Oldest:
+		return true
+	case Recent:
+		return true
+	case SupplierName:
 		return true
 	default:
 		return false
@@ -293,6 +338,45 @@ func (e ListAssignedErrandsParamsScope) Valid() bool {
 	case ListAssignedErrandsParamsScopeActive:
 		return true
 	case ListAssignedErrandsParamsScopeHistory:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAuditLogParamsAction.
+const (
+	ErrandCancel   ListAuditLogParamsAction = "errand.cancel"
+	ErrandComplete ListAuditLogParamsAction = "errand.complete"
+)
+
+// Valid indicates whether the value is a known member of the ListAuditLogParamsAction enum.
+func (e ListAuditLogParamsAction) Valid() bool {
+	switch e {
+	case ErrandCancel:
+		return true
+	case ErrandComplete:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAuditLogParamsOutcome.
+const (
+	ListAuditLogParamsOutcomeFailed    ListAuditLogParamsOutcome = "failed"
+	ListAuditLogParamsOutcomeRefused   ListAuditLogParamsOutcome = "refused"
+	ListAuditLogParamsOutcomeSucceeded ListAuditLogParamsOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ListAuditLogParamsOutcome enum.
+func (e ListAuditLogParamsOutcome) Valid() bool {
+	switch e {
+	case ListAuditLogParamsOutcomeFailed:
+		return true
+	case ListAuditLogParamsOutcomeRefused:
+		return true
+	case ListAuditLogParamsOutcomeSucceeded:
 		return true
 	default:
 		return false
@@ -364,6 +448,35 @@ type AssignmentRecord struct {
 // AssignmentRecordOutcome defines model for AssignmentRecord.Outcome.
 type AssignmentRecordOutcome string
 
+// AuditEntry One row of the admin audit log (D-107, D-113).
+type AuditEntry struct {
+	Action             string                  `json:"action"`
+	ActorId            openapi_types.UUID      `json:"actorId"`
+	ActorRole          string                  `json:"actorRole"`
+	AdditionalComments *map[string]interface{} `json:"additionalComments,omitempty"`
+	AfterState         *map[string]interface{} `json:"afterState,omitempty"`
+	BeforeState        *map[string]interface{} `json:"beforeState,omitempty"`
+	CorrelationId      string                  `json:"correlationId"`
+	Id                 openapi_types.UUID      `json:"id"`
+	OccurredAt         time.Time               `json:"occurredAt"`
+	Outcome            AuditEntryOutcome       `json:"outcome"`
+	Reason             string                  `json:"reason"`
+	RefusalReason      string                  `json:"refusalReason"`
+	TargetId           string                  `json:"targetId"`
+	TargetType         string                  `json:"targetType"`
+}
+
+// AuditEntryOutcome defines model for AuditEntry.Outcome.
+type AuditEntryOutcome string
+
+// AuditLogPage defines model for AuditLogPage.
+type AuditLogPage struct {
+	Items  []AuditEntry `json:"items"`
+	Limit  int          `json:"limit"`
+	Offset int          `json:"offset"`
+	Total  int          `json:"total"`
+}
+
 // CampusLocation defines model for CampusLocation.
 type CampusLocation struct {
 	// Area The group the form lists it under.
@@ -434,6 +547,12 @@ type Errand struct {
 // ErrandAction An action the viewer may take now; each maps to the route of the same name.
 type ErrandAction string
 
+// ErrandCounts How many errands a user has in each state, as requester and as the courier now assigned (D-117). A state with none is left out.
+type ErrandCounts struct {
+	Assigned  map[string]int `json:"assigned"`
+	Requested map[string]int `json:"requested"`
+}
+
 // ErrandDetail defines model for ErrandDetail.
 type ErrandDetail struct {
 	Errand     Errand         `json:"errand"`
@@ -443,11 +562,14 @@ type ErrandDetail struct {
 
 // ErrandList defines model for ErrandList.
 type ErrandList struct {
-	Items []Errand `json:"items"`
+	Items  []Errand `json:"items"`
+	Limit  *int     `json:"limit,omitempty"`
+	Offset *int     `json:"offset,omitempty"`
 
 	// Recommendation The errand the courier's model suggests (D-094). Advice the courier can ignore.
 	Recommendation *Recommendation `json:"recommendation,omitempty"`
 	ServerTime     time.Time       `json:"serverTime"`
+	Total          *int            `json:"total,omitempty"`
 }
 
 // ErrandState defines model for ErrandState.
@@ -649,10 +771,31 @@ type Unavailable = Error
 // ListActiveErrandsParams defines parameters for ListActiveErrands.
 type ListActiveErrandsParams struct {
 	Scope ListActiveErrandsParamsScope `form:"scope" json:"scope"`
+
+	// State Only errands in this state; it must be a final state for `history` and not final for `active`.
+	State *ErrandState `form:"state,omitempty" json:"state,omitempty"`
+
+	// From Only errands that reached their state at or after this time (RFC 3339 or YYYY-MM-DD).
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Only errands that reached their state before this time (RFC 3339 or YYYY-MM-DD).
+	To         *string             `form:"to,omitempty" json:"to,omitempty"`
+	SupplierId *openapi_types.UUID `form:"supplier_id,omitempty" json:"supplier_id,omitempty"`
+
+	// UserId Only errands this user requested or was assigned.
+	UserId *openapi_types.UUID `form:"user_id,omitempty" json:"user_id,omitempty"`
+
+	// Sort `recent` (the default for history), `supplier_name` (A to Z) or `oldest` (the default for active).
+	Sort   *ListActiveErrandsParamsSort `form:"sort,omitempty" json:"sort,omitempty"`
+	Limit  *int                         `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int                         `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // ListActiveErrandsParamsScope defines parameters for ListActiveErrands.
 type ListActiveErrandsParamsScope string
+
+// ListActiveErrandsParamsSort defines parameters for ListActiveErrands.
+type ListActiveErrandsParamsSort string
 
 // CreateErrandParams defines parameters for CreateErrand.
 type CreateErrandParams struct {
@@ -667,6 +810,28 @@ type ListAssignedErrandsParams struct {
 
 // ListAssignedErrandsParamsScope defines parameters for ListAssignedErrands.
 type ListAssignedErrandsParamsScope string
+
+// ListAuditLogParams defines parameters for ListAuditLog.
+type ListAuditLogParams struct {
+	Action   *ListAuditLogParamsAction  `form:"action,omitempty" json:"action,omitempty"`
+	Outcome  *ListAuditLogParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
+	ActorId  *string                    `form:"actor_id,omitempty" json:"actor_id,omitempty"`
+	TargetId *string                    `form:"target_id,omitempty" json:"target_id,omitempty"`
+
+	// From RFC 3339 time or YYYY-MM-DD; inclusive.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To RFC 3339 time or YYYY-MM-DD; exclusive.
+	To     *string `form:"to,omitempty" json:"to,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int    `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListAuditLogParamsAction defines parameters for ListAuditLog.
+type ListAuditLogParamsAction string
+
+// ListAuditLogParamsOutcome defines parameters for ListAuditLog.
+type ListAuditLogParamsOutcome string
 
 // ListOpenErrandsParams defines parameters for ListOpenErrands.
 type ListOpenErrandsParams struct {
@@ -701,7 +866,7 @@ type RateErrandJSONRequestBody = RateRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// ListActiveErrands Every errand that is not final (ADMIN only)
+	// ListActiveErrands Every errand that is not final, or the past ones (ADMIN only)
 	// (GET /)
 	ListActiveErrands(w http.ResponseWriter, r *http.Request, params ListActiveErrandsParams)
 	// CreateErrand Post an errand (F3.1)
@@ -716,6 +881,9 @@ type ServerInterface interface {
 	// ListAssignedErrands Errands the caller accepted as courier (F3.5)
 	// (GET /assigned)
 	ListAssignedErrands(w http.ResponseWriter, r *http.Request, params ListAssignedErrandsParams)
+	// ListAuditLog The admin audit log, newest first (ADMIN only)
+	// (GET /audit-log)
+	ListAuditLog(w http.ResponseWriter, r *http.Request, params ListAuditLogParams)
 	// GetHealth Liveness and database readiness
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -734,6 +902,9 @@ type ServerInterface interface {
 	// CountSupplierActiveErrands How many errands that are not final reference a supplier (F2.2.3)
 	// (GET /suppliers/{supplierId}/active-errands)
 	CountSupplierActiveErrands(w http.ResponseWriter, r *http.Request, supplierId openapi_types.UUID)
+	// GetUserErrandCounts How many errands a user has in each state (ADMIN only)
+	// (GET /users/{userId}/errand-counts)
+	GetUserErrandCounts(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID)
 	// GetUserRating The ratings a user has received, as requester and as courier together (D-093)
 	// (GET /users/{userId}/rating)
 	GetUserRating(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID)
@@ -773,7 +944,7 @@ type ServerInterface interface {
 
 type Unimplemented struct{}
 
-// ListActiveErrands Every errand that is not final (ADMIN only)
+// ListActiveErrands Every errand that is not final, or the past ones (ADMIN only)
 // (GET /)
 func (_ Unimplemented) ListActiveErrands(w http.ResponseWriter, r *http.Request, params ListActiveErrandsParams) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -800,6 +971,12 @@ func (_ Unimplemented) RecordShownErrands(w http.ResponseWriter, r *http.Request
 // ListAssignedErrands Errands the caller accepted as courier (F3.5)
 // (GET /assigned)
 func (_ Unimplemented) ListAssignedErrands(w http.ResponseWriter, r *http.Request, params ListAssignedErrandsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListAuditLog The admin audit log, newest first (ADMIN only)
+// (GET /audit-log)
+func (_ Unimplemented) ListAuditLog(w http.ResponseWriter, r *http.Request, params ListAuditLogParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -836,6 +1013,12 @@ func (_ Unimplemented) ListRequestedErrands(w http.ResponseWriter, r *http.Reque
 // CountSupplierActiveErrands How many errands that are not final reference a supplier (F2.2.3)
 // (GET /suppliers/{supplierId}/active-errands)
 func (_ Unimplemented) CountSupplierActiveErrands(w http.ResponseWriter, r *http.Request, supplierId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetUserErrandCounts How many errands a user has in each state (ADMIN only)
+// (GET /users/{userId}/errand-counts)
+func (_ Unimplemented) GetUserErrandCounts(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -932,6 +1115,110 @@ func (siw *ServerInterfaceWrapper) ListActiveErrands(w http.ResponseWriter, r *h
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "state" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "state", r.URL.Query(), &params.State, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "state"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "state", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "supplier_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "supplier_id", r.URL.Query(), &params.SupplierId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "supplier_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "supplier_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "user_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "user_id", r.URL.Query(), &params.UserId, runtime.BindQueryParameterOptions{Type: "string", Format: "uuid"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "user_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "user_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sort" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sort", r.URL.Query(), &params.Sort, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sort"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sort", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
 		}
 		return
 	}
@@ -1040,6 +1327,130 @@ func (siw *ServerInterfaceWrapper) ListAssignedErrands(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListAssignedErrands(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAuditLog operation middleware
+func (siw *ServerInterfaceWrapper) ListAuditLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditLogParams
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "outcome" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "outcome", r.URL.Query(), &params.Outcome, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "outcome"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor_id", r.URL.Query(), &params.ActorId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_id", r.URL.Query(), &params.TargetId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAuditLog(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1174,6 +1585,32 @@ func (siw *ServerInterfaceWrapper) CountSupplierActiveErrands(w http.ResponseWri
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.CountSupplierActiveErrands(w, r, supplierId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUserErrandCounts operation middleware
+func (siw *ServerInterfaceWrapper) GetUserErrandCounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUserErrandCounts(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1602,6 +2039,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/locations", wrapper.ListDeliveryLocations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/audit-log", wrapper.ListAuditLog)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/users/{userId}/errand-counts", wrapper.GetUserErrandCounts)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/suppliers/{supplierId}/active-errands", wrapper.CountSupplierActiveErrands)

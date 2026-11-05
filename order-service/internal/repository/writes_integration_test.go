@@ -620,7 +620,7 @@ func (e *env) testAmend(t *testing.T) {
 		var seen order.Order
 		got, err := e.repo.Amend(t.Context(), o.ID, func(cur order.Order) (*order.AmendResult, error) {
 			seen = cur
-			return &order.AmendResult{Order: next, History: h}, nil
+			return &order.AmendResult{Order: next, History: &h}, nil
 		})
 
 		require.NoError(t, err)
@@ -647,7 +647,7 @@ func (e *env) testAmend(t *testing.T) {
 		ev := rewardSetEvent(next, at(5*time.Minute), "corr-amend")
 
 		_, err := e.repo.Amend(t.Context(), o.ID, func(order.Order) (*order.AmendResult, error) {
-			return &order.AmendResult{Order: next, History: amendEntry(o, at(5*time.Minute), nil), Event: &ev}, nil
+			return &order.AmendResult{Order: next, History: ptr(amendEntry(o, at(5*time.Minute), nil)), Event: &ev}, nil
 		})
 
 		require.NoError(t, err)
@@ -655,6 +655,46 @@ func (e *env) testAmend(t *testing.T) {
 		require.Equal(t, order.RoutingRewardSet, row.routingKey)
 		require.Contains(t, row.payload, `"version": 2`)
 		require.Contains(t, row.payload, `"amount": 8`)
+	})
+
+	// A raise with an unknown outcome saves only the next version and its
+	// reward_set, with no history row (D-139).
+	t.Run("a result with no history row writes the row and its event only", func(t *testing.T) {
+		type amendFn = func(order.Order) (*order.AmendResult, error)
+		for _, tc := range []struct {
+			name  string
+			o     order.Order
+			amend func(t *testing.T, id uuid.UUID, fn amendFn) (order.Order, error)
+		}{
+			{"Amend", openErrand(requester, at(0)), func(t *testing.T, id uuid.UUID, fn amendFn) (order.Order, error) {
+				return e.repo.Amend(t.Context(), id, fn)
+			}},
+			{"AmendScheduled", scheduledErrand(requester, at(0), at(time.Hour)), func(t *testing.T, id uuid.UUID, fn amendFn) (order.Order, error) {
+				return e.repo.AmendScheduled(t.Context(), id, at(5*time.Minute), func(cur order.Order, _ int) (*order.AmendResult, error) { return fn(cur) })
+			}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				e.reset(t)
+				e.insert(t, tc.o)
+				next := tc.o
+				next.Version = 2
+				next.UpdatedAt = at(5 * time.Minute)
+				ev := rewardSetEvent(next, at(5*time.Minute), "corr-amend")
+
+				got, err := tc.amend(t, tc.o.ID, func(order.Order) (*order.AmendResult, error) {
+					return &order.AmendResult{Order: next, Event: &ev}, nil
+				})
+
+				require.NoError(t, err)
+				require.Equal(t, next, got)
+				require.Equal(t, next, e.get(t, tc.o.ID))
+				require.Empty(t, e.history(t, tc.o.ID), "no history row")
+				row := e.outbox(t, ev.EventID)
+				require.Equal(t, order.RoutingRewardSet, row.routingKey)
+				require.Contains(t, row.payload, `"version": 2`)
+				require.Contains(t, row.payload, `"amount": 5`)
+			})
+		}
 	})
 
 	t.Run("writes only the amendable columns", func(t *testing.T) {
@@ -673,7 +713,7 @@ func (e *env) testAmend(t *testing.T) {
 		next.StateChangedAt = at(5 * time.Minute)
 
 		got, err := e.repo.Amend(t.Context(), o.ID, func(order.Order) (*order.AmendResult, error) {
-			return &order.AmendResult{Order: next, History: amendEntry(o, at(5*time.Minute), nil)}, nil
+			return &order.AmendResult{Order: next, History: ptr(amendEntry(o, at(5*time.Minute), nil))}, nil
 		})
 
 		require.NoError(t, err)
@@ -705,7 +745,7 @@ func (e *env) testAmend(t *testing.T) {
 		got, err := e.repo.AmendScheduled(t.Context(), o.ID, now, func(cur order.Order, openCount int) (*order.AmendResult, error) {
 			require.Equal(t, o, cur)
 			require.Zero(t, openCount)
-			return &order.AmendResult{Order: next, History: h}, nil
+			return &order.AmendResult{Order: next, History: &h}, nil
 		})
 		require.NoError(t, err)
 		require.Equal(t, next, got)
@@ -735,7 +775,7 @@ func (e *env) testAmend(t *testing.T) {
 		got, err := e.repo.AmendScheduled(t.Context(), o.ID, now, func(cur order.Order, openCount int) (*order.AmendResult, error) {
 			require.Equal(t, o, cur)
 			require.Equal(t, order.MaxOpenErrands, openCount)
-			return &order.AmendResult{Order: next, History: h, Event: &ev}, nil
+			return &order.AmendResult{Order: next, History: &h, Event: &ev}, nil
 		})
 		require.NoError(t, err)
 		require.Equal(t, next, got)

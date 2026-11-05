@@ -11,8 +11,14 @@
 import type { AuthorizedSend } from "../auth/session";
 import { config } from "../../lib/config";
 // AI-generated (edited by James Teo): HttpResponse, for request() below.
-import { NetworkError, type HttpResponse } from "../../lib/http";
+import { NetworkError, queryString, type HttpResponse } from "../../lib/http";
 import type { AccountRole } from "../auth/types";
+import {
+  parseAuditPage,
+  type AuditEntry,
+  type AuditFilter,
+  type Page,
+} from "../admin/auditTypes";
 
 /**
  * The only module that calls user-service's `/api/users/{uid}` routes. Login,
@@ -46,6 +52,21 @@ export interface UserProfile {
 
 /** user-service's `account_status` enum. */
 export type AccountStatus = "ACTIVE" | "SUSPENDED" | "UNVERIFIED";
+
+/** One row of the admin's account list (D-122): the full profile and the last login. */
+export interface AccountListItem extends UserProfile {
+  /** ISO 8601, or absent when the account has never signed in. */
+  lastLoginAt?: string;
+}
+
+/** What the admin's account list can be narrowed by (D-121 to D-123). */
+export interface AccountSearch {
+  /** Matches anywhere in the username or email, ignoring case. */
+  query?: string;
+  status?: AccountStatus;
+  limit?: number;
+  offset?: number;
+}
 
 /**
  * An error from a user-service profile call. user-service answers
@@ -94,6 +115,13 @@ export interface UsersApi {
   suspendUser(uid: string): Promise<void>;
   /** ADMIN only. Sets the account ACTIVE again, so its password signs in. */
   reactivateUser(uid: string): Promise<void>;
+  /**
+   * ADMIN only. Searches and lists accounts, 50 a page at most (D-104, D-121 to
+   * D-123).
+   */
+  listUsers(search?: AccountSearch): Promise<Page<AccountListItem>>;
+  /** ADMIN only. The accounts half of the admin audit log, newest first (D-110). */
+  listAuditLog(filter?: AuditFilter): Promise<Page<AuditEntry>>;
 }
 
 /**
@@ -182,6 +210,59 @@ export function createUsersApi(authorizedSend: AuthorizedSend): UsersApi {
     reactivateUser(uid) {
       return setStatus(uid, "ACTIVE");
     },
+
+    async listUsers(search = {}) {
+      const response = await request(
+        `${PREFIX}${queryString({
+          q: search.query?.trim(),
+          status: search.status,
+          limit: search.limit === undefined ? undefined : String(search.limit),
+          offset: search.offset ? String(search.offset) : undefined,
+        })}`,
+      );
+      const page = toAccountPage(response.body);
+      if (!page) throw new UsersApiError("The account list came back in a shape this screen cannot read.", 0);
+      return page;
+    },
+
+    async listAuditLog(filter = {}) {
+      const response = await request(`${PREFIX}/audit-log${auditQuery(filter)}`);
+      const page = parseAuditPage(response.body, "accounts", false);
+      if (!page) throw new UsersApiError("The audit log came back in a shape this screen cannot read.", 0);
+      return page;
+    },
+  };
+}
+
+/** The query string of an audit list; empty values are left out. */
+export function auditQuery(filter: AuditFilter): string {
+  return queryString({
+    action: filter.action,
+    outcome: filter.outcome,
+    actor_id: filter.actorId?.trim(),
+    target_id: filter.targetId?.trim(),
+    from: filter.from,
+    to: filter.to,
+    limit: filter.limit === undefined ? undefined : String(filter.limit),
+    offset: filter.offset ? String(filter.offset) : undefined,
+  });
+}
+
+/** The page GET /api/users answers with; null when it is not the documented shape. */
+export function toAccountPage(body: unknown): Page<AccountListItem> | null {
+  if (typeof body !== "object" || body === null) return null;
+  const raw = body as Record<string, unknown>;
+  const { total, limit, offset } = raw;
+  if (!Array.isArray(raw["items"])) return null;
+  if (typeof total !== "number" || typeof limit !== "number" || typeof offset !== "number") return null;
+  return {
+    items: raw["items"].map((item) => ({
+      ...toUserProfile(item),
+      lastLoginAt: optionalText((item as Record<string, unknown> | null)?.["last_login_date"]),
+    })),
+    total,
+    limit,
+    offset,
   };
 }
 

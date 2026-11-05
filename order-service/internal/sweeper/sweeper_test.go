@@ -182,8 +182,9 @@ func TestSweepOnceAutoConfirmsDueDeliveredErrands(t *testing.T) {
 	assert.Equal(t, courier.UserID, *got.CourierID)
 
 	events := e.repo.EventsFor(o.ID)
-	require.Len(t, events, 1)
-	ev := events[0]
+	require.Len(t, events, 2)
+	assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
+	ev := events[1]
 	assert.Equal(t, order.RoutingCompleted, ev.RoutingKey)
 	assert.Equal(t, order.RoutingCompleted, ev.Payload.EventType)
 	require.NotNil(t, ev.Payload.CourierID, "errand.completed names the courier to pay")
@@ -238,6 +239,7 @@ func TestSweepOnceLeavesErrandsThatAreNotDue(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			e := newEnv(t)
 			before := tc.setup(t, e)
+			beforeEvents := e.repo.EventsFor(before.ID)
 			e.clock.Advance(tc.advance)
 
 			expired, confirmed, err := e.newSweeper().SweepOnce(context.Background())
@@ -246,7 +248,7 @@ func TestSweepOnceLeavesErrandsThatAreNotDue(t *testing.T) {
 			assert.Zero(t, expired)
 			assert.Zero(t, confirmed)
 			assert.Equal(t, before, e.get(t, before.ID), "the errand must be untouched")
-			assert.Empty(t, e.repo.EventsFor(before.ID))
+			assert.Equal(t, beforeEvents, e.repo.EventsFor(before.ID), "the sweeper must emit no events")
 		})
 	}
 }
@@ -304,9 +306,10 @@ func TestSweepOnceDoesNotCompleteAnErrandTheRequesterConfirmedFirst(t *testing.T
 			assert.Zero(t, confirmed, "the sweeper must not count an errand it did not move")
 			assert.Equal(t, order.StateCompleted, e.get(t, o.ID).State)
 			events := e.repo.EventsFor(o.ID)
-			require.Len(t, events, 1, "the courier is paid exactly once")
-			assert.Equal(t, order.RoutingCompleted, events[0].RoutingKey)
-			assert.Equal(t, requestID, events[0].CorrelationID, "the requester's confirm emitted it")
+			require.Len(t, events, 2, "accepted and completed events")
+			assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
+			assert.Equal(t, order.RoutingCompleted, events[1].RoutingKey)
+			assert.Equal(t, requestID, events[1].CorrelationID, "the requester's confirm emitted it")
 			assert.Equal(t,
 				[]order.Action{order.ActionCreate, order.ActionAccept, order.ActionPickUp, order.ActionDeliver, order.ActionConfirm},
 				e.actionsOf(t, o.ID))
@@ -366,11 +369,12 @@ func TestConcurrentSweepersMoveEachErrandOnce(t *testing.T) {
 		assert.Equal(t, order.StateCompleted, e.get(t, id).State)
 		assert.Equal(t, 1, count(e.actionsOf(t, id), order.ActionAutoConfirm))
 		events := e.repo.EventsFor(id)
-		if assert.Len(t, events, 1) {
-			assert.Equal(t, order.RoutingCompleted, events[0].RoutingKey)
+		if assert.Len(t, events, 2) {
+			assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
+			assert.Equal(t, order.RoutingCompleted, events[1].RoutingKey)
 		}
 	}
-	assert.Len(t, e.repo.Events(), len(openIDs)+len(deliveredIDs), "no event beyond one per errand")
+	assert.Len(t, e.repo.Events(), len(openIDs)+2*len(deliveredIDs), "open errands have 1 expire event; delivered errands have 1 accepted + 1 completed event")
 }
 
 func TestSweepOnceCarriesOnPastAFailedErrand(t *testing.T) {

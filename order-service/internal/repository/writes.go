@@ -200,6 +200,13 @@ func (p *Postgres) Transition(ctx context.Context, t order.Transition) (order.Or
 				return err
 			}
 		}
+		// An admin's cancel or complete saves its audit row with the transition
+		// (D-108): if this write fails, the transition rolls back with it.
+		if t.Audit != nil {
+			if err := insertAudit(ctx, tx, t.Audit); err != nil {
+				return err
+			}
+		}
 		// AI-generated (edited by James Teo).
 		// RETURNING ran before this transaction's history row, so a
 		// withdrawal's own courier is added here, as a read now would (D-060).
@@ -240,6 +247,11 @@ func (p *Postgres) Accept(ctx context.Context, c order.AcceptCommand) (order.Ord
 		}
 		if err := insertHistory(ctx, tx, o.ID, c.History); err != nil {
 			return err
+		}
+		if c.Event != nil {
+			if err := insertEvent(ctx, tx, *c.Event); err != nil {
+				return err
+			}
 		}
 		accepted = o
 		return nil
@@ -282,8 +294,10 @@ func (p *Postgres) Amend(ctx context.Context, id uuid.UUID, fn func(current orde
 		if err != nil {
 			return fmt.Errorf("amend errand %s: %w", id, err)
 		}
-		if err := insertHistory(ctx, tx, id, res.History); err != nil {
-			return err
+		if res.History != nil {
+			if err := insertHistory(ctx, tx, id, *res.History); err != nil {
+				return err
+			}
 		}
 		if res.Event != nil {
 			if err := insertEvent(ctx, tx, *res.Event); err != nil {
@@ -334,8 +348,10 @@ func (p *Postgres) AmendScheduled(ctx context.Context, id uuid.UUID, now time.Ti
 		if err != nil {
 			return fmt.Errorf("amend scheduled errand %s: %w", id, err)
 		}
-		if err := insertHistory(ctx, tx, id, res.History); err != nil {
-			return err
+		if res.History != nil {
+			if err := insertHistory(ctx, tx, id, *res.History); err != nil {
+				return err
+			}
 		}
 		if res.Event != nil {
 			if err := insertEvent(ctx, tx, *res.Event); err != nil {

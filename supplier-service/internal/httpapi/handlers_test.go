@@ -45,6 +45,7 @@ var errNotOnDeletePath = errors.New("fake repository: not on the delete path")
 type fakeRepository struct {
 	byID        map[string]*supplier.Supplier
 	softDeleted []string
+	audits      []*supplier.AuditEntry
 }
 
 func newFakeRepository(ids ...string) *fakeRepository {
@@ -83,6 +84,34 @@ func (f *fakeRepository) ExistsDuplicate(context.Context, string, string, string
 }
 
 func (f *fakeRepository) Count(context.Context) (int, error) {
+	return 0, errNotOnDeletePath
+}
+
+// An admin's delete saves the delete and its audit row together, and a refused
+// one records the attempt on its own; nothing else audit-related is on the path.
+func (f *fakeRepository) SoftDeleteAudited(ctx context.Context, id string, e *supplier.AuditEntry) error {
+	f.audits = append(f.audits, e)
+	return f.SoftDelete(ctx, id)
+}
+
+func (f *fakeRepository) RecordAudit(_ context.Context, e *supplier.AuditEntry) error {
+	f.audits = append(f.audits, e)
+	return nil
+}
+
+func (f *fakeRepository) CreateAudited(context.Context, *supplier.Supplier, *supplier.AuditEntry) error {
+	return errNotOnDeletePath
+}
+
+func (f *fakeRepository) UpdateAudited(context.Context, *supplier.Supplier, *supplier.AuditEntry) error {
+	return errNotOnDeletePath
+}
+
+func (f *fakeRepository) ListAudit(context.Context, supplier.AuditFilter) (*supplier.AuditPage, error) {
+	return nil, errNotOnDeletePath
+}
+
+func (f *fakeRepository) PurgeAudit(context.Context) (int64, error) {
 	return 0, errNotOnDeletePath
 }
 

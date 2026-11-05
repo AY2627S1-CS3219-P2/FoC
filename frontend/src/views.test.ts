@@ -40,10 +40,9 @@ describe("isViewAvailable", () => {
     ]);
   });
 
-  it("gives an admin All errands and Admin first, and no student screens, in either mode", () => {
+  it("gives an admin the Dashboard first, and no student screens, in either mode", () => {
     const expected: ViewName[] = [
       "home",
-      "all-errands",
       "admin",
       "suppliers",
       "profile",
@@ -57,7 +56,6 @@ describe("isViewAvailable", () => {
   it("keeps the admin views from a student", () => {
     for (const mode of ["requesting", "delivering"] as const) {
       expect(isViewAvailable("admin", "STUDENT", mode)).toBe(false);
-      expect(isViewAvailable("all-errands", "STUDENT", mode)).toBe(false);
     }
   });
 

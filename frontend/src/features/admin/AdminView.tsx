@@ -36,6 +36,13 @@ interface AdminViewProps {
    */
   initialAccountId?: string | null;
   onNotify: (message: ToastMessage) => void;
+  // AI-generated (edited by Claude Code, 2026-11-03): the dashboard's Accounts
+  // tab shows an account's actions inside its own card, picked from the list.
+  /**
+   * Shown inside the dashboard's Accounts tab: no page heading, no ID lookup
+   * form (the account is picked from the list), and no card of its own.
+   */
+  embedded?: boolean;
 }
 
 /**
@@ -53,6 +60,7 @@ export function AdminView({
   currentUserId,
   initialAccountId,
   onNotify,
+  embedded = false,
 }: AdminViewProps) {
   const [query, setQuery] = useState(initialAccountId ?? "");
   const [loading, setLoading] = useState(false);
@@ -144,7 +152,7 @@ export function AdminView({
   const isSelf = profile?.uid === currentUserId;
   // AI-generated (edited by James Teo): which status control this account gets,
   // and the handlers for its confirmation step.
-  const control = statusControlFor(profile?.status, isSelf);
+  const control = statusControlFor(profile?.status, isSelf, profile?.role);
   const statusAction = STATUS_ACTIONS[control];
 
   function cancelStatusChange() {
@@ -179,14 +187,18 @@ export function AdminView({
     setChangingStatus(false);
   }
 
+  const Shell = embedded ? "div" : "section";
   return (
-    <section>
-      <div className="page-head">
-        <h1>Admin</h1>
-      </div>
+    <Shell>
+      {!embedded && (
+        <div className="page-head">
+          <h1>Admin</h1>
+        </div>
+      )}
 
-      <div className="card">
-        <h2 className="section-label">Look up a user</h2>
+      <div className={embedded ? undefined : "card"}>
+        {!embedded && <h2 className="section-label">Look up a user</h2>}
+        {!embedded && (
         <form className="controls" onSubmit={lookUp}>
           <input
             className="search-input"
@@ -207,6 +219,7 @@ export function AdminView({
             {loading ? "Looking up…" : "Look up"}
           </button>
         </form>
+        )}
 
         {error && <p className="status error">{error}</p>}
 
@@ -282,6 +295,9 @@ export function AdminView({
                   )}
                 </div>
                 {control === "not-verified" && <p className="balance-label">Not verified yet.</p>}
+                {control === "none" && profile.role === "ADMIN" && profile.status === "ACTIVE" && (
+                  <p className="balance-label">An admin account can&rsquo;t be suspended.</p>
+                )}
               </>
             )}
           </>
@@ -297,7 +313,7 @@ export function AdminView({
           />
         </Modal>
       )}
-    </section>
+    </Shell>
   );
 }
 
@@ -318,15 +334,17 @@ export type StatusControl = "suspend" | "reactivate" | "not-verified" | "none";
  * and SUSPENDED ones reactivated. An UNVERIFIED account gets no control,
  * because setting it ACTIVE would skip its email code. Your own account gets
  * none either, as with Reset password, and neither does a profile without a
- * status. This only picks a button: user-service decides whether the change
- * is allowed.
+ * status. An ACTIVE admin account gets none (D-125): no admin can be suspended.
+ * This only picks a button: user-service decides whether the change is allowed,
+ * and still refuses suspending an admin.
  */
 export function statusControlFor(
   status: AccountStatus | undefined,
   isSelf: boolean,
+  role?: string,
 ): StatusControl {
   if (isSelf) return "none";
-  if (status === "ACTIVE") return "suspend";
+  if (status === "ACTIVE") return role === "ADMIN" ? "none" : "suspend";
   if (status === "SUSPENDED") return "reactivate";
   if (status === "UNVERIFIED") return "not-verified";
   return "none";

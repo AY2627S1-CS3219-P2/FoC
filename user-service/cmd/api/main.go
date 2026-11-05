@@ -149,6 +149,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}()
 	stopRelay := startBackground(ctx, relay.New(relay.NewPostgresStore(pool), publisher, logger, relay.Options{}).Run)
 	defer stopRelay()
+	// D-115: audit entries older than 6 months are removed by a scheduled job.
+	stopAuditPurge := startBackground(ctx, func(ctx context.Context) { accountService.RunAuditPurge(ctx, user.PurgeInterval) })
+	defer stopAuditPurge()
 	authenticator := session.NewAuthenticator(userRepository, jwtService)
 	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)
 	// AI-generated (edited by ZI YANG): supply the recorded Redis refresh lock through the composition root.
@@ -176,6 +179,12 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		},
 		// AI-generated (edited by nigeltzy): each user's ranking model (D-095, D-099).
 		Ranking: handlers.RankingDependencies{Models: rankingService, Logger: logger},
+		// The admin dashboard's account list and audit log (D-110, D-121).
+		Admin: handlers.AdminDependencies{
+			Searcher: accountService,
+			Audit:    accountService,
+			Logger:   logger,
+		},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,
 			HealthCheck: newHealthCheck(

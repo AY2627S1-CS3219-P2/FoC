@@ -50,7 +50,14 @@ func TestAcceptAssignsTheCourier(t *testing.T) {
 	assert.Equal(t, now, a.OccurredAt)
 	assert.Equal(t, "corr-accept", a.CorrelationID)
 
-	assert.Empty(t, f.repo.EventsFor(o.ID), "accepting settles nothing")
+	events := f.repo.EventsFor(o.ID)
+	require.Len(t, events, 1, "accepting stages errand.accepted for chat-service")
+	assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
+	assert.Equal(t, o.ID, events[0].Payload.ErrandID)
+	assert.Equal(t, o.RequesterID, events[0].Payload.RequesterID)
+	assert.Equal(t, ptr(f.courier.UserID), events[0].Payload.CourierID)
+	assert.Equal(t, now, events[0].Payload.OccurredAt)
+	assert.Equal(t, "corr-accept", events[0].Payload.CorrelationID)
 	assert.Empty(t, f.credit.Adjusts())
 	assert.Len(t, f.credit.Reserves(), 1, "only the create's reservation")
 
@@ -62,6 +69,8 @@ func TestAcceptAssignsTheCourier(t *testing.T) {
 	assert.Equal(t, o.Version, sent[0].ExpectedVersion)
 	assert.Equal(t, now, sent[0].Now)
 	assert.Equal(t, maxActive, sent[0].MaxActive)
+	require.NotNil(t, sent[0].Event)
+	assert.Equal(t, order.RoutingAccepted, sent[0].Event.RoutingKey)
 }
 
 // AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — verifies duplicate
@@ -107,8 +116,8 @@ func TestConcurrentScheduledOpeningHasOneWinner(t *testing.T) {
 func TestTransitionsCarryTheirConditions(t *testing.T) {
 	// D-046: the conditional write re-checks the state, the version and the
 	// people the Go check relied on, and D-049's deadlines; the repository
-	// applies it only if the row still matches (ports.go). History and event are checked by
-	// the other tests.
+	// applies it only if the row still matches (ports.go). History, event and the admin's
+	// audit row are checked by the other tests.
 	type run func(f *fixture, o order.Order) error
 	userAction := func(act func(f *fixture, o order.Order) (order.Order, error)) run {
 		return func(f *fixture, o order.Order) error { return just(act(f, o)) }
@@ -241,7 +250,7 @@ func TestTransitionsCarryTheirConditions(t *testing.T) {
 			sent := f.repo.sentTransitions()
 			require.Len(t, sent, 1)
 			got := sent[0]
-			got.History, got.Event = order.HistoryEntry{}, nil
+			got.History, got.Event, got.Audit = order.HistoryEntry{}, nil, nil // the audit row is checked in admin_test.go
 			want := tc.want(f, o, now)
 			want.OrderID, want.Now = o.ID, now
 			want.ExpectVersion = ptr(o.Version) // every write re-checks the version it read
@@ -625,7 +634,15 @@ func TestWithdrawReopensTheErrandWithAFreshDeadline(t *testing.T) {
 	assert.Equal(t, order.ActorCourier, w.ActorKind)
 	assert.Equal(t, ptr(f.courier.UserID), w.CourierID, "the row keeps who withdrew (F3.5.3)")
 	assert.Equal(t, "corr-withdraw", w.CorrelationID)
-	assert.Empty(t, f.repo.EventsFor(o.ID), "withdrawing settles nothing")
+	events := f.repo.EventsFor(o.ID)
+	require.Len(t, events, 2, "accept then withdraw stages accepted and withdrawn events")
+	assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)
+	assert.Equal(t, order.RoutingWithdrawn, events[1].RoutingKey)
+	assert.Equal(t, o.ID, events[1].Payload.ErrandID)
+	assert.Equal(t, o.RequesterID, events[1].Payload.RequesterID)
+	assert.Equal(t, ptr(f.courier.UserID), events[1].Payload.CourierID)
+	assert.Equal(t, now, events[1].Payload.OccurredAt)
+	assert.Equal(t, "corr-withdraw", events[1].Payload.CorrelationID)
 
 	// AI-generated (edited by James Teo).
 	// Back in OPEN, any student but the requester may take it, except the
@@ -720,8 +737,10 @@ func TestTheSweepUsesTheDeadlineAWithdrawSets(t *testing.T) {
 	assert.True(t, ok, "due exactly T after the withdraw")
 	after := f.stored(o.ID)
 	assert.Equal(t, order.StateExpired, after.order.State)
-	require.Len(t, after.events, 1, "one refund")
-	assertEvent(t, after.events[0], order.RoutingExpired, after.order, nil, f.clock.Now(), "corr-sweep")
+	require.Len(t, after.events, 3, "accepted, withdrawn, and expired events")
+	assert.Equal(t, order.RoutingAccepted, after.events[0].RoutingKey)
+	assert.Equal(t, order.RoutingWithdrawn, after.events[1].RoutingKey)
+	assertEvent(t, after.events[2], order.RoutingExpired, after.order, nil, f.clock.Now(), "corr-sweep")
 }
 
 func TestPickUpKeepsTheCourier(t *testing.T) {

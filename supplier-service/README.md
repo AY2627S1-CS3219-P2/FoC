@@ -45,6 +45,27 @@ docker compose up supplier-service supplier-db
 | POST | `/suppliers` | ADMIN access token | create |
 | PUT | `/suppliers/{id}` | ADMIN access token | update |
 | DELETE | `/suppliers/{id}` | ADMIN access token | soft-delete; 409 while an unfinished errand references it (see below) |
+| GET | `/suppliers/audit-log` | ADMIN access token | the admin audit log, newest first (see below) |
+
+### Admin audit log
+
+Every admin create, edit and delete is recorded in `admin_audit` (D-106 to
+D-115; the shapes are in `ai/decisions/admin-dashboard-design.md`):
+
+- The supplier change and its `succeeded` row are saved in **one transaction**,
+  so either both are or neither is (D-108). The first-boot seed is nobody's
+  admin action and writes no row.
+- A **refused or failed** admin attempt (a 400, 404 or 409, or an error) is
+  recorded as `refused` or `failed` in a write of its own (D-109). A student's 403
+  and a missing token are not logged.
+- An edit's row holds the **new value of each field it changed** in
+  `additional_comments` (D-112). A delete holds the name and building.
+- Rows are **immutable**: a trigger refuses every `UPDATE` and any `DELETE` of a
+  row under 6 months old. A job at start and every 24 hours deletes the older ones
+  (D-114, D-115).
+- `GET /suppliers/audit-log?action=&outcome=&actor_id=&target_id=&from=&to=&limit=&offset=`
+  returns `{items, total, limit, offset}`, at most 50 a page. Any admin may read
+  all of it (D-110).
 
 ### Status codes for bad input and races
 

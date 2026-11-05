@@ -22,6 +22,7 @@ import (
 func NewRouter(svc *supplier.Service, v TokenVerifier, rev RevocationChecker) http.Handler {
 	h := NewHandler(svc)
 	r := chi.NewRouter()
+	r.Use(middleware.RequestID)
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
@@ -34,6 +35,7 @@ func NewRouter(svc *supplier.Service, v TokenVerifier, rev RevocationChecker) ht
 		r.Group(func(r chi.Router) {
 			r.Use(authenticate(v, rev))
 			r.Use(requireAdmin)
+			r.Get("/audit-log", h.AuditLog)
 			r.Post("/", h.Create)
 			r.Put("/{id}", h.Update)
 			r.Delete("/{id}", h.Delete)

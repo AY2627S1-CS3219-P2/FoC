@@ -153,7 +153,7 @@ func TestHistoryReturnsOpenActionForScheduledOpening(t *testing.T) {
 		next.ExpiresAt = &expiresAt
 		next.StateChangedAt, next.UpdatedAt = now, now
 		next.Version++
-		return &order.AmendResult{Order: next, History: order.HistoryEntry{
+		return &order.AmendResult{Order: next, History: &order.HistoryEntry{
 			OrderID: cur.ID, Action: order.ActionOpen, FromState: order.StateScheduled,
 			ToState: order.StateOpen, ActorKind: order.ActorSystem, OccurredAt: now,
 		}}, nil
@@ -267,7 +267,7 @@ func TestRequestValidation(t *testing.T) {
 		{name: "requested scope not in the contract", method: http.MethodGet, target: "/requested?scope=everything", msg: "scope must be active or history"},
 		{name: "scope sent twice", method: http.MethodGet, target: "/requested?scope=active&scope=history", msg: "scope is not valid"},
 		{name: "admin list without a scope", method: http.MethodGet, target: "/", msg: "scope is required"},
-		{name: "admin list with the history scope", method: http.MethodGet, target: "/?scope=history", msg: "scope must be active"},
+		{name: "admin list with a scope not in the contract", method: http.MethodGet, target: "/?scope=everything", msg: "scope must be active or history"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -378,6 +378,17 @@ func TestServiceErrorsMapToStatusCodes(t *testing.T) {
 				return h.do(t, http.MethodPost, "/", h.createBody(), as(student()))
 			},
 			status: http.StatusUnprocessableEntity, msg: "not enough available credits for this reward",
+		},
+		{
+			name: "a reward raise whose answer from credit-service was lost",
+			run: func(t *testing.T, h *harness) *httptest.ResponseRecorder {
+				requester := student()
+				d := h.create(t, requester)
+				h.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
+				return h.do(t, http.MethodPatch, "/"+d.Errand.Id.String(), map[string]any{"version": d.Errand.Version, "reward": 9}, as(requester))
+			},
+			status: http.StatusServiceUnavailable,
+			msg:    "the reward raise could not be confirmed, so nothing was saved and the reward stays at 5; refresh before trying again",
 		},
 		{
 			name: "supplier-service down",

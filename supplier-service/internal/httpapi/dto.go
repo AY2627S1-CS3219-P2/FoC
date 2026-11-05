@@ -97,3 +97,45 @@ func toResponseList(in []*supplier.Supplier) []supplierResponse {
 	}
 	return out
 }
+
+// auditResponse is one audit log row as the API returns it (D-113). Empty
+// reasons are omitted and the three JSON details are null when an action had
+// none, so the dashboard can show what is there.
+type auditResponse struct {
+	ID                 string         `json:"id"`
+	OccurredAt         time.Time      `json:"occurred_at"`
+	ActorID            string         `json:"actor_id"`
+	ActorRole          string         `json:"actor_role"`
+	Action             string         `json:"action"`
+	TargetType         string         `json:"target_type"`
+	TargetID           string         `json:"target_id"`
+	Outcome            string         `json:"outcome"`
+	RefusalReason      string         `json:"refusal_reason"`
+	Reason             string         `json:"reason"`
+	BeforeState        map[string]any `json:"before_state"`
+	AfterState         map[string]any `json:"after_state"`
+	AdditionalComments map[string]any `json:"additional_comments"`
+	CorrelationID      string         `json:"correlation_id"`
+}
+
+// auditPageResponse is one page of the audit log with the total that matched,
+// for "page 3 of N" (D-104).
+type auditPageResponse struct {
+	Items  []auditResponse `json:"items"`
+	Total  int             `json:"total"`
+	Limit  int             `json:"limit"`
+	Offset int             `json:"offset"`
+}
+
+func toAuditPageResponse(p *supplier.AuditPage) auditPageResponse {
+	out := auditPageResponse{Items: make([]auditResponse, 0, len(p.Items)), Total: p.Total, Limit: p.Limit, Offset: p.Offset}
+	for _, e := range p.Items {
+		out.Items = append(out.Items, auditResponse{
+			ID: e.ID, OccurredAt: e.OccurredAt, ActorID: e.ActorID, ActorRole: e.ActorRole,
+			Action: e.Action, TargetType: e.TargetType, TargetID: e.TargetID, Outcome: e.Outcome,
+			RefusalReason: e.RefusalReason, Reason: e.Reason, BeforeState: e.BeforeState,
+			AfterState: e.AfterState, AdditionalComments: e.AdditionalComments, CorrelationID: e.CorrelationID,
+		})
+	}
+	return out
+}

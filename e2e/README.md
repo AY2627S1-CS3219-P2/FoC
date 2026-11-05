@@ -97,8 +97,14 @@ instead of every test timing out on its own.
 | `TestRatingGateHoldsBothSidesUntilTheyRate` | rating an unfinished errand is 409; once it completes, `GET /api/orders/ratings/pending` lists it for both sides, the requester's next create and the courier's next accept are 409, 6 stars is 400, and a third student's rating is 404 on the completed errand, which they cannot see, and 403 on an `OPEN` one; each side's `POST /api/orders/{id}/rating` is 201 once and 409 the second time, after which that side may post or accept again; `GET /api/orders/users/{userId}/rating` shows each count and average (D-093) |
 | `TestCourierIsRecommendedTheTypeTheyTake` | over 4 rounds a courier is shown (`POST /api/orders/activity/shown`) a Printing and a Food errand and always completes the Printing one; then `GET /api/orders/open` recommends the new Printing errand with a confidence of at least 0.4 and a reason, `?recommend=false` sends no `recommendation`, and `GET /api/users/{uid}/ranking-model` returns the courier's model under 10 KB to them and 403 to anyone else (D-094, D-099, D-100, D-101) |
 <!-- AI Assistance Disclosure: Claude Code (Opus 5.5), date: 2026-10-31 — documents the ratings and errand-ranking e2e coverage. -->
+| `TestSupplierWritesAreAudited` | an ADMIN's supplier create, update and delete each leave a row in `GET /api/suppliers/audit-log?target_id=`, newest first, with the admin's id from the token and a correlation id |
+| `TestRefusedSupplierDeleteIsAudited` | a delete the unfinished-errand rule refuses (409) is logged as `refused` with a reason, beside the `succeeded` create |
+| `TestAccountStatusChangesAreAudited` | an ADMIN's suspend and reactivate of a student appear in `GET /api/users/audit-log`; the admin suspending themself is 403, logged as `refused`, and leaves the admin active |
+| `TestAdminErrandCancelIsAudited` | an ADMIN's cancel of an accepted errand appears in `GET /api/orders/audit-log` as `errand.cancel` |
+| `TestOnlyAnAdminReadsTheAuditLog` | each of the three audit logs answers a student 403 and a request with no token 401 |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
+<!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-03 — documents the admin audit log e2e tests. -->
 
 ## Notes
 

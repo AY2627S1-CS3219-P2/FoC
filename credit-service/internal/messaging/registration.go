@@ -23,9 +23,15 @@ import (
 )
 
 const (
-	RegistrationQueue     = "credit.registration"
-	RegistrationConsumer  = "credit-service.registration"
+	UsersQueue            = "credit.users"
+	UsersConsumer         = "credit-service.users"
+	UsersDLQ              = "credit.users.dlq"
 	RoutingUserRegistered = "user.registered"
+
+	// Backward compatibility aliases
+	RegistrationQueue    = UsersQueue
+	RegistrationConsumer = UsersConsumer
+	RegistrationDLQ      = UsersDLQ
 )
 
 // ErrMalformedEvent marks a message that cannot be retried successfully.
@@ -61,6 +67,21 @@ func WithLogger(logger *slog.Logger) func(*RegistrationHandler) {
 			h.logger = logger
 		}
 	}
+}
+
+// QueueName returns the primary queue name for user events.
+func (h *RegistrationHandler) QueueName() string {
+	return UsersQueue
+}
+
+// DLQName returns the dead letter queue name for user events.
+func (h *RegistrationHandler) DLQName() string {
+	return UsersDLQ
+}
+
+// ConsumerTag returns the AMQP consumer tag for the given worker.
+func (h *RegistrationHandler) ConsumerTag(workerID int) string {
+	return fmt.Sprintf("%s-%d", UsersConsumer, workerID)
 }
 
 type registrationEvent struct {
@@ -136,7 +157,7 @@ func (h *RegistrationHandler) HandleDelivery(ctx context.Context, d amqp.Deliver
 	_ = d.Ack(false)
 }
 
-// RunRegistrationConsumer consumes credit.registration messages until ctx ends.
+// RunRegistrationConsumer consumes credit.users messages until ctx ends.
 func RunRegistrationConsumer(ctx context.Context, amqpURL string, handler *RegistrationHandler, logger *slog.Logger) error {
 	conn, err := amqp.Dial(amqpURL)
 	if err != nil {
@@ -154,9 +175,9 @@ func RunRegistrationConsumer(ctx context.Context, amqpURL string, handler *Regis
 		return fmt.Errorf("set RabbitMQ qos: %w", err)
 	}
 
-	deliveries, err := ch.ConsumeWithContext(ctx, RegistrationQueue, RegistrationConsumer, false, false, false, false, nil)
+	deliveries, err := ch.ConsumeWithContext(ctx, UsersQueue, UsersConsumer, false, false, false, false, nil)
 	if err != nil {
-		return fmt.Errorf("consume %s: %w", RegistrationQueue, err)
+		return fmt.Errorf("consume %s: %w", UsersQueue, err)
 	}
 
 	for delivery := range deliveries {

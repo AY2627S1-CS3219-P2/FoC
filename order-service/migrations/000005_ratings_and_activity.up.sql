@@ -1,8 +1,8 @@
 -- AI Assistance Disclosure:
 -- Tool: Claude Code (model: Opus 5.5), date: 2026-10-29
 -- Scope: Tables for ratings (D-093) and Find errands' shown and search
---   records (D-088, D-092), kept in order-service (D-089). Numbered 000004 to
---   follow open PR #67's 000002 and 000003.
+--   records (D-088, D-092), kept in order-service (D-089). Numbered 000005 to
+--   follow #67's 000002 and 000003 and the admin audit table's 000004.
 -- Author review: nigeltzy — Checked that the migration was generated according to the requirements set out, and operates in an expected manner.
 
 -- One row per side per errand: the requester rates the courier, the courier

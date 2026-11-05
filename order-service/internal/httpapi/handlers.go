@@ -104,23 +104,44 @@ func (s *server) CreateErrand(w http.ResponseWriter, r *http.Request, params gen
 	s.writeDetailAfter(w, r, c, o, status)
 }
 
-// ListActiveErrands handles GET /?scope=active: every errand that is not
-// final, for an ADMIN (D-053).
+// ListActiveErrands handles GET /, the admin's errand list (D-053, D-105):
+// scope=active is every errand that is not final and scope=history the past
+// ones. With no filter, paging or sort it is the original list: every active
+// errand, oldest state change first, at most 100. With any of them it is the
+// filtered, sorted, offset-paged list, at most 50 a page (D-104, D-117).
 func (s *server) ListActiveErrands(w http.ResponseWriter, r *http.Request, params gen.ListActiveErrandsParams) {
 	c, ok := callerOf(w, r)
 	if !ok {
 		return
 	}
 	if !params.Scope.Valid() {
-		writeError(w, http.StatusBadRequest, "scope must be active")
+		writeError(w, http.StatusBadRequest, "scope must be active or history")
 		return
 	}
-	orders, err := s.svc.ListActive(r.Context(), c)
+	if params.Scope == gen.ListActiveErrandsParamsScopeActive && !adminListOptionsGiven(params) {
+		orders, err := s.svc.ListActive(r.Context(), c)
+		if err != nil {
+			s.writeServiceError(w, r, err)
+			return
+		}
+		s.writeList(w, c, orders)
+		return
+	}
+	f, err := adminFilter(params)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	page, err := s.svc.ListAdminErrands(r.Context(), c, f)
 	if err != nil {
 		s.writeServiceError(w, r, err)
 		return
 	}
-	s.writeList(w, c, orders)
+	now := s.svc.Now()
+	total, limit, offset := page.Total, page.Limit, page.Offset
+	writeJSON(w, http.StatusOK, gen.ErrandList{
+		Items: toErrands(page.Items, c, now), ServerTime: now.UTC(), Total: &total, Limit: &limit, Offset: &offset,
+	})
 }
 
 // ListOpenErrands handles GET /open: the errands couriers can accept (F3.2).

@@ -11,6 +11,8 @@
 import type { ReactNode } from "react";
 import { STATE_LABEL } from "./format";
 import type { Errand, ErrandStatus } from "./orderTypes";
+import { useChatSocket } from "../chat/ChatSocketContext";
+import { UnreadBadge } from "../chat/UnreadBadge";
 
 /**
  * The badge colours for a state. Purely visual: the badge always carries the
@@ -70,6 +72,9 @@ export function ErrandCard({
   poster,
   flair,
 }: ErrandCardProps) {
+  const { unreadErrandIds } = useChatSocket();
+  const hasUnread = unreadErrandIds.has(errand.id);
+
   return (
     <article
       ref={cardRef}
@@ -78,7 +83,10 @@ export function ErrandCard({
       {flair}
       <button type="button" className="errand-card-open" onClick={onOpen}>
         <span className="errand-card-body">
-          <span className="errand-title">{errand.itemDescription}</span>
+          <span className="errand-title">
+            {errand.itemDescription}
+            {hasUnread && <UnreadBadge />}
+          </span>
           <span className="errand-meta">
             {errand.supplier.name} → {errand.deliveryLocation}
           </span>

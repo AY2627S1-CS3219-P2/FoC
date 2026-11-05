@@ -48,8 +48,9 @@ import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
 import { NeedsService } from "./components/NeedsService";
 import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
+import { createChatApi } from "./features/chat/chatApi";
+import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
-import { AllErrandsView } from "./features/errands/AllErrandsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
 import { createActivityReporter } from "./features/errands/activityReporter";
 import { PendingRatings } from "./features/errands/PendingRatings";
@@ -58,7 +59,7 @@ import { NewErrandView } from "./features/errands/NewErrandView";
 import { HomeView } from "./features/home/HomeView";
 import { ProfileView } from "./features/profile/ProfileView";
 import { createUsersApi, type UserProfile } from "./features/profile/usersApi";
-import { AdminView } from "./features/admin/AdminView";
+import { DashboardView } from "./features/admin/DashboardView";
 import { SuppliersView } from "./features/suppliers/SuppliersView";
 // AI-generated (edited by James Teo): one availability rule for nav and guard.
 import { isViewAvailable, type ViewName } from "./views";
@@ -120,7 +121,7 @@ export function App() {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi, orders, creditAccounts } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts, chatApi } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
@@ -134,6 +135,7 @@ export function App() {
         usersApi: null,
         orders: null,
         creditAccounts: null,
+        chatApi: null,
       };
     }
     const authorizedSend = createAuthorizedSend({
@@ -147,7 +149,6 @@ export function App() {
         clearLastView();
         setMode("requesting");
         setBalance({ status: "loading" });
-        setAdminLookupId(null);
         // AI-generated (edited by James Teo): the login page says the user was
         // signed out, unless the session had already ended another way.
         if (signedIn.current) setSessionEnded(true);
@@ -161,6 +162,7 @@ export function App() {
       // AI-generated (edited by James Teo).
       orders: createOrdersApi(authorizedSend),
       creditAccounts: createCreditAccountsApi(authorizedSend),
+      chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
     };
   }, [tokens]);
 
@@ -194,10 +196,6 @@ export function App() {
   // shell shows "—" unless it is "ready": while loading, with no account yet,
   // when credit-service fails, for an admin and in a fixture build.
   const [balance, setBalance] = useState<Balance>({ status: "loading" });
-
-  // AI-generated (edited by James Teo): an account ID handed from an errand's
-  // detail to the Admin screen, which looks it up on opening.
-  const [adminLookupId, setAdminLookupId] = useState<string | null>(null);
 
   /**
    * A reload drops the in-memory access token but keeps the HttpOnly refresh
@@ -308,7 +306,6 @@ export function App() {
     // while the logout was on its way.
     setMode("requesting");
     setBalance({ status: "loading" });
-    setAdminLookupId(null);
     setSessionEnded(false);
     setSession(null);
     setView("home");
@@ -346,7 +343,6 @@ export function App() {
     // refresh failed during the change must not add "signed out" to it.
     setMode("requesting");
     setBalance({ status: "loading" });
-    setAdminLookupId(null);
     setSessionEnded(false);
     setSession(null);
     setView("home");
@@ -387,11 +383,8 @@ export function App() {
   const shownView: ViewName = isViewAvailable(view, role, mode) ? view : "home";
   const { available, held } = balanceFigures(balance);
 
-  // AI-generated (edited by James Teo): navigation, mode and the hand-over to
-  // the Admin screen.
-  /** A nav or in-page link: an account handed to the Admin screen is dropped. */
+  /** A nav or in-page link. */
   const navigate = (next: ViewName) => {
-    setAdminLookupId(null);
     setView(next);
   };
 
@@ -401,22 +394,13 @@ export function App() {
     if (!isViewAvailable(view, role, next)) setView("home");
   };
 
-  /** From an errand's detail: the Admin screen, with that account looked up. */
-  const lookUpAccount = (uid: string) => {
-    setAdminLookupId(uid);
-    setView("admin");
-  };
-
   /** After a post: the held credits show at once, then the new errand. */
   const handlePosted = () => {
     refreshBalance();
     navigate("my-errands");
   };
 
-  return (
-    <>
-      {/* AI-generated (edited by James Teo): navigate, changeMode and the
-          balance's figures. */}
+  const shell = (
       <AppShell
         session={session}
         view={shownView}
@@ -492,20 +476,6 @@ export function App() {
             <NeedsService title="My errands" service="order-service" />
           ))}
 
-        {shownView === "all-errands" &&
-          (orders ? (
-            <AllErrandsView
-              ordersApi={orders}
-              suppliersApi={suppliers}
-              usersApi={usersApi}
-              userId={session.userId}
-              onNotify={setToast}
-              onLookUpAccount={lookUpAccount}
-            />
-          ) : (
-            <NeedsService title="All errands" service="order-service" />
-          ))}
-
         {shownView === "suppliers" && (
           <SuppliersView
             api={suppliers}
@@ -542,15 +512,31 @@ export function App() {
         {/* AI-generated (edited by James Teo): keyed by the handed-over account,
             so each hand-over opens with that account looked up. */}
         {shownView === "admin" && (
-          <AdminView
-            key={adminLookupId ?? ""}
+          <DashboardView
             usersApi={usersApi}
-            currentUserId={session.userId}
-            initialAccountId={adminLookupId}
+            ordersApi={orders}
+            suppliersApi={suppliers}
+            userId={session.userId}
             onNotify={setToast}
+            initialAccountId={null}
           />
         )}
       </AppShell>
+  );
+
+  return (
+    <>
+      {chatApi ? (
+        <ChatSocketProvider
+          chatApi={chatApi}
+          isAuthenticated={session !== null}
+          accessToken={tokens.getAccessToken()}
+        >
+          {shell}
+        </ChatSocketProvider>
+      ) : (
+        shell
+      )}
 
       <Toast message={toast} onDismiss={dismissToast} />
     </>

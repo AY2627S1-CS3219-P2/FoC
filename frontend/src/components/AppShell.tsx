@@ -18,6 +18,8 @@
 // balance is credit-service's, and the nav follows isViewAvailable.
 import { useState, type ReactNode } from "react";
 import type { ActingMode, Session } from "../features/auth/types";
+import { useChatSocket } from "../features/chat/ChatSocketContext";
+import { UnreadBadge } from "../features/chat/UnreadBadge";
 import { isViewAvailable, NAV_ITEMS, type ViewName } from "../views";
 import {
   BellIcon,
@@ -45,7 +47,6 @@ const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
   profile: UserIcon,
   notifications: BellIcon,
   admin: ShieldIcon,
-  "all-errands": ListIcon,
 };
 
 interface AppShellProps {
@@ -74,6 +75,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { hasUnread } = useChatSocket();
   // AI-generated (edited by James Teo): an admin never posts or carries an
   // errand and has no credit account, so gets no mode toggle and no balance.
   const isStudent = session.role === "STUDENT";
@@ -118,6 +120,7 @@ export function AppShell({
               >
                 <Icon />
                 <span>{item.label}</span>
+                {item.view === "my-errands" && hasUnread && <UnreadBadge />}
               </button>
             );
           })}
@@ -159,6 +162,7 @@ export function AppShell({
           <span className="topbar-user">
             <span className="avatar">{session.initials}</span>
             <span>{session.username}</span>
+            {hasUnread && <UnreadBadge />}
           </span>
 
           <span className="topbar-spacer" />

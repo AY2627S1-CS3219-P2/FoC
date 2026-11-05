@@ -59,6 +59,7 @@ func (s *Service) Accept(ctx context.Context, c Caller, id uuid.UUID, version in
 			OccurredAt:    now,
 			CorrelationID: correlationID,
 		},
+		Event: newEvent(uuid.New(), RoutingAccepted, o, uuidPtr(c.UserID), now, correlationID),
 	})
 	switch {
 	case err == nil:
@@ -98,17 +99,25 @@ func (s *Service) Confirm(ctx context.Context, c Caller, id uuid.UUID, correlati
 // ADMIN's cancel of any errand that is not final (D-045). Which one applies is
 // decided by the caller's relationship to the errand, not by a flag.
 func (s *Service) Cancel(ctx context.Context, c Caller, id uuid.UUID, correlationID string) (Order, error) {
-	return s.userTransition(ctx, c, id, func(o Order) Action {
+	o, err := s.userTransition(ctx, c, id, func(o Order) Action {
 		if RelationshipOf(o, c) == RelAdmin {
 			return ActionAdminCancel
 		}
 		return ActionCancel
 	}, correlationID)
+	if err != nil {
+		s.recordAdminAttempt(ctx, c, AuditCancel, id, correlationID, err)
+	}
+	return o, err
 }
 
 // Complete is an ADMIN completing a PICKED_UP or DELIVERED errand (D-045).
 func (s *Service) Complete(ctx context.Context, c Caller, id uuid.UUID, correlationID string) (Order, error) {
-	return s.userTransition(ctx, c, id, func(Order) Action { return ActionAdminComplete }, correlationID)
+	o, err := s.userTransition(ctx, c, id, func(Order) Action { return ActionAdminComplete }, correlationID)
+	if err != nil {
+		s.recordAdminAttempt(ctx, c, AuditComplete, id, correlationID, err)
+	}
+	return o, err
 }
 
 // Expire moves an OPEN errand past its deadline to EXPIRED (F3.10.1, F3.14.1).
@@ -143,14 +152,14 @@ func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID
 			OrderID: cur.ID, FromState: StateScheduled, OccurredAt: openedAt,
 			ActorKind: ActorSystem, CorrelationID: correlationID,
 		}
-		res := &AmendResult{Order: next, History: h}
+		res := &AmendResult{Order: next, History: &h}
 		if openCount >= MaxOpenErrands {
 			next.State = StateCancelled
 			next.ExpiresAt = nil
 			h.Action = ActionCancel
 			h.ToState = StateCancelled
 			res.Order = next
-			res.History = h
+			res.History = &h
 			res.Event = newEvent(uuid.New(), RoutingCancelled, next, nil, openedAt, correlationID)
 		} else {
 			next.State = StateOpen
@@ -159,7 +168,7 @@ func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID
 			h.Action = ActionOpen
 			h.ToState = StateOpen
 			res.Order = next
-			res.History = h
+			res.History = &h
 		}
 		applied = true
 		return res, nil
@@ -273,6 +282,11 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 	}
 	h.ActorKind = actorKind(by.relationship(o))
 	t.History = h
+	// An admin's cancel or complete also writes an audit row, in the same
+	// transaction (D-106, D-108).
+	if by.relationship(o) == RelAdmin {
+		t.Audit = adminAuditEntry(by.caller, a, o, r.to, now, correlationID)
+	}
 
 	switch r.to {
 	case StateCompleted:
@@ -281,6 +295,9 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 		t.Event = newEvent(uuid.New(), RoutingCancelled, o, nil, now, correlationID)
 	case StateExpired:
 		t.Event = newEvent(uuid.New(), RoutingExpired, o, nil, now, correlationID)
+	}
+	if a == ActionWithdraw {
+		t.Event = newEvent(uuid.New(), RoutingWithdrawn, o, o.CourierID, now, correlationID)
 	}
 	return t
 }

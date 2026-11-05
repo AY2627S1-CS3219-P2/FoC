@@ -118,6 +118,9 @@ type Transition struct {
 	Now          time.Time
 	History      HistoryEntry
 	Event        *OutboxEvent
+	// Audit, when set, is the admin's audit row; it is saved in the same
+	// transaction as the transition (D-108).
+	Audit *AuditEntry
 }
 
 // AcceptCommand is D-046's accept: one conditional write, with a per-courier
@@ -129,15 +132,19 @@ type AcceptCommand struct {
 	Now             time.Time
 	MaxActive       int
 	History         HistoryEntry
+	Event           *OutboxEvent
 }
 
 // AmendResult is what an amend writes under the row lock. A nil *AmendResult
 // means nothing changed and nothing is written.
 type AmendResult struct {
-	Order   Order // the full row after the amendment; Version already incremented
-	History HistoryEntry
-	// Event is the errand.reward_set when the reward changed, written in the
-	// same transaction (D-102); nil otherwise.
+	Order Order // the full row after the amendment; Version already incremented
+	// History is nil when nothing the requester sent is saved: a raise with
+	// an unknown outcome only moves the version on (D-139).
+	History *HistoryEntry
+	// Event is written in the same transaction: errand.cancelled when the
+	// amend cancels the errand, errand.reward_set when the reward changed
+	// (D-102) or a raise's outcome is unknown (D-139); nil otherwise.
 	Event *OutboxEvent
 }
 
@@ -217,12 +224,26 @@ type Repository interface {
 	// longer OPEN, has expired, belongs to the courier, or its version moved.
 	Accept(ctx context.Context, c AcceptCommand) (Order, error)
 	// Amend locks the row (SELECT ... FOR UPDATE), calls fn with it while the
-	// lock is held, then writes fn's result and history row in the same
-	// transaction, with fn's event when it has one (D-102). fn's error
+	// lock is held, then writes fn's result in the same transaction, with its
+	// history row and event when it has them (D-102). fn's error
 	// rolls back and is returned unchanged. It returns ErrNotFound for an
 	// unknown id, and the unchanged row when fn returns a nil result.
 	Amend(ctx context.Context, id uuid.UUID, fn func(current Order) (*AmendResult, error)) (Order, error)
 	// AmendScheduled also serializes changes that open an errand against creates
 	// for the same requester, passing the transactional OPEN count to fn.
 	AmendScheduled(ctx context.Context, id uuid.UUID, now time.Time, fn func(current Order, openCount int) (*AmendResult, error)) (Order, error)
+
+	// ListAdminErrands is the admin's filtered, sorted, paged errand list
+	// (D-105, D-117); Total is how many matched before paging.
+	ListAdminErrands(ctx context.Context, f AdminErrandFilter) (AdminErrandPage, error)
+	// CountByUser counts a user's errands by state, as requester and as the
+	// courier now assigned (D-117).
+	CountByUser(ctx context.Context, userID uuid.UUID) (ErrandCounts, error)
+	// RecordAudit writes one audit row on its own, for an attempt that did not
+	// commit and so had no transaction to share (D-109).
+	RecordAudit(ctx context.Context, e *AuditEntry) error
+	ListAudit(ctx context.Context, f AuditFilter) (*AuditPage, error)
+	// PurgeAudit deletes the audit rows older than 6 months and returns how many
+	// it removed (D-115).
+	PurgeAudit(ctx context.Context) (int64, error)
 }

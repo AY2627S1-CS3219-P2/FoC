@@ -25,9 +25,12 @@ type fakeStatusUpdater struct {
 	uid    uuid.UUID
 	status user.AccountStatus
 	err    error
+	// audit is who the admin change was attributed to.
+	audit user.AuditContext
 }
 
-func (f *fakeStatusUpdater) UpdateAccountStatus(_ context.Context, uid uuid.UUID, status user.AccountStatus) error {
+func (f *fakeStatusUpdater) AdminUpdateAccountStatus(_ context.Context, ac user.AuditContext, uid uuid.UUID, status user.AccountStatus) error {
+	f.audit = ac
 	f.uid, f.status = uid, status
 	return f.err
 }

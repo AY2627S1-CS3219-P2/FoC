@@ -13,4 +13,18 @@ type Repository interface {
 	SoftDelete(ctx context.Context, id string) error
 	ExistsDuplicate(ctx context.Context, name, building, locationDescription, excludeID string) (bool, error)
 	Count(ctx context.Context) (int, error)
+
+	// The audited writes save the supplier change and its audit row in one
+	// transaction, so either both are saved or neither is (D-108).
+	CreateAudited(ctx context.Context, s *Supplier, e *AuditEntry) error
+	UpdateAudited(ctx context.Context, s *Supplier, e *AuditEntry) error
+	SoftDeleteAudited(ctx context.Context, id string, e *AuditEntry) error
+
+	// RecordAudit writes one audit row on its own. It is for an attempt that
+	// did not commit, so there was no transaction to share (D-109).
+	RecordAudit(ctx context.Context, e *AuditEntry) error
+	ListAudit(ctx context.Context, f AuditFilter) (*AuditPage, error)
+	// PurgeAudit deletes the audit rows older than 6 months and returns how
+	// many it removed (D-115).
+	PurgeAudit(ctx context.Context) (int64, error)
 }

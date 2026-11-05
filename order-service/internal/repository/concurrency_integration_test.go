@@ -239,7 +239,7 @@ func (e *env) testAmendHoldsRowLock(t *testing.T) {
 			next.Version = cur.Version + 1
 			next.UpdatedAt = at(5 * time.Minute)
 			changes := []order.FieldChange{{Field: order.FieldReward, From: "5", To: "9"}}
-			return &order.AmendResult{Order: next, History: amendEntry(cur, at(5*time.Minute), changes)}, nil
+			return &order.AmendResult{Order: next, History: ptr(amendEntry(cur, at(5*time.Minute), changes))}, nil
 		})
 		return err
 	})
@@ -406,12 +406,12 @@ func (e *env) testAcceptIsJudgedAtArrival(t *testing.T) {
 }
 
 // AI-generated (edited by James Teo).
-// testNoRewardSetAfterAFailedRaise is a raise whose answer is lost while the
+// testCancelRacingAnUnconfirmedRaise is a raise whose answer is lost while the
 // requester's cancel waits on the row lock the amend holds across its credit
-// call. The amend saves and queues nothing (D-102), so the cancel's
-// errand.cancelled is the only event, at the reward the errand kept, and
-// credit-service returns the whole hold, the lost raise's extra included.
-func (e *env) testNoRewardSetAfterAFailedRaise(t *testing.T) {
+// call. The amend saves the next version with a reward_set at the reward the
+// errand kept (D-139), so the waiting cancel finds the errand changed; tried
+// again, it cancels at that same reward.
+func (e *env) testCancelRacingAnUnconfirmedRaise(t *testing.T) {
 	e.reset(t)
 	ctx := t.Context()
 	svc, _, credit, supplier := serviceOn(e.repo)
@@ -438,7 +438,14 @@ func (e *env) testNoRewardSetAfterAFailedRaise(t *testing.T) {
 
 	release()
 	require.Equal(t, order.KindUnavailable, order.KindOf(receive(t, amended, "the amend to fail")))
-	require.NoError(t, receive(t, cancelled, "the cancel to commit"))
+	require.Equal(t, order.KindConflict, order.KindOf(receive(t, cancelled, "the cancel to find the errand changed")))
+	kept := e.get(t, o.ID)
+	require.Equal(t, order.StateOpen, kept.State)
+	require.Equal(t, 5, kept.Reward)
+	require.Equal(t, o.Version+1, kept.Version)
+
+	_, err = svc.Cancel(ctx, requester, o.ID, "corr-cancel-again")
+	require.NoError(t, err)
 	require.Equal(t, order.StateCancelled, e.get(t, o.ID).State)
 	rows, err := e.pool.Query(ctx, `SELECT routing_key, (payload->>'amount')::int FROM outbox
 		WHERE payload->>'errandId' = $1 ORDER BY created_at`, o.ID.String())
@@ -452,7 +459,6 @@ func (e *env) testNoRewardSetAfterAFailedRaise(t *testing.T) {
 		return q, row.Scan(&q.key, &q.amount)
 	})
 	require.NoError(t, err)
-	require.Equal(t, []queued{{order.RoutingCancelled, 5}}, events, "the settlement alone, at the reward the errand kept")
-	held, _ := credit.Hold(o.ID)
-	require.Equal(t, 8, held, "credit holds the lost raise; the refund returns all of it")
+	require.Equal(t, []queued{{order.RoutingRewardSet, 5}, {order.RoutingCancelled, 5}}, events,
+		"the reward_set that returns the lost raise's extra, then the settlement, both at the reward the errand kept")
 }
