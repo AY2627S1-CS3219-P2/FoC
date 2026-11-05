@@ -67,86 +67,64 @@ func NewVerifier(jwksURL string, authRedis redis.UniversalClient) *Verifier {
 	}
 }
 
-type jwtHeader struct {
-	Alg string `json:"alg"`
-	Typ string `json:"typ"`
-	Kid string `json:"kid"`
-}
-
-type jwtPayload struct {
-	Iss string `json:"iss"`
-	Aud string `json:"aud"`
-	Sub string `json:"sub"`
-	Exp int64  `json:"exp"`
-	Iat int64  `json:"iat"`
-	Jti string `json:"jti"`
-	Typ string `json:"typ"`
-	Rol string `json:"role"`
-}
-
 func (v *Verifier) Verify(ctx context.Context, tokenString string) (*Claims, error) {
-	parts := strings.Split(tokenString, ".")
-	if len(parts) != 3 {
+	if tokenString == "" {
 		return nil, ErrMalformed
 	}
 
-	headerBytes, err := base64.RawURLEncoding.DecodeString(parts[0])
+	var registered jwt.RegisteredClaims
+	parsed, err := jwt.ParseWithClaims(tokenString, &registered,
+		func(t *jwt.Token) (any, error) {
+			kid, _ := t.Header["kid"].(string)
+			if kid == "" {
+				return nil, ErrMalformed
+			}
+			return v.key(ctx, kid)
+		},
+		jwt.WithValidMethods([]string{jwt.SigningMethodRS256.Alg()}),
+		jwt.WithLeeway(clockSkew),
+		jwt.WithExpirationRequired(),
+		jwt.WithIssuedAt(),
+		jwt.WithIssuer(issuer),
+		jwt.WithAudience(audience),
+	)
 	if err != nil {
-		return nil, ErrMalformed
+		switch {
+		case errors.Is(err, jwt.ErrTokenExpired), errors.Is(err, jwt.ErrTokenNotValidYet), errors.Is(err, jwt.ErrTokenUsedBeforeIssued):
+			return nil, ErrExpired
+		case errors.Is(err, ErrKeysUnavailable):
+			return nil, err
+		case errors.Is(err, jwt.ErrTokenMalformed), errors.Is(err, jwt.ErrTokenRequiredClaimMissing), errors.Is(err, ErrMalformed):
+			return nil, ErrMalformed
+		default:
+			return nil, ErrInvalidSignature
+		}
 	}
-	var header jwtHeader
-	if err := json.Unmarshal(headerBytes, &header); err != nil {
-		return nil, ErrMalformed
-	}
-	if header.Alg != "RS256" || header.Kid == "" {
+	if !parsed.Valid {
 		return nil, ErrInvalidSignature
 	}
 
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
+	var custom struct {
+		Typ  string `json:"typ"`
+		Role string `json:"role"`
+	}
+	if err := decodePayload(tokenString, &custom); err != nil {
 		return nil, ErrMalformed
 	}
-	var payload jwtPayload
-	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
-		return nil, ErrMalformed
-	}
-
-	if payload.Iss != issuer || payload.Aud != audience {
-		return nil, ErrInvalidSignature
-	}
-	if payload.Typ != "" && payload.Typ != "access" {
+	if custom.Typ != "access" {
 		return nil, ErrWrongType
 	}
 
-	now := time.Now()
-	if payload.Exp != 0 && now.After(time.Unix(payload.Exp, 0).Add(clockSkew)) {
-		return nil, ErrExpired
-	}
-
-	userID, err := uuid.Parse(payload.Sub)
-	if err != nil || userID == uuid.Nil {
+	id, err := uuid.Parse(registered.Subject)
+	if err != nil || id == uuid.Nil || registered.ID == "" || registered.IssuedAt == nil {
 		return nil, ErrMalformed
 	}
 
 	claims := &Claims{
-		UserID:   userID,
-		Role:     payload.Rol,
-		TokenID:  payload.Jti,
-		IssuedAt: time.Unix(payload.Iat, 0),
-	}
-
-	// Verify cryptographic signature
-	key, err := v.key(ctx, header.Kid)
-	if err != nil {
-		return nil, err
-	}
-
-	parser := jwt.NewParser(jwt.WithValidMethods([]string{"RS256"}))
-	_, err = parser.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
-		return key, nil
-	})
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrInvalidSignature, err)
+		UserID:   id,
+		Role:     custom.Role,
+		TokenID:  registered.ID,
+		IssuedAt: registered.IssuedAt.Time,
 	}
 
 	// Check revocation in shared Redis (D-041, D-054)
@@ -161,6 +139,21 @@ func (v *Verifier) Verify(ctx context.Context, tokenString string) (*Claims, err
 	}
 
 	return claims, nil
+}
+
+func decodePayload(token string, target any) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return ErrMalformed
+	}
+	b, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return ErrMalformed
+	}
+	if err := json.Unmarshal(b, target); err != nil {
+		return ErrMalformed
+	}
+	return nil
 }
 
 func (v *Verifier) isRevoked(ctx context.Context, c *Claims) (bool, error) {
