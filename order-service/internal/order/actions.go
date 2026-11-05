@@ -147,14 +147,14 @@ func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID
 			OrderID: cur.ID, FromState: StateScheduled, OccurredAt: openedAt,
 			ActorKind: ActorSystem, CorrelationID: correlationID,
 		}
-		res := &AmendResult{Order: next, History: h}
+		res := &AmendResult{Order: next, History: &h}
 		if openCount >= MaxOpenErrands {
 			next.State = StateCancelled
 			next.ExpiresAt = nil
 			h.Action = ActionCancel
 			h.ToState = StateCancelled
 			res.Order = next
-			res.History = h
+			res.History = &h
 			res.Event = newEvent(uuid.New(), RoutingCancelled, next, nil, openedAt, correlationID)
 		} else {
 			next.State = StateOpen
@@ -163,7 +163,7 @@ func (s *Service) OpenScheduled(ctx context.Context, id uuid.UUID, correlationID
 			h.Action = ActionOpen
 			h.ToState = StateOpen
 			res.Order = next
-			res.History = h
+			res.History = &h
 		}
 		applied = true
 		return res, nil

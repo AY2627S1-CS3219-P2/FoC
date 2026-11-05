@@ -73,7 +73,7 @@ func TestPostgres(t *testing.T) {
 	// AI-generated (edited by James Teo).
 	t.Run("ConcurrentCreatesRespectTheOpenLimit", e.testConcurrentCreatesRespectTheOpenLimit)
 	t.Run("AcceptIsJudgedAtArrival", e.testAcceptIsJudgedAtArrival)
-	t.Run("NoRewardSetAfterAFailedRaise", e.testNoRewardSetAfterAFailedRaise)
+	t.Run("CancelRacingAnUnconfirmedRaise", e.testCancelRacingAnUnconfirmedRaise)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.

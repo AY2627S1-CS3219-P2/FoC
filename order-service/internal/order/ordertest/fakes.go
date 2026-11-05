@@ -656,7 +656,9 @@ func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current orde
 		return order.Order{}, err
 	}
 	r.orders[id] = res.Order
-	r.appendHistory(res.History)
+	if res.History != nil {
+		r.appendHistory(*res.History)
+	}
 	if res.Event != nil {
 		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
 	}
@@ -688,7 +690,9 @@ func (r *Repository) AmendScheduled(_ context.Context, id uuid.UUID, now time.Ti
 		return order.Order{}, err
 	}
 	r.orders[id] = res.Order
-	r.appendHistory(res.History)
+	if res.History != nil {
+		r.appendHistory(*res.History)
+	}
 	if res.Event != nil {
 		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
 	}
