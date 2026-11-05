@@ -74,7 +74,7 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 
 	t.Run("valid completed payload dispatches successfully", func(t *testing.T) {
 		requesterID := uuid.New()
-	body := fmt.Sprintf(`{
+		body := fmt.Sprintf(`{
 			"schemaVersion": 1,
 			"eventId": "%s",
 			"errandId": "%s",

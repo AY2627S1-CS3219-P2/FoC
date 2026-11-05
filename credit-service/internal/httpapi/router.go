@@ -22,16 +22,20 @@ import (
 // HealthCheck reports whether a required runtime dependency is reachable.
 type HealthCheck func(context.Context) error
 
-// NewRouter returns the credit-service HTTP handler.
+// NewRouter returns the credit-service HTTP handler, logging every request to
+// logger. A nil logger discards the lines.
 func NewRouter(healthCheck HealthCheck, verifier *auth.Verifier, rev *auth.Revocations, creditService *credit.Service, logger *slog.Logger) http.Handler {
+	logger = orDiscard(logger)
 	router := chi.NewRouter()
 	router.Use(middleware.RequestID)
-	router.Use(middleware.Recoverer)
+	// The access log wraps the recoverer so it records the 500 a panic becomes.
+	router.Use(accessLog(logger))
+	router.Use(recoverPanics(logger))
 
-	router.Get("/api/v1/health", health(healthCheck))
+	router.Get("/api/v1/health", health(healthCheck, logger))
 
 	if creditService != nil {
-		h := NewHandler(creditService, healthCheck)
+		h := NewHandler(creditService, healthCheck, logger)
 		gen.HandlerWithOptions(h, gen.ChiServerOptions{
 			BaseRouter: router,
 			Middlewares: []gen.MiddlewareFunc{
@@ -49,9 +53,11 @@ func NewRouter(healthCheck HealthCheck, verifier *auth.Verifier, rev *auth.Revoc
 // AuthenticateRoutes returns a middleware that enforces Bearer token verification
 // and revocation checks on all protected API routes, skipping public health endpoints.
 func AuthenticateRoutes(verifier *auth.Verifier, rev *auth.Revocations, logger *slog.Logger) gen.MiddlewareFunc {
+	logger = orDiscard(logger)
 	if verifier == nil {
 		return func(next http.Handler) http.Handler {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				logCause(logger, r, "no token verifier is configured; refusing request", nil)
 				writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "verifier unconfigured")
 			})
 		}
@@ -69,10 +75,11 @@ func AuthenticateRoutes(verifier *auth.Verifier, rev *auth.Revocations, logger *
 	}
 }
 
-func health(healthCheck HealthCheck) http.HandlerFunc {
+func health(healthCheck HealthCheck, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if healthCheck != nil {
 			if err := healthCheck(r.Context()); err != nil {
+				logCause(logger, r, "health check failed", err)
 				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unhealthy"})
 				return
 			}

@@ -45,11 +45,12 @@ type rewardSetPayload struct {
 	OccurredAt    time.Time  `json:"occurredAt"`
 }
 
-func checkClockSkew(logger *slog.Logger, eventID uuid.UUID, occurredAt time.Time) {
+func checkClockSkew(logger *slog.Logger, eventID, errandID uuid.UUID, occurredAt time.Time) {
 	skew := time.Since(occurredAt)
 	if math.Abs(skew.Minutes()) > 10 {
 		logger.Warn("implausible clock skew detected on event",
 			"eventId", eventID,
+			"errandId", errandID,
 			"occurredAt", occurredAt,
 			"receivedAt", time.Now().UTC(),
 			"skew", skew.String(),
@@ -96,7 +97,7 @@ func (h *PayoutHandler) Handle(ctx context.Context, routingKey string, body []by
 		return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 	}
 
-	checkClockSkew(h.logger, ev.EventID, ev.OccurredAt)
+	checkClockSkew(requestLogger(ctx, h.logger), ev.EventID, ev.ErrandID, ev.OccurredAt)
 
 	if h.service == nil {
 		return errors.New("lifecycle service is required")
@@ -140,7 +141,7 @@ func (h *RefundHandler) Handle(ctx context.Context, routingKey string, body []by
 		return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 	}
 
-	checkClockSkew(h.logger, ev.EventID, ev.OccurredAt)
+	checkClockSkew(requestLogger(ctx, h.logger), ev.EventID, ev.ErrandID, ev.OccurredAt)
 
 	var reason credit.TransactionReason
 	switch routingKey {
@@ -202,15 +203,17 @@ func (h *RewardSetHandler) Handle(ctx context.Context, routingKey string, body [
 		return fmt.Errorf("%w: occurredAt is required", ErrMalformedEvent)
 	}
 
-	checkClockSkew(h.logger, ev.EventID, ev.OccurredAt)
+	log := requestLogger(ctx, h.logger)
+	checkClockSkew(log, ev.EventID, ev.ErrandID, ev.OccurredAt)
 
 	if h.service == nil {
 		return errors.New("lifecycle service is required")
 	}
 	err := h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
 	if errors.Is(err, credit.ErrRewardSetStale) {
-		h.logger.Info("errand.reward_set ignored as stale",
+		log.Info("errand.reward_set ignored as stale",
 			"routingKey", routingKey,
+			"eventId", ev.EventID,
 			"errandId", ev.ErrandID,
 			"version", *ev.Version,
 			"amount", ev.Amount,
@@ -220,8 +223,9 @@ func (h *RewardSetHandler) Handle(ctx context.Context, routingKey string, body [
 	if err != nil {
 		return err
 	}
-	h.logger.Info("errand.reward_set applied",
+	log.Info("errand.reward_set applied",
 		"routingKey", routingKey,
+		"eventId", ev.EventID,
 		"errandId", ev.ErrandID,
 		"version", *ev.Version,
 		"amount", ev.Amount,
