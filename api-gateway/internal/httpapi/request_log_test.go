@@ -8,12 +8,15 @@
 package httpapi_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -143,7 +146,7 @@ func newLoggedGateway(t *testing.T, s gatewaySetup) *loggedGateway {
 	}
 	logs := &logBuffer{}
 	router, err := httpapi.NewRouter(config.Downstream{
-		User: s.upstream, Supplier: s.upstream, Order: s.upstream, Credit: s.upstream,
+		User: s.upstream, Supplier: s.upstream, Order: s.upstream, Credit: s.upstream, Chat: s.upstream,
 	}, auth.NewVerifier(s.jwks, nil), s.revocations, testRefreshTTL, logs.logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -601,6 +604,141 @@ func TestAbortedResponseIsStillLogged(t *testing.T) {
 	}
 }
 
+// A chat WebSocket upgrade on a real connection: ReverseProxy can switch
+// protocols only if the access log's writer lets it hijack the connection.
+// Bytes then flow both ways, and the access line, written once the connection
+// closes, records the 101 that went out on the hijacked connection.
+func TestChatWebSocketUpgradeSwitchesProtocolsAndIsLogged(t *testing.T) {
+	const ticket = "test-ticket-xyz"
+	forwardedID := make(chan string, 1)
+	// Stands in for chat-service, which redeems the ticket itself.
+	chat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/ws" || r.URL.Query().Get("ticket") != ticket || !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			http.Error(w, "not a chat upgrade", http.StatusBadRequest)
+			return
+		}
+		forwardedID <- r.Header.Get("X-Request-Id")
+		conn, rw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		defer conn.Close()
+		// Echoes a request id, as a service may; the gateway drops it.
+		_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nX-Request-Id: chat-service-copy\r\n\r\n")
+		_ = rw.Flush()
+		if msg, err := rw.ReadString('\n'); err == nil {
+			_, _ = rw.WriteString("chat-service got " + msg)
+			_ = rw.Flush()
+		}
+		// Holds the connection open until the gateway closes it.
+		_, _ = io.Copy(io.Discard, rw)
+	}))
+	t.Cleanup(chat.Close)
+	g := newLoggedGateway(t, gatewaySetup{upstream: chat.URL})
+	// Closed once the router returns, by which time the access line is
+	// written; server.Close does not wait for a hijacked connection.
+	served := make(chan struct{})
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer close(served)
+		g.router.ServeHTTP(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	conn, err := net.Dial("tcp", server.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set deadline: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	upgrade, err := http.NewRequest(http.MethodGet, server.URL+"/api/chat/ws?ticket="+ticket, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	upgrade.Header.Set("Connection", "Upgrade")
+	upgrade.Header.Set("Upgrade", "websocket")
+	upgrade.Header.Set("Sec-WebSocket-Version", "13")
+	upgrade.Header.Set("Sec-WebSocket-Key", "dGhlIHNhbXBsZSBub25jZQ==")
+	if err := upgrade.Write(conn); err != nil {
+		t.Fatalf("send the upgrade: %v", err)
+	}
+	res, err := http.ReadResponse(reader, upgrade)
+	if err != nil {
+		t.Fatalf("read the upgrade's response: %v", err)
+	}
+	if res.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101; the log:\n%s", res.StatusCode, g.logs.String())
+	}
+	ids := res.Header.Values("X-Request-Id")
+	if len(ids) != 1 || !uuidV4.MatchString(ids[0]) {
+		t.Fatalf("X-Request-Id on the 101 = %q, want the one id the gateway minted", ids)
+	}
+	if got := <-forwardedID; got != ids[0] {
+		t.Errorf("chat-service got X-Request-Id %q, want %q", got, ids[0])
+	}
+
+	if _, err := io.WriteString(conn, "hello from the browser\n"); err != nil {
+		t.Fatalf("write on the switched connection: %v", err)
+	}
+	if got, err := reader.ReadString('\n'); err != nil || got != "chat-service got hello from the browser\n" {
+		t.Fatalf("read on the switched connection = %q, %v; want chat-service's reply", got, err)
+	}
+
+	_ = conn.Close()
+	select {
+	case <-served:
+	case <-time.After(10 * time.Second):
+		t.Fatalf("the gateway still holds the connection after the client closed it; the log:\n%s", g.logs.String())
+	}
+	access := g.logs.only(t, msgAccess)
+	if access["path"] != "/api/chat/ws" || access["status"] != float64(http.StatusSwitchingProtocols) ||
+		access["level"] != "INFO" || access["request_id"] != ids[0] {
+		t.Errorf("access line = %v, want path /api/chat/ws, status 101, level INFO and request_id %q", access, ids[0])
+	}
+	if strings.Contains(g.logs.String(), ticket) {
+		t.Errorf("the log carries the ticket:\n%s", g.logs.String())
+	}
+}
+
+// A streamed response, such as a chat image, reaches the client part by part:
+// ReverseProxy flushes each part through the access log's writer.
+func TestStreamedResponseIsFlushedPartByPart(t *testing.T) {
+	release := make(chan struct{})
+	chat := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "first part\n")
+		w.(http.Flusher).Flush()
+		// The rest waits until the client has read the first part.
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		_, _ = io.WriteString(w, "second part\n")
+	}))
+	t.Cleanup(chat.Close)
+	g := newLoggedGateway(t, gatewaySetup{upstream: chat.URL})
+	server := httptest.NewServer(g.router)
+	t.Cleanup(server.Close)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	res, err := client.Get(server.URL + "/api/chat/media/ee337867-10c6-4539-8256-bad7a2e95e8b")
+	if err != nil {
+		t.Fatalf("GET: %v", err)
+	}
+	defer res.Body.Close()
+	reader := bufio.NewReader(res.Body)
+	if got, err := reader.ReadString('\n'); err != nil || got != "first part\n" {
+		t.Fatalf("first part = %q, %v; want it before the service has finished", got, err)
+	}
+	close(release)
+	if rest, err := io.ReadAll(reader); err != nil || string(rest) != "second part\n" {
+		t.Fatalf("rest = %q, %v; want the second part", rest, err)
+	}
+}
+
 // No line carries the access token, the refresh cookie, a query string or a
 // request body.
 func TestLogLinesLeaveOutTokensCookiesQueriesAndBodies(t *testing.T) {
@@ -645,7 +783,7 @@ func TestLogLinesLeaveOutTokensCookiesQueriesAndBodies(t *testing.T) {
 
 func TestNewRouterNeedsALogger(t *testing.T) {
 	_, err := httpapi.NewRouter(config.Downstream{
-		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit",
+		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit", Chat: "http://chat",
 	}, auth.NewVerifier("http://jwks", nil), &fakeRevocations{}, testRefreshTTL, nil)
 	if err == nil {
 		t.Fatal("NewRouter with a nil logger: expected an error, got nil")

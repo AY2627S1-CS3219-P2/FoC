@@ -287,11 +287,31 @@ func build(route Route, how behaviour, log *slog.Logger) (*Proxy, error) {
 		},
 		// ReverseProxy's own messages, such as a body that breaks off mid-copy.
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
-		Transport: &http.Transport{
-			ResponseHeaderTimeout: 15 * time.Second,
+		Transport: &wsAwareTransport{
+			httpTransport: &http.Transport{
+				ResponseHeaderTimeout: 15 * time.Second,
+			},
+			wsTransport: &http.Transport{},
 		},
 	}
 	return p, nil
+}
+
+type wsAwareTransport struct {
+	httpTransport *http.Transport
+	wsTransport   *http.Transport
+}
+
+func (t *wsAwareTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	if isWebSocketUpgrade(req) {
+		return t.wsTransport.RoundTrip(req)
+	}
+	return t.httpTransport.RoundTrip(req)
+}
+
+func isWebSocketUpgrade(req *http.Request) bool {
+	return strings.EqualFold(req.Header.Get("Upgrade"), "websocket") ||
+		strings.Contains(strings.ToLower(req.Header.Get("Connection")), "upgrade")
 }
 
 // RewritePath maps a public path to the downstream service's own path.

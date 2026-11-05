@@ -200,6 +200,17 @@ func TestEventPayloadUsesCreditServiceFieldNames(t *testing.T) {
 			require.Error(f.t, err)
 			return f.repo.Events()[0]
 		}, base},
+		{"errand.accepted", func(f *fixture) order.OutboxEvent {
+			o := f.post()
+			require.NoError(f.t, just(f.svc.Accept(f.ctx, f.courier, o.ID, o.Version, "corr")))
+			return f.repo.EventsFor(o.ID)[0]
+		}, append(slices.Clone(base), "courierId")},
+		{"errand.withdrawn", func(f *fixture) order.OutboxEvent {
+			o := f.post()
+			require.NoError(f.t, just(f.svc.Accept(f.ctx, f.courier, o.ID, o.Version, "corr")))
+			require.NoError(f.t, just(f.svc.Withdraw(f.ctx, f.courier, o.ID, "corr")))
+			return f.repo.EventsFor(o.ID)[1]
+		}, append(slices.Clone(base), "courierId")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -225,7 +236,9 @@ func TestOnlySettlementsEmitEvents(t *testing.T) {
 	// The reward amend writes only its reward_set (D-102).
 	f := newFixture(t)
 	settlements := func() []order.OutboxEvent {
-		return slices.DeleteFunc(f.repo.Events(), func(e order.OutboxEvent) bool { return e.RoutingKey == order.RoutingRewardSet })
+		return slices.DeleteFunc(f.repo.Events(), func(e order.OutboxEvent) bool {
+			return e.RoutingKey == order.RoutingRewardSet || e.RoutingKey == order.RoutingAccepted || e.RoutingKey == order.RoutingWithdrawn
+		})
 	}
 	o := f.post()
 	version := o.Version
@@ -249,7 +262,7 @@ func TestOnlySettlementsEmitEvents(t *testing.T) {
 		version = got.Version
 		assert.Empty(t, settlements(), "after %s", step.name)
 	}
-	assert.Len(t, f.repo.Events(), 1, "the amend's reward_set, and nothing else")
+	assert.Len(t, f.repo.Events(), 4, "the amend's reward_set, two accepts, and one withdraw")
 
 	done, err := f.svc.Confirm(f.ctx, f.requester, o.ID, "corr-confirm")
 	require.NoError(t, err)

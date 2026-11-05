@@ -48,6 +48,8 @@ import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
 import { NeedsService } from "./components/NeedsService";
 import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
+import { createChatApi } from "./features/chat/chatApi";
+import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
@@ -117,7 +119,7 @@ export function App() {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi, orders, creditAccounts } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts, chatApi } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
@@ -131,6 +133,7 @@ export function App() {
         usersApi: null,
         orders: null,
         creditAccounts: null,
+        chatApi: null,
       };
     }
     const authorizedSend = createAuthorizedSend({
@@ -157,6 +160,7 @@ export function App() {
       // AI-generated (edited by James Teo).
       orders: createOrdersApi(authorizedSend),
       creditAccounts: createCreditAccountsApi(authorizedSend),
+      chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
     };
   }, [tokens]);
 
@@ -380,10 +384,7 @@ export function App() {
     navigate("my-errands");
   };
 
-  return (
-    <>
-      {/* AI-generated (edited by James Teo): navigate, changeMode and the
-          balance's figures. */}
+  const shell = (
       <AppShell
         session={session}
         view={shownView}
@@ -496,6 +497,21 @@ export function App() {
           />
         )}
       </AppShell>
+  );
+
+  return (
+    <>
+      {chatApi ? (
+        <ChatSocketProvider
+          chatApi={chatApi}
+          isAuthenticated={session !== null}
+          accessToken={tokens.getAccessToken()}
+        >
+          {shell}
+        </ChatSocketProvider>
+      ) : (
+        shell
+      )}
 
       <Toast message={toast} onDismiss={dismissToast} />
     </>

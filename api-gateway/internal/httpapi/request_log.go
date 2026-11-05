@@ -7,11 +7,13 @@
 package httpapi
 
 import (
+	"bufio"
 	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"runtime/debug"
 	"time"
@@ -76,7 +78,7 @@ func accessLog(log *slog.Logger) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			info := &requestInfo{}
-			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
+			ww := &statusWriter{WrapResponseWriter: middleware.NewWrapResponseWriter(w, r.ProtoMajor)}
 			// Deferred: ReverseProxy aborts a response whose body breaks off
 			// by panicking with http.ErrAbortHandler, and that request still
 			// gets its line.
@@ -101,6 +103,38 @@ func accessLog(log *slog.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(ww, r.WithContext(context.WithValue(r.Context(), requestInfoKey{}, info)))
 		})
 	}
+}
+
+// statusWriter is chi's status-recording writer plus the one status it cannot
+// see: ReverseProxy switches protocols, as for chat's WebSocket, by hijacking
+// the connection and writing the 101 there instead of through WriteHeader.
+type statusWriter struct {
+	middleware.WrapResponseWriter
+	switched bool
+}
+
+// Status returns the status written, 101 once the connection was handed over
+// for a protocol switch, or 0 when neither has happened.
+func (w *statusWriter) Status() int {
+	if status := w.WrapResponseWriter.Status(); status != 0 || !w.switched {
+		return status
+	}
+	return http.StatusSwitchingProtocols
+}
+
+// Hijack hands over the connection, which ReverseProxy needs to switch
+// protocols.
+func (w *statusWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	conn, rw, err := http.NewResponseController(w.WrapResponseWriter).Hijack()
+	if err == nil {
+		w.switched = true
+	}
+	return conn, rw, err
+}
+
+// Flush sends what has been written so far, which a streamed response needs.
+func (w *statusWriter) Flush() {
+	_ = http.NewResponseController(w.WrapResponseWriter).Flush()
 }
 
 func accessLevel(ctx context.Context, status int) slog.Level {

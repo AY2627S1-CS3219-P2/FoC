@@ -177,6 +177,7 @@ type harness struct {
 	suppRec     *recorder
 	orderRec    *recorder
 	creditRec   *recorder
+	chatRec     *recorder
 	// logs holds every line the router logged.
 	logs *logBuffer
 }
@@ -190,7 +191,7 @@ func newHarness(t *testing.T) *harness {
 	jwks := httptest.NewServer(iss.jwksHandler())
 	t.Cleanup(jwks.Close)
 
-	userRec, suppRec, orderRec, creditRec := &recorder{}, &recorder{}, &recorder{}, &recorder{}
+	userRec, suppRec, orderRec, creditRec, chatRec := &recorder{}, &recorder{}, &recorder{}, &recorder{}, &recorder{}
 	userSvc := stubService(userRec)
 	t.Cleanup(userSvc.Close)
 	suppSvc := stubService(suppRec)
@@ -199,6 +200,8 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(orderSvc.Close)
 	creditSvc := stubService(creditRec)
 	t.Cleanup(creditSvc.Close)
+	chatSvc := stubService(chatRec)
+	t.Cleanup(chatSvc.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
 	revocations := &fakeRevocations{}
@@ -208,6 +211,7 @@ func newHarness(t *testing.T) *harness {
 		Supplier: suppSvc.URL,
 		Order:    orderSvc.URL,
 		Credit:   creditSvc.URL,
+		Chat:     chatSvc.URL,
 	}, verifier, revocations, testRefreshTTL, logs.logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -221,6 +225,7 @@ func newHarness(t *testing.T) *harness {
 		suppRec:     suppRec,
 		orderRec:    orderRec,
 		creditRec:   creditRec,
+		chatRec:     chatRec,
 		logs:        logs,
 	}
 }
@@ -625,7 +630,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 	t.Cleanup(svc.Close)
 
 	router, err := httpapi.NewRouter(config.Downstream{
-		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL,
+		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL, Chat: svc.URL,
 	}, auth.NewVerifier(jwks.URL, nil), &fakeRevocations{}, testRefreshTTL, (&logBuffer{}).logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -1003,9 +1008,59 @@ func TestAuthRoutesSkipTheRevocationCheck(t *testing.T) {
 
 func TestNewRouterNeedsARevocationChecker(t *testing.T) {
 	_, err := httpapi.NewRouter(config.Downstream{
-		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit",
+		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit", Chat: "http://chat",
 	}, auth.NewVerifier("http://jwks", nil), nil, testRefreshTTL, (&logBuffer{}).logger())
 	if err == nil {
 		t.Fatal("NewRouter with a nil checker: expected an error, got nil")
+	}
+}
+
+func TestChatRouteReachesChatServiceAndRetainsToken(t *testing.T) {
+	h := newHarness(t)
+	token := h.issuer.mint(t, tokenOpts{subject: "user-123", role: "STUDENT"})
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/conversations", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	res := h.do(req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if h.chatRec.path != "/conversations" {
+		t.Errorf("path = %q, want %q", h.chatRec.path, "/conversations")
+	}
+	if h.chatRec.header.Get("Authorization") != "Bearer "+token {
+		t.Errorf("Authorization = %q, want %q", h.chatRec.header.Get("Authorization"), "Bearer "+token)
+	}
+	if h.chatRec.header.Get(proxy.ClaimHeaderUserID) != "user-123" {
+		t.Errorf("X-User-Id = %q, want %q", h.chatRec.header.Get(proxy.ClaimHeaderUserID), "user-123")
+	}
+}
+
+func TestChatWSRoutePassesThroughWithoutAuthorizationHeader(t *testing.T) {
+	h := newHarness(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/ws?ticket=test-ticket-xyz", nil)
+
+	res := h.do(req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if h.chatRec.path != "/ws" {
+		t.Errorf("path = %q, want %q", h.chatRec.path, "/ws")
+	}
+	if h.chatRec.query != "ticket=test-ticket-xyz" {
+		t.Errorf("query = %q, want %q", h.chatRec.query, "ticket=test-ticket-xyz")
+	}
+}
+
+func TestChatImagesRoutePassesThroughWithoutAuthorizationHeader(t *testing.T) {
+	h := newHarness(t)
+	req := httptest.NewRequest(http.MethodGet, "/api/chat/images/ee337867-10c6-4539-8256-bad7a2e95e8b", nil)
+
+	res := h.do(req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if h.chatRec.path != "/images/ee337867-10c6-4539-8256-bad7a2e95e8b" {
+		t.Errorf("path = %q, want %q", h.chatRec.path, "/images/ee337867-10c6-4539-8256-bad7a2e95e8b")
 	}
 }

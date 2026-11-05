@@ -65,10 +65,17 @@ PROXIED (token verified, headers stripped then injected, bearer token kept)
   /api/suppliers/*          -> SUPPLIER_BASE_URL /suppliers/*
   /api/orders/*             -> ORDER_BASE_URL    /*
   /api/credits/accounts/*   -> CREDIT_BASE_URL   /api/v1/credits/accounts/*  (D-056)
+  /api/chat/*               -> CHAT_BASE_URL     /*
   (nothing else under /api/credits is routed: credit-service's reservation
    routes are for order-service alone)
 
   GET /healthz      the gateway's own
+
+PROXIED WITHOUT A TOKEN (claim headers stripped, none injected)
+  /api/chat/ws?ticket=      -> CHAT_BASE_URL     /ws   WebSocket upgrade; chat-service
+                                                       redeems the single-use ticket
+  /api/chat/images/*        -> CHAT_BASE_URL     /images/*   for <img> tags, which
+  /api/chat/media/*         -> CHAT_BASE_URL     /media/*    send no token
 
 ANSWERED BY THE GATEWAY (token verified, never proxied)
   POST /api/client-errors   a signed-in browser's error report: logged, 204
@@ -149,8 +156,10 @@ through it too; nothing here uses the `log` package or chi's text logger.
   request has finished: `request_id`, `method`, `path` (never the query
   string), `status`, `duration_ms`, and `user_id` once the token has passed
   every check. WARN when the client hung up, ERROR for a 5xx, INFO
-  otherwise. Health checks are logged like any other request: the central
-  log pipeline drops them, so do not filter them here.
+  otherwise. A WebSocket upgrade's line has status `101` and is written
+  when the connection closes, so its `duration_ms` is how long the
+  connection was open. Health checks are logged like any other request: the
+  central log pipeline drops them, so do not filter them here.
 - **Cause lines.** Each 5xx the gateway answers itself logs why, once, at
   ERROR with `request_id`: the 502 when a service cannot be reached, the
   503s when the signing keys or the revocation keys cannot be read, and a
