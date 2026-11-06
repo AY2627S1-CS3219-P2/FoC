@@ -335,6 +335,9 @@ h3 {
 }
 
 .mode-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
   padding: 5px 14px;
   font-size: 13px;
   /* AI-generated (edited by James Teo): was --text-muted, 4.28:1 on the
@@ -344,6 +347,10 @@ h3 {
   background: none;
   border: none;
   border-radius: 6px;
+}
+
+.mode-toggle button .unread-dot {
+  margin-left: 4px;
 }
 
 .mode-toggle button.active {

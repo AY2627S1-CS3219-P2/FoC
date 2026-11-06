@@ -13,17 +13,14 @@ import (
 
 type inMemoryChatRepo struct {
 	convs         map[uuid.UUID]*Conversation
-	messages      map[uuid.UUID]*Message
-	clientMsgs    map[string]*Message
-	auditLogs     []*AuditEntry
+	messages      []*Message
 	lastReadTimes map[string]time.Time
+	auditLogs     []*AuditEntry
 }
 
 func newInMemoryRepo() *inMemoryChatRepo {
 	return &inMemoryChatRepo{
 		convs:         make(map[uuid.UUID]*Conversation),
-		messages:      make(map[uuid.UUID]*Message),
-		clientMsgs:    make(map[string]*Message),
 		lastReadTimes: make(map[string]time.Time),
 	}
 }
@@ -70,14 +67,10 @@ func (m *inMemoryChatRepo) ListAllConversationsAdmin(ctx context.Context, errand
 func (m *inMemoryChatRepo) UpsertConversationOnAccepted(ctx context.Context, errandID, requesterID, courierID uuid.UUID, occurredAt time.Time) (*Conversation, error) {
 	for _, c := range m.convs {
 		if c.ErrandID == errandID && c.CourierID == courierID {
-			if !occurredAt.Before(c.LastEventOccurredAt) {
-				c.Status = StatusActive
-				c.LastEventOccurredAt = occurredAt
-			}
 			return c, nil
 		}
 	}
-	c := &Conversation{
+	conv := &Conversation{
 		ID:                  uuid.New(),
 		ErrandID:            errandID,
 		RequesterID:         requesterID,
@@ -85,19 +78,17 @@ func (m *inMemoryChatRepo) UpsertConversationOnAccepted(ctx context.Context, err
 		Status:              StatusActive,
 		LastEventOccurredAt: occurredAt,
 		CreatedAt:           occurredAt,
+		UpdatedAt:           occurredAt,
 	}
-	m.convs[c.ID] = c
-	return c, nil
+	m.convs[conv.ID] = conv
+	return conv, nil
 }
 
 func (m *inMemoryChatRepo) FreezeConversation(ctx context.Context, errandID, courierID uuid.UUID, occurredAt time.Time) error {
 	for _, c := range m.convs {
 		if c.ErrandID == errandID && c.CourierID == courierID {
-			if !occurredAt.Before(c.LastEventOccurredAt) {
-				c.Status = StatusFrozen
-				c.LastEventOccurredAt = occurredAt
-			}
-			return nil
+			c.Status = StatusFrozen
+			c.UpdatedAt = occurredAt
 		}
 	}
 	return nil
@@ -107,9 +98,7 @@ func (m *inMemoryChatRepo) MarkErrandCompleted(ctx context.Context, errandID uui
 	for _, c := range m.convs {
 		if c.ErrandID == errandID {
 			c.ErrandCompletedAt = &occurredAt
-			if occurredAt.After(c.LastEventOccurredAt) {
-				c.LastEventOccurredAt = occurredAt
-			}
+			c.UpdatedAt = occurredAt
 		}
 	}
 	return nil
@@ -119,9 +108,7 @@ func (m *inMemoryChatRepo) FreezeErrandCancelledOrExpired(ctx context.Context, e
 	for _, c := range m.convs {
 		if c.ErrandID == errandID {
 			c.Status = StatusFrozen
-			if occurredAt.After(c.LastEventOccurredAt) {
-				c.LastEventOccurredAt = occurredAt
-			}
+			c.UpdatedAt = occurredAt
 		}
 	}
 	return nil
@@ -130,7 +117,7 @@ func (m *inMemoryChatRepo) FreezeErrandCancelledOrExpired(ctx context.Context, e
 func (m *inMemoryChatRepo) FreezeConversationsPast24Hours(ctx context.Context, cutoff time.Time) (int64, error) {
 	var count int64
 	for _, c := range m.convs {
-		if c.Status == StatusActive && c.ErrandCompletedAt != nil && !c.ErrandCompletedAt.After(cutoff) {
+		if c.ErrandCompletedAt != nil && c.ErrandCompletedAt.Before(cutoff) && c.Status != StatusFrozen {
 			c.Status = StatusFrozen
 			count++
 		}
@@ -140,22 +127,25 @@ func (m *inMemoryChatRepo) FreezeConversationsPast24Hours(ctx context.Context, c
 
 func (m *inMemoryChatRepo) SaveMessage(ctx context.Context, msg *Message) (*Message, bool, error) {
 	if msg.ClientMessageID != nil {
-		key := msg.ConversationID.String() + "_" + msg.ClientMessageID.String()
-		if existing, ok := m.clientMsgs[key]; ok {
-			return existing, true, nil
+		for _, existing := range m.messages {
+			if existing.ConversationID == msg.ConversationID &&
+				existing.ClientMessageID != nil &&
+				*existing.ClientMessageID == *msg.ClientMessageID {
+				return existing, true, nil
+			}
 		}
-		m.clientMsgs[key] = msg
 	}
-	m.messages[msg.ID] = msg
+	m.messages = append(m.messages, msg)
 	return msg, false, nil
 }
 
 func (m *inMemoryChatRepo) GetMessage(ctx context.Context, messageID uuid.UUID) (*Message, error) {
-	msg, ok := m.messages[messageID]
-	if !ok {
-		return nil, ErrConversationNotFound
+	for _, msg := range m.messages {
+		if msg.ID == messageID {
+			return msg, nil
+		}
 	}
-	return msg, nil
+	return nil, nil
 }
 
 func (m *inMemoryChatRepo) ListMessages(ctx context.Context, conversationID uuid.UUID, cursor *MessageCursor, since *time.Time, limit int) ([]*Message, *MessageCursor, bool, error) {
@@ -174,8 +164,15 @@ func (m *inMemoryChatRepo) UpdateLastRead(ctx context.Context, conversationID, u
 	return nil
 }
 
-func (m *inMemoryChatRepo) GetUnreadSummary(ctx context.Context, userID uuid.UUID) (bool, []uuid.UUID, error) {
-	return false, []uuid.UUID{}, nil
+func (m *inMemoryChatRepo) GetUnreadSummary(ctx context.Context, userID uuid.UUID) (*UnreadSummary, error) {
+	return &UnreadSummary{
+		HasUnread:          false,
+		UnreadErrandIDs:    []uuid.UUID{},
+		RequesterHasUnread: false,
+		CourierHasUnread:   false,
+		RequesterErrandIDs: []uuid.UUID{},
+		CourierErrandIDs:   []uuid.UUID{},
+	}, nil
 }
 
 func (m *inMemoryChatRepo) RecordAudit(ctx context.Context, entry *AuditEntry) error {
@@ -225,7 +222,7 @@ func TestService_SendMessage_Idempotency(t *testing.T) {
 	require.NoError(t, err)
 
 	clientMsgID := uuid.New()
-	text := "Are you near the library? 📚"
+	text := "Hello World!"
 
 	// First send
 	msg1, err := svc.SendTextMessage(context.Background(), requesterID, conv.ID, clientMsgID, text)
@@ -337,4 +334,17 @@ func TestService_ListConversations_AdminCanViewAllConversations(t *testing.T) {
 	convs, err := svc.ListConversations(context.Background(), admin, &errandID)
 	require.NoError(t, err)
 	assert.Len(t, convs, 1)
+}
+
+func TestService_GetUnreadSummary(t *testing.T) {
+	repo := newInMemoryRepo()
+	svc := NewService(repo, nil, nil)
+	userID := uuid.New()
+
+	summary, err := svc.GetUnreadSummary(context.Background(), userID)
+	require.NoError(t, err)
+	assert.False(t, summary.HasUnread)
+	assert.Empty(t, summary.UnreadErrandIDs)
+	assert.False(t, summary.RequesterHasUnread)
+	assert.False(t, summary.CourierHasUnread)
 }

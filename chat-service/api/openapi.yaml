@@ -267,6 +267,20 @@ paths:
                     items:
                       type: string
                       format: uuid
+                  requester_has_unread:
+                    type: boolean
+                  courier_has_unread:
+                    type: boolean
+                  requester_unread_errand_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
+                  courier_unread_errand_ids:
+                    type: array
+                    items:
+                      type: string
+                      format: uuid
         '401':
           $ref: '#/components/responses/Unauthorized'
 

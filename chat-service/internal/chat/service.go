@@ -170,7 +170,7 @@ func (s *Service) MarkAsRead(ctx context.Context, callerID, convID uuid.UUID) er
 	return nil
 }
 
-func (s *Service) GetUnreadSummary(ctx context.Context, callerID uuid.UUID) (bool, []uuid.UUID, error) {
+func (s *Service) GetUnreadSummary(ctx context.Context, callerID uuid.UUID) (*UnreadSummary, error) {
 	return s.repo.GetUnreadSummary(ctx, callerID)
 }
 

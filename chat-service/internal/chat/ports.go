@@ -17,6 +17,15 @@ func (RealClock) Now() time.Time {
 	return time.Now().UTC()
 }
 
+type UnreadSummary struct {
+	HasUnread             bool        `json:"has_unread"`
+	UnreadErrandIDs       []uuid.UUID `json:"unread_errand_ids"`
+	RequesterHasUnread    bool        `json:"requester_has_unread"`
+	CourierHasUnread      bool        `json:"courier_has_unread"`
+	RequesterErrandIDs    []uuid.UUID `json:"requester_unread_errand_ids"`
+	CourierErrandIDs      []uuid.UUID `json:"courier_unread_errand_ids"`
+}
+
 type Repository interface {
 	GetConversation(ctx context.Context, id uuid.UUID) (*Conversation, error)
 	GetConversationByErrandCourier(ctx context.Context, errandID, courierID uuid.UUID) (*Conversation, error)
@@ -36,7 +45,7 @@ type Repository interface {
 	ListMessages(ctx context.Context, conversationID uuid.UUID, cursor *MessageCursor, since *time.Time, limit int) ([]*Message, *MessageCursor, bool, error)
 
 	UpdateLastRead(ctx context.Context, conversationID, userID uuid.UUID, readAt time.Time) error
-	GetUnreadSummary(ctx context.Context, userID uuid.UUID) (hasUnread bool, unreadErrandIDs []uuid.UUID, err error)
+	GetUnreadSummary(ctx context.Context, userID uuid.UUID) (*UnreadSummary, error)
 	RecordAudit(ctx context.Context, entry *AuditEntry) error
 }
 
