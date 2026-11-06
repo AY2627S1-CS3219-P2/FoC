@@ -21,6 +21,8 @@ describe("AppShell unread notification badges", () => {
       requesterUnreadErrandIds: new Set(["err-1"]),
       courierUnreadErrandIds: new Set(),
       markErrandRead: vi.fn(),
+      refreshUnreadSummary: vi.fn(),
+      setActiveConversationId: vi.fn(),
       subscribeToEvents: vi.fn(),
       chatApi: {} as any,
     });
@@ -57,6 +59,8 @@ describe("AppShell unread notification badges", () => {
       requesterUnreadErrandIds: new Set(),
       courierUnreadErrandIds: new Set(["err-2"]),
       markErrandRead: vi.fn(),
+      refreshUnreadSummary: vi.fn(),
+      setActiveConversationId: vi.fn(),
       subscribeToEvents: vi.fn(),
       chatApi: {} as any,
     });
@@ -91,6 +95,8 @@ describe("AppShell unread notification badges", () => {
       requesterUnreadErrandIds: new Set(["err-1"]),
       courierUnreadErrandIds: new Set(),
       markErrandRead: vi.fn(),
+      refreshUnreadSummary: vi.fn(),
+      setActiveConversationId: vi.fn(),
       subscribeToEvents: vi.fn(),
       chatApi: {} as any,
     });

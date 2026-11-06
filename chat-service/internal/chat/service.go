@@ -56,6 +56,8 @@ func (s *Service) SendTextMessage(ctx context.Context, senderID, convID, clientM
 		return nil, fmt.Errorf("save text message: %w", err)
 	}
 
+	_ = s.repo.UpdateLastRead(ctx, convID, senderID, now)
+
 	if !isDup && s.broadcaster != nil {
 		if recipientID, ok := conv.OtherParticipantID(senderID); ok {
 			_ = s.broadcaster.BroadcastMessage(ctx, saved, recipientID)
@@ -93,6 +95,8 @@ func (s *Service) SendImageMessage(ctx context.Context, senderID, convID, client
 	if err != nil {
 		return nil, fmt.Errorf("save image message: %w", err)
 	}
+
+	_ = s.repo.UpdateLastRead(ctx, convID, senderID, now)
 
 	if !isDup && s.broadcaster != nil {
 		if recipientID, ok := conv.OtherParticipantID(senderID); ok {

@@ -19,6 +19,8 @@ interface ChatSocketContextValue {
   requesterUnreadErrandIds: Set<string>;
   courierUnreadErrandIds: Set<string>;
   markErrandRead: (errandId: string) => void;
+  refreshUnreadSummary: () => Promise<void>;
+  setActiveConversationId: (id: string | null) => void;
   subscribeToEvents: (listener: (event: RealtimeEvent) => void) => () => void;
   chatApi: ChatApi;
 }
@@ -31,6 +33,8 @@ const defaultContextValue: ChatSocketContextValue = {
   requesterUnreadErrandIds: new Set(),
   courierUnreadErrandIds: new Set(),
   markErrandRead: () => {},
+  refreshUnreadSummary: async () => {},
+  setActiveConversationId: () => {},
   subscribeToEvents: () => () => {},
   chatApi: {} as ChatApi,
 };
@@ -60,6 +64,11 @@ export function ChatSocketProvider({
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const listenersRef = useRef<Set<(event: RealtimeEvent) => void>>(new Set());
+  const activeConversationIdRef = useRef<string | null>(null);
+
+  const setActiveConversationId = useCallback((id: string | null) => {
+    activeConversationIdRef.current = id;
+  }, []);
 
   // Synchronize unread state via REST
   const refreshUnreadSummary = useCallback(async () => {
@@ -183,10 +192,12 @@ export function ChatSocketProvider({
               }
             });
 
-            // Update unread state on new message
+            // Update unread state on new message if user is not actively in this conversation
             if (realtimeEvent.type === "message.created") {
-              setHasUnread(true);
-              void refreshUnreadSummary();
+              if (activeConversationIdRef.current !== realtimeEvent.data.conversation_id) {
+                setHasUnread(true);
+                void refreshUnreadSummary();
+              }
             }
           } catch {
             // Non-JSON frame
@@ -235,6 +246,8 @@ export function ChatSocketProvider({
         requesterUnreadErrandIds,
         courierUnreadErrandIds,
         markErrandRead,
+        refreshUnreadSummary,
+        setActiveConversationId,
         subscribeToEvents,
         chatApi,
       }}

@@ -16,7 +16,7 @@ export function ChatBox({
   isRequester: _isRequester,
   onClose: _onClose,
 }: ChatBoxProps) {
-  const { chatApi, subscribeToEvents, markErrandRead } = useChatSocket();
+  const { chatApi, subscribeToEvents, markErrandRead, setActiveConversationId, refreshUnreadSummary } = useChatSocket();
 
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
@@ -94,6 +94,15 @@ export function ChatBox({
 
   // Current conversation selected
   const conversation = conversations.find((c) => c.id === selectedConvId) ?? null;
+
+  // Track active conversation to prevent incoming messages from marking unread while viewing
+  useEffect(() => {
+    setActiveConversationId(selectedConvId);
+    return () => {
+      setActiveConversationId(null);
+      void refreshUnreadSummary();
+    };
+  }, [selectedConvId, setActiveConversationId, refreshUnreadSummary]);
 
   // Load messages whenever selected conversation changes
   useEffect(() => {
@@ -257,6 +266,7 @@ export function ChatBox({
 
     try {
       setSending(true);
+      markErrandRead(errandId);
       const saved = await chatApi.sendTextMessage(conversation.id, content, clientMsgId);
       setMessages((prev) =>
         prev.map((m) => (m.client_message_id === clientMsgId ? { ...saved, status: "sent" } : m)),
@@ -319,6 +329,7 @@ export function ChatBox({
 
     try {
       setSending(true);
+      markErrandRead(errandId);
       const saved = await chatApi.sendImageMessage(conversation.id, fileToSend, clientMsgId);
       setMessages((prev) =>
         prev.map((m) => (m.client_message_id === clientMsgId ? { ...saved, status: "sent" } : m)),
