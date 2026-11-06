@@ -938,7 +938,7 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	delivered := step("deliver", order.StateDelivered, func() (order.Order, error) { return svc.Deliver(ctx, other, first.ID, "corr-deliver") })
 	require.Equal(t, clock.Now().Add(24*time.Hour), *delivered.ConfirmBy)
 	step("confirm", order.StateCompleted, func() (order.Order, error) { return svc.Confirm(ctx, requester, first.ID, "corr-confirm") })
-	require.Equal(t, []string{order.RoutingCompleted}, routingKeys(first.ID))
+	require.Equal(t, []string{order.RoutingAccepted, order.RoutingWithdrawn, order.RoutingAccepted, order.RoutingCompleted}, routingKeys(first.ID))
 	_, history, err := svc.Get(ctx, requester, first.ID)
 	require.NoError(t, err)
 	var actions []order.Action
@@ -987,7 +987,7 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		return svc.Accept(ctx, courier, fourth.ID, amended.Version, "corr-accept")
 	})
 	step("admin cancel", order.StateCancelled, func() (order.Order, error) { return svc.Cancel(ctx, admin, fourth.ID, "corr-admin") })
-	require.ElementsMatch(t, []string{order.RoutingRewardSet, order.RoutingCancelled}, routingKeys(fourth.ID))
+	require.ElementsMatch(t, []string{order.RoutingRewardSet, order.RoutingAccepted, order.RoutingCancelled}, routingKeys(fourth.ID))
 
 	// The courier's assignment history shows each way an assignment ended (F3.5.3).
 	assignments, err := svc.ListAssignmentHistory(ctx, courier)
