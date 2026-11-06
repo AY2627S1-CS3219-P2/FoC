@@ -75,7 +75,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { hasUnread, requesterHasUnread, courierHasUnread } = useChatSocket();
+  const { requesterHasUnread, courierHasUnread } = useChatSocket();
   // AI-generated (edited by James Teo): an admin never posts or carries an
   // errand and has no credit account, so gets no mode toggle and no balance.
   const isStudent = session.role === "STUDENT";
@@ -165,7 +165,6 @@ export function AppShell({
           <span className="topbar-user">
             <span className="avatar">{session.initials}</span>
             <span>{session.username}</span>
-            {hasUnread && <UnreadBadge />}
           </span>
 
           <span className="topbar-spacer" />
