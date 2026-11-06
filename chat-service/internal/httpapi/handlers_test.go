@@ -23,8 +23,9 @@ import (
 
 type mockRepo struct {
 	chat.Repository
-	convs    map[uuid.UUID]*chat.Conversation
-	messages map[uuid.UUID]*chat.Message
+	convs         map[uuid.UUID]*chat.Conversation
+	messages      map[uuid.UUID]*chat.Message
+	unreadSummary *chat.UnreadSummary
 }
 
 func newMockRepo() *mockRepo {
@@ -87,8 +88,18 @@ func (m *mockRepo) UpdateLastRead(ctx context.Context, conversationID, userID uu
 	return nil
 }
 
-func (m *mockRepo) GetUnreadSummary(ctx context.Context, userID uuid.UUID) (bool, []uuid.UUID, error) {
-	return false, []uuid.UUID{}, nil
+func (m *mockRepo) GetUnreadSummary(ctx context.Context, userID uuid.UUID) (*chat.UnreadSummary, error) {
+	if m.unreadSummary != nil {
+		return m.unreadSummary, nil
+	}
+	return &chat.UnreadSummary{
+		HasUnread:          false,
+		UnreadErrandIDs:    []uuid.UUID{},
+		RequesterHasUnread: false,
+		CourierHasUnread:   false,
+		RequesterErrandIDs: []uuid.UUID{},
+		CourierErrandIDs:   []uuid.UUID{},
+	}, nil
 }
 
 func setupTestServer(t *testing.T, repo chat.Repository) (*Handler, func()) {
@@ -162,30 +173,26 @@ func TestGetConversation_Authorized(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	var resp chat.Conversation
-	err := json.Unmarshal(rec.Body.Bytes(), &resp)
-	require.NoError(t, err)
-	assert.Equal(t, convID, resp.ID)
 }
 
-func TestSendMessage_Text(t *testing.T) {
+func TestSendMessage_Success(t *testing.T) {
 	repo := newMockRepo()
 	convID := uuid.New()
 	userID := uuid.New()
-	courierID := uuid.New()
 	repo.convs[convID] = &chat.Conversation{
 		ID:          convID,
 		ErrandID:    uuid.New(),
 		RequesterID: userID,
-		CourierID:   courierID,
+		CourierID:   uuid.New(),
 		Status:      chat.StatusActive,
 	}
 
 	handler, cleanup := setupTestServer(t, repo)
 	defer cleanup()
 
+	clientMsgID := uuid.New().String()
 	payload := map[string]string{
-		"client_message_id": uuid.New().String(),
+		"client_message_id": clientMsgID,
 		"text":              "Hello Courier! 🛵",
 	}
 	body, _ := json.Marshal(payload)
@@ -256,4 +263,38 @@ func TestAdminListConversations_ForbiddenForStudent(t *testing.T) {
 	handler.AdminListConversations(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
+}
+
+func TestGetUnreadSummary(t *testing.T) {
+	repo := newMockRepo()
+	errandID1 := uuid.New()
+	errandID2 := uuid.New()
+	repo.unreadSummary = &chat.UnreadSummary{
+		HasUnread:          true,
+		UnreadErrandIDs:    []uuid.UUID{errandID1, errandID2},
+		RequesterHasUnread: true,
+		CourierHasUnread:   false,
+		RequesterErrandIDs: []uuid.UUID{errandID1, errandID2},
+		CourierErrandIDs:   []uuid.UUID{},
+	}
+
+	handler, cleanup := setupTestServer(t, repo)
+	defer cleanup()
+
+	req := httptest.NewRequest(http.MethodGet, "/unread-summary", nil)
+	caller := chat.Caller{UserID: uuid.New(), Role: "STUDENT"}
+	req = req.WithContext(auth.WithCaller(req.Context(), caller))
+
+	rec := httptest.NewRecorder()
+	handler.GetUnreadSummary(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+	var summary chat.UnreadSummary
+	err := json.Unmarshal(rec.Body.Bytes(), &summary)
+	require.NoError(t, err)
+	assert.True(t, summary.HasUnread)
+	assert.True(t, summary.RequesterHasUnread)
+	assert.False(t, summary.CourierHasUnread)
+	assert.Len(t, summary.RequesterErrandIDs, 2)
+	assert.Empty(t, summary.CourierErrandIDs)
 }

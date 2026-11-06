@@ -16,11 +16,13 @@ export function ChatBox({
   isRequester: _isRequester,
   onClose: _onClose,
 }: ChatBoxProps) {
-  const { chatApi, subscribeToEvents, markErrandRead } = useChatSocket();
+  const { chatApi, subscribeToEvents, markErrandRead, setActiveConversationId, refreshUnreadSummary } = useChatSocket();
 
-  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConvId, setSelectedConvId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -28,15 +30,30 @@ export function ChatBox({
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   const [timeRemainingText, setTimeRemainingText] = useState<string | null>(null);
   const [isExpired, setIsExpired] = useState(false);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Load conversation and message history
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleOutsideClick(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    if (dropdownOpen) {
+      document.addEventListener("mousedown", handleOutsideClick);
+      return () => document.removeEventListener("mousedown", handleOutsideClick);
+    }
+  }, [dropdownOpen]);
+
+  // Load conversations for the errand
   useEffect(() => {
     let active = true;
 
@@ -46,24 +63,20 @@ export function ChatBox({
         const convs = await chatApi.fetchConversationsByErrand(errandId);
         if (!active) return;
 
+        setConversations(convs);
+
         if (convs.length > 0) {
-          const conv = convs[0];
-          setConversation(conv);
-
-          const page = await chatApi.fetchMessages(conv.id);
-          if (!active) return;
-
-          // Chronological ordering
-          const sorted = [...page.messages].sort(
-            (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
-          );
-          setMessages(sorted);
-
-          // Mark as read only if current user is participant
-          if (conv.requester_id === currentUserId || conv.courier_id === currentUserId) {
-            void chatApi.markConversationRead(conv.id);
-            markErrandRead(errandId);
-          }
+          // Default to the first active conversation, or the first one overall
+          const activeConv = convs.find((c) => c.status === "ACTIVE") ?? convs[0];
+          setSelectedConvId((prev) => {
+            // Keep previous selection if it still exists in convs
+            if (prev && convs.some((c) => c.id === prev)) {
+              return prev;
+            }
+            return activeConv.id;
+          });
+        } else {
+          setSelectedConvId(null);
         }
       } catch (e) {
         console.error("Failed to load conversation:", e);
@@ -77,39 +90,93 @@ export function ChatBox({
     return () => {
       active = false;
     };
-  }, [errandId, currentUserId, chatApi, markErrandRead]);
+  }, [errandId, chatApi]);
+
+  // Current conversation selected
+  const conversation = conversations.find((c) => c.id === selectedConvId) ?? null;
+
+  // Track active conversation to prevent incoming messages from marking unread while viewing
+  useEffect(() => {
+    setActiveConversationId(selectedConvId);
+    return () => {
+      setActiveConversationId(null);
+      void refreshUnreadSummary();
+    };
+  }, [selectedConvId, setActiveConversationId, refreshUnreadSummary]);
+
+  // Load messages whenever selected conversation changes
+  useEffect(() => {
+    if (!selectedConvId) {
+      setMessages([]);
+      return;
+    }
+
+    let active = true;
+
+    async function loadMessages() {
+      setLoadingMessages(true);
+      try {
+        const page = await chatApi.fetchMessages(selectedConvId!);
+        if (!active) return;
+
+        // Chronological ordering
+        const sorted = [...page.messages].sort(
+          (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+        );
+        setMessages(sorted);
+
+        // Mark as read only if current user is participant
+        if (conversation && (conversation.requester_id === currentUserId || conversation.courier_id === currentUserId)) {
+          void chatApi.markConversationRead(conversation.id);
+          markErrandRead(errandId);
+        }
+        setTimeout(scrollToBottom, 50);
+      } catch (e) {
+        console.error("Failed to load messages for conversation:", e);
+      } finally {
+        if (active) setLoadingMessages(false);
+      }
+    }
+
+    void loadMessages();
+
+    return () => {
+      active = false;
+    };
+  }, [selectedConvId, chatApi, markErrandRead, errandId, currentUserId, conversation]);
 
   // Real-time WebSocket events listener
   useEffect(() => {
     const unsubscribe = subscribeToEvents((event) => {
-      if (!conversation) return;
-
       if (event.type === "message.created") {
         const msg = event.data;
-        if (msg.conversation_id === conversation.id) {
+        // Append to message list if it belongs to currently viewed conversation
+        if (selectedConvId && msg.conversation_id === selectedConvId) {
           setMessages((prev) => {
             if (prev.some((m) => m.id === msg.id || (m.client_message_id && m.client_message_id === msg.client_message_id))) {
               return prev;
             }
             return [...prev, msg];
           });
-          // Mark read only if current user is participant
-          if (conversation.requester_id === currentUserId || conversation.courier_id === currentUserId) {
+          if (conversation && (conversation.requester_id === currentUserId || conversation.courier_id === currentUserId)) {
             void chatApi.markConversationRead(conversation.id);
             markErrandRead(errandId);
           }
           setTimeout(scrollToBottom, 50);
         }
       } else if (event.type === "conversation.read_only") {
-        if (event.data.conversation_id === conversation.id) {
-          setConversation((prev) => (prev ? { ...prev, status: "FROZEN" } : null));
+        const convId = event.data.conversation_id;
+        setConversations((prev) =>
+          prev.map((c) => (c.id === convId ? { ...c, status: "FROZEN" } : c)),
+        );
+        if (selectedConvId === convId) {
           setIsExpired(true);
         }
       }
     });
 
     return unsubscribe;
-  }, [conversation, currentUserId, errandId, subscribeToEvents, chatApi, markErrandRead]);
+  }, [selectedConvId, conversation, currentUserId, errandId, subscribeToEvents, chatApi, markErrandRead]);
 
   // Scroll to bottom when messages update
   useEffect(() => {
@@ -159,6 +226,11 @@ export function ChatBox({
     conversation != null &&
     (currentUserId === conversation.requester_id || currentUserId === conversation.courier_id);
 
+  const isWithdrawnCourier =
+    conversation != null &&
+    conversation.status === "FROZEN" &&
+    conversation.errand_completed_at == null;
+
   const isReadOnly =
     !isParticipant ||
     isExpired ||
@@ -194,6 +266,7 @@ export function ChatBox({
 
     try {
       setSending(true);
+      markErrandRead(errandId);
       const saved = await chatApi.sendTextMessage(conversation.id, content, clientMsgId);
       setMessages((prev) =>
         prev.map((m) => (m.client_message_id === clientMsgId ? { ...saved, status: "sent" } : m)),
@@ -256,6 +329,7 @@ export function ChatBox({
 
     try {
       setSending(true);
+      markErrandRead(errandId);
       const saved = await chatApi.sendImageMessage(conversation.id, fileToSend, clientMsgId);
       setMessages((prev) =>
         prev.map((m) => (m.client_message_id === clientMsgId ? { ...saved, status: "sent" } : m)),
@@ -303,7 +377,7 @@ export function ChatBox({
     );
   }
 
-  if (!conversation) {
+  if (conversations.length === 0 || !conversation) {
     return (
       <div className="chat-container">
         <div className="chat-empty">No courier has accepted this errand yet. Chat will appear once accepted.</div>
@@ -311,8 +385,67 @@ export function ChatBox({
     );
   }
 
+  // Label helper for courier conversations
+  const getConversationLabel = (conv: Conversation, index: number) => {
+    const isConvActive = conv.status === "ACTIVE";
+    const courierNum = conversations.length - index;
+    if (isConvActive) {
+      return `Courier ${courierNum} (Current)`;
+    }
+    return `Courier ${courierNum} (Withdrawn)`;
+  };
+
   return (
     <div className="chat-container" role="region" aria-label="Real-time Errand Chat">
+      {/* Multi-Courier Header Dropdown */}
+      {conversations.length > 1 && (
+        <div className="chat-header-bar" ref={dropdownRef}>
+          <div className="chat-header-info">
+            <span className="chat-header-title">Chat Session</span>
+          </div>
+          <div className="chat-dropdown-wrapper">
+            <button
+              type="button"
+              className="chat-dropdown-btn"
+              onClick={() => setDropdownOpen((prev) => !prev)}
+              aria-haspopup="listbox"
+              aria-expanded={dropdownOpen}
+            >
+              <span>{getConversationLabel(conversation, conversations.indexOf(conversation))}</span>
+              <span className="chat-dropdown-caret">▾</span>
+            </button>
+
+            {dropdownOpen && (
+              <div className="chat-dropdown-menu" role="listbox">
+                {conversations.map((conv, idx) => {
+                  const isSelected = conv.id === selectedConvId;
+                  const isConvActive = conv.status === "ACTIVE";
+                  return (
+                    <button
+                      key={conv.id}
+                      type="button"
+                      role="option"
+                      aria-selected={isSelected}
+                      className={`chat-dropdown-item ${isSelected ? "selected" : ""}`}
+                      onClick={() => {
+                        setSelectedConvId(conv.id);
+                        setDropdownOpen(false);
+                      }}
+                    >
+                      <span className="chat-item-label">{getConversationLabel(conv, idx)}</span>
+                      <span className={`chat-item-badge ${isConvActive ? "active" : "withdrawn"}`}>
+                        {isConvActive ? "Active" : "Withdrawn"}
+                      </span>
+                      {isSelected && <span className="chat-item-check">✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 24h Countdown Banner */}
       {timeRemainingText && !isReadOnly && (
         <div className="chat-banner countdown" role="status">
@@ -323,13 +456,19 @@ export function ChatBox({
       {/* Read-Only Notice */}
       {isReadOnly && (
         <div className="chat-banner readonly" role="alert">
-          🔒 {!isParticipant ? "Admin audit view (read-only)." : "This conversation is read-only."}
+          {isWithdrawnCourier
+            ? "🔒 This courier has withdrawn. This conversation is archived and read-only."
+            : !isParticipant
+            ? "🔒 Admin audit view (read-only)."
+            : "🔒 This conversation is read-only."}
         </div>
       )}
 
       {/* Message List */}
       <div className="chat-messages" role="log" aria-live="polite">
-        {messages.length === 0 ? (
+        {loadingMessages ? (
+          <div className="chat-messages-empty">Loading messages…</div>
+        ) : messages.length === 0 ? (
           <div className="chat-messages-empty">No messages yet. Say hello! 👋</div>
         ) : (
           messages.map((msg) => {
@@ -507,7 +646,13 @@ export function ChatBox({
         </div>
       ) : (
         <div className="chat-disabled-bar">
-          <span>{!isParticipant ? "Admin audit view: message sending is disabled." : "Messaging is disabled for this conversation."}</span>
+          <span>
+            {isWithdrawnCourier
+              ? "This conversation is archived because the courier has withdrawn."
+              : !isParticipant
+              ? "Admin audit view: message sending is disabled."
+              : "Messaging is disabled for this conversation."}
+          </span>
         </div>
       )}
     </div>

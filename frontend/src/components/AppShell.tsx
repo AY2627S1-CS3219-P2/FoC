@@ -75,7 +75,7 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const { hasUnread } = useChatSocket();
+  const { requesterHasUnread, courierHasUnread } = useChatSocket();
   // AI-generated (edited by James Teo): an admin never posts or carries an
   // errand and has no credit account, so gets no mode toggle and no balance.
   const isStudent = session.role === "STUDENT";
@@ -120,7 +120,10 @@ export function AppShell({
               >
                 <Icon />
                 <span>{item.label}</span>
-                {item.view === "my-errands" && hasUnread && <UnreadBadge />}
+                {item.view === "my-errands" &&
+                  (mode === "requesting" ? requesterHasUnread : courierHasUnread) && (
+                    <UnreadBadge />
+                  )}
               </button>
             );
           })}
@@ -162,7 +165,6 @@ export function AppShell({
           <span className="topbar-user">
             <span className="avatar">{session.initials}</span>
             <span>{session.username}</span>
-            {hasUnread && <UnreadBadge />}
           </span>
 
           <span className="topbar-spacer" />
@@ -176,14 +178,16 @@ export function AppShell({
                 aria-pressed={mode === "requesting"}
                 onClick={() => onModeChange("requesting")}
               >
-                Requesting
+                <span>Requesting</span>
+                {requesterHasUnread && <UnreadBadge />}
               </button>
               <button
                 className={mode === "delivering" ? "active" : ""}
                 aria-pressed={mode === "delivering"}
                 onClick={() => onModeChange("delivering")}
               >
-                Delivering
+                <span>Delivering</span>
+                {courierHasUnread && <UnreadBadge />}
               </button>
             </div>
           )}

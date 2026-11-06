@@ -40,6 +40,10 @@ export interface MessagePage {
 export interface UnreadSummaryResponse {
   has_unread: boolean;
   unread_errand_ids: string[];
+  requester_has_unread?: boolean;
+  courier_has_unread?: boolean;
+  requester_unread_errand_ids?: string[];
+  courier_unread_errand_ids?: string[];
 }
 
 export interface WSTicketResponse {

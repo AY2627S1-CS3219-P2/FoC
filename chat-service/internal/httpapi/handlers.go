@@ -361,7 +361,7 @@ func (h *Handler) MarkRead(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// GetUnreadSummary returns boolean and list of unread errand IDs.
+// GetUnreadSummary returns boolean and list of unread errand IDs with role separation.
 func (h *Handler) GetUnreadSummary(w http.ResponseWriter, r *http.Request) {
 	caller, ok := auth.CallerFromContext(r.Context())
 	if !ok {
@@ -369,19 +369,22 @@ func (h *Handler) GetUnreadSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hasUnread, unreadErrands, err := h.service.GetUnreadSummary(r.Context(), caller.UserID)
+	summary, err := h.service.GetUnreadSummary(r.Context(), caller.UserID)
 	if err != nil {
 		h.serverError(w, r, err.Error(), err)
 		return
 	}
-	if unreadErrands == nil {
-		unreadErrands = []uuid.UUID{}
+	if summary.UnreadErrandIDs == nil {
+		summary.UnreadErrandIDs = []uuid.UUID{}
+	}
+	if summary.RequesterErrandIDs == nil {
+		summary.RequesterErrandIDs = []uuid.UUID{}
+	}
+	if summary.CourierErrandIDs == nil {
+		summary.CourierErrandIDs = []uuid.UUID{}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
-		"has_unread":        hasUnread,
-		"unread_errand_ids": unreadErrands,
-	})
+	writeJSON(w, http.StatusOK, summary)
 }
 
 // AdminListConversations provides admin audit-tracked inspection of conversations.
