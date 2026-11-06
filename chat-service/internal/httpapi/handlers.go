@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,13 +24,15 @@ type Handler struct {
 	service      *chat.Service
 	ticketStore  *ticket.Store
 	mediaStorage *media.Storage
+	log          *slog.Logger
 }
 
-func NewHandler(service *chat.Service, ticketStore *ticket.Store, mediaStorage *media.Storage) *Handler {
+func NewHandler(service *chat.Service, ticketStore *ticket.Store, mediaStorage *media.Storage, log *slog.Logger) *Handler {
 	return &Handler{
 		service:      service,
 		ticketStore:  ticketStore,
 		mediaStorage: mediaStorage,
+		log:          log,
 	}
 }
 
@@ -53,7 +56,7 @@ func (h *Handler) IssueWSTicket(w http.ResponseWriter, r *http.Request) {
 
 	t, err := h.ticketStore.IssueTicket(r.Context(), caller.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to issue ticket")
+		h.serverError(w, r, "failed to issue ticket", err)
 		return
 	}
 
@@ -80,7 +83,7 @@ func (h *Handler) ListConversations(w http.ResponseWriter, r *http.Request) {
 
 	convs, err := h.service.ListConversations(r.Context(), caller, errandFilter)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 		return
 	}
 	if convs == nil {
@@ -114,7 +117,7 @@ func (h *Handler) GetConversation(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 		return
 	}
 
@@ -176,7 +179,7 @@ func (h *Handler) GetMessages(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 		return
 	}
 	if page.Messages == nil {
@@ -242,7 +245,7 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, "unsupported image type; only JPEG and PNG are allowed")
 				return
 			}
-			writeError(w, http.StatusInternalServerError, fmt.Sprintf("failed to store image: %v", err))
+			h.serverError(w, r, fmt.Sprintf("failed to store image: %v", err), err)
 			return
 		}
 
@@ -251,7 +254,7 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			// Rollback stored file if DB insertion failed
 			_ = h.mediaStorage.Delete(r.Context(), mediaID)
-			h.mapServiceError(w, err)
+			h.mapServiceError(w, r, err)
 			return
 		}
 
@@ -274,14 +277,14 @@ func (h *Handler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	msg, err := h.service.SendTextMessage(r.Context(), caller.UserID, convID, clientMsgID, req.Text)
 	if err != nil {
-		h.mapServiceError(w, err)
+		h.mapServiceError(w, r, err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, msg)
 }
 
-func (h *Handler) mapServiceError(w http.ResponseWriter, err error) {
+func (h *Handler) mapServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, chat.ErrEmptyMessage), errors.Is(err, chat.ErrTextTooLong):
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -296,7 +299,7 @@ func (h *Handler) mapServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, chat.ErrConversationNotFound):
 		writeError(w, http.StatusNotFound, "conversation not found")
 	default:
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 	}
 }
 
@@ -349,7 +352,7 @@ func (h *Handler) MarkRead(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "forbidden")
 			return
 		}
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 		return
 	}
 
@@ -368,7 +371,7 @@ func (h *Handler) GetUnreadSummary(w http.ResponseWriter, r *http.Request) {
 
 	summary, err := h.service.GetUnreadSummary(r.Context(), caller.UserID)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 		return
 	}
 	if summary.UnreadErrandIDs == nil {
@@ -415,7 +418,7 @@ func (h *Handler) AdminListConversations(w http.ResponseWriter, r *http.Request)
 
 	convs, err := h.service.AdminListConversations(r.Context(), caller, errandFilter, limit)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
+		h.serverError(w, r, err.Error(), err)
 		return
 	}
 	if convs == nil {

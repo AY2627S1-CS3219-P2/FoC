@@ -58,8 +58,8 @@ func TestAdminWritesOverPostgresAndRedis(t *testing.T) {
 	_, orderSrv := startOrderService(t, http.StatusOK, `{"supplierId":"x","activeErrands":0}`)
 
 	repo := repository.NewPostgresRepository(pool)
-	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(orderSrv.URL)),
-		startKeySet(t, http.StatusOK), auth.NewRevocations(rdb))
+	router := httpapi.NewRouter(supplier.NewService(repo, orderclient.New(orderSrv.URL), discardLog()),
+		startKeySet(t, http.StatusOK), auth.NewRevocations(rdb), discardLog())
 	ctx := context.Background()
 
 	create := func(authorization, name string) *httptest.ResponseRecorder {
@@ -132,7 +132,7 @@ func TestAdminWritesOverPostgresAndRedis(t *testing.T) {
 func TestBadIDsAndCaseOverPostgres(t *testing.T) {
 	t.Parallel()
 	repo := repository.NewPostgresRepository(openDatabase(t))
-	router := httpapi.NewRouter(supplier.NewService(repo, &zeroErrands{}), startKeySet(t, http.StatusOK), &fakeRevocations{})
+	router := httpapi.NewRouter(supplier.NewService(repo, &zeroErrands{}, discardLog()), startKeySet(t, http.StatusOK), &fakeRevocations{}, discardLog())
 	admin := "Bearer " + mintToken(t, tokenSpec{})
 	serve := func(method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))

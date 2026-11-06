@@ -1,0 +1,200 @@
+// Ships the log of every container in this Compose project to Loki, and
+// probes each service's health endpoint for Prometheus.
+
+// ---- Logs -------------------------------------------------------------------
+
+// Compose passes in its project name, so another project's containers on the
+// same Docker host are left out.
+discovery.docker "compose" {
+	host = "unix:///var/run/docker.sock"
+	// A rebuilt service is a new container; find it within seconds, not the
+	// default minute.
+	refresh_interval = "5s"
+
+	filter {
+		name   = "label"
+		values = ["com.docker.compose.project=" + sys.env("COMPOSE_PROJECT_NAME")]
+	}
+}
+
+discovery.relabel "logs" {
+	targets = []
+
+	rule {
+		source_labels = ["__meta_docker_container_label_com_docker_compose_service"]
+		target_label  = "service"
+	}
+
+	// Keeps stdout and stderr apart while a panic is joined below, so a line on
+	// one cannot split a stack trace on the other. Dropped before Loki.
+	rule {
+		source_labels = ["__meta_docker_container_log_stream"]
+		target_label  = "stream"
+	}
+}
+
+loki.source.docker "compose" {
+	host          = "unix:///var/run/docker.sock"
+	targets       = discovery.docker.compose.targets
+	relabel_rules = discovery.relabel.logs.rules
+	forward_to    = [loki.process.compose.receiver]
+}
+
+loki.process "compose" {
+	forward_to = [loki.write.loki.receiver]
+
+	// The Go services. Postgres, Redis and RabbitMQ lines pass through as they
+	// are.
+	stage.match {
+		selector = `{service=~"api-gateway|user-service|supplier-service|order-service|credit-service|chat-service"}`
+
+		// A panic prints its stack trace over many lines. Every other line these
+		// services write starts a new entry: JSON, a stdlib log timestamp, or
+		// go-redis's prefix.
+		stage.multiline {
+			firstline = `^(\{|\d{4}/\d{2}/\d{2} \d{2}:\d{2}:\d{2} |redis: |panic: | panic: |fatal error: )`
+		}
+
+		stage.json {
+			expressions = {level = ""}
+		}
+
+		stage.labels {
+			values = {level = ""}
+		}
+
+		// The Go runtime's panic, chi Recoverer's and net/http's own.
+		stage.match {
+			selector = `{service=~".+"} |~ "^( ?panic: |fatal error: |\\d{4}/\\d{2}/\\d{2} \\d{2}:\\d{2}:\\d{2} http: panic serving )"`
+
+			stage.static_labels {
+				values = {level = "ERROR"}
+			}
+		}
+
+		// Access lines of health probes and Compose healthchecks, each service
+		// matched to its own health endpoint, as JSON ...
+		stage.match {
+			selector            = `{service="api-gateway"} |= "\"method\":\"GET\"" |= "\"path\":\"/healthz\"" |= "\"status\":"`
+			action              = "drop"
+			drop_counter_reason = "health_check"
+		}
+
+		stage.match {
+			selector            = `{service=~"order-service|supplier-service|chat-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/health\"" |= "\"status\":"`
+			action              = "drop"
+			drop_counter_reason = "health_check"
+		}
+
+		stage.match {
+			selector            = `{service=~"user-service|credit-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/api/v1/health\"" |= "\"status\":"`
+			action              = "drop"
+			drop_counter_reason = "health_check"
+		}
+
+		// ... and as chi's text access log, which the gateway, supplier-service
+		// and chat-service write until they log JSON.
+		stage.match {
+			selector            = `{service="api-gateway"} |~ "\"GET https?://[^/ ]+/healthz HTTP/[0-9.]+\" from "`
+			action              = "drop"
+			drop_counter_reason = "health_check"
+		}
+
+		stage.match {
+			selector            = `{service=~"supplier-service|chat-service"} |~ "\"GET https?://[^/ ]+/health HTTP/[0-9.]+\" from "`
+			action              = "drop"
+			drop_counter_reason = "health_check"
+		}
+	}
+
+	// With OTP_DELIVERY=log, user-service logs the user's email and plaintext
+	// verification code. It stays in `docker compose logs`, which the e2e suite
+	// reads it from.
+	stage.match {
+		selector            = `{service="user-service"} |= "\"otp\":"`
+		action              = "drop"
+		drop_counter_reason = "verification_code"
+	}
+
+	stage.label_drop {
+		values = ["stream"]
+	}
+}
+
+loki.write "loki" {
+	// Retries forever, at most 15 s apart, so a Loki outage delays logs instead
+	// of losing them. Lines Alloy has read but not yet delivered are held in
+	// memory, so an Alloy restart while Loki is down loses those.
+	endpoint {
+		url                 = "http://loki:3100/loki/api/v1/push"
+		max_backoff_period  = "15s"
+		max_backoff_retries = 0
+	}
+}
+
+// ---- Health -----------------------------------------------------------------
+
+prometheus.exporter.blackbox "health" {
+	config = "{ modules: { http_2xx: { prober: http, timeout: 5s, http: { preferred_ip_protocol: ip4 } } } }"
+
+	target {
+		name    = "api-gateway"
+		address = "http://api-gateway:8080/healthz"
+		module  = "http_2xx"
+		labels  = {service = "api-gateway"}
+	}
+
+	target {
+		name    = "user-service"
+		address = "http://user-service:8081/api/v1/health"
+		module  = "http_2xx"
+		labels  = {service = "user-service"}
+	}
+
+	target {
+		name    = "supplier-service"
+		address = "http://supplier-service:8082/health"
+		module  = "http_2xx"
+		labels  = {service = "supplier-service"}
+	}
+
+	target {
+		name    = "order-service"
+		address = "http://order-service:8083/health"
+		module  = "http_2xx"
+		labels  = {service = "order-service"}
+	}
+
+	target {
+		name    = "credit-service"
+		address = "http://credit-service:8084/api/v1/health"
+		module  = "http_2xx"
+		labels  = {service = "credit-service"}
+	}
+
+	target {
+		name    = "chat-service"
+		address = "http://chat-service:8085/health"
+		module  = "http_2xx"
+		labels  = {service = "chat-service"}
+	}
+
+	target {
+		name    = "loki"
+		address = "http://loki:3100/ready"
+		module  = "http_2xx"
+		labels  = {service = "loki"}
+	}
+}
+
+prometheus.scrape "health" {
+	targets         = prometheus.exporter.blackbox.health.targets
+	scrape_interval = "15s"
+	forward_to      = [prometheus.remote_write.prometheus.receiver]
+}
+
+prometheus.remote_write "prometheus" {
+	endpoint {
+		url = "http://prometheus:9090/api/v1/write"
+	}
+}

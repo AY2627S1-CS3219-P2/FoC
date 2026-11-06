@@ -8,8 +8,11 @@
 package supplier
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -70,7 +73,7 @@ func newAuditService(t *testing.T) (*Service, *fakeRepository, *fakeErrandCounte
 	t.Helper()
 	repo := newFakeRepository()
 	errands := &fakeErrandCounter{}
-	return NewService(repo, errands), repo, errands
+	return NewService(repo, errands, discardLog()), repo, errands
 }
 
 func TestAdminCreateLogsWhatItSet(t *testing.T) {
@@ -254,6 +257,25 @@ func TestAFailedAttemptRowNeverHidesTheRealError(t *testing.T) {
 
 	require.ErrorIs(t, err, ErrValidation, "the caller still gets the refusal")
 	assert.Empty(t, repo.audits)
+}
+
+func TestAnAuditRowThatCannotBeWrittenIsLoggedWithTheRequestID(t *testing.T) {
+	var logs bytes.Buffer
+	repo := newFakeRepository()
+	repo.recordAuditErr = errors.New("audit table gone")
+	svc := NewService(repo, &fakeErrandCounter{}, slog.New(slog.NewJSONHandler(&logs, nil)))
+
+	_, err := svc.AdminCreate(context.Background(), testAdmin, &Supplier{})
+
+	require.ErrorIs(t, err, ErrValidation)
+	var line map[string]any
+	require.NoError(t, json.Unmarshal(logs.Bytes(), &line), "exactly one JSON line: %s", logs.String())
+	assert.Equal(t, "ERROR", line["level"])
+	assert.Equal(t, testAdmin.CorrelationID, line["request_id"])
+	assert.Equal(t, testAdmin.ActorID, line["user_id"])
+	assert.Equal(t, ActionCreate, line["action"])
+	assert.Equal(t, OutcomeRefused, line["outcome"])
+	assert.Contains(t, line["err"], "audit table gone")
 }
 
 func TestLongFailureTextIsCut(t *testing.T) {

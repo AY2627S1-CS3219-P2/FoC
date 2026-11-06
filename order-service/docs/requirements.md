@@ -86,4 +86,4 @@ the team wrote them. Decisions on how each one is met are the D-0xx rows in
 - **NFR5.2:** Order lifecycle events consumed by dependent services must reflect in state within 2s at p95 and 5s at p99.
 - **NFR5.4:** Order state changes committed during message broker outages must reflect in dependent services within 5 minutes of recovery.
 - **NFR5.5:** Credit Service must deduct reserved credits and transfer them to the courier's balance atomically.
-- **NFR7.1:** State-changing API requests and asynchronous order lifecycle events must carry a correlation identifier in structured logs.
+- **NFR7.1:** 100% of state-changing API requests and asynchronous order lifecycle events shall carry an order, request, or event correlation identifier in structured logs, and high-severity errors shall be visible in the selected centralised logging view within 30 seconds.

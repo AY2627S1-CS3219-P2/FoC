@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"io"
 	// AI-generated (edited by James Teo).
-	"log"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -33,10 +33,12 @@ const maxBodyBytes = 64 << 10
 
 type Handler struct {
 	svc *supplier.Service
+	log *slog.Logger
 }
 
-func NewHandler(svc *supplier.Service) *Handler {
-	return &Handler{svc: svc}
+// NewHandler returns the handlers over svc, which log each 500's cause to log.
+func NewHandler(svc *supplier.Service, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, log: log}
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -57,7 +59,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	}
 	suppliers, err := h.svc.List(r.Context(), filter)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to list suppliers")
+		h.serverError(w, r, "failed to list suppliers", err)
 		return
 	}
 	writeJSON(w, http.StatusOK, toResponseList(suppliers))
@@ -67,7 +69,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	s, err := h.svc.Get(r.Context(), id)
-	if handleServiceError(w, err) {
+	if h.handleServiceError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toResponse(s))
@@ -81,7 +83,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created, err := h.svc.AdminCreate(r.Context(), auditContext(r), req.toDomain())
-	if handleServiceError(w, err) {
+	if h.handleServiceError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, toResponse(created))
@@ -97,7 +99,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := h.svc.AdminUpdate(r.Context(), auditContext(r), id, req.toDomain())
-	if handleServiceError(w, err) {
+	if h.handleServiceError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toResponse(updated))
@@ -116,7 +118,7 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 		ctx = orderclient.WithToken(ctx, "Bearer "+token)
 	}
 	err := h.svc.AdminDelete(ctx, auditContext(r), id)
-	if handleServiceError(w, err) {
+	if h.handleServiceError(w, r, err) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -155,7 +157,7 @@ func (h *Handler) Health(w http.ResponseWriter, r *http.Request) {
 
 // handleServiceError writes the appropriate HTTP status for a service
 // error and reports whether it wrote a response (i.e. err != nil).
-func handleServiceError(w http.ResponseWriter, err error) bool {
+func (h *Handler) handleServiceError(w http.ResponseWriter, r *http.Request, err error) bool {
 	if err == nil {
 		return false
 	}
@@ -173,10 +175,21 @@ func handleServiceError(w http.ResponseWriter, err error) bool {
 		// AI-generated (edited by James Teo).
 		// The client only gets a generic message, so this line is the one
 		// place the cause shows up (e.g. order-service refusing the token).
-		log.Printf("internal server error: %v", err)
-		writeError(w, http.StatusInternalServerError, "internal server error")
+		h.serverError(w, r, msgInternal, err)
 	}
 	return true
+}
+
+// serverError answers 500 with msg and logs err as its cause, once, at ERROR.
+// Once the client has hung up, whatever err is, nothing is logged here: that
+// is no fault of this service, and the WARN access line records it.
+func (h *Handler) serverError(w http.ResponseWriter, r *http.Request, msg string, err error) {
+	if !hungUp(r) {
+		h.log.LogAttrs(r.Context(), slog.LevelError, "request failed",
+			slog.String("request_id", middleware.GetReqID(r.Context())),
+			slog.String("err", err.Error()))
+	}
+	writeError(w, http.StatusInternalServerError, msg)
 }
 
 // auditContext says who the admin write on r is attributed to: the verified
@@ -221,7 +234,7 @@ func (h *Handler) AuditLog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	page, err := h.svc.AuditLog(r.Context(), f)
-	if handleServiceError(w, err) {
+	if h.handleServiceError(w, r, err) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toAuditPageResponse(page))

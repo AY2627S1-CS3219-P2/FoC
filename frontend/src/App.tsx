@@ -29,7 +29,7 @@ import type { AuthResult } from "./features/auth/authApi";
 import { LoginPage } from "./features/auth/LoginPage";
 import type { ActingMode, Session } from "./features/auth/types";
 import { config } from "./lib/config";
-import { createTokenStore } from "./lib/tokens";
+import type { TokenStore } from "./lib/tokens";
 // AI-generated (edited by James Teo): the remembered acting mode, and polling.
 import {
   clearLastView,
@@ -90,7 +90,12 @@ const authClient = usingGateway
       logOut: (_accessToken: string | null) => authApi.logOut(),
     };
 
-export function App() {
+interface AppProps {
+  /** The page's one TokenStore, made in main.tsx and never replaced. */
+  tokens: TokenStore;
+}
+
+export function App({ tokens }: AppProps) {
   const [session, setSession] = useState<Session | null>(null);
 
   // AI-generated (edited by James Teo): true when the app ended the session
@@ -107,10 +112,6 @@ export function App() {
   // login page renders for a frame and then vanishes, which reads as a bug
   // even when the restore succeeds.
   const [restoring, setRestoring] = useState(usingGateway);
-
-  // Created once and never replaced. The access token lives in the store's
-  // closure, not in component state.
-  const [tokens] = useState(createTokenStore);
 
   /**
    * The authorized transport and the clients built over it, made once per

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"foc/chat-service/internal/chat"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -333,7 +335,7 @@ func CallerFromContext(ctx context.Context) (chat.Caller, bool) {
 	return caller, ok
 }
 
-func RequireToken(v *Verifier) func(http.Handler) http.Handler {
+func RequireToken(v *Verifier, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -345,6 +347,12 @@ func RequireToken(v *Verifier) func(http.Handler) http.Handler {
 			claims, err := v.Verify(r.Context(), tokenString)
 			if err != nil {
 				if errors.Is(err, ErrRedisUnreachable) {
+					// A client that hung up is no fault of this service; its
+					// access line records it at WARN.
+					if !errors.Is(r.Context().Err(), context.Canceled) {
+						log.ErrorContext(r.Context(), "cannot check token revocation: Redis could not be reached",
+							"request_id", middleware.GetReqID(r.Context()), "err", err)
+					}
 					http.Error(w, `{"error":"auth verification service unavailable"}`, http.StatusServiceUnavailable)
 					return
 				}

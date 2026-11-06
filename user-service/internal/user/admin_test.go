@@ -9,9 +9,11 @@
 package user
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strings"
 	"testing"
 	"time"
@@ -53,7 +55,7 @@ func (f *fakeAccountRepository) PurgeAudit(context.Context) (int64, error) {
 	if f.purged != nil {
 		f.purged <- struct{}{}
 	}
-	return 0, f.purgeErr
+	return f.purgedRows, f.purgeErr
 }
 
 func (f *fakeAccountRepository) SearchUsers(_ context.Context, flt UserFilter) (*UserPage, error) {
@@ -386,4 +388,64 @@ func TestPurgeRunsAtStartAndOnEveryTickUntilCancelled(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the loop did not stop when its context was cancelled")
 	}
+}
+
+func TestAuditWriteFailuresAndPurgesAreLogged(t *testing.T) {
+	uid := uuid.New()
+	tests := map[string]struct {
+		repo *fakeAccountRepository
+		run  func(*AccountService)
+		want map[string]any
+	}{
+		"an attempt row that cannot be written is an error": {
+			repo: &fakeAccountRepository{
+				user:           &User{UID: uid, AccountRole: AccountRoleAdmin, AccountStatus: AccountStatusActive},
+				recordAuditErr: errors.New("audit table gone"),
+			},
+			run: func(svc *AccountService) {
+				_ = svc.AdminUpdateAccountStatus(context.Background(), testAdminCtx, uid, AccountStatusSuspended)
+			},
+			want: map[string]any{
+				"level": "ERROR", "msg": "could not record audit entry", "request_id": testAdminCtx.CorrelationID,
+				"action": ActionSuspend, "outcome": OutcomeRefused, "target_id": uid.String(),
+				"actor_id": testAdminCtx.ActorID, "error": "audit table gone",
+			},
+		},
+		"a failed purge is an error": {
+			repo: &fakeAccountRepository{purgeErr: errors.New("connection reset")},
+			run:  purgeOnce,
+			want: map[string]any{"level": "ERROR", "msg": "audit purge failed", "error": "connection reset"},
+		},
+		"a purge that removed entries says how many": {
+			repo: &fakeAccountRepository{purgedRows: 3},
+			run:  purgeOnce,
+			want: map[string]any{"level": "INFO", "msg": "purged audit entries older than 6 months", "count": float64(3)},
+		},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			svc := NewAccountServiceWithOTPAndDelivery(tt.repo, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, nil, nil, slog.New(slog.NewJSONHandler(&logs, nil)))
+
+			tt.run(svc)
+
+			var line map[string]any
+			if err := json.Unmarshal(logs.Bytes(), &line); err != nil {
+				t.Fatalf("logs = %q, want one JSON line: %v", logs.String(), err)
+			}
+			for key, value := range tt.want {
+				if line[key] != value {
+					t.Errorf("%s = %v, want %v", key, line[key], value)
+				}
+			}
+		})
+	}
+}
+
+// purgeOnce runs the purge loop with its context already ended, so it purges
+// once, at start, and returns.
+func purgeOnce(svc *AccountService) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	svc.RunAuditPurge(ctx, time.Hour)
 }

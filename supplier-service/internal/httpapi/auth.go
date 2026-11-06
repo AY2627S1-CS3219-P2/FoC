@@ -11,9 +11,11 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
+
+	"github.com/go-chi/chi/v5/middleware"
 
 	"foc/supplier-service/internal/auth"
 )
@@ -54,27 +56,33 @@ type RevocationChecker interface {
 // When user-service's keys cannot be loaded, or the revocation keys cannot be
 // read (Redis down, or answering with an error), nothing can be checked, so
 // the write is refused with a 503 rather than let through unchecked.
-func authenticate(v TokenVerifier, rev RevocationChecker) func(http.Handler) http.Handler {
+func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
 			token, ok := bearerToken(r.Header)
 			if !ok {
-				refuse(w, r, http.StatusUnauthorized, msgUnauthenticated, "no single Bearer token in Authorization")
+				refuse(log, w, r, http.StatusUnauthorized, msgUnauthenticated, "no single Bearer token in Authorization")
 				return
 			}
 			claims, err := v.Verify(ctx, token)
 			if errors.Is(err, auth.ErrKeysUnavailable) {
-				log.Printf("%s %s refused: cannot load user-service's signing keys: %v", r.Method, r.URL.Path, err)
+				// The key fetch is detached from the request, so err never
+				// shows that the client hung up; only the request's context does.
+				if !hungUp(r) {
+					log.LogAttrs(ctx, slog.LevelError, "cannot load user-service's signing keys; refusing the request",
+						slog.String("request_id", middleware.GetReqID(ctx)),
+						slog.String("err", err.Error()))
+				}
 				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
 				return
 			}
 			if err != nil {
-				refuse(w, r, http.StatusUnauthorized, msgUnauthenticated, err.Error())
+				refuse(log, w, r, http.StatusUnauthorized, msgUnauthenticated, err.Error())
 				return
 			}
 			if claims.Role != roleAdmin && claims.Role != roleStudent {
-				refuse(w, r, http.StatusUnauthorized, msgUnauthenticated, "token has no known role")
+				refuse(log, w, r, http.StatusUnauthorized, msgUnauthenticated, "token has no known role")
 				return
 			}
 
@@ -86,18 +94,27 @@ func authenticate(v TokenVerifier, rev RevocationChecker) func(http.Handler) htt
 				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
 				return
 			case errors.Is(err, auth.ErrRedisUnreachable):
-				log.Printf("%s %s refused for %s: Redis could not be reached: %v", r.Method, r.URL.Path, claims.UserID, err)
+				log.LogAttrs(ctx, slog.LevelError, "Redis could not be reached; refusing the request",
+					slog.String("request_id", middleware.GetReqID(ctx)),
+					slog.String("user_id", claims.UserID.String()),
+					slog.String("err", err.Error()))
 				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
 				return
 			case err != nil:
-				log.Printf("%s %s refused for %s: cannot read the revocation keys: %v", r.Method, r.URL.Path, claims.UserID, err)
+				log.LogAttrs(ctx, slog.LevelError, "cannot read the revocation keys in Redis; refusing the request",
+					slog.String("request_id", middleware.GetReqID(ctx)),
+					slog.String("user_id", claims.UserID.String()),
+					slog.String("err", err.Error()))
 				writeError(w, http.StatusServiceUnavailable, msgKeysUnavailable)
 				return
 			case revoked:
-				refuse(w, r, http.StatusUnauthorized, msgUnauthenticated, "token revoked for "+claims.UserID.String())
+				refuse(log, w, r, http.StatusUnauthorized, msgUnauthenticated, "token revoked for "+claims.UserID.String())
 				return
 			}
 
+			if info, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok {
+				info.userID = claims.UserID.String()
+			}
 			ctx = auth.ContextWithCaller(ctx, auth.Caller{UserID: claims.UserID, Role: claims.Role})
 			ctx = auth.ContextWithToken(ctx, token)
 			next.ServeHTTP(w, r.WithContext(ctx))
@@ -107,27 +124,38 @@ func authenticate(v TokenVerifier, rev RevocationChecker) func(http.Handler) htt
 
 // requireAdmin lets a request through only when the verified caller authenticate
 // put in the context is an ADMIN. It must run after authenticate.
-func requireAdmin(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		caller, ok := auth.CallerFromContext(r.Context())
-		if !ok {
-			// Only a router that skipped authenticate gets here.
-			refuse(w, r, http.StatusUnauthorized, msgUnauthenticated, "no verified caller on the request")
-			return
-		}
-		if caller.Role != roleAdmin {
-			refuse(w, r, http.StatusForbidden, msgAdminRequired, "role "+caller.Role+" for "+caller.UserID.String())
-			return
-		}
-		log.Printf("admin write: %s %s by %s", r.Method, r.URL.Path, caller.UserID)
-		next.ServeHTTP(w, r)
-	})
+func requireAdmin(log *slog.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			caller, ok := auth.CallerFromContext(r.Context())
+			if !ok {
+				// Only a router that skipped authenticate gets here.
+				refuse(log, w, r, http.StatusUnauthorized, msgUnauthenticated, "no verified caller on the request")
+				return
+			}
+			if caller.Role != roleAdmin {
+				refuse(log, w, r, http.StatusForbidden, msgAdminRequired, "role "+caller.Role+" for "+caller.UserID.String())
+				return
+			}
+			log.LogAttrs(r.Context(), slog.LevelInfo, "admin write",
+				slog.String("request_id", middleware.GetReqID(r.Context())),
+				slog.String("method", r.Method),
+				slog.String("path", r.URL.Path),
+				slog.String("user_id", caller.UserID.String()))
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // refuse answers a write with status and msg, and logs the reason, which the
 // client is not told. The token is never logged.
-func refuse(w http.ResponseWriter, r *http.Request, status int, msg, reason string) {
-	log.Printf("%s %s refused with %d: %s", r.Method, r.URL.Path, status, reason)
+func refuse(log *slog.Logger, w http.ResponseWriter, r *http.Request, status int, msg, reason string) {
+	log.LogAttrs(r.Context(), slog.LevelInfo, "request refused",
+		slog.String("request_id", middleware.GetReqID(r.Context())),
+		slog.String("method", r.Method),
+		slog.String("path", r.URL.Path),
+		slog.Int("status", status),
+		slog.String("reason", reason))
 	writeError(w, status, msg)
 }
 
