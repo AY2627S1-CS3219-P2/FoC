@@ -107,7 +107,7 @@
       "id": 3,
       "type": "logs",
       "title": "High-severity errors",
-      "description": "Any ERROR line, any panic, and any 5xx line not logged at WARN (a WARN 5xx is a client that hung up). Includes the 5xx lines of services that still log plain text.",
+      "description": "Any ERROR line, any panic, and any 5xx line not logged at WARN (a WARN 5xx is a client that hung up). Also catches the 5xx lines of a service that logs plain text.",
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 6 },
       "datasource": { "type": "loki", "uid": "loki" },
       "targets": [
@@ -203,6 +203,33 @@
         "showTime": true,
         "sortOrder": "Descending",
         "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Response time (p95)",
+      "description": "95% of each service's requests in the last 5 minutes finished within this time, as the service itself timed them. The gateway's time includes the service behind it. Health checks are not counted, nor are WebSocket upgrades, which the gateway logs only when the connection closes.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 39 },
+      "interval": "15s",
+      "maxDataPoints": 2016,
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "quantile_over_time(0.95, {service=~\".+\", service!~\"loki|alloy|prometheus|grafana\"} |= `\"msg\":\"http request\"` | json status, duration_ms | status != 101 | unwrap duration_ms | __error__=\"\" [5m]) by (service)",
+          "queryType": "range",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "ms" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
       }
     }
   ]

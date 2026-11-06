@@ -73,7 +73,7 @@ loki.process "compose" {
 		}
 
 		// Access lines of health probes and Compose healthchecks, each service
-		// matched to its own health endpoint, as JSON ...
+		// matched to its own health endpoint.
 		stage.match {
 			selector            = `{service="api-gateway"} |= "\"method\":\"GET\"" |= "\"path\":\"/healthz\"" |= "\"status\":"`
 			action              = "drop"
@@ -88,20 +88,6 @@ loki.process "compose" {
 
 		stage.match {
 			selector            = `{service=~"user-service|credit-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/api/v1/health\"" |= "\"status\":"`
-			action              = "drop"
-			drop_counter_reason = "health_check"
-		}
-
-		// ... and as chi's text access log, which the gateway, supplier-service
-		// and chat-service write until they log JSON.
-		stage.match {
-			selector            = `{service="api-gateway"} |~ "\"GET https?://[^/ ]+/healthz HTTP/[0-9.]+\" from "`
-			action              = "drop"
-			drop_counter_reason = "health_check"
-		}
-
-		stage.match {
-			selector            = `{service=~"supplier-service|chat-service"} |~ "\"GET https?://[^/ ]+/health HTTP/[0-9.]+\" from "`
 			action              = "drop"
 			drop_counter_reason = "health_check"
 		}
