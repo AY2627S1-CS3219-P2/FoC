@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"time"
 
 	"foc/chat-service/internal/chat"
@@ -32,10 +32,11 @@ type ErrandLifecycleEvent struct {
 
 type LifecycleHandler struct {
 	service *chat.Service
+	log     *slog.Logger
 }
 
-func NewLifecycleHandler(service *chat.Service) *LifecycleHandler {
-	return &LifecycleHandler{service: service}
+func NewLifecycleHandler(service *chat.Service, log *slog.Logger) *LifecycleHandler {
+	return &LifecycleHandler{service: service, log: log}
 }
 
 func (h *LifecycleHandler) Handle(ctx context.Context, routingKey string, body []byte) error {
@@ -82,9 +83,10 @@ func (h *LifecycleHandler) Handle(ctx context.Context, routingKey string, body [
 }
 
 func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) {
+	attrs := append([]any{"request_id", d.CorrelationId, "routingKey", d.RoutingKey}, eventIDs(d.Body)...)
+	log := h.log.With(attrs...)
 	err := h.Handle(ctx, d.RoutingKey, d.Body)
 	if err != nil {
-		log.Printf("error handling amqp delivery (key: %s): %v", d.RoutingKey, err)
 		// Check delivery count if available from headers
 		var count int64 = 0
 		if xCount, ok := d.Headers["x-delivery-count"]; ok {
@@ -93,14 +95,39 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 			}
 		}
 		if count >= 5 {
-			log.Printf("delivery count %d exceeded, dead-lettering", count)
+			log.Error("lifecycle event failed; delivery count exceeded, dead-lettering", "deliveryCount", count, "err", err)
 			_ = d.Nack(false, false)
 			return
 		}
+		log.Warn("lifecycle event failed; requeuing", "deliveryCount", count, "err", err)
 		_ = d.Nack(false, true)
 		return
 	}
-	_ = d.Ack(false)
+	if err := d.Ack(false); err != nil {
+		log.Warn("could not acknowledge lifecycle event; the broker will redeliver it", "err", err)
+		return
+	}
+	log.Info("lifecycle event acknowledged")
+}
+
+// eventIDs names the event on every line about it: its eventId and errandId,
+// each only when the body holds it as a UUID, so a malformed event still names
+// what it can and nothing else from the body reaches the log.
+func eventIDs(body []byte) []any {
+	var ids struct {
+		EventID  string `json:"eventId"`
+		ErrandID string `json:"errandId"`
+	}
+	_ = json.Unmarshal(body, &ids)
+
+	var attrs []any
+	if id, err := uuid.Parse(ids.EventID); err == nil {
+		attrs = append(attrs, "eventId", id.String())
+	}
+	if id, err := uuid.Parse(ids.ErrandID); err == nil {
+		attrs = append(attrs, "errandId", id.String())
+	}
+	return attrs
 }
 
 func RunConsumer(ctx context.Context, amqpURL string, handler *LifecycleHandler) error {

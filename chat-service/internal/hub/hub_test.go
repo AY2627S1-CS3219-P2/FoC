@@ -3,6 +3,7 @@ package hub
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func TestHub_LocalDispatch(t *testing.T) {
-	h := NewHub(nil, nil, nil)
+	h := NewHub(nil, nil, nil, slog.New(slog.DiscardHandler))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

@@ -20,8 +20,10 @@
 package proxy
 
 import (
+	"context"
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -35,6 +37,11 @@ const (
 	ClaimHeaderUserID = "X-User-Id"
 	ClaimHeaderRole   = "X-User-Role"
 )
+
+// HeaderRequestID carries the request's id. It is forwarded to the service,
+// and only the gateway sets it on the response: a service's own copy is
+// dropped, so the client receives one value.
+const HeaderRequestID = "X-Request-Id"
 
 // Identity is what the gateway asserts about a caller. It is built from
 // verified token claims and never from anything the caller sent.
@@ -101,9 +108,9 @@ type Route struct {
 // New returns a Proxy that deletes the Authorization header and injects the
 // verified identity into the claim headers, so the callee never receives the
 // bearer token. The gateway's service routes forward the token instead, with
-// NewRetainingToken.
-func New(route Route) (*Proxy, error) {
-	return build(route, behaviour{forwardToken: false, injectClaims: true})
+// NewRetainingToken. Every constructor logs to log, which must not be nil.
+func New(route Route, log *slog.Logger) (*Proxy, error) {
+	return build(route, behaviour{forwardToken: false, injectClaims: true}, log)
 }
 
 // AI-generated (edited by James Teo).
@@ -111,25 +118,25 @@ func New(route Route) (*Proxy, error) {
 // Authorization header, so the callee can verify the access token itself, as
 // D-041 in ai/decisions.md has every service do. Client-supplied claim headers
 // are still stripped and the verified ones injected.
-func NewRetainingToken(route Route) (*Proxy, error) {
-	return build(route, behaviour{forwardToken: true, injectClaims: true})
+func NewRetainingToken(route Route, log *slog.Logger) (*Proxy, error) {
+	return build(route, behaviour{forwardToken: true, injectClaims: true}, log)
 }
 
 // NewPassthrough returns a Proxy for a public route with no verified identity
 // and no refresh cookie, such as POST /auth/register. Authorization is
 // forwarded unchanged and no claim headers are injected.
-func NewPassthrough(route Route) (*Proxy, error) {
-	return build(route, behaviour{forwardToken: true, injectClaims: false})
+func NewPassthrough(route Route, log *slog.Logger) (*Proxy, error) {
+	return build(route, behaviour{forwardToken: true, injectClaims: false}, log)
 }
 
 // NewSessionIssuing returns a Proxy for POST /auth/login. It moves
 // refreshToken from user-service's response body into the HttpOnly refresh
 // cookie, so the page never receives it.
-func NewSessionIssuing(route Route, ttl time.Duration) (*Proxy, error) {
+func NewSessionIssuing(route Route, ttl time.Duration, log *slog.Logger) (*Proxy, error) {
 	return build(route, behaviour{
 		forwardToken: true,
 		session:      sessionBehaviour{cookieFromBody: true, ttl: ttl},
-	})
+	}, log)
 }
 
 // NewSessionRotating returns a Proxy for POST /auth/refresh. It copies the
@@ -138,11 +145,11 @@ func NewSessionIssuing(route Route, ttl time.Duration) (*Proxy, error) {
 // revokes all of a user's sessions when an old refresh token is reused, so the
 // cookie must be replaced on every refresh, and expired when user-service
 // rejects it with 401. A 5xx leaves the cookie in place.
-func NewSessionRotating(route Route, ttl time.Duration) (*Proxy, error) {
+func NewSessionRotating(route Route, ttl time.Duration, log *slog.Logger) (*Proxy, error) {
 	return build(route, behaviour{
 		forwardToken: true,
 		session:      sessionBehaviour{bodyFromCookie: true, cookieFromBody: true, clearOnReject: true, ttl: ttl},
-	})
+	}, log)
 }
 
 // NewSessionEnding returns a Proxy for POST /auth/logout. It copies the
@@ -152,14 +159,17 @@ func NewSessionRotating(route Route, ttl time.Duration) (*Proxy, error) {
 // A logout rejected because the access token expired while the user was idle
 // must still leave the browser without the cookie; otherwise the next page
 // load refreshes and signs the user back in.
-func NewSessionEnding(route Route) (*Proxy, error) {
+func NewSessionEnding(route Route, log *slog.Logger) (*Proxy, error) {
 	return build(route, behaviour{
 		forwardToken: true,
 		session:      sessionBehaviour{bodyFromCookie: true, clearCookie: true},
-	})
+	}, log)
 }
 
-func build(route Route, how behaviour) (*Proxy, error) {
+func build(route Route, how behaviour, log *slog.Logger) (*Proxy, error) {
+	if log == nil {
+		return nil, errors.New("proxy: a logger is required")
+	}
 	target, err := url.Parse(route.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("proxy: parsing base URL %q: %w", route.BaseURL, err)
@@ -196,7 +206,10 @@ func build(route Route, how behaviour) (*Proxy, error) {
 						if merged, err := putRefreshToken(raw, c.Value); err == nil {
 							r.Out.Body, r.Out.ContentLength = setJSONBody(r.Out.Header, merged)
 						} else {
-							log.Printf("api-gateway: refresh cookie into body: %v", err)
+							// The parse error is left out: it can quote the body.
+							log.LogAttrs(r.In.Context(), slog.LevelWarn,
+								"refresh cookie not copied: the request body is not a JSON object",
+								slog.String("request_id", RequestIDFrom(r.In.Context())))
 							r.Out.Body, r.Out.ContentLength = setJSONBody(r.Out.Header, raw)
 						}
 					}
@@ -215,6 +228,10 @@ func build(route Route, how behaviour) (*Proxy, error) {
 		// Drop any Access-Control-* headers a downstream service sets; the gateway
 		// sends no CORS headers, so none reach the browser.
 		ModifyResponse: func(res *http.Response) error {
+			// ReverseProxy adds the service's headers to the ones the gateway
+			// has already set, so a service echoing the request id would give
+			// the client a second X-Request-Id.
+			res.Header.Del(HeaderRequestID)
 			for name := range res.Header {
 				if strings.HasPrefix(http.CanonicalHeaderKey(name), "Access-Control-") {
 					res.Header.Del(name)
@@ -250,7 +267,16 @@ func build(route Route, how behaviour) (*Proxy, error) {
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			// Answer 502 with a JSON error body when the downstream cannot be reached.
-			log.Printf("api-gateway: proxy %s %s: %v", r.Method, r.URL.Path, err)
+			// A client that hung up is not the service's failure, so that
+			// cause is a warning.
+			level := slog.LevelError
+			if errors.Is(r.Context().Err(), context.Canceled) {
+				level = slog.LevelWarn
+			}
+			log.LogAttrs(r.Context(), level, "cannot proxy the request; answering 502",
+				slog.String("request_id", RequestIDFrom(r.Context())),
+				slog.String("upstream", target.Host),
+				slog.String("err", err.Error()))
 			// AI-generated (edited by nigeltzy).
 			if p.behaviour.session.clearCookie {
 				w.Header().Add("Set-Cookie", expiredRefreshCookie().String())
@@ -259,6 +285,8 @@ func build(route Route, how behaviour) (*Proxy, error) {
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = w.Write([]byte(`{"error":"upstream service unavailable"}`))
 		},
+		// ReverseProxy's own messages, such as a body that breaks off mid-copy.
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
 		Transport: &wsAwareTransport{
 			httpTransport: &http.Transport{
 				ResponseHeaderTimeout: 15 * time.Second,

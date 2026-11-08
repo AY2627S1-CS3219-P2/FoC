@@ -22,6 +22,7 @@ type fakeAccountRepository struct {
 	searchPage             *UserPage
 	searched               UserFilter
 	purged                 chan struct{}
+	purgedRows             int64
 	purgeErr               error
 	user                   *User
 	hasAdmin               bool

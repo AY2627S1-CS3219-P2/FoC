@@ -6,12 +6,18 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"foc/user-service/internal/config"
 )
 
 func TestParseTokenTTL(t *testing.T) {
@@ -42,7 +48,7 @@ func TestParseTokenTTL(t *testing.T) {
 
 // AI-generated (edited by ZI YANG): the server timeouts match the recorded defensive policy.
 func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
-	server := newHTTPServer(":8081", http.NotFoundHandler())
+	server := newHTTPServer(":8081", http.NotFoundHandler(), slog.New(slog.DiscardHandler))
 
 	if server.ReadHeaderTimeout != 5*time.Second {
 		t.Fatalf("ReadHeaderTimeout = %s, want 5s", server.ReadHeaderTimeout)
@@ -55,6 +61,21 @@ func TestNewHTTPServerUsesRecordedTimeouts(t *testing.T) {
 	}
 	if server.IdleTimeout != 120*time.Second {
 		t.Fatalf("IdleTimeout = %s, want 120s", server.IdleTimeout)
+	}
+}
+
+func TestNewHTTPServerWritesNetHTTPErrorsAsJSON(t *testing.T) {
+	var logs bytes.Buffer
+	server := newHTTPServer(":8081", http.NotFoundHandler(), slog.New(slog.NewJSONHandler(&logs, nil)))
+
+	server.ErrorLog.Printf("http: Accept error: %s; retrying in 5ms", "too many open files")
+
+	var line map[string]any
+	if err := json.Unmarshal(logs.Bytes(), &line); err != nil {
+		t.Fatalf("ErrorLog wrote %q, want one JSON line: %v", logs.String(), err)
+	}
+	if line["level"] != "ERROR" || line["msg"] != "http: Accept error: too many open files; retrying in 5ms" {
+		t.Fatalf("ErrorLog line = %v, want net/http's message at ERROR", line)
 	}
 }
 
@@ -119,6 +140,57 @@ func TestParseRabbitMQURL(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Fatalf("parseRabbitMQURL() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// A malformed USER_DB_URL or REDIS_URL stops run with an error that names the
+// variable, and the fatal line main logs from it holds no piece of the
+// password, whatever characters the password holds.
+func TestRunKeepsConnectionPasswordsOutOfTheFatalLine(t *testing.T) {
+	// run applies ./migrations, so from the service root, as in the container,
+	// an unchecked USER_DB_URL would reach golang-migrate's parse of it.
+	t.Chdir(filepath.Join("..", ".."))
+	const (
+		userDBURL = "postgres://svc:pw@127.0.0.1:1/users"
+		redisURL  = "redis://127.0.0.1:1/0"
+	)
+	tests := map[string]struct {
+		cfg      config.Config
+		variable string   // the malformed one, which the error must name
+		pieces   []string // of its password, none of which may be logged
+	}{
+		"database password with a slash":                {config.Config{UserDBURL: "postgres://svc:Pq8/Ws3@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Pq8", "Ws3"}},
+		"database password with a colon and a slash":    {config.Config{UserDBURL: "postgres://svc:Sc4:Et9/Qz4@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Sc4", "Et9", "Qz4"}},
+		"database password with a space":                {config.Config{UserDBURL: "postgres://svc:Xq7 Zr9@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "Zr9"}},
+		"database password with a double quote":         {config.Config{UserDBURL: `postgres://svc:Xq7"Zr9@db:5432/users`, RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "Zr9"}},
+		"database password with a hash":                 {config.Config{UserDBURL: "postgres://svc:Xq7#Zr9@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "Zr9"}},
+		"database password with a stray percent sign":   {config.Config{UserDBURL: "postgres://svc:Xq7%zzZr9@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "%zz", "Zr9"}},
+		"database settings in keyword=value form":       {config.Config{UserDBURL: "user=svc password=Xq7:Zr9 host=db dbname=users", RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "Zr9"}},
+		"database URL with no slashes after its scheme": {config.Config{UserDBURL: "postgres:svc:Xq7:Zr9@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "Zr9"}},
+		"Redis password with a slash":                   {config.Config{UserDBURL: userDBURL, RedisURL: "redis://default:Pq8/Ws3@redis:6379/0"}, "REDIS_URL", []string{"Pq8", "Ws3"}},
+		"Redis URL with one slash after its scheme":     {config.Config{UserDBURL: userDBURL, RedisURL: "redis:/default:Xq7Zr9@redis:6379"}, "REDIS_URL", []string{"Xq7", "Zr9"}},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			var logs bytes.Buffer
+			logger := slog.New(slog.NewJSONHandler(&logs, nil))
+
+			err := run(context.Background(), tt.cfg, logger)
+			if err == nil {
+				t.Fatal("run() error = nil, want the malformed URL rejected")
+			}
+			logger.Error("user service stopped", "error", err) // main's fatal line
+
+			if !strings.Contains(err.Error(), tt.variable) {
+				t.Errorf("run() error = %q, want it to name %s", err, tt.variable)
+			}
+			for _, piece := range tt.pieces {
+				if strings.Contains(logs.String(), piece) {
+					t.Errorf("fatal line %s holds %q from the password", logs.String(), piece)
+				}
 			}
 		})
 	}

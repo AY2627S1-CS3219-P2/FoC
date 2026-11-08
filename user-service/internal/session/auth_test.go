@@ -18,12 +18,13 @@ import (
 )
 
 type fakeAuthRepository struct {
-	user       *User
-	lookupErr  error
-	identifier string
-	updated    *User
-	status     AccountStatus
-	lastLogin  *time.Time
+	user         *User
+	lookupErr    error
+	identifier   string
+	updated      *User
+	status       AccountStatus
+	lastLogin    *time.Time
+	lastLoginErr error
 }
 
 func (f *fakeAuthRepository) Create(_ context.Context, account *User) error {
@@ -63,7 +64,7 @@ func (f *fakeAuthRepository) Update(_ context.Context, got *User) error {
 
 func (f *fakeAuthRepository) UpdateLastLoginByID(_ context.Context, _ uuid.UUID, timestamp time.Time) error {
 	f.lastLogin = &timestamp
-	return nil
+	return f.lastLoginErr
 }
 
 // AI-generated (edited by ZI YANG).

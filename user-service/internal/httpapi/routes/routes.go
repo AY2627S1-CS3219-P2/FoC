@@ -7,6 +7,8 @@
 package routes
 
 import (
+	"log/slog"
+
 	"foc/user-service/internal/httpapi/handlers"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +22,8 @@ type Dependencies struct {
 	System            handlers.SystemDependencies
 	TokenVerifier     handlers.TokenVerifier
 	RevocationChecker handlers.RevocationChecker
+	// Logger receives every request's access line and any panic report.
+	Logger *slog.Logger
 }
 
 // GetRoutes constructs grouped handlers and returns their route-registration function.

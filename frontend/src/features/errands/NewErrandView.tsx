@@ -18,7 +18,7 @@ import { newRequestId, type OrdersApi } from "./ordersApi";
 import { formatDateTime } from "./time";
 
 interface NewErrandViewProps {
-  /** Injected by App, which owns the token store the transport reads. */
+  /** Injected by App. main.tsx creates the token store the transport reads and passes it to App. */
   suppliersApi: SuppliersApi;
   // AI-generated (edited by James Teo).
   /** order-service's client, built by App over the same transport. */

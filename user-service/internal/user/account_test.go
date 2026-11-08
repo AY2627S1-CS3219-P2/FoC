@@ -105,7 +105,7 @@ func TestAccountServiceRegisterDeliversOTPAfterPersistingUnverifiedAccount(t *te
 	repository := &fakeAccountRepository{}
 	store := &fakeOTPStore{count: 1}
 	deliverer := &fakeOTPDeliverer{}
-	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer, nil)
 
 	account, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
 	if err != nil {
@@ -125,7 +125,7 @@ func TestAccountServiceRegisterDeliversOTPAfterPersistingUnverifiedAccount(t *te
 func TestAccountServiceRegisterRetainsUnverifiedAccountWhenDeliveryFails(t *testing.T) {
 	deliveryFailure := errors.New("Mailgun unavailable")
 	repository := &fakeAccountRepository{}
-	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: 1}, &fakeOTPDeliverer{err: deliveryFailure})
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, &fakeOTPStore{count: 1}, &fakeOTPDeliverer{err: deliveryFailure}, nil)
 
 	_, err := service.Register(context.Background(), "student@u.nus.edu", "student", "ValidPass1")
 	if !errors.Is(err, deliveryFailure) {
@@ -150,7 +150,7 @@ func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGenerating
 		t.Run(name, func(t *testing.T) {
 			store := &fakeOTPStore{count: 1}
 			deliverer := &fakeOTPDeliverer{}
-			service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: testCase.account}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+			service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: testCase.account}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer, nil)
 
 			err := service.ResendOTP(context.Background(), "student@u.nus.edu")
 			if !errors.Is(err, testCase.wantErr) {
@@ -166,7 +166,7 @@ func TestAccountServiceResendOTPRejectsUnknownAndActiveAccountsWithoutGenerating
 func TestAccountServiceResendOTPReplacesHashAndDeliversReplacement(t *testing.T) {
 	store := &fakeOTPStore{count: 2}
 	deliverer := &fakeOTPDeliverer{}
-	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer, nil)
 
 	if err := service.ResendOTP(context.Background(), "student@u.nus.edu"); err != nil {
 		t.Fatal(err)
@@ -179,7 +179,7 @@ func TestAccountServiceResendOTPReplacesHashAndDeliversReplacement(t *testing.T)
 func TestAccountServiceResendOTPEnforcesRequestLimit(t *testing.T) {
 	store := &fakeOTPStore{count: OTPRequestLimit + 1}
 	deliverer := &fakeOTPDeliverer{}
-	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+	service := NewAccountServiceWithOTPAndDelivery(&fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer, nil)
 
 	err := service.ResendOTP(context.Background(), "student@u.nus.edu")
 	if !errors.Is(err, ErrOTPRequestLimit) {
@@ -278,7 +278,7 @@ func TestAccountServiceResendOTPResetsAttemptCount(t *testing.T) {
 	store := &fakeOTPStore{count: 1, hash: HashOTP("123456"), hashFound: true}
 	deliverer := &fakeOTPDeliverer{}
 	repository := &fakeAccountRepository{user: &User{AccountStatus: AccountStatusUnverified}}
-	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer)
+	service := NewAccountServiceWithOTPAndDelivery(repository, &fakeSuspensionWriter{}, &fakeAccountSessionRepository{}, time.Minute, store, deliverer, nil)
 	ctx := context.Background()
 
 	for attempt := 1; attempt <= OTPAttemptLimit; attempt++ {
