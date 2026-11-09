@@ -194,18 +194,30 @@ func (v *Verifier) isRevoked(ctx context.Context, c *Claims) (bool, error) {
 	return false, nil
 }
 
-func (v *Verifier) IsUserSuspended(ctx context.Context, userID uuid.UUID) (bool, error) {
+func (v *Verifier) IsUserSuspended(ctx context.Context, userID uuid.UUID, authenticatedAt time.Time) (bool, error) {
 	if v.authRedis == nil {
 		return false, nil
 	}
 	rctx, cancel := context.WithTimeout(ctx, revocationTimeout)
 	defer cancel()
 
-	exists, err := v.authRedis.Exists(rctx, suspensionPrefix+userID.String()).Result()
+	val, err := v.authRedis.Get(rctx, suspensionPrefix+userID.String()).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("%w: %v", ErrRedisUnreachable, err)
 	}
-	return exists > 0, nil
+
+	suspendedAt, err := time.Parse(time.RFC3339Nano, val)
+	if err != nil {
+		// Unreadable suspension timestamp -> fail closed (revoked)
+		return true, nil
+	}
+	if authenticatedAt.IsZero() {
+		return true, nil
+	}
+	return !authenticatedAt.After(suspendedAt), nil
 }
 
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
