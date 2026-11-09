@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   actionLabel,
+  AUDIT_ACTIONS,
   combinePages,
   countsSummary,
   shortId,
@@ -172,6 +173,17 @@ describe("wording", () => {
   it("shows an account edit as the names of its fields, not values", () => {
     const edit = entry({ action: "account.update", additionalComments: { fields_changed: ["username", "phone_num"] } });
     expect(auditDetails(edit)).toEqual([{ label: "Fields changed", value: "username, phone_num" }]);
+  });
+
+  it("words a role change and shows the role it changed", () => {
+    expect(actionLabel("account.change_role")).toBe("Changed an account's role");
+    const change = entry({
+      action: "account.change_role",
+      beforeState: { account_role: "STUDENT" },
+      afterState: { account_role: "ADMIN" },
+    });
+    expect(auditDetails(change)).toEqual([{ label: "Changed", value: "STUDENT → ADMIN" }]);
+    expect(AUDIT_ACTIONS.accounts).toContain("account.change_role");
   });
 
   it("labels known actions and passes unknown ones through", () => {

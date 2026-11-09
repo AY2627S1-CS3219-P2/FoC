@@ -115,6 +115,21 @@ export interface UsersApi {
   suspendUser(uid: string): Promise<void>;
   /** ADMIN only. Sets the account ACTIVE again, so its password signs in. */
   reactivateUser(uid: string): Promise<void>;
+  // AI-generated (edited by Claude Code, 2026-11-09): promote and demote,
+  // user-service's PATCH /api/v1/users/{uid}/role with an UpdateRoleRequest
+  // (PR #104). Two named functions, as with suspend and reactivate.
+  /**
+   * ADMIN only. Makes an ACTIVE student an admin. user-service signs the
+   * target out of every session, so they sign in again as an admin. A 409
+   * means the account is not active. Resolves with nothing, because the 204
+   * has an empty body; fetch the profile again to see the new role.
+   */
+  promoteUser(uid: string): Promise<void>;
+  /**
+   * ADMIN only. Makes another admin a student, signing them out. A 409 means
+   * it is the last active admin; a 403, your own account.
+   */
+  demoteUser(uid: string): Promise<void>;
   /**
    * ADMIN only. Searches and lists accounts, 50 a page at most (D-104, D-121 to
    * D-123).
@@ -167,6 +182,15 @@ export function createUsersApi(authorizedSend: AuthorizedSend): UsersApi {
     });
   }
 
+  // AI-generated (edited by Claude Code, 2026-11-09): the body is
+  // UpdateRoleRequest, whose enum is STUDENT and ADMIN.
+  async function setRole(uid: string, role: "STUDENT" | "ADMIN"): Promise<void> {
+    await request(`${PREFIX}/${encodeURIComponent(uid)}/role`, {
+      method: "PATCH",
+      body: { role },
+    });
+  }
+
   function update(uid: string, body: Record<string, string>) {
     return call(uid, { method: "PUT", body });
   }
@@ -209,6 +233,14 @@ export function createUsersApi(authorizedSend: AuthorizedSend): UsersApi {
 
     reactivateUser(uid) {
       return setStatus(uid, "ACTIVE");
+    },
+
+    promoteUser(uid) {
+      return setRole(uid, "ADMIN");
+    },
+
+    demoteUser(uid) {
+      return setRole(uid, "STUDENT");
     },
 
     async listUsers(search = {}) {
