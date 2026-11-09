@@ -172,6 +172,17 @@ shapes are in `ai/decisions/admin-dashboard-design.md`. An account's review is
 composed here from four calls to two services (D-117). The "no endpoint to list
 or search users" note above is out of date.
 
+**Update (2026-11-09, D-154).** The shell and the list screens follow a workspace
+layout. The sidebar is an icon rail that expands (remembered in `localStorage`,
+`foc.rail`). `components/Workspace.tsx` shows a list and the open item's detail
+side by side from 1100px wide (`useMediaQuery`, `lib/useMediaQuery.ts`) and in a
+`Modal` below that; arrow keys, Home and End move between rows
+(`lib/listKeys.ts`) and Escape closes the pane. A detail that holds a dialog of
+its own (an account's) cannot sit inside one, so `Workspace` takes
+`narrow="list"` and the screen decides what a narrow window shows. Rules for
+new list screens: put the detail in `Workspace`, mark the open row `selected`,
+and show a `.skeleton` while loading, not "Loading…".
+
 ## Mock services — read before touching them
 
 Every screen backed by a service now calls the real one. Fixtures remain
