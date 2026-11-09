@@ -6,6 +6,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Pager } from "../../components/Pager";
+import type { ToastMessage } from "../../components/Toast";
+import { Workspace, WORKSPACE_WIDE } from "../../components/Workspace";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import type { CreditAdminApi } from "../credits/creditAdminApi";
 import {
   amountsText,
@@ -13,8 +16,10 @@ import {
   type FlaggedAccount,
   type ReverifyMessage,
 } from "../credits/creditAdminTypes";
+import type { OrdersApi } from "../errands/ordersApi";
 import { formatDateTime } from "../errands/time";
 import type { UsersApi } from "../profile/usersApi";
+import { AccountFocusView } from "./AccountFocusView";
 import { pageCount, shortId, type Page } from "./auditTypes";
 import { ReverifyButton } from "./ReverifyButton";
 
@@ -25,8 +30,13 @@ interface FlaggedWalletsViewProps {
   creditAdminApi: CreditAdminApi;
   /** Names the accounts; without it the rows show the account id. */
   usersApi: UsersApi | null;
-  /** Opens an account's review in the Accounts tab. */
-  onOpenAccount: (uid: string) => void;
+  // AI-generated (edited by Claude Code, 2026-11-09): "Review account" opens the account
+  // right here (D-154): in a pane beside the list on a wide window, as a page of its own
+  // with a way back on a narrow one. So the view needs what an account's page needs.
+  ordersApi: OrdersApi | null;
+  /** The signed-in admin, so no action is offered on their own account. */
+  currentUserId: string;
+  onNotify: (message: ToastMessage) => void;
 }
 
 /**
@@ -35,7 +45,9 @@ interface FlaggedWalletsViewProps {
  * discrepancy found on each (D-153). Re-verify re-runs the checks and clears the
  * flag only if they all pass; it never edits a balance (D-150).
  */
-export function FlaggedWalletsView({ creditAdminApi, usersApi, onOpenAccount }: FlaggedWalletsViewProps) {
+export function FlaggedWalletsView({ creditAdminApi, usersApi, ordersApi, currentUserId, onNotify }: FlaggedWalletsViewProps) {
+  const wide = useMediaQuery(WORKSPACE_WIDE);
+  const [selected, setSelected] = useState<{ uid: string; name?: string } | null>(null);
   const [page, setPage] = useState(1);
   const [loaded, setLoaded] = useState<Page<FlaggedAccount> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -86,18 +98,26 @@ export function FlaggedWalletsView({ creditAdminApi, usersApi, onOpenAccount }: 
 
   const pages = loaded ? pageCount(loaded.total, loaded.limit || PAGE_SIZE) : 1;
 
-  return (
-    <div>
-      <p className="page-sub">
-        Wallets frozen because their balance stopped matching the ledger. Re-verify checks again and unflags a wallet only if
-        every check passes. It never changes a balance.
-      </p>
+  const account =
+    selected && usersApi ? (
+      <AccountFocusView
+        usersApi={usersApi}
+        ordersApi={ordersApi}
+        creditAdminApi={creditAdminApi}
+        currentUserId={currentUserId}
+        uid={selected.uid}
+        name={selected.name}
+        backLabel={wide ? undefined : "Flagged wallets"}
+        onBack={wide ? undefined : () => setSelected(null)}
+        onNotify={onNotify}
+      />
+    ) : null;
 
-      {message && (
-        <p className={message.kind === "error" ? "status error" : "status"} role={message.kind === "error" ? "alert" : "status"}>
-          {message.text}
-        </p>
-      )}
+  // A narrow window shows the account as a page of its own; Back returns to the list.
+  if (!wide && account) return account;
+
+  const rows = (
+    <>
       {error && (
         <p className="status error" role="alert">
           {error}{" "}
@@ -107,9 +127,11 @@ export function FlaggedWalletsView({ creditAdminApi, usersApi, onOpenAccount }: 
         </p>
       )}
       {loading && !loaded && (
-        <p className="status" role="status">
-          Loading…
-        </p>
+        <div role="status" aria-label="Loading flagged wallets">
+          <span className="skeleton row" />
+          <span className="skeleton row" />
+          <span className="skeleton row" />
+        </div>
       )}
 
       {loaded && loaded.items.length === 0 && <p className="status">No wallets are flagged.</p>}
@@ -119,7 +141,7 @@ export function FlaggedWalletsView({ creditAdminApi, usersApi, onOpenAccount }: 
             const name = names[a.userId];
             const amounts = amountsText(a.expected, a.observed);
             return (
-              <li key={a.userId} className="audit-row">
+              <li key={a.userId} className={`audit-row ${selected?.uid === a.userId ? "selected" : ""}`}>
                 <div className="audit-head">
                   <strong>{name ?? `Account ${shortId(a.userId)}`}</strong>
                   <span className="badge badge-type">Flagged</span>
@@ -133,7 +155,12 @@ export function FlaggedWalletsView({ creditAdminApi, usersApi, onOpenAccount }: 
                 </p>
                 <div className="btn-row" style={{ justifyContent: "flex-start" }}>
                   <ReverifyButton creditAdminApi={creditAdminApi} userId={a.userId} name={name ?? "This"} onDone={done} />
-                  <button type="button" className="btn btn-secondary" onClick={() => onOpenAccount(a.userId)}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    data-ws-item
+                    onClick={() => setSelected({ uid: a.userId, name })}
+                  >
                     Review account
                   </button>
                 </div>
@@ -146,6 +173,29 @@ export function FlaggedWalletsView({ creditAdminApi, usersApi, onOpenAccount }: 
       {loaded && loaded.total > 0 && (
         <Pager page={page} pageCount={pages} total={loaded.total} busy={loading} onPage={setPage} />
       )}
+    </>
+  );
+
+  return (
+    <div>
+      <p className="page-sub">
+        Wallets frozen because their balance stopped matching the ledger. Re-verify checks again and unflags a wallet only if
+        every check passes. It never changes a balance.
+      </p>
+
+      {message && (
+        <p className={message.kind === "error" ? "status error" : "status"} role={message.kind === "error" ? "alert" : "status"}>
+          {message.text}
+        </p>
+      )}
+
+      <Workspace
+        narrow="list"
+        list={rows}
+        detail={wide ? account : null}
+        onCloseDetail={() => setSelected(null)}
+        emptyText="Pick a wallet to see its account here."
+      />
     </div>
   );
 }
