@@ -66,7 +66,10 @@ func TestPostgresRepositoryUpdateAccountStatusByID(t *testing.T) {
 		t.Fatalf("create account: %v", err)
 	}
 
-	suspendedAt := time.Date(2026, 9, 27, 10, 30, 0, 123456000, time.UTC)
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — the approved
+	// monotonic cutoff must advance from the seeded account, regardless of
+	// when this integration test runs. Author review: ZI YANG - reviewed and verified.
+	suspendedAt := account.TokensValidAfter.Add(time.Second + 123456*time.Microsecond)
 	if err := repository.UpdateAccountStatusByID(ctx, account.UID, user.AccountStatusSuspended, suspendedAt); err != nil {
 		t.Fatalf("suspend account: %v", err)
 	}

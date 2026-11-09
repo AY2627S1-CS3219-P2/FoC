@@ -118,3 +118,10 @@ func TestRedisBlocklistReaderFailsOnRedisAndMalformedReplies(t *testing.T) {
 		t.Fatal("wrong-length Redis reply was accepted")
 	}
 }
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — capture the atomic
+// script call using the existing writer fake. Author review: ZI YANG - reviewed and verified.
+func (f *fakeRedisSetter) Eval(_ context.Context, _ string, keys []string, args ...interface{}) *redis.Cmd {
+	f.key, f.value, f.ttl = keys[0], args[0], time.Duration(args[1].(int64))*time.Millisecond
+	return redis.NewCmdResult(int64(1), f.err)
+}

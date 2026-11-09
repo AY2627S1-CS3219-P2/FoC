@@ -45,20 +45,24 @@ const (
 	countActiveAdminsQuery = `
 		SELECT COUNT(*) FROM users
 		WHERE account_role = 'ADMIN' AND account_status = 'ACTIVE'`
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — preserve the
+	// latest credential cutoff across concurrent profile writes. Author review: ZI YANG - reviewed and verified.
 	updateUserQuery = `
 		UPDATE users
 		SET username = $1,
 			password = $2,
 			phone_num = $3,
-			tokens_valid_after = $4
+			tokens_valid_after = GREATEST(tokens_valid_after, $4)
 		WHERE uid = $5`
 	updateLastLoginQuery = `UPDATE users SET last_login_date = $1 WHERE uid = $2`
 	// AI-generated (edited by ZI YANG).
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — preserve the
+	// latest cutoff across suspension and role changes. Author review: ZI YANG - reviewed and verified.
 	updateAccountStatusQuery = `
 		UPDATE users
 		SET account_status = $1::account_status,
 			tokens_valid_after = CASE
-				WHEN $1::account_status = 'SUSPENDED' THEN $2
+				WHEN $1::account_status = 'SUSPENDED' THEN GREATEST(tokens_valid_after, $2)
 				ELSE tokens_valid_after
 			END
 		WHERE uid = $3`
