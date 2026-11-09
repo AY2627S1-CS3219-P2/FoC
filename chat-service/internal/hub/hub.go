@@ -15,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type SuspensionChecker func(ctx context.Context, userID uuid.UUID) (bool, error)
+type SuspensionChecker func(ctx context.Context, userID uuid.UUID, authenticatedAt time.Time) (bool, error)
 type TokenVerifier func(ctx context.Context, token string) (uuid.UUID, error)
 
 type RealtimeEnvelope struct {
