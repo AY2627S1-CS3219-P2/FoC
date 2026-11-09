@@ -209,14 +209,18 @@ func (r *PostgresRepository) UpdateLastLoginByID(ctx context.Context, uid uuid.U
 // matches the suspension key written to Redis. Reactivating a SUSPENDED
 // student also queues user.registered in the same transaction, unless the
 // student already has one.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func (r *PostgresRepository) UpdateAccountStatusByID(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time) error {
-	return r.updateAccountStatus(ctx, uid, status, tokensValidAfter, nil)
+	return r.updateAccountStatus(ctx, uid, status, tokensValidAfter, nil, nil)
 }
 
 // updateAccountStatus is UpdateAccountStatusByID; a non-nil e is the admin's
 // audit row, saved in the same transaction with the before and after status of
 // the row this transaction locked (D-108).
-func (r *PostgresRepository) updateAccountStatus(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time, e *user.AuditEntry) error {
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func (r *PostgresRepository) updateAccountStatus(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time, e *user.AuditEntry, invalidate func() error) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("begin account status transaction: %w", err)
@@ -229,6 +233,30 @@ func (r *PostgresRepository) updateAccountStatus(ctx context.Context, uid uuid.U
 			return user.ErrNotFound
 		}
 		return fmt.Errorf("lock account status: %w", mapDatabaseError(err))
+	}
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — recheck the
+	// approved suspension rule under the same lock as a concurrent promotion.
+	// Author review: ZI YANG - reviewed and verified.
+	if status == user.AccountStatusSuspended && role == user.AccountRoleAdmin {
+		if e != nil && e.ActorID == uid.String() {
+			return user.ErrCannotSuspendSelf
+		}
+		return user.ErrCannotSuspendAdmin
+	}
+	if e != nil && currentStatus == user.AccountStatusUnverified {
+		return user.ErrAccountUnverified
+	}
+	if invalidate != nil {
+		if err := invalidate(); err != nil {
+			return err
+		}
+	}
+	// Reuse this connection for audited revocation: another pool connection
+	// could wait indefinitely when concurrent suspensions exhaust the pool.
+	if e != nil && status == user.AccountStatusSuspended {
+		if _, err := tx.Exec(ctx, revokeAllUserSessionsQuery, tokensValidAfter, uid); err != nil {
+			return fmt.Errorf("revoke suspended sessions: %w", err)
+		}
 	}
 	if _, err := tx.Exec(ctx, updateAccountStatusQuery, status, tokensValidAfter, uid); err != nil {
 		return fmt.Errorf("update account status: %w", mapDatabaseError(err))

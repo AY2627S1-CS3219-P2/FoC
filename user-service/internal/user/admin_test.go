@@ -23,9 +23,16 @@ import (
 
 var testAdminCtx = AuditContext{ActorID: "11111111-1111-4111-8111-111111111111", ActorRole: "ADMIN", CorrelationID: "req-1"}
 
-func (f *fakeAccountRepository) UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status AccountStatus, tva time.Time, e *AuditEntry) error {
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func (f *fakeAccountRepository) UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status AccountStatus, tva time.Time, e *AuditEntry, invalidate func() error) error {
 	if f.auditedErr != nil {
 		return f.auditedErr
+	}
+	if invalidate != nil {
+		if err := invalidate(); err != nil {
+			return err
+		}
 	}
 	f.auditedStatus = e
 	return f.UpdateAccountStatusByID(ctx, uid, status, tva)
