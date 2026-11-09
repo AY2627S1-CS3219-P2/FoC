@@ -399,6 +399,24 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 		// Author review: ZI YANG - validated correctness
 		// AI-generated (edited by nigeltzy): whole seconds, see tokenCutoff.
 		account.TokensValidAfter = s.tokenCutoff()
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements
+		// user-service/AGENTS.md's password-change session invalidation using
+		// the existing Redis cutoff readers. Author review: ZI YANG - reviewed and verified.
+		// Publish the cutoff before persistence, as suspension does: readers
+		// cannot see the PostgreSQL boundary. Both self-service changes and
+		// admin resets must invalidate access and refresh tokens first.
+		if s.suspensionWriter == nil || s.sessions == nil {
+			return nil, errors.New("password-change invalidation dependencies are required")
+		}
+		if s.suspensionTTL <= 0 {
+			return nil, errors.New("password-change invalidation TTL must be positive")
+		}
+		if err := s.suspensionWriter.WriteSuspension(ctx, uid, account.TokensValidAfter, s.suspensionTTL); err != nil {
+			return nil, fmt.Errorf("write password-change invalidation: %w", err)
+		}
+		if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
+			return nil, fmt.Errorf("revoke password-changed account sessions: %w", err)
+		}
 	}
 	if ac == nil {
 		if err := s.repository.Update(ctx, account); err != nil {
@@ -406,14 +424,6 @@ func (s *AccountService) updateProfile(ctx context.Context, uid uuid.UUID, usern
 		}
 	} else if err := s.repository.UpdateAsAdminAudited(ctx, account, profileAuditEntries(*ac, uid, changed, passwordChanged)); err != nil {
 		return nil, fmt.Errorf("update account: %w", err)
-	}
-	if passwordChanged {
-		if s.sessions == nil {
-			return nil, errors.New("session repository is required")
-		}
-		if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
-			return nil, fmt.Errorf("revoke password-changed account sessions: %w", err)
-		}
 	}
 	return account, nil
 }

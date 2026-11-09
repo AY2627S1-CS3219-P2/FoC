@@ -1,4 +1,9 @@
 // AI Assistance Disclosure:
+// Tool: Codex (model: GPT-6), date: 2026-11-08
+// Scope: Replaced Mailgun delivery configuration and selection with SendGrid.
+// Author review: ZI YANG — reviewed and verified
+
+// AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added focused tests for environment configuration loading.
 // Author review: COMPLETED BY ZI YANG
@@ -17,9 +22,8 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 	t.Setenv("INITIAL_ADMIN_EMAIL", "admin@u.nus.edu")
 	t.Setenv("INITIAL_ADMIN_USERNAME", "initial-admin")
 	t.Setenv("INITIAL_ADMIN_PASSWORD", "StrongAdminPassword1")
-	t.Setenv("MAILGUN_API_KEY", "mailgun-key")
-	t.Setenv("MAILGUN_DOMAIN", "mg.example.test")
-	t.Setenv("MAILGUN_SENDER_EMAIL", "verify@example.test")
+	t.Setenv("SENDGRID_API_KEY", "sendgrid-key")
+	t.Setenv("SENDGRID_SENDER_EMAIL", "verify@example.test")
 	t.Setenv("OTP_DELIVERY", "log") // AI-generated (edited by James Teo).
 	// AI-generated (edited by James Teo).
 	t.Setenv("RABBITMQ_URL", "amqp://foc:secret@rabbitmq:5672/foc")
@@ -36,9 +40,8 @@ func TestLoadReadsServiceEnvironment(t *testing.T) {
 		InitialAdminEmail:    "admin@u.nus.edu",
 		InitialAdminUsername: "initial-admin",
 		InitialAdminPassword: "StrongAdminPassword1",
-		MailgunAPIKey:        "mailgun-key",
-		MailgunDomain:        "mg.example.test",
-		MailgunSenderEmail:   "verify@example.test",
+		SendGridAPIKey:       "sendgrid-key",
+		SendGridSenderEmail:  "verify@example.test",
 		OTPDelivery:          "log", // AI-generated (edited by James Teo).
 		// AI-generated (edited by James Teo).
 		RabbitMQURL: "amqp://foc:secret@rabbitmq:5672/foc",
@@ -59,9 +62,8 @@ func TestLoadUsesEmptyValuesWhenEnvironmentIsUnset(t *testing.T) {
 		"INITIAL_ADMIN_EMAIL",
 		"INITIAL_ADMIN_USERNAME",
 		"INITIAL_ADMIN_PASSWORD",
-		"MAILGUN_API_KEY",
-		"MAILGUN_DOMAIN",
-		"MAILGUN_SENDER_EMAIL",
+		"SENDGRID_API_KEY",
+		"SENDGRID_SENDER_EMAIL",
 		"OTP_DELIVERY", // AI-generated (edited by James Teo).
 		// AI-generated (edited by James Teo).
 		"RABBITMQ_URL",
