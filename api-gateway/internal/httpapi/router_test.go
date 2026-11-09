@@ -438,6 +438,7 @@ func TestServiceRoutesKeepTheBearerToken(t *testing.T) {
 		{"/api/suppliers/42", "supplier-service", func(h *harness) *recorder { return h.suppRec }},
 		{"/api/orders/open", "order-service", func(h *harness) *recorder { return h.orderRec }},
 		{"/api/credits/accounts/me", "credit-service", func(h *harness) *recorder { return h.creditRec }},
+		{"/api/credits/admin/flagged-accounts", "credit-service", func(h *harness) *recorder { return h.creditRec }},
 	}
 	for _, tc := range cases {
 		t.Run(tc.path, func(t *testing.T) {
@@ -476,6 +477,71 @@ func TestCreditAccountRouteReachesCreditServicePrefix(t *testing.T) {
 	}
 	if want := "/api/v1/credits/accounts/me/transactions"; h.creditRec.path != want {
 		t.Errorf("credit-service saw path %q, want %q", h.creditRec.path, want)
+	}
+}
+
+// AI-generated (edited by Claude Code, 2026-11-09).
+// /api/credits/admin/* is rewritten onto credit-service's admin prefix (D-151),
+// whatever the method and however deep the path.
+func TestCreditAdminRoutesReachCreditServicePrefix(t *testing.T) {
+	cases := []struct{ method, path, want string }{
+		{http.MethodGet, "/api/credits/admin/flagged-accounts?limit=10", "/api/v1/credits/admin/flagged-accounts"},
+		{http.MethodGet, "/api/credits/admin/users/0b6f3c1e-5f0a-4c8e-9a51-6d2f4a8b7c10/account", "/api/v1/credits/admin/users/0b6f3c1e-5f0a-4c8e-9a51-6d2f4a8b7c10/account"},
+		{http.MethodPost, "/api/credits/admin/users/0b6f3c1e-5f0a-4c8e-9a51-6d2f4a8b7c10/reconcile", "/api/v1/credits/admin/users/0b6f3c1e-5f0a-4c8e-9a51-6d2f4a8b7c10/reconcile"},
+		{http.MethodGet, "/api/credits/admin/audit-log", "/api/v1/credits/admin/audit-log"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+" "+tc.want, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "ADMIN"})
+			req := httptest.NewRequest(tc.method, tc.path, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			if got := h.do(req); got.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200 (body %s)", got.Code, got.Body.String())
+			}
+			if h.creditRec.path != tc.want {
+				t.Errorf("credit-service saw path %q, want %q", h.creditRec.path, tc.want)
+			}
+			if authz := h.creditRec.header.Get("Authorization"); authz != "Bearer "+token {
+				t.Errorf("credit-service received Authorization = %q, want the caller's bearer token", authz)
+			}
+		})
+	}
+}
+
+// AI-generated (edited by Claude Code, 2026-11-09).
+// The admin prefix does not open the rest of credit-service: dot segments that
+// would climb out of it onto the reservation routes are refused, and a request
+// with no token never reaches it.
+func TestCreditAdminRouteDoesNotOpenTheReservationRoutes(t *testing.T) {
+	for _, path := range []string{
+		"/api/credits/admin/../reservations",
+		"/api/credits/admin/%2e%2e/reservations",
+		"/api/credits/admin/..%2freservations",
+	} {
+		t.Run(path, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "uid-123", role: "ADMIN"})
+			req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"newReward":1}`))
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			if got := h.do(req); got.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404 (body %s)", got.Code, got.Body.String())
+			}
+			if calls := h.downstreamCalls(); len(calls) != 0 {
+				t.Errorf("the request reached %v; nothing should leave the gateway", calls)
+			}
+		})
+	}
+
+	h := newHarness(t)
+	got := h.do(httptest.NewRequest(http.MethodGet, "/api/credits/admin/flagged-accounts", nil))
+	if got.Code != http.StatusUnauthorized {
+		t.Fatalf("no token: status = %d, want 401", got.Code)
+	}
+	if calls := h.downstreamCalls(); len(calls) != 0 {
+		t.Errorf("an unauthenticated request reached %v", calls)
 	}
 }
 
