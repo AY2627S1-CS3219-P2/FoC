@@ -1,4 +1,9 @@
 # AI Assistance Disclosure:
+# Tool: Codex (model: GPT-6), date: 2026-11-08
+# Scope: Updated SendGrid OTP environment settings and Compose forwarding; local log delivery retained.
+# Author review: PENDING — reviewer to complete
+
+# AI Assistance Disclosure:
 # Tool: Codex (GPT-5), date: 2026-09-18
 # Scope: Added local PostgreSQL 16 and user-service API containers.
 # Author review: COMPLETED BY ZI YANG
@@ -79,11 +84,10 @@ services:
       INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?INITIAL_ADMIN_USERNAME must be set}
       INITIAL_ADMIN_PASSWORD: ${INITIAL_ADMIN_PASSWORD:?INITIAL_ADMIN_PASSWORD must be set}
       # Verification codes go to `docker compose logs user-service` unless .env
-      # sets OTP_DELIVERY=mailgun and the three MAILGUN_* values.
+      # sets OTP_DELIVERY=sendgrid and the two SENDGRID_* values.
       OTP_DELIVERY: ${OTP_DELIVERY:-log}
-      MAILGUN_API_KEY: ${MAILGUN_API_KEY:-}
-      MAILGUN_DOMAIN: ${MAILGUN_DOMAIN:-}
-      MAILGUN_SENDER_EMAIL: ${MAILGUN_SENDER_EMAIL:-}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY:-}
+      SENDGRID_SENDER_EMAIL: ${SENDGRID_SENDER_EMAIL:-}
       # Must match the foc user in rabbitmq/definitions.json.
       RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
     depends_on:
