@@ -142,6 +142,8 @@ development only: anyone who can read the log can verify any account.
 
 All paths below are relative to `http://localhost:8081`. You may refer to the [openapi.yaml](./api/openapi.yaml) for more information.
 
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved role-change endpoint. Author review: reviewed and verified. -->
+
 | Method | Path | Auth | Remarks |
 |---|---|---|---|
 | `GET` | `/api/v1/health` | None | Returns `200 {"status":"ok"}` only when PostgreSQL and Redis are healthy; otherwise `503 {"status":"unhealthy"}`. |
@@ -153,6 +155,7 @@ All paths below are relative to `http://localhost:8081`. You may refer to the [o
 | `POST` | `/api/v1/users/logout` | Bearer access token | JSON body: `refreshToken`. Invalidates the access token and refresh session; success returns `204`; errors include `400`, `401`, `413`, and `500`. |
 | `GET` | `/api/v1/users/{uid}` | Bearer access token | Returns a full profile to administrators and a restricted profile to other callers. Unknown or malformed user IDs return `404`. |
 | `PUT` | `/api/v1/users/{uid}` | Bearer access token | JSON body may contain `username`, `phone_num` (at most 20 characters), `currentPassword`, and `newPassword`. The caller may update their own profile, or an admin may update any profile. Returns the updated profile. |
+| `PATCH` | `/api/v1/users/{uid}/role` | Bearer access token, ACTIVE `ADMIN` | JSON `{"role":"ADMIN"}` or `{"role":"STUDENT"}`. Returns empty `204`, including an unchanged role. Suspended or unverified students cannot be promoted (`409`). Self-demotion is forbidden (`403`); the final active admin is protected (`409`). A changed role invalidates the target's access and refresh tokens; sign in again. Concurrent changes are serialized and audited. Other errors: `400`, `401`, `404`, `413`, `500`. |
 | `PATCH` | `/api/v1/users/{uid}/status` | Bearer access token, `ADMIN` role | JSON body: `{"status":"ACTIVE"}` or `{"status":"SUSPENDED"}`. Returns `200` when the status is updated. **`403`** also means the target is an admin account or the caller's own account: no admin account is suspended through the API (D-118, D-119); the refusal is logged. `409` means either the last active admin would be suspended or the account has not verified its email; other errors include `400`, `401`, `404`, `413`, and `500`. Each change is recorded in the audit log in the same transaction. |
 | `GET` | `/api/v1/users` | Bearer access token, `ADMIN` role | The admin's account search and list (D-121 to D-123): `q` matches anywhere in the username or email, ignoring case and treating `%` and `_` literally; `status` is `ACTIVE`, `SUSPENDED` or `UNVERIFIED`; `limit` (at most 50, the default) and `offset`. Sorted by username. Returns `{items, total, limit, offset}`; each item has `uid`, `username`, `email`, `phone_num`, `account_role`, `account_status`, `date_created` and `last_login_date`. Bad query `400`, student `403`. |
 | `GET` | `/api/v1/users/audit-log` | Bearer access token, `ADMIN` role | The admin audit log, newest first (D-110): `action`, `outcome`, `actor_id`, `target_id`, `from`, `to` (RFC 3339 or `YYYY-MM-DD`, `to` exclusive), `limit` and `offset`. Returns `{items, total, limit, offset}`; any admin reads all of it. See *Admin audit log* below. |
@@ -179,8 +182,11 @@ Authorization: Bearer <access-token>
 Every admin action on an account is recorded in `admin_audit` (D-106 to D-115;
 the shapes are in `ai/decisions/admin-dashboard-design.md`):
 
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — disclose the role audit action. Author review: ZI YANG - reviewed and verified. -->
+
 | Action | When |
 |---|---|
+| `account.change_role` | `PATCH /users/{uid}/role`; the row holds the role before and after |
 | `account.suspend`, `account.reactivate` | `PATCH /users/{uid}/status`; the row holds the status before and after |
 | `account.password_reset` | an admin changes another account's password; the row holds no value (D-111) |
 | `account.update` | an admin changes another account's username or phone; the row holds the names of the fields changed, not their values (D-127) |
