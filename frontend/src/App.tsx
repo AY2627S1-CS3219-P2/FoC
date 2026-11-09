@@ -55,13 +55,12 @@ import { balanceFigures, CreditsView, type Balance } from "./features/credits/Cr
 import { FindErrandsView } from "./features/errands/FindErrandsView";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
-import { HomeView } from "./features/home/HomeView";
 import { ProfileView } from "./features/profile/ProfileView";
 import { createUsersApi, type UserProfile } from "./features/profile/usersApi";
 import { DashboardView } from "./features/admin/DashboardView";
 import { SuppliersView } from "./features/suppliers/SuppliersView";
 // AI-generated (edited by James Teo): one availability rule for nav and guard.
-import { isViewAvailable, type ViewName } from "./views";
+import { defaultView, isViewAvailable, type ViewName } from "./views";
 
 /**
  * True unless the build sets VITE_USE_FIXTURES=true, in which case the auth
@@ -154,7 +153,7 @@ export function App({ tokens }: AppProps) {
         // signed out, unless the session had already ended another way.
         if (signedIn.current) setSessionEnded(true);
         setSession(null);
-        setView("home");
+        setView("my-errands");
       },
     });
     return {
@@ -170,9 +169,10 @@ export function App({ tokens }: AppProps) {
   }, [tokens]);
 
   // Restored from sessionStorage so a reload lands where the tab was, not on
-  // Home. Read once, at initial state: doing it in an effect would render Home
-  // first and then jump.
-  const [view, setView] = useState<ViewName>(() => readLastView() ?? "home");
+  // the default view. Read once, at initial state: doing it in an effect would
+  // render the default first and then jump. An admin's session falls back to
+  // the Dashboard below, whatever this holds.
+  const [view, setView] = useState<ViewName>(() => readLastView() ?? "my-errands");
   // AI-generated (edited by James Teo): the acting mode is restored the same
   // way, so a reload on a courier screen stays in Delivering mode.
   const [mode, setMode] = useState<ActingMode>(() => readLastMode() ?? "requesting");
@@ -297,7 +297,7 @@ export function App({ tokens }: AppProps) {
     setBalance({ status: "loading" });
     setSessionEnded(false);
     setSession(null);
-    setView("home");
+    setView("my-errands");
   }, [tokens]);
 
   // AI-generated (edited by nigeltzy).
@@ -334,7 +334,7 @@ export function App({ tokens }: AppProps) {
     setBalance({ status: "loading" });
     setSessionEnded(false);
     setSession(null);
-    setView("home");
+    setView("my-errands");
     setToast({ text: "Password changed. Log in with your new password.", kind: "success" });
   }, [tokens]);
 
@@ -365,11 +365,11 @@ export function App({ tokens }: AppProps) {
 
   // AI-generated (edited by nigeltzy).
   // A remembered "admin" view can outlive the account's ADMIN role, so a
-  // non-admin session falls back to Home rather than rendering it.
+  // non-admin session falls back to its default view rather than rendering it.
   // AI-generated (edited by James Teo): widened to every view the session's
   // role and mode do not offer, by the rule the nav uses.
   const role = session.role;
-  const shownView: ViewName = isViewAvailable(view, role, mode) ? view : "home";
+  const shownView: ViewName = isViewAvailable(view, role, mode) ? view : defaultView(role);
   const { available, held } = balanceFigures(balance);
 
   /** A nav or in-page link. */
@@ -377,10 +377,10 @@ export function App({ tokens }: AppProps) {
     setView(next);
   };
 
-  /** Switching to a mode that does not offer the current view lands on Home. */
+  /** Switching to a mode that does not offer the current view lands on My errands. */
   const changeMode = (next: ActingMode) => {
     setMode(next);
-    if (!isViewAvailable(view, role, next)) setView("home");
+    if (!isViewAvailable(view, role, next)) setView("my-errands");
   };
 
   /** After a post: the held credits show at once, then the new errand. */
@@ -400,19 +400,6 @@ export function App({ tokens }: AppProps) {
         held={held}
         onLogOut={handleLogOut}
       >
-        {/* AI-generated (edited by James Teo): Home's shortcuts follow the role. */}
-        {shownView === "home" && (
-          <HomeView
-            mode={mode}
-            role={role}
-            onNavigate={navigate}
-            ordersApi={orders}
-            userId={session.userId}
-            available={available}
-            held={held}
-          />
-        )}
-
         {/* AI-generated (edited by James Teo): the errand and credit screens
             get their clients, or NeedsService when the build has none. My
             errands remounts on a mode switch, so it starts on Active with

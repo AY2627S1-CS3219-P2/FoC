@@ -79,7 +79,6 @@ src/
 ├── features/
 │   ├── auth/          LoginPage, authApi (fixture + gateway clients),
 │   │                  session.ts (AT attach + refresh retry)
-│   ├── home/          landing view
 │   ├── suppliers/     view + components + suppliersApi.ts + types.ts,
 │   │                  suppliersFixture.ts (fixture builds only)
 │   ├── errands/       NewErrandView, MyErrandsView, FindErrandsView,

@@ -35,13 +35,6 @@ function Svg({ size = 17, children }: IconProps & { children: React.ReactNode })
   );
 }
 
-export const HomeIcon = (p: IconProps) => (
-  <Svg {...p}>
-    <path d="M21 8 12 3 3 8v11a1 1 0 0 0 1 1h16a1 1 0 0 0 1-1z" />
-    <path d="M3 8l9 5 9-5" />
-  </Svg>
-);
-
 export const PlusIcon = (p: IconProps) => (
   <Svg {...p}>
     <path d="M12 5v14M5 12h14" />

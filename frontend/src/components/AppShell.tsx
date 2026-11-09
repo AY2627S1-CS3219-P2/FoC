@@ -20,10 +20,9 @@ import { useState, type ReactNode } from "react";
 import type { ActingMode, Session } from "../features/auth/types";
 import { useChatSocket } from "../features/chat/ChatSocketContext";
 import { UnreadBadge } from "../features/chat/UnreadBadge";
-import { isViewAvailable, NAV_ITEMS, type ViewName } from "../views";
+import { defaultView, isViewAvailable, NAV_ITEMS, type ViewName } from "../views";
 import {
   BellIcon,
-  HomeIcon,
   ListIcon,
   LogoutIcon,
   MenuIcon,
@@ -38,7 +37,6 @@ import {
 // AI-generated (edited by James Teo): Find errands and All errands reuse the
 // search and list icons.
 const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
-  home: HomeIcon,
   "new-errand": PlusIcon,
   "find-errands": SearchIcon,
   "my-errands": ListIcon,
@@ -125,7 +123,7 @@ export function AppShell({
       )}
 
       <aside className={`sidebar ${mobileNavOpen ? "open" : ""}`}>
-        <button className="sidebar-brand" onClick={() => navigateAndClose("home")}>
+        <button className="sidebar-brand" onClick={() => navigateAndClose(defaultView(session.role))}>
           <span className="brand-mark">FoC</span>
           <span>Friend on Campus</span>
         </button>

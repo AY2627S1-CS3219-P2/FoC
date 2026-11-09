@@ -5,7 +5,7 @@
 //   keys move between the list's rows.
 // Author review: PENDING — <reviewer to complete>
 
-import { useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import { useLayoutEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from "react";
 import { nextListIndex } from "../lib/listKeys";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { Modal } from "./Modal";
@@ -44,6 +44,32 @@ interface WorkspaceProps {
 export function Workspace({ list, detail, onCloseDetail, emptyText, detailTitleId, fallbackFocus, narrow = "dialog" }: WorkspaceProps) {
   const wide = useMediaQuery(WORKSPACE_WIDE);
   const listRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<HTMLDivElement>(null);
+  const [height, setHeight] = useState<number | undefined>(undefined);
+
+  /**
+   * Fills the rest of the window below whatever sits above it (the heading and
+   * filters), so the list and the detail scroll inside their own panes and the
+   * page itself stays put. Measured, not a constant, because the filters wrap.
+   */
+  useLayoutEffect(() => {
+    const el = wsRef.current;
+    if (!wide || !el) return;
+    const fit = () => {
+      const top = el.getBoundingClientRect().top + window.scrollY;
+      // Stop short of the page's own bottom padding so the page does not scroll for it.
+      const below = parseFloat(getComputedStyle(el.closest(".content") ?? el).paddingBottom) || 16;
+      setHeight(Math.max(320, Math.floor(window.innerHeight - top - below)));
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    const watch = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(fit);
+    watch?.observe(el.closest(".content") ?? el);
+    return () => {
+      window.removeEventListener("resize", fit);
+      watch?.disconnect();
+    };
+  }, [wide]);
 
   /** Escape closes the open detail, as it closes the dialog on a narrow window. */
   function onEscape(e: KeyboardEvent) {
@@ -74,7 +100,7 @@ export function Workspace({ list, detail, onCloseDetail, emptyText, detailTitleI
   }
 
   return (
-    <div className="ws" onKeyDown={onEscape}>
+    <div className="ws" ref={wsRef} style={height ? { height } : undefined} onKeyDown={onEscape}>
       <div className="ws-list" ref={listRef} onKeyDown={onKeyDown}>
         {list}
       </div>
