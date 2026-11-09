@@ -47,6 +47,7 @@ import { createSuppliersFixture } from "./features/suppliers/suppliersFixture";
 // a fixture build.
 import { NeedsService } from "./components/NeedsService";
 import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
+import { createCreditAdminApi } from "./features/credits/creditAdminApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
 import { createChatApi } from "./features/chat/chatApi";
 import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
@@ -120,7 +121,7 @@ export function App({ tokens }: AppProps) {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi, orders, creditAccounts, chatApi } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts, creditAdmin, chatApi } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
@@ -134,6 +135,7 @@ export function App({ tokens }: AppProps) {
         usersApi: null,
         orders: null,
         creditAccounts: null,
+        creditAdmin: null,
         chatApi: null,
       };
     }
@@ -161,6 +163,8 @@ export function App({ tokens }: AppProps) {
       // AI-generated (edited by James Teo).
       orders: createOrdersApi(authorizedSend),
       creditAccounts: createCreditAccountsApi(authorizedSend),
+      // AI-generated (edited by Claude Code, 2026-11-09): credit-service's admin routes (D-150, D-151).
+      creditAdmin: createCreditAdminApi(authorizedSend),
       chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
     };
   }, [tokens]);
@@ -492,6 +496,7 @@ export function App({ tokens }: AppProps) {
             usersApi={usersApi}
             ordersApi={orders}
             suppliersApi={suppliers}
+            creditAdminApi={creditAdmin}
             userId={session.userId}
             onNotify={setToast}
             initialAccountId={null}
