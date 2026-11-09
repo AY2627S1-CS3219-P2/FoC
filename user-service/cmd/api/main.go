@@ -108,8 +108,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
-	// AI-generated (edited by James Teo): OTP_DELIVERY picks Mailgun or, for
-	// local runs, the service log.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — SendGrid delivery wiring; Author review: ZI YANG - reviewed and verified correctness.
+	// OTP_DELIVERY picks SendGrid or, for local runs, the service log.
 	otpDeliverer, err := newOTPDeliverer(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("configure OTP delivery: %w", err)
@@ -117,6 +117,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — wires the
 	// owner-recorded OTP Redis and Mailgun boundaries into registration.
 	// Author review: ZI YANG - validated correctness.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — email adapter now uses SendGrid; Author review: ZI YANG - reviewed and validated.
 	accountService := user.NewAccountServiceWithOTPAndDelivery(
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),
