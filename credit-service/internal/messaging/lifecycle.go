@@ -174,7 +174,11 @@ func (h *LifecycleHandler) HandleDelivery(ctx context.Context, d amqp.Delivery) 
 		return
 	}
 
-	if errors.Is(err, ErrMalformedEvent) || errors.Is(err, credit.ErrLifecycleViolation) || errors.Is(err, credit.ErrSelfPayoutNotAllowed) || errors.Is(err, credit.ErrRequesterMismatch) {
+	if errors.Is(err, ErrMalformedEvent) ||
+		errors.Is(err, credit.ErrLifecycleViolation) ||
+		errors.Is(err, credit.ErrSelfPayoutNotAllowed) ||
+		errors.Is(err, credit.ErrRequesterMismatch) ||
+		errors.Is(err, credit.ErrAccountIntegrityFlagged) {
 		log.Warn("rejecting contract or lifecycle violation to DLQ", "error", observability.Sanitize(err.Error()))
 		_ = d.Nack(false, false)
 		return
