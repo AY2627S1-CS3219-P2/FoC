@@ -113,10 +113,16 @@ type fakeTokenIssuer struct {
 	pair      TokenPair
 	err       error
 	issuedFor uuid.UUID
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — observe the
+	// locked role used for credential issuance. Author review: ZI YANG - reviewed and verified.
+	issuedRole AccountRole
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func (f *fakeTokenIssuer) Issue(_ context.Context, account *User) (TokenPair, error) {
 	f.issuedFor = account.UID
+	f.issuedRole = account.AccountRole
 	return f.pair, f.err
 }
 

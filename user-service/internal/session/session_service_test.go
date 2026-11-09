@@ -20,7 +20,14 @@ import (
 	"github.com/google/uuid"
 )
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 type fakeSessionRepository struct {
+	account             *User
+	credentialErr       error
+	beforeCredentials   func()
+	credentialCommitErr error
+
 	sessions       map[string]*Session
 	created        *Session
 	rotatedOldHash string
@@ -97,6 +104,8 @@ func (f *fakeRefreshVerifier) VerifyRefresh(context.Context, string) (RefreshCla
 	return f.claims, f.err
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func newSessionServiceFixtures(t *testing.T) (*User, *fakeAuthRepository, *fakeSessionRepository, *fakeTokenIssuer, time.Time) {
 	t.Helper()
 	passwordHash, err := hash.HashPassword("ValidPass1")
@@ -112,7 +121,7 @@ func newSessionServiceFixtures(t *testing.T) (*User, *fakeAuthRepository, *fakeS
 		TokensValidAfter: now.Add(-time.Hour),
 	}
 	repo := &fakeAuthRepository{user: account}
-	sessions := &fakeSessionRepository{sessions: make(map[string]*Session)}
+	sessions := &fakeSessionRepository{account: account, sessions: make(map[string]*Session)}
 	issuer := &fakeTokenIssuer{pair: TokenPair{
 		AccessToken:      "access",
 		RefreshToken:     "refresh",
@@ -350,4 +359,19 @@ func TestRefreshServiceFailsClosedWhenRefreshLockIsUnavailable(t *testing.T) {
 	if sessions.getCalls != 0 {
 		t.Fatalf("GetSessionByHash calls = %d, want 0", sessions.getCalls)
 	}
+}
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — fake the new
+// credential transaction boundary for domain tests. Author review: ZI YANG - reviewed and verified.
+func (f *fakeSessionRepository) WithAccountCredentials(ctx context.Context, uid uuid.UUID, issue func(*User, SessionRepository) error) error {
+	if f.credentialErr != nil {
+		return f.credentialErr
+	}
+	if f.beforeCredentials != nil {
+		f.beforeCredentials()
+	}
+	if err := issue(f.account, f); err != nil {
+		return err
+	}
+	return f.credentialCommitErr
 }
