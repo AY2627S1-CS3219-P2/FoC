@@ -401,7 +401,17 @@ export function App({ tokens }: AppProps) {
         onLogOut={handleLogOut}
       >
         {/* AI-generated (edited by James Teo): Home's shortcuts follow the role. */}
-        {shownView === "home" && <HomeView mode={mode} role={role} onNavigate={navigate} />}
+        {shownView === "home" && (
+          <HomeView
+            mode={mode}
+            role={role}
+            onNavigate={navigate}
+            ordersApi={orders}
+            userId={session.userId}
+            available={available}
+            held={held}
+          />
+        )}
 
         {/* AI-generated (edited by James Teo): the errand and credit screens
             get their clients, or NeedsService when the build has none. My
