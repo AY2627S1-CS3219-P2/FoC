@@ -38,6 +38,8 @@ interface ErrandCardProps {
    * lists only OPEN ones), so the badge would say nothing.
    */
   showState?: boolean;
+  // AI-generated (edited by Claude Code, 2026-11-09): the row whose detail is open beside the list (D-154).
+  selected?: boolean;
   onOpen: () => void;
   /** Buttons beside the card, such as Accept on Find errands. */
   children?: ReactNode;
@@ -55,6 +57,7 @@ export function ErrandCard({
   line,
   needsYou = false,
   showState = true,
+  selected = false,
   onOpen,
   children,
   note,
@@ -63,7 +66,7 @@ export function ErrandCard({
   const hasUnread = unreadErrandIds.has(errand.id);
 
   return (
-    <article className={`errand-card has-open ${needsYou ? "needs-you" : ""}`}>
+    <article className={`errand-card has-open ${needsYou ? "needs-you" : ""} ${selected ? "selected" : ""}`}>
       <button type="button" className="errand-card-open" onClick={onOpen}>
         <span className="errand-card-body">
           <span className="errand-title">

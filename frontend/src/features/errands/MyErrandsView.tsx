@@ -7,7 +7,6 @@
 // the requester's or the courier's lists, each with Active (polled) and
 // History, and an errand opens its detail in a modal.
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../components/Modal";
 import type { ToastMessage } from "../../components/Toast";
 import { usePolling } from "../../lib/polling";
 import type { ActingMode } from "../auth/types";
@@ -18,6 +17,7 @@ import { useChatSocket } from "../chat/ChatSocketContext";
 import { UnreadBadge } from "../chat/UnreadBadge";
 import { ErrandCard, RewardText } from "./ErrandCard";
 import { ERRAND_DETAIL_TITLE_ID, ErrandDetail, type ErrandSnapshot } from "./ErrandDetail";
+import { Workspace } from "../../components/Workspace";
 import {
   canOpenAssignment,
   confirmByText,
@@ -210,130 +210,141 @@ export function MyErrandsView({
         </p>
       </div>
 
+      {/* AI-generated (edited by Claude Code, 2026-11-09): the list and the errand's
+          detail side by side on a wide window, the detail in a dialog on a narrow
+          one (D-154). */}
+      <Workspace
+        list={
+          <>
       {/* AI-generated (edited by James Teo): the Active / History toggle, then
-          the loading, failed, empty and loaded states of the list shown. */}
-      <div className="mode-toggle list-scope" role="group" aria-label="Which errands to show">
-        <button
-          type="button"
-          className={scope === "active" ? "active" : ""}
-          aria-pressed={scope === "active"}
-          onClick={() => showScope("active")}
-        >
-          <span>Active</span>
-          {activeHasUnread && <UnreadBadge />}
-        </button>
-        <button
-          type="button"
-          className={scope === "history" ? "active" : ""}
-          aria-pressed={scope === "history"}
-          onClick={() => showScope("history")}
-        >
-          <span>History</span>
-          {historyHasUnread && <UnreadBadge />}
-        </button>
-      </div>
-
-      {error && (
-        <p className="status error" role="alert">
-          {shown ? "Couldn't refresh this list. " : "Couldn't load your errands. "}
-          {error}{" "}
-          <button type="button" className="link-btn" onClick={retry}>
-            Retry
+            the loading, failed, empty and loaded states of the list shown. */}
+        <div className="mode-toggle list-scope" role="group" aria-label="Which errands to show">
+          <button
+            type="button"
+            className={scope === "active" ? "active" : ""}
+            aria-pressed={scope === "active"}
+            onClick={() => showScope("active")}
+          >
+            <span>Active</span>
+            {activeHasUnread && <UnreadBadge />}
           </button>
-        </p>
-      )}
-
-      {!shown && !error && (
-        <p className="status" role="status">
-          Loading errands…
-        </p>
-      )}
-
-      {empty && (
-        <div className="status empty-state" role="status">
-          {scope === "history" ? (
-            <p>{requesting ? "No finished errands yet." : "No finished deliveries yet."}</p>
-          ) : requesting ? (
-            <>
-              <p>Nothing in progress.</p>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => onNavigate("new-errand")}
-              >
-                Post an errand
-              </button>
-            </>
-          ) : (
-            <>
-              <p>You&rsquo;re not carrying anything.</p>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => onNavigate("find-errands")}
-              >
-                Find errands
-              </button>
-            </>
-          )}
+          <button
+            type="button"
+            className={scope === "history" ? "active" : ""}
+            aria-pressed={scope === "history"}
+            onClick={() => showScope("history")}
+          >
+            <span>History</span>
+            {historyHasUnread && <UnreadBadge />}
+          </button>
         </div>
-      )}
-
-      {/* AI-generated (edited by James Teo): cards read order-service's fields
-          and open the errand's detail. A delivery waiting on the requester's
-          confirmation says so on its card. */}
-      {shown?.kind === "errands" &&
-        shown.items.map((errand) => {
-          const at = serverNow(shown.offset, now);
-          const toConfirm = errand.actions.includes("confirm");
-          return (
-            <ErrandCard
-              key={errand.id}
-              errand={errand}
-              line={(toConfirm ? confirmByText(errand, at) : null) ?? progressText(errand, at)}
-              needsYou={toConfirm}
-              onOpen={() => openErrand(errand, shown.offset)}
+  
+        {error && (
+          <p className="status error" role="alert">
+            {shown ? "Couldn't refresh this list. " : "Couldn't load your errands. "}
+            {error}{" "}
+            <button type="button" className="link-btn" onClick={retry}>
+              Retry
+            </button>
+          </p>
+        )}
+  
+        {!shown && !error && (
+          <div role="status" aria-label="Loading errands">
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+          </div>
+        )}
+  
+        {empty && (
+          <div className="status empty-state" role="status">
+            {scope === "history" ? (
+              <p>{requesting ? "No finished errands yet." : "No finished deliveries yet."}</p>
+            ) : requesting ? (
+              <>
+                <p>Nothing in progress.</p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => onNavigate("new-errand")}
+                >
+                  Post an errand
+                </button>
+              </>
+            ) : (
+              <>
+                <p>You&rsquo;re not carrying anything.</p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => onNavigate("find-errands")}
+                >
+                  Find errands
+                </button>
+              </>
+            )}
+          </div>
+        )}
+  
+        {/* AI-generated (edited by James Teo): cards read order-service's fields
+            and open the errand's detail. A delivery waiting on the requester's
+            confirmation says so on its card. */}
+        {shown?.kind === "errands" &&
+          shown.items.map((errand) => {
+            const at = serverNow(shown.offset, now);
+            const toConfirm = errand.actions.includes("confirm");
+            return (
+              <ErrandCard
+                key={errand.id}
+                errand={errand}
+                line={(toConfirm ? confirmByText(errand, at) : null) ?? progressText(errand, at)}
+                needsYou={toConfirm}
+                selected={open?.id === errand.id}
+                onOpen={() => openErrand(errand, shown.offset)}
+              />
+            );
+          })}
+  
+        {shown?.kind === "assignments" &&
+          shown.records.map((record) => (
+            <AssignmentRow
+              key={`${record.errandId}-${record.endedAt}`}
+              record={record}
+              onOpen={() => setOpen({ id: record.errandId })}
             />
-          );
-        })}
-
-      {shown?.kind === "assignments" &&
-        shown.records.map((record) => (
-          <AssignmentRow
-            key={`${record.errandId}-${record.endedAt}`}
-            record={record}
-            onOpen={() => setOpen({ id: record.errandId })}
-          />
-        ))}
-
-      {/* AI-generated (edited by James Teo): the errand's detail, which says
-          inside itself what an action did. */}
-      {open && (
-        <Modal
-          onClose={() => setOpen(null)}
-          labelledBy={ERRAND_DETAIL_TITLE_ID}
-          fallbackFocus={headingRef}
-        >
-          <ErrandDetail
-            errandId={open.id}
-            initial={open.initial}
-            ordersApi={ordersApi}
-            suppliersApi={suppliersApi}
-            usersApi={usersApi}
-            viewerId={userId}
-            viewerRole="STUDENT"
-            available={available}
-            onChanged={changed}
-            onRewardLowered={onRewardLowered}
-            onGone={(message) => {
-              setOpen(null);
-              onNotify({ text: message, kind: "error" });
-              changed();
-            }}
-            onOpenCredits={() => onNavigate("credits")}
-          />
-        </Modal>
-      )}
+          ))}
+  
+  
+          </>
+        }
+        detail={
+          open ? (
+            <ErrandDetail
+                errandId={open.id}
+                initial={open.initial}
+                ordersApi={ordersApi}
+                suppliersApi={suppliersApi}
+                usersApi={usersApi}
+                viewerId={userId}
+                viewerRole="STUDENT"
+                available={available}
+                onChanged={changed}
+                onRewardLowered={onRewardLowered}
+                onGone={(message) => {
+                  setOpen(null);
+                  onNotify({ text: message, kind: "error" });
+                  changed();
+                }}
+                onOpenCredits={() => onNavigate("credits")}
+              />
+          ) : null
+        }
+        onCloseDetail={() => setOpen(null)}
+        emptyText="Pick an errand to see it here."
+        detailTitleId={ERRAND_DETAIL_TITLE_ID}
+        fallbackFocus={headingRef}
+      />
     </section>
   );
 }

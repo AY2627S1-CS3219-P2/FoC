@@ -7,7 +7,7 @@
 // Author review: James Teo — reviewed and verified.
 
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../components/Modal";
+import { Workspace } from "../../components/Workspace";
 import type { ToastMessage } from "../../components/Toast";
 import { usePolling } from "../../lib/polling";
 import type { UsersApi } from "../profile/usersApi";
@@ -169,108 +169,116 @@ export function FindErrandsView({
         </p>
       </div>
 
+      {/* AI-generated (edited by Claude Code, 2026-11-09): the list and the errand's
+          detail side by side on a wide window, the detail in a dialog on a narrow
+          one (D-154). */}
+      <Workspace
+        list={
+          <>
       {error && (
-        <p className="status error" role="alert">
-          {list ? "Couldn't refresh the list. " : "Couldn't load open errands. "}
-          {error}{" "}
-          <button type="button" className="link-btn" onClick={refresh}>
-            Retry
-          </button>
-        </p>
-      )}
-
-      {!list && !error && (
-        <p className="status" role="status">
-          Loading open errands…
-        </p>
-      )}
-
-      {list && takeable.length === 0 && (
-        <p className="status" role="status">
-          No open errands right now. New ones show up here on their own.
-        </p>
-      )}
-
-      {refusal && list && !refusedCardShown && (
-        <p className="status error" tabIndex={-1} ref={refusalRef}>
-          Couldn&rsquo;t accept &ldquo;{refusal.item}&rdquo;. {refusal.message}
-        </p>
-      )}
-
-      {list && ownHidden > 0 && takeable.length > 0 && (
-        <p className="list-note">
-          Your own open errands aren&rsquo;t listed here; they&rsquo;re in My errands under
-          Requesting.
-        </p>
-      )}
-
-      {takeable.map((errand) => (
-        <ErrandCard
-          key={errand.id}
-          errand={errand}
-          line={progressText(errand, at)}
-          showState={false}
-          onOpen={() =>
-            setOpen({
-              id: errand.id,
-              initial: { errand, serverTime: new Date(at).toISOString() },
-            })
-          }
-          note={
-            refusal?.errandId === errand.id && (
-              <p className="errand-card-note" role="alert">
-                Couldn&rsquo;t accept. {refusal.message}
-              </p>
-            )
-          }
-        >
-          <button
-            type="button"
-            className="btn btn-primary"
-            ref={(node) => {
-              if (node) acceptButtons.current.set(errand.id, node);
-              else acceptButtons.current.delete(errand.id);
-            }}
-            onClick={() => void accept(errand)}
-            disabled={accepting !== null}
-            aria-label={`${acceptLabel(errand.id)}: ${errand.itemDescription}`}
+          <p className="status error" role="alert">
+            {list ? "Couldn't refresh the list. " : "Couldn't load open errands. "}
+            {error}{" "}
+            <button type="button" className="link-btn" onClick={refresh}>
+              Retry
+            </button>
+          </p>
+        )}
+  
+        {!list && !error && (
+          <p className="status" role="status">
+            Loading open errands…
+          </p>
+        )}
+  
+        {list && takeable.length === 0 && (
+          <p className="status" role="status">
+            No open errands right now. New ones show up here on their own.
+          </p>
+        )}
+  
+        {refusal && list && !refusedCardShown && (
+          <p className="status error" tabIndex={-1} ref={refusalRef}>
+            Couldn&rsquo;t accept &ldquo;{refusal.item}&rdquo;. {refusal.message}
+          </p>
+        )}
+  
+        {list && ownHidden > 0 && takeable.length > 0 && (
+          <p className="list-note">
+            Your own open errands aren&rsquo;t listed here; they&rsquo;re in My errands under
+            Requesting.
+          </p>
+        )}
+  
+        {takeable.map((errand) => (
+          <ErrandCard
+            key={errand.id}
+            errand={errand}
+            line={progressText(errand, at)}
+            showState={false}
+            onOpen={() =>
+              setOpen({
+                id: errand.id,
+                initial: { errand, serverTime: new Date(at).toISOString() },
+              })
+            }
+            note={
+              refusal?.errandId === errand.id && (
+                <p className="errand-card-note" role="alert">
+                  Couldn&rsquo;t accept. {refusal.message}
+                </p>
+              )
+            }
           >
-            {acceptLabel(errand.id)}
-          </button>
-        </ErrandCard>
-      ))}
-
-      {open && (
-        <Modal
-          onClose={() => setOpen(null)}
-          labelledBy={ERRAND_DETAIL_TITLE_ID}
-          fallbackFocus={headingRef}
-        >
-          <ErrandDetail
-            errandId={open.id}
-            initial={open.initial}
-            initialNotice={open.notice}
-            ordersApi={ordersApi}
-            suppliersApi={suppliersApi}
-            usersApi={usersApi}
-            viewerId={userId}
-            viewerRole="STUDENT"
-            available={available}
-            onChanged={() => {
-              refresh();
-              onCreditsChanged();
-            }}
-            onGone={() => {
-              // A courier who is not a party sees an errand only while it is
-              // open, so a 404 here is an errand that ended or was taken, not
-              // a failure: the neutral toast, in words that cover both.
-              setOpen(null);
-              onNotify({ text: MSG_NOT_OPEN_ANY_MORE, kind: "success" });
-              refresh();
-            }}
-          />
-        </Modal>
-      )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              ref={(node) => {
+                if (node) acceptButtons.current.set(errand.id, node);
+                else acceptButtons.current.delete(errand.id);
+              }}
+              onClick={() => void accept(errand)}
+              disabled={accepting !== null}
+              aria-label={`${acceptLabel(errand.id)}: ${errand.itemDescription}`}
+            >
+              {acceptLabel(errand.id)}
+            </button>
+          </ErrandCard>
+        ))}
+          </>
+        }
+        detail={
+          open ? (
+            <ErrandDetail
+                errandId={open.id}
+                initial={open.initial}
+                initialNotice={open.notice}
+                ordersApi={ordersApi}
+                suppliersApi={suppliersApi}
+                usersApi={usersApi}
+                viewerId={userId}
+                viewerRole="STUDENT"
+                available={available}
+                onChanged={() => {
+                  refresh();
+                  onCreditsChanged();
+                }}
+                onGone={() => {
+                  // A courier who is not a party sees an errand only while it is
+                  // open, so a 404 here is an errand that ended or was taken, not
+                  // a failure: the neutral toast, in words that cover both.
+                  setOpen(null);
+                  onNotify({ text: MSG_NOT_OPEN_ANY_MORE, kind: "success" });
+                  refresh();
+                }}
+              />
+          ) : null
+        }
+        onCloseDetail={() => setOpen(null)}
+        emptyText="Pick an errand to see it here."
+        detailTitleId={ERRAND_DETAIL_TITLE_ID}
+        fallbackFocus={headingRef}
+      />
     </section>
   );
 }
