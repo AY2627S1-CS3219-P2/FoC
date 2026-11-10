@@ -439,6 +439,8 @@ func (s *AccountService) UpdateAccountStatus(ctx context.Context, uid uuid.UUID,
 // setAccountStatus is UpdateAccountStatus; ac is nil for the unaudited call and
 // the admin's identity for AdminUpdateAccountStatus, which also refuses
 // suspending an admin or oneself (D-118, D-119) before any side effect.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func (s *AccountService) setAccountStatus(ctx context.Context, uid uuid.UUID, status AccountStatus, ac *AuditContext) error {
 	if s.repository == nil {
 		return errors.New("user repository is required")
@@ -460,6 +462,7 @@ func (s *AccountService) setAccountStatus(ctx context.Context, uid uuid.UUID, st
 		return ErrAccountUnverified
 	}
 	var tokensValidAfter time.Time
+	var invalidate func() error
 	if status == AccountStatusSuspended {
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-09-28 — checks the
 		// recorded last-active-admin guard before invalidating any sessions.
@@ -488,14 +491,27 @@ func (s *AccountService) setAccountStatus(ctx context.Context, uid uuid.UUID, st
 		if s.suspensionTTL <= 0 {
 			return errors.New("suspension TTL must be positive")
 		}
-		if err := s.suspensionWriter.WriteSuspension(ctx, uid, tokensValidAfter, s.suspensionTTL); err != nil {
-			return fmt.Errorf("write suspension invalidation: %w", err)
-		}
-		if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
-			return fmt.Errorf("revoke suspended account sessions: %w", err)
+		// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — defer side
+		// effects until the audited status transaction has locked and rechecked
+		// the target's role. Author review: ZI YANG - reviewed and verified.
+		invalidate = func() error {
+			if err := s.suspensionWriter.WriteSuspension(ctx, uid, tokensValidAfter, s.suspensionTTL); err != nil {
+				return fmt.Errorf("write suspension invalidation: %w", err)
+			}
+			return nil
 		}
 	}
 	if ac == nil {
+		if invalidate != nil {
+			if err := invalidate(); err != nil {
+				return err
+			}
+		}
+		if status == AccountStatusSuspended {
+			if err := s.sessions.RevokeAllUserSessions(ctx, uid); err != nil {
+				return fmt.Errorf("revoke suspended account sessions: %w", err)
+			}
+		}
 		if err := s.repository.UpdateAccountStatusByID(ctx, uid, status, tokensValidAfter); err != nil {
 			return fmt.Errorf("update account status: %w", err)
 		}
@@ -506,7 +522,7 @@ func (s *AccountService) setAccountStatus(ctx context.Context, uid uuid.UUID, st
 		action = ActionSuspend
 	}
 	e := ac.entry(action, uid.String(), OutcomeSucceeded, "")
-	if err := s.repository.UpdateAccountStatusAudited(ctx, uid, status, tokensValidAfter, e); err != nil {
+	if err := s.repository.UpdateAccountStatusAudited(ctx, uid, status, tokensValidAfter, e, invalidate); err != nil {
 		return fmt.Errorf("update account status: %w", err)
 	}
 	return nil

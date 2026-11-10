@@ -147,7 +147,11 @@ func (ac AuditContext) EntryForTest(action, targetID string) *AuditEntry {
 // failure, which it did not (D-109). A failure's text is cut short.
 func classify(err error) (outcome, reason string) {
 	switch {
-	case errors.Is(err, ErrNotFound), errors.Is(err, ErrCannotSuspendAdmin),
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — classify
+	// approved role-policy refusals as refused audit attempts. Author review: ZI YANG - reviewed and verified.
+	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrAdminRequired),
+		errors.Is(err, ErrCannotDemoteSelf), errors.Is(err, ErrLastActiveAdmin),
+		errors.Is(err, ErrInactivePromotion), errors.Is(err, ErrNotFound), errors.Is(err, ErrCannotSuspendAdmin),
 		errors.Is(err, ErrCannotSuspendSelf), errors.Is(err, ErrLastAdmin),
 		errors.Is(err, ErrAccountUnverified), errors.Is(err, ErrInvalidUsername),
 		errors.Is(err, ErrInvalidPhone), errors.Is(err, ErrInvalidPassword),
