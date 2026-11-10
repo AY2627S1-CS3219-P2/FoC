@@ -49,6 +49,9 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/audit-log", adminHandler.AuditLog)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}", profileHandler.Profile)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}", profileHandler.UpdateProfile)
+			// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — register the
+			// approved role-change route. Author review: ZI YANG - reviewed and verified.
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/role", adminHandler.UpdateRole)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
 		})
 	}

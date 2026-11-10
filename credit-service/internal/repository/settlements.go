@@ -32,18 +32,22 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 		}
 
 		// Single Atomic CTE:
-		// 1. Conditionally lock and transition the reservation to REFUNDED.
+		// 1. Conditionally lock and transition the reservation to REFUNDED only if requester account is consistent and valid.
 		// 2. Transfer reserved_credits back to available_credits on the requester account.
 		// 3. Append two balanced ledger entries under eventID.
 		const refundCTE = `
 			WITH locked_res AS (
-				UPDATE credit_reservations
+				UPDATE credit_reservations r
 				SET status = 'REFUNDED',
 				    updated_at = NOW()
-				WHERE errand_id = $1
-				  AND status = 'RESERVED'
-				  AND ($2::uuid IS NULL OR requester_id = $2)
-				RETURNING id, amount, requester_id
+				FROM credit_accounts a
+				WHERE r.errand_id = $1
+				  AND r.status = 'RESERVED'
+				  AND ($2::uuid IS NULL OR r.requester_id = $2)
+				  AND a.user_id = r.requester_id
+				  AND a.reserved_credits >= r.amount
+				  AND a.integrity_status != 'FLAGGED'
+				RETURNING r.id, r.amount, r.requester_id
 			),
 			update_account AS (
 				UPDATE credit_accounts a
@@ -62,17 +66,19 @@ func (r *PostgresRepository) RefundReservation(ctx context.Context, errandID uui
 					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 				)
 				SELECT
-					r.requester_id, $1, $3::uuid, t.bucket, t.amt, $4::transaction_reason, $5, NOW()
+					r.requester_id, $1, $3::uuid, 'AVAILABLE'::text, r.amount, $4::transaction_reason, $5::timestamptz, NOW()
 				FROM locked_res r
 				JOIN update_account u ON u.user_id = r.requester_id
-				CROSS JOIN (
-					VALUES
-						('AVAILABLE'::text, (SELECT amount FROM locked_res)),
-						('RESERVED'::text, -((SELECT amount FROM locked_res)::bigint))
-				) AS t(bucket, amt)
+				UNION ALL
+				SELECT
+					r.requester_id, $1, $3::uuid, 'RESERVED'::text, -(r.amount::bigint), $4::transaction_reason, $5::timestamptz, NOW()
+				FROM locked_res r
+				JOIN update_account u ON u.user_id = r.requester_id
 				RETURNING id
 			)
-			SELECT id, amount, requester_id FROM locked_res;`
+			SELECT r.id, r.amount, r.requester_id
+			FROM locked_res r
+			JOIN update_account u ON u.user_id = r.requester_id;`
 
 		var (
 			resID       uuid.UUID
@@ -189,7 +195,7 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 		}
 
 		// Single Atomic CTE:
-		// 1. Lock current reservation and capture original_hold before updating.
+		// 1. Lock current reservation and capture original_hold only if requester and courier accounts are consistent.
 		// 2. Transition reservation to PAID_OUT and set amount to payoutAmount.
 		// 3. Debit requester reserved credits by original_hold, returning leftover to available.
 		// 4. Credit courier available credits by payoutAmount (enforcing MaxBalanceCredits).
@@ -198,14 +204,20 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 
 		const payoutCTE = `
 			WITH current_res AS (
-				SELECT id, amount AS original_hold, requester_id
-				FROM credit_reservations
-				WHERE errand_id = $1
-				  AND status = 'RESERVED'
-				  AND ($2::uuid IS NULL OR requester_id = $2)
-				  AND requester_id != $4
-				  AND amount >= $3
-				FOR UPDATE
+				SELECT r.id, r.amount AS original_hold, r.requester_id
+				FROM credit_reservations r
+				JOIN credit_accounts req ON req.user_id = r.requester_id
+				JOIN credit_accounts cour ON cour.user_id = $4
+				WHERE r.errand_id = $1
+				  AND r.status = 'RESERVED'
+				  AND ($2::uuid IS NULL OR r.requester_id = $2)
+				  AND r.requester_id != $4
+				  AND r.amount >= $3
+				  AND req.reserved_credits >= r.amount
+				  AND req.integrity_status != 'FLAGGED'
+				  AND cour.available_credits + $3 <= $5
+				  AND cour.integrity_status != 'FLAGGED'
+				FOR UPDATE OF r
 			),
 			locked_res AS (
 				UPDATE credit_reservations r
@@ -245,14 +257,15 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 				)
 				SELECT
-					r.requester_id, $1, $6::uuid, t.bucket, t.amt, 'REWARD_DECREASED'::transaction_reason, $7, NOW()
+					r.requester_id, $1, $6::uuid, 'AVAILABLE'::text, (r.original_hold - $3), 'REWARD_DECREASED'::transaction_reason, $7::timestamptz, NOW()
 				FROM locked_res r
 				JOIN credit_courier cc ON true
-				CROSS JOIN (
-					VALUES
-						('AVAILABLE'::text, (SELECT (original_hold - $3) FROM locked_res)),
-						('RESERVED'::text, -((SELECT (original_hold - $3) FROM locked_res)::bigint))
-				) AS t(bucket, amt)
+				WHERE (r.original_hold - $3) > 0
+				UNION ALL
+				SELECT
+					r.requester_id, $1, $6::uuid, 'RESERVED'::text, -((r.original_hold - $3)::bigint), 'REWARD_DECREASED'::transaction_reason, $7::timestamptz, NOW()
+				FROM locked_res r
+				JOIN credit_courier cc ON true
 				WHERE (r.original_hold - $3) > 0
 				RETURNING id
 			),
@@ -261,17 +274,20 @@ func (r *PostgresRepository) PayoutReservation(ctx context.Context, errandID uui
 					user_id, errand_id, operation_id, balance_bucket, amount, reason, occurred_at, created_at
 				)
 				SELECT
-					r.requester_id, $1, $8::uuid, 'RESERVED'::text, -($3::bigint), 'ERRAND_COMPLETED_DEDUCTION'::transaction_reason, $7, NOW()
+					r.requester_id, $1, $8::uuid, 'RESERVED'::text, -($3::bigint), 'ERRAND_COMPLETED_DEDUCTION'::transaction_reason, $7::timestamptz, NOW()
 				FROM locked_res r
 				JOIN credit_courier cc ON true
 				UNION ALL
 				SELECT
-					$4, $1, $8::uuid, 'AVAILABLE'::text, $3, 'ERRAND_COMPLETED_PAYOUT'::transaction_reason, $7, NOW()
+					$4, $1, $8::uuid, 'AVAILABLE'::text, $3, 'ERRAND_COMPLETED_PAYOUT'::transaction_reason, $7::timestamptz, NOW()
 				FROM locked_res r
 				JOIN credit_courier cc ON true
 				RETURNING id
 			)
-			SELECT id, original_hold, requester_id FROM locked_res;`
+			SELECT r.id, r.original_hold, r.requester_id
+			FROM locked_res r
+			JOIN debit_requester d ON d.user_id = r.requester_id
+			JOIN credit_courier c ON c.user_id = $4;`
 
 		var (
 			resID        uuid.UUID

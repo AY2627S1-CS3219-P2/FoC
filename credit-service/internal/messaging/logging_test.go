@@ -67,6 +67,10 @@ func TestLifecycleDeliveryLogFields(t *testing.T) {
 			serviceErr:  fmt.Errorf("%w: %v", credit.ErrRequesterMismatch, leakyErr),
 			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting contract or lifecycle violation to DLQ",
 			wantError: credit.ErrRequesterMismatch.Error() + ": " + sanitizedLeak},
+		{name: "a flagged account is dead-lettered immediately", routingKey: messaging.RoutingCancelled,
+			serviceErr: fmt.Errorf("%w: %v", credit.ErrAccountIntegrityFlagged, leakyErr), attempt: 1,
+			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting contract or lifecycle violation to DLQ",
+			wantError: credit.ErrAccountIntegrityFlagged.Error() + ": " + sanitizedLeak},
 		// Transport validation precedes any decoding of the body, so this line
 		// names the delivery but not the event's identifiers.
 		{name: "an invalid transport is dead-lettered", routingKey: messaging.RoutingCancelled, contentType: "text/plain",

@@ -66,8 +66,10 @@ func insertAudit(ctx context.Context, executor userInserter, e *user.AuditEntry)
 }
 
 // UpdateAccountStatusAudited implements user.UserRepository.
-func (r *PostgresRepository) UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time, e *user.AuditEntry) error {
-	return r.updateAccountStatus(ctx, uid, status, tokensValidAfter, e)
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func (r *PostgresRepository) UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status user.AccountStatus, tokensValidAfter time.Time, e *user.AuditEntry, invalidate func() error) error {
+	return r.updateAccountStatus(ctx, uid, status, tokensValidAfter, e, invalidate)
 }
 
 // UpdateAsAdminAudited implements user.UserRepository: the profile update and

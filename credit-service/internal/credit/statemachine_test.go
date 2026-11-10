@@ -192,14 +192,7 @@ func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, er
 	newAmount := newReward
 
 	if currentAmount == newAmount {
-		opRes := &credit.OperationResult{
-			OperationID: operationID,
-			ErrandID:    errandID,
-			OutcomeCode: credit.OutcomeSuccess,
-			CreatedAt:   now,
-		}
-		m.operationResults[operationID] = opRes
-		return opRes, res, nil
+		return nil, nil, fmt.Errorf("%w: newReward matches current reward; no adjustment needed", credit.ErrInvalidRequest)
 	}
 
 	acc := m.accounts[res.RequesterID]
