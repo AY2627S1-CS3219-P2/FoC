@@ -141,6 +141,14 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		_, _, err = env.repo.CreateReservation(ctx, errandID, uuid.New(), 50)
 		require.ErrorIs(t, err, credit.ErrReservationConflict)
 
+		// Terminal reservation returns ErrReservationStateConflict on create attempt
+		terminalErrand := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, terminalErrand, userID, 10)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.RefundReservation(ctx, terminalErrand, &userID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC()))
+		_, _, err = env.repo.CreateReservation(ctx, terminalErrand, userID, 10)
+		require.ErrorIs(t, err, credit.ErrReservationStateConflict)
+
 		// 4. Insufficient credits fails
 		errand2 := uuid.New()
 		_, _, err = env.repo.CreateReservation(ctx, errand2, userID, 60)
@@ -207,6 +215,14 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		op4 := uuid.New()
 		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, otherUser, 30, 1, op4)
 		require.ErrorIs(t, err, credit.ErrReservationNotFound)
+
+		// 4. Terminal reservation returns ErrReservationStateConflict
+		terminalErrand := uuid.New()
+		_, _, err = env.repo.CreateReservation(ctx, terminalErrand, userID, 10)
+		require.NoError(t, err)
+		require.NoError(t, env.repo.RefundReservation(ctx, terminalErrand, &userID, uuid.New(), credit.TransactionReasonErrandCancelled, time.Now().UTC()))
+		_, _, err = env.repo.AdjustReservationReward(ctx, terminalErrand, userID, 20, 1, uuid.New())
+		require.ErrorIs(t, err, credit.ErrReservationStateConflict)
 	})
 
 	t.Run("AdjustReservationReward rejects insufficient credits without persisting error", func(t *testing.T) {
