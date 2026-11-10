@@ -2,6 +2,9 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: The RabbitMQ consumer on notification-service's own queue (D-140,
 //   D-143). Structure follows chat-service/internal/consumer.
+//   2026-11-10 (model: Fable 5): request_id, eventId and errandId on every
+//   event line, an INFO line after each ack and an ERROR line when an event is
+//   dead-lettered (D-135).
 // Author review: PENDING — <reviewer to complete>
 
 // Package consumer reads order lifecycle events from notification-service's own
@@ -28,6 +31,14 @@ const (
 	Queue       = "notification.errands"
 	consumerTag = "notification-service.errands"
 	prefetch    = 10
+
+	// deliveryLimit is the queue's x-delivery-limit in rabbitmq/definitions.json;
+	// consumer_test.go checks the two agree. The broker dead-letters an event
+	// that is put back on the queue once its x-delivery-count has reached this.
+	deliveryLimit = 5
+	// headerDeliveryCount is how many times the broker has redelivered an
+	// event. A quorum queue leaves it out of the first delivery.
+	headerDeliveryCount = "x-delivery-count"
 
 	// reconnectDelay is the pause before dialling the broker again.
 	reconnectDelay = 5 * time.Second
@@ -110,19 +121,64 @@ type settler interface {
 // service ignores, is acked. An event no retry can fix is dead-lettered at once.
 // Anything else goes back on the queue, and the queue's delivery limit
 // dead-letters it if it keeps failing (F6.2).
+//
+// Every line about the event carries its request id, routing key, eventId and
+// errandId (D-135): INFO once it is acknowledged, WARN when it will be tried
+// again, ERROR when it is dead-lettered.
 func (c *Consumer) settle(ctx context.Context, d amqp.Delivery, s settler) error {
+	log := c.log.With(eventAttrs(d)...)
 	err := c.process(ctx, d.RoutingKey, d.Body)
 	switch {
 	case err == nil:
-		return s.Ack(false)
+		if err := s.Ack(false); err != nil {
+			log.WarnContext(ctx, "could not acknowledge the event; the broker will redeliver it", "err", err)
+			return err
+		}
+		log.InfoContext(ctx, "event acknowledged")
+		return nil
 	case errors.Is(err, notification.ErrInvalidEvent):
-		c.log.ErrorContext(ctx, "dead-lettering an unusable event", "key", d.RoutingKey, "err", err)
+		log.ErrorContext(ctx, "dead-lettering an unusable event", "err", err)
 		return s.Nack(false, false)
+	case deliveryCount(d) >= deliveryLimit:
+		// Still put back on the queue: it is the broker that dead-letters it,
+		// because this was its last delivery.
+		log.ErrorContext(ctx, "event failed on its last delivery; the broker dead-letters it",
+			"deliveryCount", deliveryCount(d), "err", err)
+		wait(ctx, c.retryDelay)
+		return s.Nack(false, true)
 	default:
-		c.log.WarnContext(ctx, "event failed; will retry", "key", d.RoutingKey, "err", err)
+		log.WarnContext(ctx, "event failed; will retry", "deliveryCount", deliveryCount(d), "err", err)
 		wait(ctx, c.retryDelay)
 		return s.Nack(false, true)
 	}
+}
+
+// eventAttrs names a delivery on every line about it: the request id it
+// carries as its AMQP CorrelationId, its routing key, and its eventId and
+// errandId, each only when the body holds it as a UUID. So a malformed event
+// still names what it can, and nothing else from the body reaches the log.
+func eventAttrs(d amqp.Delivery) []any {
+	attrs := []any{"request_id", d.CorrelationId, "routingKey", d.RoutingKey}
+
+	var ids struct {
+		EventID  string `json:"eventId"`
+		ErrandID string `json:"errandId"`
+	}
+	_ = json.Unmarshal(d.Body, &ids)
+	if id, err := uuid.Parse(ids.EventID); err == nil {
+		attrs = append(attrs, "eventId", id.String())
+	}
+	if id, err := uuid.Parse(ids.ErrandID); err == nil {
+		attrs = append(attrs, "errandId", id.String())
+	}
+	return attrs
+}
+
+// deliveryCount is how many times the broker has redelivered d: 0 on its first
+// delivery.
+func deliveryCount(d amqp.Delivery) int64 {
+	count, _ := d.Headers[headerDeliveryCount].(int64)
+	return count
 }
 
 // payload is the JSON of an order lifecycle event (D-051).

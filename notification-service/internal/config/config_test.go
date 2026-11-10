@@ -63,3 +63,31 @@ func TestLoadRefusesABadWindow(t *testing.T) {
 		})
 	}
 }
+
+// AI-generated (edited by PENDING).
+// TestLoadRefusesABrokerURLItCannotParse: the error is fixed text, because the
+// URL carries the broker's password and net/url's own error quotes it.
+func TestLoadRefusesABrokerURLItCannotParse(t *testing.T) {
+	for _, value := range []string{
+		"amqp://foc:s3cr/et@broker:5672/foc",
+		"amqp://foc:s3cr?et@broker:5672/foc",
+		"http://foc:s3cret@broker:5672/foc",
+		"foc:s3cret@broker",
+	} {
+		t.Run(value, func(t *testing.T) {
+			setRequired(t)
+			t.Setenv("RABBITMQ_URL", value)
+			_, err := Load()
+			require.ErrorContains(t, err, "RABBITMQ_URL")
+			assert.NotContains(t, err.Error(), "s3cr")
+		})
+	}
+}
+
+// AI-generated (edited by PENDING).
+func TestLoadAcceptsAnEncodedBrokerPassword(t *testing.T) {
+	setRequired(t)
+	t.Setenv("RABBITMQ_URL", "amqps://foc:s3cr%2Fet@broker:5671/foc")
+	_, err := Load()
+	require.NoError(t, err)
+}

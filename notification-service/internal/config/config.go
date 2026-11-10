@@ -10,6 +10,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"time"
 )
@@ -31,8 +32,8 @@ type Config struct {
 	ConfirmWindow time.Duration
 }
 
-// Load reads the environment. A missing required variable or an unusable
-// window is an error.
+// Load reads the environment. A missing required variable, a broker URL that
+// does not parse or an unusable window is an error.
 func Load() (Config, error) {
 	cfg := Config{
 		Port:          os.Getenv("PORT"),
@@ -58,6 +59,15 @@ func Load() (Config, error) {
 	}
 	if err := errors.Join(missing...); err != nil {
 		return Config{}, err
+	}
+	// AI-generated (edited by PENDING).
+	// The broker URL carries its password, so this error is fixed text and never
+	// wraps or quotes the value: net/url's error quotes the whole URL, and even
+	// its inner error (invalid port ":<password>" after host) can quote the
+	// password. Unchecked, the same text would be in the consumer's reconnect
+	// warning every few seconds. As in order-service's config.
+	if u, err := url.Parse(cfg.RabbitMQURL); err != nil || (u.Scheme != "amqp" && u.Scheme != "amqps") {
+		return Config{}, errors.New("RABBITMQ_URL must be an amqp:// or amqps:// URL with reserved characters in the user and password percent-encoded")
 	}
 	if raw := os.Getenv("ORDER_CONFIRMATION_WINDOW"); raw != "" {
 		d, err := time.ParseDuration(raw)

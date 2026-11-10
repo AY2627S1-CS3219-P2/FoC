@@ -2,6 +2,8 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Access log, panic recovery and token authentication, adapted from
 //   order-service/internal/httpapi/middleware.go (D-041, D-054, D-056).
+//   2026-11-10 (model: Fable 5): the access line's level, request_id and
+//   user_id, and request_id on the cause and panic lines (D-135).
 // Author review: PENDING — <reviewer to complete>
 
 package httpapi
@@ -24,6 +26,14 @@ import (
 
 type callerKey struct{}
 
+type requestInfoKey struct{}
+
+// requestInfo is how inner middleware reports back to the access log that
+// wraps it: authenticate fills userID once it has verified the caller.
+type requestInfo struct {
+	userID string
+}
+
 // TokenVerifier checks an access token's signature, expiry and type.
 // *auth.Verifier satisfies it.
 type TokenVerifier interface {
@@ -36,27 +46,54 @@ type RevocationChecker interface {
 	Revoked(ctx context.Context, c auth.Claims) (bool, error)
 }
 
-// accessLog writes one structured line per request.
+// accessLog writes one structured line per request (D-135): at WARN when the
+// client hung up, at ERROR for a 5xx, otherwise at INFO. The path is logged
+// without its query string.
 func accessLog(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
+			info := &requestInfo{}
 			ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
-			next.ServeHTTP(ww, r)
+			next.ServeHTTP(ww, r.WithContext(context.WithValue(r.Context(), requestInfoKey{}, info)))
+
 			status := ww.Status()
 			if status == 0 {
+				// Nothing was written, so net/http sends 200.
 				status = http.StatusOK
 			}
-			log.LogAttrs(r.Context(), slog.LevelInfo, "http request",
+			attrs := []slog.Attr{
+				slog.String("request_id", middleware.GetReqID(r.Context())),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", status),
-				slog.Float64("duration_ms", float64(time.Since(start))/float64(time.Millisecond)))
+				slog.Float64("duration_ms", float64(time.Since(start))/float64(time.Millisecond)),
+			}
+			if info.userID != "" {
+				attrs = append(attrs, slog.String("user_id", info.userID))
+			}
+			level := slog.LevelInfo
+			switch {
+			case clientHungUp(r.Context()):
+				level = slog.LevelWarn
+			case status >= http.StatusInternalServerError:
+				level = slog.LevelError
+			}
+			log.LogAttrs(r.Context(), level, "http request", attrs...)
 		})
 	}
 }
 
-// recoverPanics turns a panic into a 500 and an ERROR log line.
+// clientHungUp reports whether ctx ended because the client went away, which
+// is not a fault here: net/http cancels a request's context when its
+// connection closes. The service's own deadlines end a context with
+// context.DeadlineExceeded instead, and those stay errors.
+func clientHungUp(ctx context.Context) bool {
+	return errors.Is(ctx.Err(), context.Canceled)
+}
+
+// recoverPanics turns a panic into a 500 and one ERROR log line with the
+// request id and the stack, so one bad request cannot take the process down.
 func recoverPanics(log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,16 +103,28 @@ func recoverPanics(log *slog.Logger) func(http.Handler) http.Handler {
 					return
 				}
 				if err, ok := rec.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+					// net/http's deliberate way to abort a response; let it
+					// through as chi's Recoverer does.
 					panic(rec)
 				}
 				log.LogAttrs(r.Context(), slog.LevelError, "panic serving request",
+					slog.String("request_id", middleware.GetReqID(r.Context())),
 					slog.String("panic", fmt.Sprint(rec)),
 					slog.String("stack", string(debug.Stack())))
-				writeError(w, http.StatusInternalServerError, msgInternal)
+				if !responseStarted(w) {
+					writeError(w, http.StatusInternalServerError, msgInternal)
+				}
 			}()
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// responseStarted reports whether a status has already gone out on w, the
+// access log's writer, after which a 500 can no longer be sent.
+func responseStarted(w http.ResponseWriter) bool {
+	sw, ok := w.(interface{ Status() int })
+	return ok && sw.Status() != 0
 }
 
 // authenticate verifies the caller's access token itself (D-041) and puts the
@@ -86,7 +135,8 @@ func recoverPanics(log *slog.Logger) func(http.Handler) http.Handler {
 // because the frontend treats a 401 as an expired token. As in order-service
 // (D-056), only an unreachable Redis skips the revocation check, and the skip is
 // logged; when Redis answers with an error, or the signing keys cannot be
-// loaded, the answer is 503.
+// loaded, the answer is 503. Each 503 logs its cause once, with the request id,
+// unless the client hung up (D-135).
 func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +145,7 @@ func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func
 				return
 			}
 			ctx := r.Context()
+			requestID := middleware.GetReqID(ctx)
 			token, ok := bearerToken(r.Header)
 			if !ok {
 				writeError(w, http.StatusUnauthorized, msgUnauthenticated)
@@ -102,7 +153,10 @@ func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func
 			}
 			claims, err := v.Verify(ctx, token)
 			if errors.Is(err, auth.ErrKeysUnavailable) {
-				log.ErrorContext(ctx, "cannot load user-service's signing keys; refusing the request", "err", err)
+				if !clientHungUp(ctx) {
+					log.ErrorContext(ctx, "cannot load user-service's signing keys; refusing the request",
+						"request_id", requestID, "err", err)
+				}
 				writeError(w, http.StatusServiceUnavailable, msgAuthUnavailable)
 				return
 			}
@@ -113,19 +167,29 @@ func authenticate(v TokenVerifier, rev RevocationChecker, log *slog.Logger) func
 			revoked, err := rev.Revoked(ctx, claims)
 			switch {
 			case err != nil && ctx.Err() != nil:
+				// The request ended during the lookup, so nothing is wrong with
+				// Redis. Still refused. A client that hung up is logged only by
+				// the access line; the request's own deadline is an error.
+				if !clientHungUp(ctx) {
+					log.ErrorContext(ctx, "the request's deadline passed during the revocation check; refusing the request",
+						"request_id", requestID, "user_id", claims.UserID.String(), "err", err)
+				}
 				writeError(w, http.StatusServiceUnavailable, msgAuthUnavailable)
 				return
 			case errors.Is(err, auth.ErrRedisUnreachable):
 				log.ErrorContext(ctx, "revocation check skipped: Redis could not be reached",
-					"user_id", claims.UserID.String(), "err", err)
+					"request_id", requestID, "user_id", claims.UserID.String(), "err", err)
 			case err != nil:
 				log.ErrorContext(ctx, "cannot read the revocation keys in Redis; refusing the request",
-					"user_id", claims.UserID.String(), "err", err)
+					"request_id", requestID, "user_id", claims.UserID.String(), "err", err)
 				writeError(w, http.StatusServiceUnavailable, msgAuthUnavailable)
 				return
 			case revoked:
 				writeError(w, http.StatusUnauthorized, msgUnauthenticated)
 				return
+			}
+			if info, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok {
+				info.userID = claims.UserID.String()
 			}
 			next.ServeHTTP(w, r.WithContext(context.WithValue(ctx, callerKey{}, claims.UserID)))
 		})

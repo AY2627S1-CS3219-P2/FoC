@@ -7,6 +7,8 @@
 package consumer
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -97,6 +99,100 @@ func TestSettle(t *testing.T) {
 	})
 }
 
+// AI-generated (edited by PENDING).
+// loggedConsumer returns a consumer whose JSON log lines land in the buffer.
+func loggedConsumer(h EventHandler) (*Consumer, *bytes.Buffer) {
+	var buf bytes.Buffer
+	c := New("amqp://unused", h, slog.New(slog.NewJSONHandler(&buf, nil)))
+	c.retryDelay = 0
+	return c, &buf
+}
+
+// AI-generated (edited by PENDING).
+// eventLines parses every line the consumer logged.
+func eventLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
+	t.Helper()
+	var lines []map[string]any
+	sc := bufio.NewScanner(buf)
+	for sc.Scan() {
+		var line map[string]any
+		require.NoError(t, json.Unmarshal(sc.Bytes(), &line), "every log line is JSON: %s", sc.Text())
+		lines = append(lines, line)
+	}
+	require.NoError(t, sc.Err())
+	return lines
+}
+
+// AI-generated (edited by PENDING).
+// TestSettleLogsEachEvent covers D-135's consumer lines: each carries the
+// request id from the AMQP CorrelationId, the routing key, and the eventId and
+// errandId; INFO once acknowledged, WARN while it will be retried, ERROR when it
+// is dead-lettered.
+func TestSettleLogsEachEvent(t *testing.T) {
+	eventID, errandID := uuid.New(), uuid.New()
+	good := fmt.Sprintf(
+		`{"eventId":%q,"errandId":%q,"requesterId":%q,"amount":7,"occurredAt":"2026-11-05T12:00:00Z","note":"never-logged"}`,
+		eventID, errandID, uuid.New())
+	redelivered := func(count int64) amqp.Delivery {
+		return amqp.Delivery{
+			RoutingKey: "errand.accepted", Body: []byte(good), CorrelationId: "req-1",
+			Headers: amqp.Table{"x-delivery-count": count},
+		}
+	}
+	first := amqp.Delivery{RoutingKey: "errand.accepted", Body: []byte(good), CorrelationId: "req-1"}
+
+	for _, tc := range []struct {
+		name      string
+		handler   *stubHandler
+		delivery  amqp.Delivery
+		wantLevel string
+		wantMsg   string
+		want      recordingSettler
+	}{
+		{"acknowledged", &stubHandler{}, first, "INFO", "event acknowledged", recordingSettler{acked: 1}},
+		{"refused by the service", &stubHandler{err: fmt.Errorf("%w: no courier", notification.ErrInvalidEvent)}, first,
+			"ERROR", "dead-lettering an unusable event", recordingSettler{dropped: 1}},
+		{"failed on its first delivery", &stubHandler{err: errors.New("database down")}, first,
+			"WARN", "event failed; will retry", recordingSettler{requeued: 1}},
+		{"failed one delivery before the limit", &stubHandler{err: errors.New("database down")}, redelivered(deliveryLimit - 1),
+			"WARN", "event failed; will retry", recordingSettler{requeued: 1}},
+		{"failed on its last delivery", &stubHandler{err: errors.New("database down")}, redelivered(deliveryLimit),
+			"ERROR", "event failed on its last delivery; the broker dead-letters it", recordingSettler{requeued: 1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, buf := loggedConsumer(tc.handler)
+			s := &recordingSettler{}
+			require.NoError(t, c.settle(t.Context(), tc.delivery, s))
+			assert.Equal(t, tc.want, *s)
+			assert.NotContains(t, buf.String(), "never-logged", "nothing else from the body is logged")
+
+			lines := eventLines(t, buf)
+			require.Len(t, lines, 1, "one line per event")
+			assert.Equal(t, tc.wantLevel, lines[0]["level"])
+			assert.Equal(t, tc.wantMsg, lines[0]["msg"])
+			assert.Equal(t, "req-1", lines[0]["request_id"])
+			assert.Equal(t, "errand.accepted", lines[0]["routingKey"])
+			assert.Equal(t, eventID.String(), lines[0]["eventId"])
+			assert.Equal(t, errandID.String(), lines[0]["errandId"])
+		})
+	}
+
+	t.Run("a malformed event names what it can", func(t *testing.T) {
+		c, buf := loggedConsumer(&stubHandler{})
+		s := &recordingSettler{}
+		d := amqp.Delivery{RoutingKey: "errand.accepted", Body: []byte("not json"), CorrelationId: "req-2"}
+		require.NoError(t, c.settle(t.Context(), d, s))
+		assert.Equal(t, recordingSettler{dropped: 1}, *s)
+
+		lines := eventLines(t, buf)
+		require.Len(t, lines, 1)
+		assert.Equal(t, "ERROR", lines[0]["level"])
+		assert.Equal(t, "req-2", lines[0]["request_id"])
+		assert.NotContains(t, lines[0], "eventId")
+		assert.NotContains(t, lines[0], "errandId")
+	})
+}
+
 func TestRunStopsWhenItsContextEnds(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -143,6 +239,9 @@ func TestTheQueueCannotPushBackOnPublishers(t *testing.T) {
 	assert.Equal(t, "drop-head", args["x-overflow"])
 	assert.Equal(t, "at-most-once", args["x-dead-letter-strategy"])
 	assert.Equal(t, "foc.dlx", args["x-dead-letter-exchange"])
+	// AI-generated (edited by PENDING).
+	assert.EqualValues(t, deliveryLimit, args["x-delivery-limit"],
+		"deliveryLimit decides which failure is logged as the last one")
 
 	var bound []string
 	for _, b := range defs.Bindings {

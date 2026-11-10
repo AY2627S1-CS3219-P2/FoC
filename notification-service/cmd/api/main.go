@@ -94,6 +94,10 @@ func run(log *slog.Logger) error {
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
+		// AI-generated (edited by PENDING).
+		// net/http's own errors, such as a panic outside the router's
+		// recovery, would otherwise go to stderr as plain text (D-135).
+		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),
 	}
 	serverErr := make(chan error, 1)
 	go func() {

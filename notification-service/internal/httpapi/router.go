@@ -2,6 +2,8 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Builds the HTTP router around the generated routes and implements them
 //   (api/openapi.yaml, D-144). Handlers do transport only (root AGENTS.md §6).
+//   2026-11-10 (model: Fable 5): the request id, and one cause line for each
+//   503 (D-135).
 // Author review: PENDING — <reviewer to complete>
 
 // Package httpapi is notification-service's HTTP transport. It implements the
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"foc/notification-service/internal/gen"
@@ -56,7 +59,11 @@ type server struct {
 // NewRouter returns notification-service's HTTP handler.
 func NewRouter(svc Service, db Pinger, tokens TokenVerifier, revocations RevocationChecker, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
-	r.Use(accessLog(log), recoverPanics(log), authenticate(tokens, revocations, log))
+	// AI-generated (edited by PENDING).
+	// The request id is outermost so every line about the request carries it
+	// (D-135); the access log wraps the recoverer so it records the 500 a panic
+	// becomes.
+	r.Use(middleware.RequestID, accessLog(log), recoverPanics(log), authenticate(tokens, revocations, log))
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		writeError(w, http.StatusNotFound, "no such route")
 	})
@@ -76,6 +83,12 @@ func (s *server) GetHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthTimeout)
 	defer cancel()
 	if err := s.db.Ping(ctx); err != nil {
+		// AI-generated (edited by PENDING).
+		// Why the probe failed, unless the prober itself went away (D-135).
+		if !clientHungUp(r.Context()) {
+			s.log.ErrorContext(r.Context(), "health check: database did not answer",
+				"request_id", middleware.GetReqID(r.Context()), "err", err)
+		}
 		writeError(w, http.StatusServiceUnavailable, "database not reachable")
 		return
 	}
@@ -101,8 +114,7 @@ func (s *server) ListNotifications(w http.ResponseWriter, r *http.Request, param
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	case err != nil:
-		s.log.ErrorContext(r.Context(), "list notifications", "err", err)
-		writeError(w, http.StatusServiceUnavailable, msgUnavailable)
+		s.unavailable(w, r, "list notifications", err)
 		return
 	}
 	out := gen.NotificationPage{Notifications: make([]gen.Notification, 0, len(page.Notifications)), Total: page.Total}
@@ -132,9 +144,19 @@ func (s *server) MarkNotificationRead(w http.ResponseWriter, r *http.Request, id
 	case errors.Is(err, notification.ErrNotFound):
 		writeError(w, http.StatusNotFound, msgNotFound)
 	default:
-		s.log.ErrorContext(r.Context(), "mark notification read", "err", err)
-		writeError(w, http.StatusServiceUnavailable, msgUnavailable)
+		s.unavailable(w, r, "mark notification read", err)
 	}
+}
+
+// AI-generated (edited by PENDING).
+// unavailable answers 503 and logs err as its cause, once, with the request id
+// (D-135). Once the client has hung up nothing is logged here: that is no fault
+// of this service, and the access line records it at WARN.
+func (s *server) unavailable(w http.ResponseWriter, r *http.Request, msg string, err error) {
+	if !clientHungUp(r.Context()) {
+		s.log.ErrorContext(r.Context(), msg, "request_id", middleware.GetReqID(r.Context()), "err", err)
+	}
+	writeError(w, http.StatusServiceUnavailable, msgUnavailable)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
