@@ -6,7 +6,7 @@
 // Author review: PENDING — <reviewer to complete>
 
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../components/Modal";
+import { Workspace } from "../../components/Workspace";
 import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
 import { ErrandCard } from "../errands/ErrandCard";
@@ -106,57 +106,77 @@ export function PastErrandsView({
         }}
       />
 
+      {/* AI-generated (edited by Claude Code, 2026-11-09): the list and the errand's
+          detail side by side on a wide window, the detail in a dialog on a narrow
+          one (D-154). */}
+      <Workspace
+        list={
+          <>
       {error && (
-        <p className="status error" role="alert">
-          Couldn&rsquo;t load past errands. {error}{" "}
-          <button type="button" className="link-btn" onClick={() => setReload((n) => n + 1)}>
-            Retry
-          </button>
-        </p>
-      )}
-      {loading && !list && !error && (
-        <p className="status" role="status">
-          Loading errands…
-        </p>
-      )}
-      {list && list.items.length === 0 && !loading && (
-        <p className="status" role="status">
-          No past errands match.
-        </p>
-      )}
-      {list?.items.map((errand) => (
-        <ErrandCard key={errand.id} errand={errand} line={endedText(errand)} onOpen={() => setOpen(errand.id)} />
-      ))}
-      {list && list.total !== undefined && (
-        <Pager
-          page={page}
-          pageCount={pageCount(list.total, list.limit ?? PAGE_SIZE)}
-          total={list.total}
-          busy={loading}
-          onPage={setPage}
-        />
-      )}
-
-      {open && (
-        <Modal onClose={() => setOpen(null)} labelledBy={ERRAND_DETAIL_TITLE_ID} fallbackFocus={headingRef}>
-          <ErrandDetail
-            errandId={open}
-            ordersApi={ordersApi}
-            suppliersApi={suppliersApi}
-            usersApi={usersApi}
-            viewerId={userId}
-            viewerRole="ADMIN"
-            available={null}
-            onChanged={() => setReload((n) => n + 1)}
-            onGone={(message) => {
-              setOpen(null);
-              onNotify({ text: message, kind: "error" });
-              setReload((n) => n + 1);
-            }}
-            onLookUpAccount={onLookUpAccount}
+          <p className="status error" role="alert">
+            Couldn&rsquo;t load past errands. {error}{" "}
+            <button type="button" className="link-btn" onClick={() => setReload((n) => n + 1)}>
+              Retry
+            </button>
+          </p>
+        )}
+        {loading && !list && !error && (
+          <div role="status" aria-label="Loading errands">
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+          </div>
+        )}
+        {list && list.items.length === 0 && !loading && (
+          <p className="status" role="status">
+            No past errands match.
+          </p>
+        )}
+        {list?.items.map((errand) => (
+          <ErrandCard
+            key={errand.id}
+            errand={errand}
+            line={endedText(errand)}
+            selected={open === errand.id}
+            onOpen={() => setOpen(errand.id)}
           />
-        </Modal>
-      )}
+        ))}
+        {list && list.total !== undefined && (
+          <Pager
+            page={page}
+            pageCount={pageCount(list.total, list.limit ?? PAGE_SIZE)}
+            total={list.total}
+            busy={loading}
+            onPage={setPage}
+          />
+        )}
+          </>
+        }
+        detail={
+          open ? (
+            <ErrandDetail
+                errandId={open}
+                ordersApi={ordersApi}
+                suppliersApi={suppliersApi}
+                usersApi={usersApi}
+                viewerId={userId}
+                viewerRole="ADMIN"
+                available={null}
+                onChanged={() => setReload((n) => n + 1)}
+                onGone={(message) => {
+                  setOpen(null);
+                  onNotify({ text: message, kind: "error" });
+                  setReload((n) => n + 1);
+                }}
+                onLookUpAccount={onLookUpAccount}
+              />
+          ) : null
+        }
+        onCloseDetail={() => setOpen(null)}
+        emptyText="Pick an errand to see it here."
+        detailTitleId={ERRAND_DETAIL_TITLE_ID}
+        fallbackFocus={headingRef}
+      />
     </div>
   );
 }

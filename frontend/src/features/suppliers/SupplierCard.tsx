@@ -13,7 +13,7 @@ interface SupplierCardProps {
 
 export function SupplierCard({ supplier, onSelect }: SupplierCardProps) {
   return (
-    <button className="supplier-card" onClick={() => onSelect(supplier)}>
+    <button className="supplier-card" data-ws-item onClick={() => onSelect(supplier)}>
       <SupplierImage
         className="supplier-card-img"
         src={supplier.image_url}

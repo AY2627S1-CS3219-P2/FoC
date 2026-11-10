@@ -166,7 +166,13 @@ export function DashboardView({ usersApi, ordersApi, suppliersApi, creditAdminAp
 
         {tab === "flagged" &&
           (creditAdminApi ? (
-            <FlaggedWalletsView creditAdminApi={creditAdminApi} usersApi={usersApi} onOpenAccount={openAccount} />
+            <FlaggedWalletsView
+              creditAdminApi={creditAdminApi}
+              usersApi={usersApi}
+              ordersApi={ordersApi}
+              currentUserId={userId}
+              onNotify={onNotify}
+            />
           ) : (
             <NeedsService title="Flagged wallets" service="credit-service" />
           ))}

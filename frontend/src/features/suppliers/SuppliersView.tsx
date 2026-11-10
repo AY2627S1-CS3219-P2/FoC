@@ -19,6 +19,7 @@ import type { SuppliersApi } from "./suppliersApi";
 import type { Supplier, SupplierInput } from "./types";
 import { MockBadge } from "../../components/MockBadge";
 import { Modal } from "../../components/Modal";
+import { Workspace } from "../../components/Workspace";
 import { SupplierCard } from "./SupplierCard";
 import { SupplierDetail } from "./SupplierDetail";
 import { SupplierForm } from "./SupplierForm";
@@ -91,13 +92,16 @@ export function SuppliersView({
     setSubmitting(true);
     try {
       if (modal?.kind === "edit") {
-        await api.updateSupplier(modal.supplier.id, input);
+        const updated = await api.updateSupplier(modal.supplier.id, input);
         onNotify({ text: "Supplier updated", kind: "success" });
+        // AI-generated (edited by Claude Code, 2026-11-10): back to the supplier's
+        // detail with its new values, not to an empty pane.
+        setModal({ kind: "detail", supplier: updated });
       } else {
         await api.createSupplier(input);
         onNotify({ text: "Supplier created", kind: "success" });
+        setModal(null);
       }
-      setModal(null);
       await load();
     } catch (err) {
       onNotify({
@@ -168,60 +172,72 @@ export function SuppliersView({
         )}
       </div>
 
-      {loading && <p className="status">Loading suppliers…</p>}
-
-      {error && !loading && (
-        <p className="status error">
-          Could not load suppliers: {error}
-          <br />
-          {/* AI-generated (edited by nigeltzy). */}
-          <span className="status-hint">
-            The server isn't responding. Try again in a moment.
-          </span>
-        </p>
-      )}
-
-      {!loading && !error && suppliers.length === 0 && (
-        <p className="status">No suppliers match your search.</p>
-      )}
-
-      {!loading && !error && suppliers.length > 0 && (
-        <div className="supplier-grid">
-          {suppliers.map((s) => (
-            <SupplierCard
-              key={s.id}
-              supplier={s}
-              onSelect={(supplier) => setModal({ kind: "detail", supplier })}
-            />
-          ))}
-        </div>
-      )}
-
-      {modal && (
-        <Modal onClose={() => setModal(null)}>
-          {modal.kind === "detail" && (
+      {/* AI-generated (edited by Claude Code, 2026-11-09): a supplier's detail, and its
+          edit form, open beside the list on a wide window and in a dialog on a narrow
+          one (D-154); adding one stays a dialog. */}
+      <Workspace
+        list={
+          <>
+      {loading && (
+          <div role="status" aria-label="Loading suppliers">
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+          </div>
+        )}
+  
+        {error && !loading && (
+          <p className="status error">
+            Could not load suppliers: {error}
+            <br />
+            {/* AI-generated (edited by nigeltzy). */}
+            <span className="status-hint">
+              The server isn't responding. Try again in a moment.
+            </span>
+          </p>
+        )}
+  
+        {!loading && !error && suppliers.length === 0 && (
+          <p className="status">No suppliers match your search.</p>
+        )}
+  
+        {!loading && !error && suppliers.length > 0 && (
+          <div className="supplier-grid">
+            {suppliers.map((s) => (
+              <SupplierCard
+                key={s.id}
+                supplier={s}
+                onSelect={(supplier) => setModal({ kind: "detail", supplier })}
+              />
+            ))}
+          </div>
+        )}
+          </>
+        }
+        detail={
+          modal?.kind === "detail" ? (
             <SupplierDetail
               supplier={modal.supplier}
               isAdmin={isAdmin}
               onEdit={(supplier) => setModal({ kind: "edit", supplier })}
               onDelete={handleDelete}
             />
-          )}
-          {modal.kind === "create" && (
-            <SupplierForm
-              submitting={submitting}
-              onSubmit={handleSubmit}
-              onCancel={() => setModal(null)}
-            />
-          )}
-          {modal.kind === "edit" && (
+          ) : modal?.kind === "edit" ? (
             <SupplierForm
               existing={modal.supplier}
               submitting={submitting}
               onSubmit={handleSubmit}
-              onCancel={() => setModal(null)}
+              onCancel={() => setModal({ kind: "detail", supplier: modal.supplier })}
             />
-          )}
+          ) : null
+        }
+        onCloseDetail={() => setModal(null)}
+        emptyText="Pick a supplier to see it here."
+      />
+
+      {modal?.kind === "create" && (
+        <Modal onClose={() => setModal(null)}>
+          <SupplierForm submitting={submitting} onSubmit={handleSubmit} onCancel={() => setModal(null)} />
         </Modal>
       )}
     </section>
