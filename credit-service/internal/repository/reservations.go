@@ -362,7 +362,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 }
 
 // ApplyRewardSet applies an outbox errand.reward_set event to reconcile hold with committed decreases (D-057, D-102).
-func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
+func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		// Lock the reservation
 		var reservation credit.Reservation
@@ -380,6 +380,11 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, event
 				return credit.ErrReservationNotFound
 			}
 			return fmt.Errorf("lock reservation for reward_set: %w", err)
+		}
+
+		// Requester identity mismatch check
+		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != reservation.RequesterID {
+			return credit.ErrRequesterMismatch
 		}
 
 		// Terminal state: ignore as safe no-op

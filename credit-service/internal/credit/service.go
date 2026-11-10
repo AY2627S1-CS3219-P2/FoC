@@ -130,7 +130,7 @@ func (s *Service) AdjustReservationReward(ctx context.Context, errandID, request
 }
 
 // ApplyRewardSet reconciles an existing reservation's reward amount with an errand.reward_set event (D-057).
-func (s *Service) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
+func (s *Service) ApplyRewardSet(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
 	if errandID == uuid.Nil {
 		return ErrInvalidErrandID
 	}
@@ -150,7 +150,7 @@ func (s *Service) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUI
 		return errors.New("reservation repository is required")
 	}
 
-	return s.reservationRepo.ApplyRewardSet(ctx, errandID, eventID, newReward, version, occurredAt)
+	return s.reservationRepo.ApplyRewardSet(ctx, errandID, requesterID, eventID, newReward, version, occurredAt)
 }
 
 // RefundReservation validates refund parameters and requests refund settlement from the repository.

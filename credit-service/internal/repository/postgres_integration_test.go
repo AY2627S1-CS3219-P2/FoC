@@ -272,7 +272,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		// An event cannot increase the secured amount, even with a newer version.
-		err = env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 30, 2, now)
+		err = env.repo.ApplyRewardSet(ctx, errandID, &userID, uuid.New(), 30, 2, now)
 		require.ErrorIs(t, err, credit.ErrLifecycleViolation)
 		var heldAmount, heldVersion int64
 		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&heldAmount, &heldVersion))
@@ -284,7 +284,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		_, res, err := env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, opID)
 		require.NoError(t, err)
 		require.Equal(t, int64(2), res.Version)
-		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, opID, 50, 2, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, opID, 50, 2, now))
 		acc, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, int64(50), acc.ReservedCredits)
@@ -292,21 +292,21 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		// A committed decrease releases the difference once. Older and duplicate
 		// versions are ignored without re-releasing credits.
 		decreaseEventID := uuid.New()
-		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, decreaseEventID, 15, 3, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, decreaseEventID, 15, 3, now))
 		accAfterDecrease, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, int64(85), accAfterDecrease.AvailableCredits)
 		require.Equal(t, int64(15), accAfterDecrease.ReservedCredits)
 
 		// Duplicate event does not release again
-		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, decreaseEventID, 15, 3, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, decreaseEventID, 15, 3, now))
 		accAfterDup, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
 		require.Equal(t, int64(85), accAfterDup.AvailableCredits)
 		require.Equal(t, int64(15), accAfterDup.ReservedCredits)
 
 		// Stale version (2 < 3) is rejected
-		require.ErrorIs(t, env.repo.ApplyRewardSet(ctx, errandID, uuid.New(), 10, 2, now), credit.ErrRewardSetStale)
+		require.ErrorIs(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, uuid.New(), 10, 2, now), credit.ErrRewardSetStale)
 	})
 
 	t.Run("ApplyRewardSet forward recovery heals ghost holds and OCC rejects ghost arrivals", func(t *testing.T) {
@@ -337,7 +337,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		// 3. Forward recovery: Order Service timed out, kept reward at 20, advanced order to version 2,
 		// and sent errand.reward_set {amount: 20, version: 2}.
 		timeoutEventID := uuid.New()
-		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, timeoutEventID, 20, 2, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID, &userID, timeoutEventID, 20, 2, now))
 
 		accHealed, err := env.repo.GetAccount(ctx, userID)
 		require.NoError(t, err)
@@ -371,7 +371,7 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 
 		zeroDeltaEventID := uuid.New()
-		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID2, zeroDeltaEventID, 20, 2, now))
+		require.NoError(t, env.repo.ApplyRewardSet(ctx, errandID2, &userID, zeroDeltaEventID, 20, 2, now))
 
 		var zVer int64
 		require.NoError(t, env.pool.QueryRow(ctx, `SELECT version FROM credit_reservations WHERE errand_id = $1`, errandID2).Scan(&zVer))
@@ -557,6 +557,10 @@ func TestPostgresRepository_Integration(t *testing.T) {
 
 		// Refund with wrong requesterId fails with ErrRequesterMismatch
 		err = env.repo.RefundReservation(ctx, errandID, &wrongRequesterID, uuid.New(), credit.TransactionReasonErrandCancelled, now)
+		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
+
+		// ApplyRewardSet with wrong requesterId fails with ErrRequesterMismatch
+		err = env.repo.ApplyRewardSet(ctx, errandID, &wrongRequesterID, uuid.New(), 15, 2, now)
 		require.ErrorIs(t, err, credit.ErrRequesterMismatch)
 
 		// Refund with correct requesterId succeeds
