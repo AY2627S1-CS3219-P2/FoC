@@ -162,8 +162,8 @@ export interface ReverifyMessage {
 
 /**
  * The sentence for a Re-verify's outcome. Clearing a flag does not replay a
- * refund or payout the flag blocked: credit-service has already retried and
- * dead-lettered it, so the message says so (D-150).
+ * refund or payout the flag blocked: credit-service has already sent it to the
+ * dead-letter queue, so the message says so (D-150).
  */
 export function reverifyMessage(result: ReverifyResult, name: string): ReverifyMessage {
   switch (result.outcome) {
