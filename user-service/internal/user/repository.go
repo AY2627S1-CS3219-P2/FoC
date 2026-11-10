@@ -31,7 +31,9 @@ type UserRepository interface {
 	// UpdateAccountStatusAudited is UpdateAccountStatusByID with the admin's audit
 	// row saved in the same transaction (D-108). The repository fills the row's
 	// before and after states from the account it locked.
-	UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time, e *AuditEntry) error
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — invalidate only
+	// after the transaction locks and rechecks the target. Author review: ZI YANG - reviewed and verified.
+	UpdateAccountStatusAudited(ctx context.Context, uid uuid.UUID, status AccountStatus, tokensValidAfter time.Time, e *AuditEntry, invalidate func() error) error
 	// UpdateAsAdminAudited is Update with the admin's audit rows saved in the same
 	// transaction (D-108).
 	UpdateAsAdminAudited(ctx context.Context, u *User, entries []*AuditEntry) error

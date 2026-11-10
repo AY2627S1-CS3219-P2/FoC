@@ -49,16 +49,20 @@ type RefreshLock interface {
 const refreshLockTTL = 5 * time.Second
 
 // LoginService authenticates an account and records its refresh session.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 type LoginService struct {
 	authenticator *Authenticator
-	sessions      user.SessionRepository
+	sessions      CredentialSessionRepository
 	now           func() time.Time
 	logger        *slog.Logger
 }
 
 // NewLoginService constructs a login service with its persistence and token
 // dependencies ready for use. A nil logger discards the service's logs.
-func NewLoginService(a *Authenticator, sessions user.SessionRepository, now func() time.Time, logger *slog.Logger) *LoginService {
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func NewLoginService(a *Authenticator, sessions CredentialSessionRepository, now func() time.Time, logger *slog.Logger) *LoginService {
 	if now == nil {
 		now = time.Now
 	}
@@ -88,32 +92,45 @@ func (s *LoginService) Login(ctx context.Context, identifier, password string) (
 		// AI-generated (edited by ZI YANG): login analytics must not make authentication unavailable.
 		s.logger.WarnContext(ctx, "record last login failed", "user_id", account.UID.String(), "error", err.Error())
 	}
-	pair, err := s.authenticator.issuer.Issue(ctx, account)
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — reread the
+	// role under a shared account lock and return tokens only after commit.
+	// Author review: ZI YANG - reviewed and verified.
+	var pair TokenPair
+	err = s.sessions.WithAccountCredentials(ctx, account.UID, func(current *user.User, sessions user.SessionRepository) error {
+		if current.PasswordHash != account.PasswordHash {
+			return user.ErrInvalidCredentials
+		}
+		if current.AccountStatus == user.AccountStatusSuspended {
+			return user.ErrAccountSuspended
+		}
+		if current.AccountStatus != user.AccountStatusActive {
+			return user.ErrAccountUnverified
+		}
+		var err error
+		pair, err = s.authenticator.issuer.Issue(ctx, current)
+		if err != nil {
+			return fmt.Errorf("issue JWT session: %w", err)
+		}
+		if pair.RefreshJTI == uuid.Nil || pair.RefreshExpiresAt.IsZero() {
+			return errors.New("issuer returned incomplete refresh metadata")
+		}
+		return sessions.CreateSession(ctx, &user.Session{
+			JTI: pair.RefreshJTI, CreatedAt: s.now().UTC(), ExpiresAt: pair.RefreshExpiresAt,
+			TokenHash: HashRefreshToken(pair.RefreshToken), UID: current.UID,
+		})
+	})
 	if err != nil {
-		return TokenPair{}, fmt.Errorf("issue JWT session: %w", err)
-	}
-	if pair.RefreshJTI == uuid.Nil || pair.RefreshExpiresAt.IsZero() {
-		return TokenPair{}, errors.New("issuer returned incomplete refresh metadata")
-	}
-
-	now := s.now().UTC()
-	session := &user.Session{
-		JTI:       pair.RefreshJTI,
-		CreatedAt: now,
-		ExpiresAt: pair.RefreshExpiresAt,
-		TokenHash: HashRefreshToken(pair.RefreshToken),
-		UID:       account.UID,
-	}
-	if err := s.sessions.CreateSession(ctx, session); err != nil {
-		return TokenPair{}, fmt.Errorf("create refresh session: %w", err)
+		return TokenPair{}, fmt.Errorf("persist login credentials: %w", err)
 	}
 	return pair, nil
 }
 
 // RefreshService rotates refresh sessions and detects replayed credentials.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 type RefreshService struct {
 	repository user.UserRepository
-	sessions   user.SessionRepository
+	sessions   CredentialSessionRepository
 	verifier   RefreshTokenVerifier
 	issuer     TokenIssuer
 	lock       RefreshLock
@@ -122,7 +139,9 @@ type RefreshService struct {
 
 // NewRefreshService constructs a refresh service with injected token and
 // persistence boundaries.
-func NewRefreshService(repository user.UserRepository, sessions user.SessionRepository, verifier RefreshTokenVerifier, issuer TokenIssuer, lock RefreshLock, now func() time.Time) *RefreshService {
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func NewRefreshService(repository user.UserRepository, sessions CredentialSessionRepository, verifier RefreshTokenVerifier, issuer TokenIssuer, lock RefreshLock, now func() time.Time) *RefreshService {
 	if now == nil {
 		now = time.Now
 	}
@@ -148,16 +167,29 @@ func (s *RefreshService) Refresh(ctx context.Context, rawToken string) (TokenPai
 	if err != nil {
 		return TokenPair{}, err
 	}
-	account, err := s.activeAccount(ctx, claims)
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — share the
+	// account lock with role changes through rotation. Author review: ZI YANG - reviewed and verified.
+	var pair TokenPair
+	err = s.sessions.WithAccountCredentials(ctx, claims.UserID, func(account *user.User, sessions user.SessionRepository) error {
+		if err := validateRefreshAccount(account, claims); err != nil {
+			return err
+		}
+		var next *user.Session
+		var err error
+		pair, next, err = s.issueRefreshSession(ctx, account)
+		if err != nil {
+			return err
+		}
+		return sessions.RotateSession(ctx, oldHash, next)
+	})
 	if err != nil {
-		return TokenPair{}, err
-	}
-	pair, newSession, err := s.issueRefreshSession(ctx, account)
-	if err != nil {
-		return TokenPair{}, err
-	}
-	if err := s.rotateSession(ctx, session.UID, oldHash, newSession); err != nil {
-		return TokenPair{}, err
+		// Release the account/session transaction before replay revocation.
+		if errors.Is(err, user.ErrSessionCompromised) {
+			if revokeErr := s.revokeCompromisedSessions(ctx, session.UID); revokeErr != nil {
+				return TokenPair{}, revokeErr
+			}
+		}
+		return TokenPair{}, fmt.Errorf("refresh credentials: %w", err)
 	}
 	return pair, nil
 }
@@ -221,15 +253,14 @@ func (s *RefreshService) activeSession(ctx context.Context, oldHash string, clai
 	return session, nil
 }
 
-func (s *RefreshService) activeAccount(ctx context.Context, claims RefreshClaims) (*user.User, error) {
-	account, err := s.repository.GetByID(ctx, claims.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("get refresh account: %w", err)
+// validateRefreshAccount uses the state read after acquiring the shared lock.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func validateRefreshAccount(account *user.User, claims RefreshClaims) error {
+	if account == nil || account.AccountStatus != user.AccountStatusActive || (!account.TokensValidAfter.IsZero() && claims.IssuedAt.Before(account.TokensValidAfter)) {
+		return user.ErrAccountSuspended
 	}
-	if account == nil || account.AccountStatus == user.AccountStatusSuspended || (!account.TokensValidAfter.IsZero() && claims.IssuedAt.Before(account.TokensValidAfter)) {
-		return nil, user.ErrAccountSuspended
-	}
-	return account, nil
+	return nil
 }
 
 func (s *RefreshService) issueRefreshSession(ctx context.Context, account *user.User) (TokenPair, *user.Session, error) {
@@ -247,19 +278,6 @@ func (s *RefreshService) issueRefreshSession(ctx context.Context, account *user.
 		TokenHash: HashRefreshToken(pair.RefreshToken),
 		UID:       account.UID,
 	}, nil
-}
-
-func (s *RefreshService) rotateSession(ctx context.Context, uid uuid.UUID, oldHash string, newSession *user.Session) error {
-	if err := s.sessions.RotateSession(ctx, oldHash, newSession); err != nil {
-		if errors.Is(err, user.ErrSessionCompromised) {
-			if revokeErr := s.revokeCompromisedSessions(ctx, uid); revokeErr != nil {
-				return revokeErr
-			}
-			return user.ErrSessionCompromised
-		}
-		return fmt.Errorf("rotate refresh session: %w", err)
-	}
-	return nil
 }
 
 func (s *RefreshService) revokeCompromisedSessions(ctx context.Context, uid uuid.UUID) error {

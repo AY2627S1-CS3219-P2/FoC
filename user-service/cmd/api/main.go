@@ -175,9 +175,12 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		},
 		// The admin dashboard's account list and audit log (D-110, D-121).
 		Admin: handlers.AdminDependencies{
-			Searcher: accountService,
-			Audit:    accountService,
-			Logger:   logger,
+			// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — wire the
+			// approved role-change operation. Author review: ZI YANG - reviewed and verified.
+			RoleUpdater: accountService,
+			Searcher:    accountService,
+			Audit:       accountService,
+			Logger:      logger,
 		},
 		System: handlers.SystemDependencies{
 			JWKSProvider: jwtService,

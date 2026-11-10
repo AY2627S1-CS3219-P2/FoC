@@ -94,7 +94,9 @@ func (f *fakeAuthRepository) UpdateAccountStatusByID(_ context.Context, _ uuid.U
 func (f *fakeAuthRepository) ActivateUser(context.Context, string) error { return nil }
 
 // The admin audit and search methods are not on the login path.
-func (f *fakeAuthRepository) UpdateAccountStatusAudited(context.Context, uuid.UUID, AccountStatus, time.Time, *AuditEntry) error {
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
+func (f *fakeAuthRepository) UpdateAccountStatusAudited(context.Context, uuid.UUID, AccountStatus, time.Time, *AuditEntry, func() error) error {
 	return nil
 }
 func (f *fakeAuthRepository) UpdateAsAdminAudited(context.Context, *User, []*AuditEntry) error {
@@ -113,10 +115,16 @@ type fakeTokenIssuer struct {
 	pair      TokenPair
 	err       error
 	issuedFor uuid.UUID
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — observe the
+	// locked role used for credential issuance. Author review: ZI YANG - reviewed and verified.
+	issuedRole AccountRole
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func (f *fakeTokenIssuer) Issue(_ context.Context, account *User) (TokenPair, error) {
 	f.issuedFor = account.UID
+	f.issuedRole = account.AccountRole
 	return f.pair, f.err
 }
 
