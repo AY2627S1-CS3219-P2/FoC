@@ -52,7 +52,7 @@ router and Redis integration tests pass.
 - No shared auth package with the services (root §4.2). If the gateway and a
   service both parse a claim, the duplication is correct.
 
-## The route surface (D-027, amended by D-043 and D-056)
+## The route surface (D-027, amended by D-043, D-056 and D-151)
 
 ```
 TERMINATED (public, no token required)
@@ -65,6 +65,8 @@ PROXIED (token verified, headers stripped then injected, bearer token kept)
   /api/suppliers/*          -> SUPPLIER_BASE_URL /suppliers/*
   /api/orders/*             -> ORDER_BASE_URL    /*
   /api/credits/accounts/*   -> CREDIT_BASE_URL   /api/v1/credits/accounts/*  (D-056)
+  /api/credits/admin/*      -> CREDIT_BASE_URL   /api/v1/credits/admin/*     (D-151; ADMIN
+                                                  only, credit-service checks the role)
   /api/chat/*               -> CHAT_BASE_URL     /*
   (nothing else under /api/credits is routed: credit-service's reservation
    routes are for order-service alone)

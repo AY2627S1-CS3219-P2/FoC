@@ -7,7 +7,7 @@
 //   refused attempt still leaves a row, the table refuses UPDATE and an early
 //   DELETE, the purge removes only rows older than 6 months, the audit read
 //   filters and pages, and the account search matches anywhere, literally.
-// Author review: PENDING — <reviewer to complete>
+// Author review: ZI YANG — reviewed and verified
 
 package repository
 
@@ -44,6 +44,8 @@ func statusOf(t *testing.T, ctx context.Context, repo *PostgresRepository, uid u
 	return got.AccountStatus
 }
 
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func TestAdminChangesAndTheirAuditRowsShareOneTransaction(t *testing.T) {
 	ctx := context.Background()
 	pool := newIntegrationPool(t, ctx)
@@ -53,7 +55,7 @@ func TestAdminChangesAndTheirAuditRowsShareOneTransaction(t *testing.T) {
 		account := createIntegrationAccount(t, ctx, repo, "suspend", user.AccountRoleStudent)
 		e := integrationAdmin.EntryForTest(user.ActionSuspend, account.UID.String())
 
-		if err := repo.UpdateAccountStatusAudited(ctx, account.UID, user.AccountStatusSuspended, time.Now().UTC().Truncate(time.Second), e); err != nil {
+		if err := repo.UpdateAccountStatusAudited(ctx, account.UID, user.AccountStatusSuspended, time.Now().UTC().Truncate(time.Second), e, nil); err != nil {
 			t.Fatal(err)
 		}
 
@@ -80,7 +82,7 @@ func TestAdminChangesAndTheirAuditRowsShareOneTransaction(t *testing.T) {
 		}
 		t.Cleanup(func() { _, _ = pool.Exec(ctx, `ALTER TABLE IF EXISTS admin_audit_away RENAME TO admin_audit`) })
 
-		err := repo.UpdateAccountStatusAudited(ctx, account.UID, user.AccountStatusSuspended, time.Now().UTC(), integrationAdmin.EntryForTest(user.ActionSuspend, account.UID.String()))
+		err := repo.UpdateAccountStatusAudited(ctx, account.UID, user.AccountStatusSuspended, time.Now().UTC(), integrationAdmin.EntryForTest(user.ActionSuspend, account.UID.String()), nil)
 
 		if err == nil {
 			t.Fatal("expected an error")

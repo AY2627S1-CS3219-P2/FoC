@@ -14,6 +14,27 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+// Defines values for AuditEntryOutcome.
+const (
+	AuditEntryOutcomeFailed    AuditEntryOutcome = "failed"
+	AuditEntryOutcomeRefused   AuditEntryOutcome = "refused"
+	AuditEntryOutcomeSucceeded AuditEntryOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the AuditEntryOutcome enum.
+func (e AuditEntryOutcome) Valid() bool {
+	switch e {
+	case AuditEntryOutcomeFailed:
+		return true
+	case AuditEntryOutcomeRefused:
+		return true
+	case AuditEntryOutcomeSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreditStatus.
 const (
 	READY                  CreditStatus = "READY"
@@ -36,6 +57,7 @@ func (e CreditStatus) Valid() bool {
 const (
 	ACCOUNTINTEGRITYFAILURE  ErrorCode = "ACCOUNT_INTEGRITY_FAILURE"
 	CREDITLIMITEXCEEDED      ErrorCode = "CREDIT_LIMIT_EXCEEDED"
+	FORBIDDEN                ErrorCode = "FORBIDDEN"
 	IDEMPOTENCYCONFLICT      ErrorCode = "IDEMPOTENCY_CONFLICT"
 	INSUFFICIENTCREDITS      ErrorCode = "INSUFFICIENT_CREDITS"
 	INTERNALERROR            ErrorCode = "INTERNAL_ERROR"
@@ -52,6 +74,8 @@ func (e ErrorCode) Valid() bool {
 	case ACCOUNTINTEGRITYFAILURE:
 		return true
 	case CREDITLIMITEXCEEDED:
+		return true
+	case FORBIDDEN:
 		return true
 	case IDEMPOTENCYCONFLICT:
 		return true
@@ -92,6 +116,24 @@ func (e HealthResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for IntegrityStatus.
+const (
+	CONSISTENT IntegrityStatus = "CONSISTENT"
+	FLAGGED    IntegrityStatus = "FLAGGED"
+)
+
+// Valid indicates whether the value is a known member of the IntegrityStatus enum.
+func (e IntegrityStatus) Valid() bool {
+	switch e {
+	case CONSISTENT:
+		return true
+	case FLAGGED:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReservationStatus.
 const (
 	PAIDOUT  ReservationStatus = "PAID_OUT"
@@ -107,6 +149,30 @@ func (e ReservationStatus) Valid() bool {
 	case REFUNDED:
 		return true
 	case RESERVED:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReverifyOutcome.
+const (
+	CLEARED      ReverifyOutcome = "CLEARED"
+	NOTFLAGGED   ReverifyOutcome = "NOT_FLAGGED"
+	STALE        ReverifyOutcome = "STALE"
+	STILLFLAGGED ReverifyOutcome = "STILL_FLAGGED"
+)
+
+// Valid indicates whether the value is a known member of the ReverifyOutcome enum.
+func (e ReverifyOutcome) Valid() bool {
+	switch e {
+	case CLEARED:
+		return true
+	case NOTFLAGGED:
+		return true
+	case STALE:
+		return true
+	case STILLFLAGGED:
 		return true
 	default:
 		return false
@@ -152,6 +218,42 @@ func (e TransactionReason) Valid() bool {
 	}
 }
 
+// Defines values for ListAuditLogParamsAction.
+const (
+	CreditReverify ListAuditLogParamsAction = "credit.reverify"
+)
+
+// Valid indicates whether the value is a known member of the ListAuditLogParamsAction enum.
+func (e ListAuditLogParamsAction) Valid() bool {
+	switch e {
+	case CreditReverify:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ListAuditLogParamsOutcome.
+const (
+	ListAuditLogParamsOutcomeFailed    ListAuditLogParamsOutcome = "failed"
+	ListAuditLogParamsOutcomeRefused   ListAuditLogParamsOutcome = "refused"
+	ListAuditLogParamsOutcomeSucceeded ListAuditLogParamsOutcome = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the ListAuditLogParamsOutcome enum.
+func (e ListAuditLogParamsOutcome) Valid() bool {
+	switch e {
+	case ListAuditLogParamsOutcomeFailed:
+		return true
+	case ListAuditLogParamsOutcomeRefused:
+		return true
+	case ListAuditLogParamsOutcomeSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
 // AccountResponse defines model for AccountResponse.
 type AccountResponse struct {
 	AvailableCredits *int64             `json:"availableCredits,omitempty"`
@@ -165,6 +267,50 @@ type AccountResponse struct {
 type AdjustRewardRequest struct {
 	CurrVersion int64 `json:"currVersion"`
 	NewReward   int64 `json:"newReward"`
+}
+
+// AdminAccountResponse An account as stored. The balances are real even when the account is flagged, but a flagged account's are not trusted (D-150).
+type AdminAccountResponse struct {
+	AvailableCredits int64              `json:"availableCredits"`
+	CreatedAt        time.Time          `json:"createdAt"`
+	Detail           *string            `json:"detail,omitempty"`
+	Expected         *float64           `json:"expected,omitempty"`
+	FlaggedAt        *time.Time         `json:"flaggedAt,omitempty"`
+	IntegrityStatus  IntegrityStatus    `json:"integrityStatus"`
+	Observed         *float64           `json:"observed,omitempty"`
+	ReasonCode       *string            `json:"reasonCode,omitempty"`
+	ReservedCredits  int64              `json:"reservedCredits"`
+	UpdatedAt        time.Time          `json:"updatedAt"`
+	UserId           openapi_types.UUID `json:"userId"`
+}
+
+// AuditEntry One row of the admin audit log (D-107, D-113); the same shape as order-service's.
+type AuditEntry struct {
+	Action             string                  `json:"action"`
+	ActorId            openapi_types.UUID      `json:"actorId"`
+	ActorRole          string                  `json:"actorRole"`
+	AdditionalComments *map[string]interface{} `json:"additionalComments,omitempty"`
+	AfterState         *map[string]interface{} `json:"afterState,omitempty"`
+	BeforeState        *map[string]interface{} `json:"beforeState,omitempty"`
+	CorrelationId      string                  `json:"correlationId"`
+	Id                 openapi_types.UUID      `json:"id"`
+	OccurredAt         time.Time               `json:"occurredAt"`
+	Outcome            AuditEntryOutcome       `json:"outcome"`
+	Reason             string                  `json:"reason"`
+	RefusalReason      string                  `json:"refusalReason"`
+	TargetId           string                  `json:"targetId"`
+	TargetType         string                  `json:"targetType"`
+}
+
+// AuditEntryOutcome defines model for AuditEntry.Outcome.
+type AuditEntryOutcome string
+
+// AuditLogPage defines model for AuditLogPage.
+type AuditLogPage struct {
+	Items  []AuditEntry `json:"items"`
+	Limit  int          `json:"limit"`
+	Offset int          `json:"offset"`
+	Total  int          `json:"total"`
 }
 
 // CreateReservationRequest defines model for CreateReservationRequest.
@@ -185,6 +331,24 @@ type ErrorResponse struct {
 	Message string    `json:"message"`
 }
 
+// FlaggedAccount A flagged account and the first discrepancy found on it (D-153).
+type FlaggedAccount struct {
+	Detail     *string            `json:"detail,omitempty"`
+	Expected   *float64           `json:"expected,omitempty"`
+	FlaggedAt  time.Time          `json:"flaggedAt"`
+	Observed   *float64           `json:"observed,omitempty"`
+	ReasonCode string             `json:"reasonCode"`
+	UserId     openapi_types.UUID `json:"userId"`
+}
+
+// FlaggedAccountsPage defines model for FlaggedAccountsPage.
+type FlaggedAccountsPage struct {
+	Items  []FlaggedAccount `json:"items"`
+	Limit  int              `json:"limit"`
+	Offset int              `json:"offset"`
+	Total  int              `json:"total"`
+}
+
 // HealthResponse defines model for HealthResponse.
 type HealthResponse struct {
 	Status HealthResponseStatus `json:"status"`
@@ -192,6 +356,9 @@ type HealthResponse struct {
 
 // HealthResponseStatus defines model for HealthResponse.Status.
 type HealthResponseStatus string
+
+// IntegrityStatus defines model for IntegrityStatus.
+type IntegrityStatus string
 
 // ReservationResponse defines model for ReservationResponse.
 type ReservationResponse struct {
@@ -206,6 +373,18 @@ type ReservationResponse struct {
 
 // ReservationStatus defines model for ReservationStatus.
 type ReservationStatus string
+
+// ReverifyOutcome defines model for ReverifyOutcome.
+type ReverifyOutcome string
+
+// ReverifyResponse What a Re-verify did. The reason, detail and amounts are the current finding when the account is still flagged (D-153); nothing is stored from them.
+type ReverifyResponse struct {
+	Detail     *string         `json:"detail,omitempty"`
+	Expected   *float64        `json:"expected,omitempty"`
+	Observed   *float64        `json:"observed,omitempty"`
+	Outcome    ReverifyOutcome `json:"outcome"`
+	ReasonCode *string         `json:"reasonCode,omitempty"`
+}
 
 // TransactionListResponse defines model for TransactionListResponse.
 type TransactionListResponse struct {
@@ -233,6 +412,9 @@ type BadRequest = ErrorResponse
 // Conflict defines model for Conflict.
 type Conflict = ErrorResponse
 
+// Forbidden defines model for Forbidden.
+type Forbidden = ErrorResponse
+
 // InternalError defines model for InternalError.
 type InternalError = ErrorResponse
 
@@ -252,6 +434,34 @@ type UnprocessableContent = ErrorResponse
 type ListMyCreditTransactionsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// ListAuditLogParams defines parameters for ListAuditLog.
+type ListAuditLogParams struct {
+	Action   *ListAuditLogParamsAction  `form:"action,omitempty" json:"action,omitempty"`
+	Outcome  *ListAuditLogParamsOutcome `form:"outcome,omitempty" json:"outcome,omitempty"`
+	ActorId  *string                    `form:"actor_id,omitempty" json:"actor_id,omitempty"`
+	TargetId *string                    `form:"target_id,omitempty" json:"target_id,omitempty"`
+
+	// From RFC 3339 time or YYYY-MM-DD; inclusive.
+	From *string `form:"from,omitempty" json:"from,omitempty"`
+
+	// To RFC 3339 time or YYYY-MM-DD; exclusive.
+	To     *string `form:"to,omitempty" json:"to,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int    `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// ListAuditLogParamsAction defines parameters for ListAuditLog.
+type ListAuditLogParamsAction string
+
+// ListAuditLogParamsOutcome defines parameters for ListAuditLog.
+type ListAuditLogParamsOutcome string
+
+// ListFlaggedAccountsParams defines parameters for ListFlaggedAccounts.
+type ListFlaggedAccountsParams struct {
+	Limit  *int `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
 }
 
 // AdjustReservationRewardParams defines parameters for AdjustReservationReward.
@@ -274,6 +484,18 @@ type ServerInterface interface {
 	// ListMyCreditTransactions List the authenticated user's grouped financial operations.
 	// (GET /api/v1/credits/accounts/me/transactions)
 	ListMyCreditTransactions(w http.ResponseWriter, r *http.Request, params ListMyCreditTransactionsParams)
+	// ListAuditLog The admin audit log, newest first (ADMIN only).
+	// (GET /api/v1/credits/admin/audit-log)
+	ListAuditLog(w http.ResponseWriter, r *http.Request, params ListAuditLogParams)
+	// ListFlaggedAccounts List the flagged accounts, oldest flag first (ADMIN only).
+	// (GET /api/v1/credits/admin/flagged-accounts)
+	ListFlaggedAccounts(w http.ResponseWriter, r *http.Request, params ListFlaggedAccountsParams)
+	// GetAccountForAdmin Read a user's account as stored, flagged or not (ADMIN only).
+	// (GET /api/v1/credits/admin/users/{userId}/account)
+	GetAccountForAdmin(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID)
+	// ReverifyAccount Re-verify one account, clearing its flag if every ledger check passes (ADMIN only).
+	// (POST /api/v1/credits/admin/users/{userId}/reconcile)
+	ReverifyAccount(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID)
 	// CreateReservation Reserve requester credits for an errand.
 	// (POST /api/v1/credits/reservations)
 	CreateReservation(w http.ResponseWriter, r *http.Request)
@@ -301,6 +523,30 @@ func (_ Unimplemented) GetMyCreditAccount(w http.ResponseWriter, r *http.Request
 // ListMyCreditTransactions List the authenticated user's grouped financial operations.
 // (GET /api/v1/credits/accounts/me/transactions)
 func (_ Unimplemented) ListMyCreditTransactions(w http.ResponseWriter, r *http.Request, params ListMyCreditTransactionsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListAuditLog The admin audit log, newest first (ADMIN only).
+// (GET /api/v1/credits/admin/audit-log)
+func (_ Unimplemented) ListAuditLog(w http.ResponseWriter, r *http.Request, params ListAuditLogParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ListFlaggedAccounts List the flagged accounts, oldest flag first (ADMIN only).
+// (GET /api/v1/credits/admin/flagged-accounts)
+func (_ Unimplemented) ListFlaggedAccounts(w http.ResponseWriter, r *http.Request, params ListFlaggedAccountsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// GetAccountForAdmin Read a user's account as stored, flagged or not (ADMIN only).
+// (GET /api/v1/credits/admin/users/{userId}/account)
+func (_ Unimplemented) GetAccountForAdmin(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// ReverifyAccount Re-verify one account, clearing its flag if every ledger check passes (ADMIN only).
+// (POST /api/v1/credits/admin/users/{userId}/reconcile)
+func (_ Unimplemented) ReverifyAccount(w http.ResponseWriter, r *http.Request, userId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -388,6 +634,228 @@ func (siw *ServerInterfaceWrapper) ListMyCreditTransactions(w http.ResponseWrite
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListMyCreditTransactions(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAuditLog operation middleware
+func (siw *ServerInterfaceWrapper) ListAuditLog(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListAuditLogParams
+
+	// ------------- Optional query parameter "action" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "action", r.URL.Query(), &params.Action, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "action"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "action", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "outcome" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "outcome", r.URL.Query(), &params.Outcome, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "outcome"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "outcome", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "actor_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "actor_id", r.URL.Query(), &params.ActorId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "actor_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "actor_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "target_id" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "target_id", r.URL.Query(), &params.TargetId, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "target_id"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "target_id", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "from" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "from", r.URL.Query(), &params.From, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "from"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "from", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "to" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "to", r.URL.Query(), &params.To, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "to"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "to", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAuditLog(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFlaggedAccounts operation middleware
+func (siw *ServerInterfaceWrapper) ListFlaggedAccounts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFlaggedAccountsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "offset"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFlaggedAccounts(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetAccountForAdmin operation middleware
+func (siw *ServerInterfaceWrapper) GetAccountForAdmin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetAccountForAdmin(w, r, userId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReverifyAccount operation middleware
+func (siw *ServerInterfaceWrapper) ReverifyAccount(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "userId" -------------
+	var userId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "userId", chi.URLParam(r, "userId"), &userId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid", ValueIsUnescaped: r.URL.RawPath == ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "userId", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReverifyAccount(w, r, userId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -619,6 +1087,18 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/api/v1/credits/accounts/me/transactions", wrapper.ListMyCreditTransactions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/credits/admin/flagged-accounts", wrapper.ListFlaggedAccounts)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/credits/admin/users/{userId}/account", wrapper.GetAccountForAdmin)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/api/v1/credits/admin/users/{userId}/reconcile", wrapper.ReverifyAccount)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/api/v1/credits/admin/audit-log", wrapper.ListAuditLog)
 	})
 
 	return r

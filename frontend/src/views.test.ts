@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { AccountRole, ActingMode } from "./features/auth/types";
-import { isViewAvailable, NAV_ITEMS, VIEW_NAMES, type ViewName } from "./views";
+import { defaultView, isViewAvailable, NAV_ITEMS, VIEW_NAMES, type ViewName } from "./views";
 
 /** The views a session's nav lists, in nav order. */
 function navFor(role: AccountRole, mode: ActingMode): ViewName[] {
@@ -18,7 +18,6 @@ function navFor(role: AccountRole, mode: ActingMode): ViewName[] {
 describe("isViewAvailable", () => {
   it("lists a requesting student's views", () => {
     expect(navFor("STUDENT", "requesting")).toEqual([
-      "home",
       "new-errand",
       "my-errands",
       "suppliers",
@@ -30,7 +29,6 @@ describe("isViewAvailable", () => {
 
   it("swaps New errand for Find errands in Delivering mode", () => {
     expect(navFor("STUDENT", "delivering")).toEqual([
-      "home",
       "find-errands",
       "my-errands",
       "suppliers",
@@ -42,7 +40,6 @@ describe("isViewAvailable", () => {
 
   it("gives an admin the Dashboard first, and no student screens, in either mode", () => {
     const expected: ViewName[] = [
-      "home",
       "admin",
       "suppliers",
       "profile",
@@ -75,6 +72,16 @@ describe("isViewAvailable", () => {
     for (const view of VIEW_NAMES) {
       expect(NAV_ITEMS.some((item) => item.view === view)).toBe(true);
     }
+  });
+
+  it("opens on a view the session's own nav lists", () => {
+    for (const role of ["STUDENT", "ADMIN"] as const) {
+      for (const mode of ["requesting", "delivering"] as const) {
+        expect(isViewAvailable(defaultView(role), role, mode)).toBe(true);
+      }
+    }
+    expect(defaultView("STUDENT")).toBe("my-errands");
+    expect(defaultView("ADMIN")).toBe("admin");
   });
 
   it("refuses a name that is not a view", () => {

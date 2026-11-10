@@ -18,12 +18,12 @@ func (RealClock) Now() time.Time {
 }
 
 type UnreadSummary struct {
-	HasUnread             bool        `json:"has_unread"`
-	UnreadErrandIDs       []uuid.UUID `json:"unread_errand_ids"`
-	RequesterHasUnread    bool        `json:"requester_has_unread"`
-	CourierHasUnread      bool        `json:"courier_has_unread"`
-	RequesterErrandIDs    []uuid.UUID `json:"requester_unread_errand_ids"`
-	CourierErrandIDs      []uuid.UUID `json:"courier_unread_errand_ids"`
+	HasUnread          bool        `json:"has_unread"`
+	UnreadErrandIDs    []uuid.UUID `json:"unread_errand_ids"`
+	RequesterHasUnread bool        `json:"requester_has_unread"`
+	CourierHasUnread   bool        `json:"courier_has_unread"`
+	RequesterErrandIDs []uuid.UUID `json:"requester_unread_errand_ids"`
+	CourierErrandIDs   []uuid.UUID `json:"courier_unread_errand_ids"`
 }
 
 type Repository interface {

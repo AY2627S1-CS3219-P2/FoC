@@ -25,7 +25,7 @@ import (
 type mockLifecycleService struct {
 	refundFn    func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error
 	payoutFn    func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, courierID, eventID uuid.UUID, amount *int64, occurredAt time.Time) error
-	rewardSetFn func(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
+	rewardSetFn func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error
 }
 
 func (m *mockLifecycleService) RefundReservation(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
@@ -42,9 +42,9 @@ func (m *mockLifecycleService) PayoutReservation(ctx context.Context, errandID u
 	return nil
 }
 
-func (m *mockLifecycleService) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+func (m *mockLifecycleService) ApplyRewardSet(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
 	if m.rewardSetFn != nil {
-		return m.rewardSetFn(ctx, errandID, eventID, newReward, version, occurredAt)
+		return m.rewardSetFn(ctx, errandID, requesterID, eventID, newReward, version, occurredAt)
 	}
 	return nil
 }
@@ -292,6 +292,30 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 		handler.HandleDelivery(ctx, d)
 	})
 
+	t.Run("reward_set requester mismatch rejected to DLQ", func(t *testing.T) {
+		mismatchedSvc := &mockLifecycleService{
+			rewardSetFn: func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reward, version int64, occurredAt time.Time) error {
+				return credit.ErrRequesterMismatch
+			},
+		}
+		handler := messaging.NewLifecycleHandler(mismatchedSvc, logger)
+		rewardSetBody := []byte(fmt.Sprintf(`{
+			"schemaVersion": 1,
+			"eventId": "%s",
+			"errandId": "%s",
+			"requesterId": "%s",
+			"amount": 50,
+			"version": 2,
+			"occurredAt": "2026-10-19T12:00:00Z"
+		}`, uuid.New(), uuid.New(), uuid.New()))
+		d := amqp.Delivery{
+			RoutingKey:  messaging.RoutingRewardSet,
+			ContentType: "application/json",
+			Body:        rewardSetBody,
+		}
+		handler.HandleDelivery(ctx, d)
+	})
+
 	t.Run("account integrity flagged rejected immediately to DLQ without retries", func(t *testing.T) {
 		flaggedSvc := &mockLifecycleService{
 			refundFn: func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
@@ -309,7 +333,9 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 			Body:        body,
 		}
 		handler.HandleDelivery(ctx, d)
-		if backoffCalled { t.Fatal("backoff retry must not be called when account integrity is flagged") }
+		if backoffCalled {
+			t.Fatal("backoff retry must not be called when account integrity is flagged")
+		}
 	})
 }
 
@@ -324,9 +350,11 @@ func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
 	var calledReward, calledVersion int64
 	var calledTime time.Time
 
+	var calledRequester *uuid.UUID
 	svc := &mockLifecycleService{
-		rewardSetFn: func(ctx context.Context, eID, evID uuid.UUID, reward, version int64, occ time.Time) error {
+		rewardSetFn: func(ctx context.Context, eID uuid.UUID, reqID *uuid.UUID, evID uuid.UUID, reward, version int64, occ time.Time) error {
 			calledErrand = eID
+			calledRequester = reqID
 			calledEvent = evID
 			calledReward = reward
 			calledVersion = version
@@ -355,6 +383,9 @@ func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
 			t.Fatalf("dispatch did not forward expected values: errand=%s, event=%s, reward=%d, version=%d, time=%v",
 				calledErrand, calledEvent, calledReward, calledVersion, calledTime)
 		}
+		if calledRequester != nil {
+			t.Fatalf("expected nil requesterId when omitted from payload, got %v", calledRequester)
+		}
 		if !bytes.Contains(logBuf.Bytes(), []byte("errand.reward_set applied")) {
 			t.Fatalf("expected log 'errand.reward_set applied', got: %s", logBuf.String())
 		}
@@ -363,10 +394,32 @@ func TestLifecycleHandler_DispatchRewardSet(t *testing.T) {
 		}
 	})
 
+	t.Run("valid reward_set payload with requesterId dispatches and passes requesterId", func(t *testing.T) {
+		logBuf.Reset()
+		reqID := uuid.New()
+		body := fmt.Sprintf(`{
+			"schemaVersion": 1,
+			"eventId": "%s",
+			"errandId": "%s",
+			"requesterId": "%s",
+			"amount": 75,
+			"version": 3,
+			"occurredAt": "%s"
+		}`, eventID, errandID, reqID, now.Format(time.RFC3339Nano))
+
+		err := h.Dispatch(context.Background(), messaging.RoutingRewardSet, []byte(body))
+		if err != nil {
+			t.Fatalf("unexpected dispatch error: %v", err)
+		}
+		if calledRequester == nil || *calledRequester != reqID {
+			t.Fatalf("expected requesterId %s, got %v", reqID, calledRequester)
+		}
+	})
+
 	t.Run("stale reward_set event logs ignored as stale", func(t *testing.T) {
 		logBuf.Reset()
 		staleSvc := &mockLifecycleService{
-			rewardSetFn: func(ctx context.Context, eID, evID uuid.UUID, reward, version int64, occ time.Time) error {
+			rewardSetFn: func(ctx context.Context, eID uuid.UUID, reqID *uuid.UUID, evID uuid.UUID, reward, version int64, occ time.Time) error {
 				return credit.ErrRewardSetStale
 			},
 		}
@@ -433,7 +486,7 @@ func TestLifecycleHandler_RetryBackoff_InvokedOnTemporaryError(t *testing.T) {
 	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 	svc := &mockLifecycleService{
-		rewardSetFn: func(ctx context.Context, errandID, eventID uuid.UUID, reward, version int64, occurredAt time.Time) error {
+		rewardSetFn: func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reward, version int64, occurredAt time.Time) error {
 			return errors.New("temporary database connection error")
 		},
 	}

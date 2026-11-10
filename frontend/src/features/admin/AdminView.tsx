@@ -72,23 +72,30 @@ export function AdminView({
   // while the change is in flight, so focus would be lost twice: focus goes
   // back to the control's button once the step closes, and to the confirm
   // button once a failed change re-enables it.
-  const [confirmingStatus, setConfirmingStatus] = useState(false);
-  const [changingStatus, setChangingStatus] = useState(false);
+  // AI-generated (edited by Claude Code, 2026-11-09): the same step now serves
+  // the role control (promote, demote) as well as the status one, so it holds
+  // which action is being confirmed. Focus goes back to the button of that
+  // action's family, since the button itself may have changed (Suspend becomes
+  // Reactivate, Make admin becomes Remove admin).
+  const [confirming, setConfirming] = useState<AccountActionKey | null>(null);
+  const [changing, setChanging] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const statusButtonRef = useRef<HTMLButtonElement>(null);
-  const refocusStatusButton = useRef(false);
+  const roleButtonRef = useRef<HTMLButtonElement>(null);
+  const refocusFamily = useRef<"status" | "role" | null>(null);
   useEffect(() => {
-    if (confirmingStatus || !refocusStatusButton.current) return;
-    refocusStatusButton.current = false;
-    statusButtonRef.current?.focus();
-  }, [confirmingStatus, profile]);
+    if (confirming || !refocusFamily.current) return;
+    const family = refocusFamily.current;
+    refocusFamily.current = null;
+    (family === "status" ? statusButtonRef : roleButtonRef).current?.focus();
+  }, [confirming, profile]);
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
   const refocusConfirmButton = useRef(false);
   useEffect(() => {
-    if (changingStatus || !refocusConfirmButton.current) return;
+    if (changing || !refocusConfirmButton.current) return;
     refocusConfirmButton.current = false;
     confirmButtonRef.current?.focus();
-  }, [changingStatus]);
+  }, [changing]);
 
   // AI-generated (edited by James Teo): a handed-over account is looked up once,
   // as the screen opens.
@@ -128,7 +135,7 @@ export function AdminView({
     setProfile(null);
     // AI-generated (edited by James Teo): a new lookup closes any open
     // confirmation step, so it cannot act on the next account shown.
-    setConfirmingStatus(false);
+    setConfirming(null);
     setStatusError(null);
     try {
       setProfile(await client.getUser(uid));
@@ -153,38 +160,46 @@ export function AdminView({
   // AI-generated (edited by James Teo): which status control this account gets,
   // and the handlers for its confirmation step.
   const control = statusControlFor(profile?.status, isSelf, profile?.role);
-  const statusAction = STATUS_ACTIONS[control];
+  // AI-generated (edited by Claude Code, 2026-11-09): which role control this
+  // account gets, beside the status one.
+  const roleControl = roleControlFor(profile?.status, profile?.role, isSelf);
+  const statusKey: AccountActionKey | null = control === "suspend" || control === "reactivate" ? control : null;
+  const roleKey: AccountActionKey | null = roleControl === "none" ? null : roleControl;
+  const statusAction = statusKey ? ACCOUNT_ACTIONS[statusKey] : undefined;
+  const roleAction = roleKey ? ACCOUNT_ACTIONS[roleKey] : undefined;
+  const action = confirming ? ACCOUNT_ACTIONS[confirming] : undefined;
 
-  function cancelStatusChange() {
-    setConfirmingStatus(false);
+  function cancelChange() {
+    refocusFamily.current = confirming ? ACTION_FAMILY[confirming] : null;
+    setConfirming(null);
     setStatusError(null);
-    refocusStatusButton.current = true;
   }
 
-  async function changeStatus() {
-    if (!profile || !statusAction) return;
+  async function changeAccount() {
+    if (!profile || !confirming || !action) return;
     const target = profile;
-    setChangingStatus(true);
+    const family = ACTION_FAMILY[confirming];
+    setChanging(true);
     setStatusError(null);
     try {
-      await statusAction.run(api, target.uid);
+      await action.run(api, target.uid);
     } catch (err) {
       refocusConfirmButton.current = true;
       setStatusError(statusErrorMessage(err));
-      setChangingStatus(false);
+      setChanging(false);
       return;
     }
-    onNotify({ text: statusAction.done(target.username || "The user"), kind: "success" });
+    onNotify({ text: action.done(target.username || "The user"), kind: "success" });
     try {
       setProfile(await api.getUser(target.uid));
     } catch {
-      // The change succeeded, so the Status row shows its result even when
-      // the lookup that would confirm it fails.
-      setProfile({ ...target, status: statusAction.result });
+      // The change succeeded, so the Status or Role row shows its result even
+      // when the lookup that would confirm it fails.
+      setProfile(action.apply(target));
     }
-    refocusStatusButton.current = true;
-    setConfirmingStatus(false);
-    setChangingStatus(false);
+    refocusFamily.current = family;
+    setConfirming(null);
+    setChanging(false);
   }
 
   const Shell = embedded ? "div" : "section";
@@ -214,7 +229,7 @@ export function AdminView({
               change is in flight, so its result cannot land on another account. */}
           <button
             className="btn btn-primary"
-            disabled={loading || changingStatus || !query.trim()}
+            disabled={loading || changing || !query.trim()}
           >
             {loading ? "Looking up…" : "Look up"}
           </button>
@@ -244,15 +259,15 @@ export function AdminView({
               <p className="balance-label">
                 This is your own account. Change your password from your Profile instead.
               </p>
-            ) : confirmingStatus && statusAction ? (
+            ) : confirming && action ? (
               <div
-                className={statusAction.confirmBoxClass}
+                className={action.confirmBoxClass}
                 role="group"
                 aria-labelledby="status-confirm-question"
               >
                 <p id="status-confirm-question">
-                  {statusAction.verb} <strong>{profile.username || "this account"}</strong>?{" "}
-                  {statusAction.consequence}
+                  {action.verb} <strong>{profile.username || "this account"}</strong>?{" "}
+                  {action.consequence}
                 </p>
                 {statusError && (
                   <p className="status error" role="alert">
@@ -262,16 +277,16 @@ export function AdminView({
                 <div className="btn-row" style={{ justifyContent: "flex-start", marginTop: 0 }}>
                   <button
                     ref={confirmButtonRef}
-                    className={`btn ${statusAction.buttonClass}`}
-                    onClick={changeStatus}
-                    disabled={changingStatus}
+                    className={`btn ${action.buttonClass}`}
+                    onClick={changeAccount}
+                    disabled={changing}
                   >
-                    {changingStatus ? statusAction.busyLabel : statusAction.confirmLabel}
+                    {changing ? action.busyLabel : action.confirmLabel}
                   </button>
                   <button
                     className="btn btn-secondary"
-                    onClick={cancelStatusChange}
-                    disabled={changingStatus}
+                    onClick={cancelChange}
+                    disabled={changing}
                     autoFocus
                   >
                     Cancel
@@ -284,19 +299,30 @@ export function AdminView({
                   <button className="btn btn-secondary" onClick={() => setResetting(true)}>
                     Reset password
                   </button>
-                  {statusAction && (
+                  {statusAction && statusKey && (
                     <button
                       ref={statusButtonRef}
                       className={`btn ${statusAction.buttonClass}`}
-                      onClick={() => setConfirmingStatus(true)}
+                      onClick={() => setConfirming(statusKey)}
                     >
                       {statusAction.label}
+                    </button>
+                  )}
+                  {roleAction && roleKey && (
+                    <button
+                      ref={roleButtonRef}
+                      className={`btn ${roleAction.buttonClass}`}
+                      onClick={() => setConfirming(roleKey)}
+                    >
+                      {roleAction.label}
                     </button>
                   )}
                 </div>
                 {control === "not-verified" && <p className="balance-label">Not verified yet.</p>}
                 {control === "none" && profile.role === "ADMIN" && profile.status === "ACTIVE" && (
-                  <p className="balance-label">An admin account can&rsquo;t be suspended.</p>
+                  <p className="balance-label">
+                    An admin account can&rsquo;t be suspended. Remove their admin role first.
+                  </p>
                 )}
               </>
             )}
@@ -350,11 +376,47 @@ export function statusControlFor(
   return "none";
 }
 
-/** The wording and the call behind one status control. */
-interface StatusAction {
+// AI-generated (edited by Claude Code, 2026-11-09): the role control — Make
+// admin and Remove admin (D-149), on user-service's PATCH /api/v1/users/{uid}/role.
+
+/** The role control the Admin screen shows for a looked-up account. */
+export type RoleControl = "promote" | "demote" | "none";
+
+/**
+ * Picks the role control for an account. An ACTIVE student can be made an
+ * admin, and an admin can be made a student, whatever their status. Your own
+ * account gets none, and neither does an unverified or suspended student, or
+ * a profile with no role. This only picks a button: user-service decides
+ * whether the change is allowed, and still refuses demoting yourself or the
+ * last active admin.
+ */
+export function roleControlFor(
+  status: AccountStatus | undefined,
+  role: string | undefined,
+  isSelf: boolean,
+): RoleControl {
+  if (isSelf) return "none";
+  if (role === "ADMIN") return "demote";
+  if (role === "STUDENT" && status === "ACTIVE") return "promote";
+  return "none";
+}
+
+/** Every action the Admin screen can confirm: two on the status, two on the role. */
+export type AccountActionKey = "suspend" | "reactivate" | "promote" | "demote";
+
+/** Which button a confirmation step returns focus to. */
+const ACTION_FAMILY: Record<AccountActionKey, "status" | "role"> = {
+  suspend: "status",
+  reactivate: "status",
+  promote: "role",
+  demote: "role",
+};
+
+/** The wording and the call behind one account action. */
+interface AccountAction {
   label: string;
   buttonClass: string;
-  /** Danger colours for suspending; neutral ones for reactivating. */
+  /** Danger colours for suspending and demoting; neutral ones for the rest. */
   confirmBoxClass: string;
   /** Starts the confirmation question, which goes on with the username. */
   verb: string;
@@ -362,12 +424,39 @@ interface StatusAction {
   confirmLabel: string;
   busyLabel: string;
   run: (api: UsersApi, uid: string) => Promise<void>;
-  /** The status the account has once the call succeeds. */
-  result: AccountStatus;
+  /** The profile as it is once the call succeeds, for when it cannot be fetched again. */
+  apply: (profile: UserProfile) => UserProfile;
   done: (name: string) => string;
 }
 
-const STATUS_ACTIONS: Partial<Record<StatusControl, StatusAction>> = {
+const ACCOUNT_ACTIONS: Record<AccountActionKey, AccountAction> = {
+  promote: {
+    label: "Make admin",
+    buttonClass: "btn-secondary",
+    confirmBoxClass: "confirm-box neutral",
+    verb: "Give admin rights to",
+    // user-service signs the target out of every session when the role changes.
+    consequence:
+      "They can manage accounts, errands and suppliers, and read the audit log. They're signed out and must sign in again.",
+    confirmLabel: "Yes, make admin",
+    busyLabel: "Making admin…",
+    run: (api, uid) => api.promoteUser(uid),
+    apply: (profile) => ({ ...profile, role: "ADMIN" }),
+    done: (name) => `${name} is now an admin.`,
+  },
+  demote: {
+    label: "Remove admin",
+    buttonClass: "btn-danger",
+    confirmBoxClass: "confirm-box",
+    verb: "Remove admin rights from",
+    consequence:
+      "They become a student and lose access to the dashboard. They're signed out and must sign in again.",
+    confirmLabel: "Yes, remove admin",
+    busyLabel: "Removing admin…",
+    run: (api, uid) => api.demoteUser(uid),
+    apply: (profile) => ({ ...profile, role: "STUDENT" }),
+    done: (name) => `${name} is now a student.`,
+  },
   suspend: {
     label: "Suspend account",
     buttonClass: "btn-danger",
@@ -380,7 +469,7 @@ const STATUS_ACTIONS: Partial<Record<StatusControl, StatusAction>> = {
     confirmLabel: "Yes, suspend",
     busyLabel: "Suspending…",
     run: (api, uid) => api.suspendUser(uid),
-    result: "SUSPENDED",
+    apply: (profile) => ({ ...profile, status: "SUSPENDED" }),
     done: (name) => `${name} is suspended.`,
   },
   reactivate: {
@@ -392,7 +481,7 @@ const STATUS_ACTIONS: Partial<Record<StatusControl, StatusAction>> = {
     confirmLabel: "Yes, reactivate",
     busyLabel: "Reactivating…",
     run: (api, uid) => api.reactivateUser(uid),
-    result: "ACTIVE",
+    apply: (profile) => ({ ...profile, status: "ACTIVE" }),
     done: (name) => `${name} can sign in again.`,
   },
 };

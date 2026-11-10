@@ -6,8 +6,11 @@
 // Author review: PENDING — <reviewer to complete>
 
 import { Fragment, useEffect, useState, type FormEvent } from "react";
+import { Workspace, WORKSPACE_WIDE } from "../../components/Workspace";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
+import type { CreditAdminApi } from "../credits/creditAdminApi";
 import type { OrdersApi } from "../errands/ordersApi";
 import { formatDateTime } from "../errands/time";
 import type { AccountListItem, AccountStatus, UsersApi } from "../profile/usersApi";
@@ -23,6 +26,8 @@ const SEARCH_DELAY_MS = 250;
 interface AccountsPanelProps {
   usersApi: UsersApi;
   ordersApi: OrdersApi | null;
+  // AI-generated (edited by Claude Code, 2026-11-09): the wallet block of the review (D-150).
+  creditAdminApi: CreditAdminApi | null;
   currentUserId: string;
   /** An account to open on arrival, from an errand's detail or an audit row. */
   initialAccountId: string | null;
@@ -30,7 +35,7 @@ interface AccountsPanelProps {
 }
 
 /** Search and list; the chosen account's actions and review open under its row. */
-export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccountId, onNotify }: AccountsPanelProps) {
+export function AccountsPanel({ usersApi, ordersApi, creditAdminApi, currentUserId, initialAccountId, onNotify }: AccountsPanelProps) {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AccountStatus | "">("");
@@ -83,6 +88,10 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
     setPage(1);
   }
 
+  // AI-generated (edited by Claude Code, 2026-11-09): on a wide window the details open
+  // in a pane beside the list (D-154); on a narrow one they open under their row, as
+  // before, because they hold a dialog of their own (Reset password).
+  const wide = useMediaQuery(WORKSPACE_WIDE);
   const chosen = selected ? list?.items.find((a) => a.uid === selected.uid) : undefined;
   // The details open under their row. When the account is not on this page
   // (it was looked up from an errand, or the search moved on), they open above
@@ -105,6 +114,8 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
         uid={selected.uid}
         ordersApi={ordersApi}
         usersApi={usersApi}
+        creditAdminApi={creditAdminApi}
+        name={chosen?.username}
         lastLoginAt={chosen ? (chosen.lastLoginAt ?? null) : selected.lastLoginAt}
       />
     </div>
@@ -140,53 +151,65 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
         </select>
       </form>
 
+      <Workspace
+        narrow="list"
+        list={
+          <>
       {error && (
-        <p className="status error" role="alert">
-          {error}{" "}
-          <button type="button" className="link-btn" onClick={() => setReload((n) => n + 1)}>
-            Retry
-          </button>
-        </p>
-      )}
-      {loading && !list && !error && (
-        <p className="status" role="status">
-          Loading accounts…
-        </p>
-      )}
-      {list && list.items.length === 0 && !loading && (
-        <p className="status" role="status">
-          No accounts match.
-        </p>
-      )}
-      {list && !chosen && detail}
-      {list?.items.map((a) => {
-        const isSelected = selected?.uid === a.uid;
-        return (
-          <Fragment key={a.uid}>
-            <button
-              type="button"
-              className="account-row"
-              aria-expanded={isSelected}
-              aria-current={isSelected}
-              onClick={() => setSelected(isSelected ? null : { uid: a.uid, lastLoginAt: a.lastLoginAt ?? null })}
-            >
-              <span>
-                <strong>{a.username || "—"}</strong>
-                <span className="audit-meta"> {a.email}</span>
-              </span>
-              <span className="audit-meta">
-                {a.role} · {a.status}
-                {a.lastLoginAt ? ` · last in ${formatDateTime(a.lastLoginAt) || a.lastLoginAt}` : " · never signed in"}
-              </span>
+          <p className="status error" role="alert">
+            {error}{" "}
+            <button type="button" className="link-btn" onClick={() => setReload((n) => n + 1)}>
+              Retry
             </button>
-            {isSelected && detail}
-          </Fragment>
-        );
-      })}
-      {list && (
-        <Pager page={page} pageCount={pageCount(list.total, list.limit)} total={list.total} busy={loading} onPage={setPage} />
-      )}
-
+          </p>
+        )}
+        {loading && !list && !error && (
+          <div role="status" aria-label="Loading accounts">
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+            <span className="skeleton row" />
+          </div>
+        )}
+        {list && list.items.length === 0 && !loading && (
+          <p className="status" role="status">
+            No accounts match.
+          </p>
+        )}
+        {!wide && list && !chosen && detail}
+        {list?.items.map((a) => {
+          const isSelected = selected?.uid === a.uid;
+          return (
+            <Fragment key={a.uid}>
+              <button
+                type="button"
+                className={`account-row ${isSelected ? "selected" : ""}`}
+                data-ws-item
+                aria-expanded={isSelected}
+                aria-current={isSelected}
+                onClick={() => setSelected(isSelected ? null : { uid: a.uid, lastLoginAt: a.lastLoginAt ?? null })}
+              >
+                <span>
+                  <strong>{a.username || "—"}</strong>
+                  <span className="audit-meta"> {a.email}</span>
+                </span>
+                <span className="audit-meta">
+                  {a.role} · {a.status}
+                  {a.lastLoginAt ? ` · last in ${formatDateTime(a.lastLoginAt) || a.lastLoginAt}` : " · never signed in"}
+                </span>
+              </button>
+              {!wide && isSelected && detail}
+            </Fragment>
+          );
+        })}
+        {list && (
+          <Pager page={page} pageCount={pageCount(list.total, list.limit)} total={list.total} busy={loading} onPage={setPage} />
+        )}
+          </>
+        }
+        detail={wide && selected ? detail : null}
+        onCloseDetail={() => setSelected(null)}
+        emptyText="Pick an account to see it here."
+      />
     </div>
   );
 }

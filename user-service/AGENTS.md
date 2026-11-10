@@ -462,6 +462,23 @@ initialise the `users` table with a default admin. This bootstrap step shall be 
 initialisation and before the Chi router is configured. Ensure that the admin credentials will not be leaked
 into production.
 
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — transcribes the -->
+<!-- human-authorized requirement for administrator role changes below. Author review: ZI YANG - reviewed and edited. -->
+### Administrator Role Changes (approved decisions)
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — transcribes the -->
+<!-- owner's approved API, concurrency and session decisions, including the -->
+<!-- explicit prohibition of self-demotion. Author review: ZI YANG - reviewed and edited. -->
+
+- An active administrator can promote an ACTIVE STUDENT to ADMIN and demote another ADMIN to STUDENT. A SUSPENDED student must never be promoted. An active administrator must never demote themselves, even when other active administrators exist.
+- Always retain at least one ACTIVE ADMIN; refuse a demotion that would remove the final active administrator. This strengthens the earlier requirement that counted administrators of any status.
+- API: `PATCH /api/v1/users/{uid}/role`, bearer authentication, JSON `{"role":"ADMIN"}` or `{"role":"STUDENT"}`; 204 with no body for success, including an unchanged role.
+- Errors use `{"error":"..."}`: 400 invalid user ID/body/role; 401 missing, invalid or revoked authentication; 403 caller is not an ACTIVE ADMIN or attempts self-demotion; 404 target missing; 409 final active administrator or promotion of an inactive account; 413 body over 10 KiB; 500 database, Redis or audit failure.
+- Serialize all promotions and demotions with one PostgreSQL transaction advisory lock. Lock caller and target rows in consistent ID order, then recheck the caller's current authority and the active-admin count inside the transaction. Use READ COMMITTED so reads after acquiring the lock see earlier commits.
+- Persist the role, monotonic `tokens_valid_after`, refresh-session revocations and successful audit entry in the same transaction. The existing status-update transaction must recheck the prohibition against suspending admins after locking its target, closing promotion-versus-suspension races.
+- For a changed role, publish the existing Redis cutoff before committing. Abort the change if Redis fails. Preserve the latest cutoff and sufficient TTL in every cutoff writer. A later database rollback may leave existing access tokens invalidated despite the failed role change.
+- Invalidate all target access and refresh tokens on either role change; the target signs in again for the new role. Login and refresh hold a shared account-row lock while reading current account state, issuing credentials and saving the refresh session; role updates hold an exclusive row lock. Do not return credentials until their transaction commits.
+- Audit successful changes with before/after roles, and record refused or failed attempts under the existing audit policy. Test concurrency between demotions, promotion and suspension, and login/refresh and role changes, as well as dependency failures.
+
 ### Entry point of service (`cmd/api/main.go`)
 The `main.go` file should construct its dependencies in the following order:
 1. Parse environment variables (using a library like kelseyhightower/envconfig).

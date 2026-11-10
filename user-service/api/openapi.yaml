@@ -226,6 +226,16 @@ components:
         limit: {type: integer, maximum: 50}
         offset: {type: integer}
 
+    # AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved
+    # administrator role-change body. Author review: ZI YANG - reviewed and verified.
+    UpdateRoleRequest:
+      type: object
+      required: [role]
+      properties:
+        role:
+          type: string
+          enum: [STUDENT, ADMIN]
+
     UpdateStatusRequest:
       type: object
       required: [status]
@@ -683,7 +693,9 @@ paths:
       parameters:
         - in: query
           name: action
-          schema: {type: string, enum: [account.suspend, account.reactivate, account.password_reset, account.update]}
+          # AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — include
+          # approved role changes in audit filters. Author review: ZI YANG - reviewed and verified.
+          schema: {type: string, enum: [account.suspend, account.reactivate, account.password_reset, account.update, account.change_role]}
         - in: query
           name: outcome
           schema: {type: string, enum: [succeeded, refused, failed]}
@@ -1024,6 +1036,76 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         '500':
           description: Internal Server Error, including unreadable Redis revocation keys.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved
+  # role-change endpoint and failures. Author review: ZI YANG - reviewed and verified.
+  /api/v1/users/{uid}/role:
+    patch:
+      summary: Promote or demote another user (active ADMIN only)
+      description: >-
+        Only ACTIVE students can be promoted. An active administrator cannot
+        demote themselves. At least one ACTIVE ADMIN must remain. Concurrent
+        changes are serialized. A changed role invalidates the target's access
+        and refresh tokens; the target signs in again. Changes and their audit
+        entry commit together; refused or failed domain attempts are audited.
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: uid
+          required: true
+          schema: {type: string, format: uuid}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRoleRequest'
+      responses:
+        '204':
+          description: Role updated, or already assigned. Empty response body.
+        '400':
+          description: Invalid user ID, JSON body, or account role.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Missing, invalid, expired or revoked authentication.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Caller is not an ACTIVE ADMIN, or is attempting self-demotion.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Target account not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Cannot demote the last active admin, or promote an inactive student.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '413':
+          description: Request body exceeds 10 KiB.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal failure, including Redis, database or audit persistence failure.
           content:
             application/json:
               schema:

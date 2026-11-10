@@ -24,6 +24,9 @@ const (
 )
 
 type redisSetter interface {
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — atomic cutoff
+	// updates preserve the latest timestamp and TTL. Author review: ZI YANG - reviewed and verified.
+	Eval(context.Context, string, []string, ...interface{}) *redis.Cmd
 	Set(ctx context.Context, key string, value any, expiration time.Duration) *redis.StatusCmd
 }
 
@@ -114,6 +117,8 @@ func (w *RedisBlocklistWriter) BlockAccessToken(ctx context.Context, jti uuid.UU
 // WriteSuspension writes the suspended:uid:<uuid> key holding suspendedAt in
 // UTC whole-second RFC3339Nano form, with the given TTL. Readers reject a
 // verified token whose iat is at or before this value.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUID, suspendedAt time.Time, ttl time.Duration) error {
 	if w.client == nil {
 		return errors.New("Redis client is required")
@@ -127,10 +132,40 @@ func (w *RedisBlocklistWriter) WriteSuspension(ctx context.Context, uid uuid.UUI
 	if ttl <= 0 {
 		return errors.New("suspension key TTL must be positive")
 	}
-	if err := w.client.Set(ctx, suspensionKeyPrefix+uid.String(), suspendedAt.UTC().Format(time.RFC3339Nano), ttl).Err(); err != nil {
+	if err := w.client.Eval(ctx, monotonicCutoffScript, []string{suspensionKeyPrefix + uid.String()}, suspendedAt.UTC().Format(time.RFC3339Nano), ttl.Milliseconds()).Err(); err != nil {
 		return fmt.Errorf("set Redis suspension key: %w", err)
 	}
 	return nil
 }
 
 var _ session.BlocklistWriter = (*RedisBlocklistWriter)(nil)
+
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved monotonic
+// cutoff writes shared by role, password and suspension invalidation.
+// Author review: ZI YANG - reviewed and verified.
+// Normalize optional fractional seconds before comparing UTC timestamp strings.
+// Retain the greater TTL so an older in-flight writer cannot undo revocation.
+const monotonicCutoffScript = `
+local function normalized(value)
+ local base, fraction = string.match(value, "^(%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d)%.?(%d*)Z$")
+ if not base or #fraction > 9 then return nil end
+ return base .. "." .. fraction .. string.rep("0", 9 - #fraction) .. "Z"
+end
+local incoming = normalized(ARGV[1])
+if not incoming then return redis.error_reply("invalid cutoff") end
+local existing = redis.call("GET", KEYS[1])
+local value = ARGV[1]
+local ttl = tonumber(ARGV[2])
+local remaining = redis.call("PTTL", KEYS[1])
+if existing then
+ local current = normalized(existing)
+ if not current then return redis.error_reply("invalid existing cutoff") end
+ if current > incoming then value = existing end
+end
+if remaining == -1 then
+ redis.call("SET", KEYS[1], value)
+else
+ redis.call("SET", KEYS[1], value, "PX", math.max(ttl, remaining))
+end
+return 1
+`

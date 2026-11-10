@@ -195,6 +195,69 @@ describe("usersApi account status", () => {
   });
 });
 
+// AI-generated (edited by Claude Code, 2026-11-09): promote and demote, against
+// user-service's PATCH /api/v1/users/{uid}/role (UpdateRoleRequest, PR #104).
+describe("usersApi account role", () => {
+  const changes: [string, (api: ReturnType<typeof createUsersApi>) => Promise<void>, string][] = [
+    ["promoteUser", (api) => api.promoteUser(UID), "ADMIN"],
+    ["demoteUser", (api) => api.demoteUser(UID), "STUDENT"],
+  ];
+
+  it.each(changes)("%s sends PATCH /api/users/{uid}/role with %s", async (_name, call, role) => {
+    const { send, api } = stubSend({ ok: true, status: 204, body: null });
+    await call(api);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send.mock.calls[0]![0]).toMatchObject({
+      path: `/api/users/${UID}/role`,
+      method: "PATCH",
+    });
+    expect(send.mock.calls[0]![0].body).toEqual({ role });
+  });
+
+  it("resolves with nothing on user-service's empty 204", async () => {
+    const { api } = stubSend({ ok: true, status: 204, body: null });
+    await expect(api.promoteUser(UID)).resolves.toBeUndefined();
+  });
+
+  it("encodes the account ID into the role path", async () => {
+    const { send, api } = stubSend({ ok: true, status: 204, body: null });
+    await api.demoteUser("a/b");
+    expect(send.mock.calls[0]![0].path).toBe("/api/users/a%2Fb/role");
+  });
+
+  it("keeps the last-admin conflict's message and status", async () => {
+    const { api } = stubSend({
+      ok: false,
+      status: 409,
+      body: { error: "cannot demote the last active admin" },
+    });
+    await expect(api.demoteUser(UID)).rejects.toMatchObject({
+      name: "UsersApiError",
+      message: "cannot demote the last active admin",
+      status: 409,
+    });
+  });
+
+  it("keeps the inactive-student conflict's message and status", async () => {
+    const { api } = stubSend({
+      ok: false,
+      status: 409,
+      body: { error: "only an active student can be promoted" },
+    });
+    await expect(api.promoteUser(UID)).rejects.toMatchObject({
+      message: "only an active student can be promoted",
+      status: 409,
+    });
+  });
+
+  it("turns a role change that never arrived into status 0", async () => {
+    const { api } = stubSend(new NetworkError(""));
+    const err = await api.promoteUser(UID).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UsersApiError);
+    expect((err as UsersApiError).status).toBe(0);
+  });
+});
+
 describe("admin list and audit log", () => {
   it("searches accounts with q, status and paging, leaving empty values out", async () => {
     const { send, api } = stubSend({

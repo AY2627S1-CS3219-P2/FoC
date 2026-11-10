@@ -6,7 +6,7 @@
 // Author review: James Teo — reviewed and verified.
 
 import { describe, expect, it } from "vitest";
-import { formatDate, statusControlFor } from "./AdminView";
+import { formatDate, roleControlFor, statusControlFor } from "./AdminView";
 
 describe("formatDate", () => {
   it("shows a date and time as the Credits screen does, not the US locale", () => {
@@ -48,5 +48,28 @@ describe("statusControlFor", () => {
 
   it("offers nothing when the profile carries no status", () => {
     expect(statusControlFor(undefined, false)).toBe("none");
+  });
+});
+
+// AI-generated (edited by Claude Code, 2026-11-09): the role control (D-149).
+describe("roleControlFor", () => {
+  it("offers Make admin on an active student only", () => {
+    expect(roleControlFor("ACTIVE", "STUDENT", false)).toBe("promote");
+    expect(roleControlFor("SUSPENDED", "STUDENT", false)).toBe("none");
+    expect(roleControlFor("UNVERIFIED", "STUDENT", false)).toBe("none");
+  });
+
+  it("offers Remove admin on another admin, active or not", () => {
+    expect(roleControlFor("ACTIVE", "ADMIN", false)).toBe("demote");
+    expect(roleControlFor("SUSPENDED", "ADMIN", false)).toBe("demote");
+  });
+
+  it("offers nothing on your own account", () => {
+    expect(roleControlFor("ACTIVE", "ADMIN", true)).toBe("none");
+    expect(roleControlFor("ACTIVE", "STUDENT", true)).toBe("none");
+  });
+
+  it("offers nothing when the profile carries no role", () => {
+    expect(roleControlFor("ACTIVE", undefined, false)).toBe("none");
   });
 });

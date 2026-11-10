@@ -7,7 +7,7 @@
 // Author review: James Teo — reviewed and verified.
 
 import { useEffect, useRef, useState } from "react";
-import { Modal } from "../../components/Modal";
+import { Workspace } from "../../components/Workspace";
 import type { ToastMessage } from "../../components/Toast";
 import { usePolling } from "../../lib/polling";
 import type { UsersApi } from "../profile/usersApi";
@@ -274,6 +274,15 @@ export function FindErrandsView({
         </p>
       </div>
 
+      {/* AI-generated (edited by Claude Code, 2026-11-09): the list and the errand's
+          detail side by side on a wide window, the detail in a dialog on a narrow
+          one (D-154). */}
+      <Workspace
+        list={
+          <>
+      {/* AI-generated (edited by PENDING): the location notes, filters and
+          suggested cards (D-092, D-094, D-098) sit inside the Workspace's list,
+          from merging the two. */}
       {/* AI-generated (edited by nigeltzy): asking for the courier's location
           (D-098) only when they tap, and saying why the order is what it is. */}
       {courier.kind === "ask" && (
@@ -440,54 +449,56 @@ export function FindErrandsView({
               </p>
             )
           }
-        >
-          <button
-            type="button"
-            className="btn btn-primary"
-            ref={(node) => {
-              if (node) acceptButtons.current.set(errand.id, node);
-              else acceptButtons.current.delete(errand.id);
-            }}
-            onClick={() => void accept(errand)}
-            disabled={accepting !== null}
-            aria-label={`${acceptLabel(errand.id)}: ${errand.itemDescription}`}
           >
-            {acceptLabel(errand.id)}
-          </button>
-        </ErrandCard>
-      ))}
-
-      {open && (
-        <Modal
-          onClose={() => setOpen(null)}
-          labelledBy={ERRAND_DETAIL_TITLE_ID}
-          fallbackFocus={headingRef}
-        >
-          <ErrandDetail
-            errandId={open.id}
-            initial={open.initial}
-            initialNotice={open.notice}
-            ordersApi={ordersApi}
-            suppliersApi={suppliersApi}
-            usersApi={usersApi}
-            viewerId={userId}
-            viewerRole="STUDENT"
-            available={available}
-            onChanged={() => {
-              refresh();
-              onCreditsChanged();
-            }}
-            onGone={() => {
-              // A courier who is not a party sees an errand only while it is
-              // open, so a 404 here is an errand that ended or was taken, not
-              // a failure: the neutral toast, in words that cover both.
-              setOpen(null);
-              onNotify({ text: MSG_NOT_OPEN_ANY_MORE, kind: "success" });
-              refresh();
-            }}
-          />
-        </Modal>
-      )}
+            <button
+              type="button"
+              className="btn btn-primary"
+              ref={(node) => {
+                if (node) acceptButtons.current.set(errand.id, node);
+                else acceptButtons.current.delete(errand.id);
+              }}
+              onClick={() => void accept(errand)}
+              disabled={accepting !== null}
+              aria-label={`${acceptLabel(errand.id)}: ${errand.itemDescription}`}
+            >
+              {acceptLabel(errand.id)}
+            </button>
+          </ErrandCard>
+        ))}
+          </>
+        }
+        detail={
+          open ? (
+            <ErrandDetail
+                errandId={open.id}
+                initial={open.initial}
+                initialNotice={open.notice}
+                ordersApi={ordersApi}
+                suppliersApi={suppliersApi}
+                usersApi={usersApi}
+                viewerId={userId}
+                viewerRole="STUDENT"
+                available={available}
+                onChanged={() => {
+                  refresh();
+                  onCreditsChanged();
+                }}
+                onGone={() => {
+                  // A courier who is not a party sees an errand only while it is
+                  // open, so a 404 here is an errand that ended or was taken, not
+                  // a failure: the neutral toast, in words that cover both.
+                  setOpen(null);
+                  onNotify({ text: MSG_NOT_OPEN_ANY_MORE, kind: "success" });
+                  refresh();
+                }}
+              />
+          ) : null
+        }
+        onCloseDetail={() => setOpen(null)}
+        emptyText="Pick an errand to see it here."
+        detailTitleId={ERRAND_DETAIL_TITLE_ID}
+        fallbackFocus={headingRef}
+      />
     </section>
   );
 }

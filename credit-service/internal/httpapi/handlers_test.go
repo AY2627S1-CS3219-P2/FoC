@@ -10,6 +10,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,7 +62,7 @@ func (m *mockReservationRepo) AdjustReservationReward(ctx context.Context, erran
 	return nil, nil, errors.New("not implemented")
 }
 
-func (m *mockReservationRepo) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+func (m *mockReservationRepo) ApplyRewardSet(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
 	return nil
 }
 
@@ -701,6 +702,35 @@ func TestAdjustReservationReward(t *testing.T) {
 		}
 		if errResp.Code != gen.RESERVATIONNOTFOUND {
 			t.Fatalf("code = %v, want RESERVATION_NOT_FOUND", errResp.Code)
+		}
+	})
+
+	t.Run("returns 400 INVALID_REQUEST when reward adjustment is zero-delta", func(t *testing.T) {
+		repo := &mockReservationRepo{
+			adjustRewardFn: func(ctx context.Context, eID, rID uuid.UUID, next int64, currVersion int64, opID uuid.UUID) (*credit.OperationResult, *credit.Reservation, error) {
+				return nil, nil, fmt.Errorf("%w: newReward matches current reward; no adjustment needed", credit.ErrInvalidRequest)
+			},
+		}
+
+		router, _, iss := setupTestRouter(t, nil, repo, nil)
+		token := iss.mint(t, tokenOpts{subject: requesterID.String(), role: "STUDENT"})
+		payload := map[string]any{"newReward": 35, "currVersion": 1}
+		data, _ := json.Marshal(payload)
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/credits/reservations/"+errandID.String(), bytes.NewReader(data))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("status = %d, want 400; body: %s", rec.Code, rec.Body.String())
+		}
+		var errResp gen.ErrorResponse
+		if err := json.NewDecoder(rec.Body).Decode(&errResp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+		if errResp.Code != gen.INVALIDREQUEST {
+			t.Fatalf("code = %v, want INVALID_REQUEST", errResp.Code)
 		}
 	})
 }

@@ -24,8 +24,8 @@ function bootstrap(container: HTMLElement): void {
     : createErrorReporter({
         post: createGatewayPost(config.gatewayBaseUrl),
         getAccessToken: () => tokens.getAccessToken(),
-        // App opens on Home when no view is remembered.
-        getView: () => readLastView() ?? "home",
+        // App opens on the default view when none is remembered.
+        getView: () => readLastView() ?? "my-errands",
       });
 
   const root = createRoot(container, {

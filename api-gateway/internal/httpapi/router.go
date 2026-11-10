@@ -52,6 +52,12 @@ const supplierServiceAPIPrefix = "/suppliers"
 // routes; the public /api/credits/accounts/* path is rewritten onto it.
 const creditServiceAccountsPrefix = "/api/v1/credits/accounts"
 
+// AI-generated (edited by Claude Code, 2026-11-09).
+// creditServiceAdminPrefix is where credit-service mounts its admin routes
+// (D-150, D-151); the public /api/credits/admin/* path is rewritten onto it.
+// credit-service checks for the ADMIN role itself on every one of them.
+const creditServiceAdminPrefix = "/api/v1/credits/admin"
+
 // authRoute is one of the six public /auth routes. They carry credentials,
 // not a verified identity, so they are registered outside RequireToken and
 // user-service authenticates them. newProxy sets the route's refresh-cookie
@@ -156,10 +162,12 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		// The claim headers are still stripped and injected (D-022).
 		{"/api/suppliers", downstream.Supplier, supplierServiceAPIPrefix, proxy.NewRetainingToken},
 		{"/api/orders", downstream.Order, "", proxy.NewRetainingToken},
-		// Only credit-service's account routes are public (D-056). Its
-		// reservation routes are for order-service alone, so nothing else
-		// under /api/credits is routed and it gets the JSON 404 below.
+		// Only credit-service's account routes and, since D-151, its admin
+		// routes are public (D-056). Its reservation routes are for
+		// order-service alone, so nothing else under /api/credits is routed
+		// and it gets the JSON 404 below.
 		{"/api/credits/accounts", downstream.Credit, creditServiceAccountsPrefix, proxy.NewRetainingToken},
+		{"/api/credits/admin", downstream.Credit, creditServiceAdminPrefix, proxy.NewRetainingToken},
 		{"/api/chat", downstream.Chat, "", proxy.NewRetainingToken},
 	}
 

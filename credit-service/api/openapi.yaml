@@ -22,7 +22,7 @@ components:
   schemas:
     ErrorCode:
       type: string
-      enum: [INVALID_REQUEST, WALLET_NOT_READY, INSUFFICIENT_CREDITS, RESERVATION_NOT_FOUND, RESERVATION_STATE_CONFLICT, IDEMPOTENCY_CONFLICT, ACCOUNT_INTEGRITY_FAILURE, CREDIT_LIMIT_EXCEEDED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
+      enum: [INVALID_REQUEST, FORBIDDEN, WALLET_NOT_READY, INSUFFICIENT_CREDITS, RESERVATION_NOT_FOUND, RESERVATION_STATE_CONFLICT, IDEMPOTENCY_CONFLICT, ACCOUNT_INTEGRITY_FAILURE, CREDIT_LIMIT_EXCEEDED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]
     ErrorResponse:
       type: object
       additionalProperties: false
@@ -162,6 +162,162 @@ components:
             $ref: "#/components/schemas/TransactionOperation"
         nextCursor:
           type: [string, "null"]
+    # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-09 — the admin
+    # routes of D-150 to D-153 (flagged accounts, an account's wallet, Re-verify,
+    # the audit log). Author review: PENDING — Seth Tay, credit-service owner.
+    IntegrityStatus:
+      type: string
+      enum: [CONSISTENT, FLAGGED]
+    FlaggedAccount:
+      description: A flagged account and the first discrepancy found on it (D-153).
+      type: object
+      additionalProperties: false
+      required: [userId, reasonCode, flaggedAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        reasonCode:
+          type: string
+        detail:
+          type: [string, "null"]
+        expected:
+          type: [number, "null"]
+          format: double
+        observed:
+          type: [number, "null"]
+          format: double
+        flaggedAt:
+          type: string
+          format: date-time
+    FlaggedAccountsPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/FlaggedAccount"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
+    AdminAccountResponse:
+      description: An account as stored. The balances are real even when the account is flagged, but a flagged account's are not trusted (D-150).
+      type: object
+      additionalProperties: false
+      required: [userId, availableCredits, reservedCredits, integrityStatus, createdAt, updatedAt]
+      properties:
+        userId:
+          type: string
+          format: uuid
+        availableCredits:
+          type: integer
+          format: int64
+        reservedCredits:
+          type: integer
+          format: int64
+        integrityStatus:
+          $ref: "#/components/schemas/IntegrityStatus"
+        flaggedAt:
+          type: [string, "null"]
+          format: date-time
+        reasonCode:
+          type: [string, "null"]
+        detail:
+          type: [string, "null"]
+        expected:
+          type: [number, "null"]
+          format: double
+        observed:
+          type: [number, "null"]
+          format: double
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    ReverifyOutcome:
+      type: string
+      enum: [CLEARED, STILL_FLAGGED, NOT_FLAGGED, STALE]
+    ReverifyResponse:
+      description: What a Re-verify did. The reason, detail and amounts are the current finding when the account is still flagged (D-153); nothing is stored from them.
+      type: object
+      additionalProperties: false
+      required: [outcome]
+      properties:
+        outcome:
+          $ref: "#/components/schemas/ReverifyOutcome"
+        reasonCode:
+          type: [string, "null"]
+        detail:
+          type: [string, "null"]
+        expected:
+          type: [number, "null"]
+          format: double
+        observed:
+          type: [number, "null"]
+          format: double
+    AuditEntry:
+      description: One row of the admin audit log (D-107, D-113); the same shape as order-service's.
+      type: object
+      additionalProperties: false
+      required: [id, occurredAt, actorId, actorRole, action, targetType, targetId, outcome, refusalReason, reason, correlationId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        occurredAt:
+          type: string
+          format: date-time
+        actorId:
+          type: string
+          format: uuid
+        actorRole:
+          type: string
+        action:
+          type: string
+        targetType:
+          type: string
+        targetId:
+          type: string
+        outcome:
+          type: string
+          enum: [succeeded, refused, failed]
+        refusalReason:
+          type: string
+        reason:
+          type: string
+        beforeState:
+          type: [object, "null"]
+          additionalProperties: true
+        afterState:
+          type: [object, "null"]
+          additionalProperties: true
+        additionalComments:
+          type: [object, "null"]
+          additionalProperties: true
+        correlationId:
+          type: string
+    AuditLogPage:
+      type: object
+      additionalProperties: false
+      required: [items, total, limit, offset]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEntry"
+        total:
+          type: integer
+        limit:
+          type: integer
+        offset:
+          type: integer
   responses:
     BadRequest:
       description: Invalid request.
@@ -171,6 +327,12 @@ components:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthorized:
       description: Missing or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Forbidden:
+      description: The caller is not an ADMIN.
       content:
         application/json:
           schema:
@@ -369,6 +531,182 @@ paths:
           $ref: "#/components/responses/BadRequest"
         "401":
           $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-09 — D-150 to
+  # D-153. ADMIN only; the gateway routes /api/credits/admin/* here (D-151).
+  /api/v1/credits/admin/flagged-accounts:
+    get:
+      summary: List the flagged accounts, oldest flag first (ADMIN only).
+      operationId: listFlaggedAccounts
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: limit
+          required: false
+          schema:
+            type: integer
+            default: 50
+            minimum: 1
+            maximum: 50
+        - in: query
+          name: offset
+          required: false
+          schema:
+            type: integer
+            default: 0
+            minimum: 0
+      responses:
+        "200":
+          description: One page of flagged accounts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FlaggedAccountsPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/credits/admin/users/{userId}/account:
+    get:
+      summary: Read a user's account as stored, flagged or not (ADMIN only).
+      operationId: getAccountForAdmin
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: The stored account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AdminAccountResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/credits/admin/users/{userId}/reconcile:
+    post:
+      summary: Re-verify one account, clearing its flag if every ledger check passes (ADMIN only).
+      description: |
+        Re-runs the reconciliation checks on the account. If it is flagged and every
+        check passes, the flag is cleared (D-150). Nothing else is written: no balance
+        or ledger row changes, and a blocked refund or payout is not replayed.
+      operationId: reverifyAccount
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: What the Re-verify did.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReverifyResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /api/v1/credits/admin/audit-log:
+    get:
+      summary: The admin audit log, newest first (ADMIN only).
+      description: |
+        Every Re-verify that cleared a flag, and every one that was refused or failed
+        (D-152). Any admin reads the whole log (D-110). Rows are immutable and kept
+        6 months (D-114). At most 50 a page (D-104).
+      operationId: listAuditLog
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: query
+          name: action
+          schema:
+            type: string
+            enum: [credit.reverify]
+        - in: query
+          name: outcome
+          schema:
+            type: string
+            enum: [succeeded, refused, failed]
+        - in: query
+          name: actor_id
+          schema:
+            type: string
+        - in: query
+          name: target_id
+          schema:
+            type: string
+        - in: query
+          name: from
+          description: RFC 3339 time or YYYY-MM-DD; inclusive.
+          schema:
+            type: string
+        - in: query
+          name: to
+          description: RFC 3339 time or YYYY-MM-DD; exclusive.
+          schema:
+            type: string
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+        - in: query
+          name: offset
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: One page of audit rows.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditLogPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "503":
           $ref: "#/components/responses/ServiceUnavailable"
         "500":

@@ -45,7 +45,7 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID, re
 				return credit.ErrReservationConflict
 			}
 			if existing.Status != credit.ReservationStatusReserved {
-				return credit.ErrReservationConflict
+				return credit.ErrReservationStateConflict
 			}
 			res = existing
 			created = false
@@ -226,7 +226,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 
 		// 4. Require reservation status RESERVED.
 		if reservation.Status != credit.ReservationStatusReserved {
-			return credit.ErrReservationConflict
+			return credit.ErrReservationStateConflict
 		}
 		// Reject stale requests from an earlier order state.
 		// Requests where currVersion >= reservation.Version are accepted, allowing raises after non-credit edits.
@@ -234,14 +234,9 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			return credit.ErrReservationConflict
 		}
 
-		// 5. If currentAmount == newAmount, update version and return unchanged reservation (validated idempotent no-op).
+		// 5. Reject zero-delta adjustments: credit ledger operations require non-zero deltas.
 		if currentAmount == newAmount {
-			if _, err := tx.Exec(txCtx, `UPDATE credit_reservations SET version = $1, updated_at = NOW() WHERE id = $2`, targetVersion, reservation.ID); err != nil {
-				return fmt.Errorf("update reservation version: %w", err)
-			}
-			reservation.Version = targetVersion
-			resRev = &reservation
-			return nil
+			return fmt.Errorf("%w: newReward matches current reward; no adjustment needed", credit.ErrInvalidRequest)
 		}
 
 		// 6. Otherwise, lock and verify the requester account.
@@ -367,7 +362,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 }
 
 // ApplyRewardSet applies an outbox errand.reward_set event to reconcile hold with committed decreases (D-057, D-102).
-func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
+func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward, version int64, occurredAt time.Time) error {
 	return r.withTx(ctx, func(txCtx context.Context, tx pgx.Tx) error {
 		// Lock the reservation
 		var reservation credit.Reservation
@@ -385,6 +380,11 @@ func (r *PostgresRepository) ApplyRewardSet(ctx context.Context, errandID, event
 				return credit.ErrReservationNotFound
 			}
 			return fmt.Errorf("lock reservation for reward_set: %w", err)
+		}
+
+		// Requester identity mismatch check
+		if requesterID != nil && *requesterID != uuid.Nil && *requesterID != reservation.RequesterID {
+			return credit.ErrRequesterMismatch
 		}
 
 		// Terminal state: ignore as safe no-op
