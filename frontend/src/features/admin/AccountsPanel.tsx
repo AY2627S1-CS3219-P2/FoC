@@ -183,6 +183,7 @@ export function AccountsPanel({ usersApi, ordersApi, creditAdminApi, currentUser
               <button
                 type="button"
                 className={`account-row ${isSelected ? "selected" : ""}`}
+                data-ws-item
                 aria-expanded={isSelected}
                 aria-current={isSelected}
                 onClick={() => setSelected(isSelected ? null : { uid: a.uid, lastLoginAt: a.lastLoginAt ?? null })}

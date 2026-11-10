@@ -92,13 +92,16 @@ export function SuppliersView({
     setSubmitting(true);
     try {
       if (modal?.kind === "edit") {
-        await api.updateSupplier(modal.supplier.id, input);
+        const updated = await api.updateSupplier(modal.supplier.id, input);
         onNotify({ text: "Supplier updated", kind: "success" });
+        // AI-generated (edited by Claude Code, 2026-11-10): back to the supplier's
+        // detail with its new values, not to an empty pane.
+        setModal({ kind: "detail", supplier: updated });
       } else {
         await api.createSupplier(input);
         onNotify({ text: "Supplier created", kind: "success" });
+        setModal(null);
       }
-      setModal(null);
       await load();
     } catch (err) {
       onNotify({
@@ -224,7 +227,7 @@ export function SuppliersView({
               existing={modal.supplier}
               submitting={submitting}
               onSubmit={handleSubmit}
-              onCancel={() => setModal(null)}
+              onCancel={() => setModal({ kind: "detail", supplier: modal.supplier })}
             />
           ) : null
         }
