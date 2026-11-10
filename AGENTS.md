@@ -103,6 +103,7 @@ explicitly in your summary and explaining why the stdlib won't do.
 ```
 user-service/      order-service/      frontend/
 supplier-service/  credit-service/     api-gateway/
+chat-service/      notification-service/
 data/              compose.yaml        .env.example
 e2e/               rabbitmq/           observability/
 ai/usage-log.md    ai/decisions.md
@@ -123,6 +124,7 @@ state its own port but must not restate this table.
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
 | `chat-service` | 8085 | `CHAT_DB_URL` |
+| `notification-service` | 8086 (D-140) | `NOTIFICATION_DB_URL` |
 | `frontend` | 3001: where `npm run dev` serves the app; in production a static host serves it (D-033) | — |
 | `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of its own; it reads the shared Redis revocation keys, §4.1) |
 | `observability` | Grafana 3000 and Loki 3100, published on 127.0.0.1 only (`GRAFANA_PORT`, `LOKI_PORT`) | — |
@@ -203,8 +205,8 @@ Rules: no test depends on another test's leftover state or on execution order
 (temporal coupling in disguise). No `time.Sleep` to wait for something — poll
 with a deadline. New behaviour ships with its test in the same PR.
 
-Today `api-gateway`, `user-service`, `supplier-service` and `order-service` have
-unit tests, and all four also have integration tests (`testcontainers-go`); and `e2e/` holds the whole-stack suite, whose preflight
+Today `api-gateway`, `user-service`, `supplier-service`, `order-service` and
+`notification-service` have unit tests, and all five also have integration tests (`testcontainers-go`); and `e2e/` holds the whole-stack suite, whose preflight
 names what the stack still lacks before it can pass. Build the tier your task
 needs; never report a tier as running unless you ran it.
 
@@ -220,9 +222,9 @@ Further reading: [Backend 101 — a guide to OpenAPI and API-first](https://medi
   `make generate`.
 - Changing the YAML is an interface change — a human decides it, you implement
   it. Say so if a task implies one.
-- `user-service`, `order-service` and `credit-service` have committed specs;
-  only `order-service` generates code from its spec so far
-  (`go generate ./internal/gen` in that folder). Once CI exists it must fail on
+- `user-service`, `order-service`, `credit-service` and `notification-service`
+  have committed specs; only `order-service` and `notification-service` generate
+  code from theirs so far (`go generate ./internal/gen` in that folder). Once CI exists it must fail on
   stale generated code; until then, regenerate by hand and say that you did.
 
 ## 9. Git
@@ -273,8 +275,8 @@ make up / make down       # full stack via Compose
 What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
 and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
 carries Redis, RabbitMQ, the API Gateway, and user-service, supplier-service,
-order-service, credit-service and chat-service with their databases, plus
-chat-service's own Redis. Loki, Grafana Alloy,
+order-service, credit-service, chat-service and notification-service with their
+databases, plus chat-service's own Redis. Loki, Grafana Alloy,
 Prometheus and Grafana sit under the `observability` profile, so `docker compose
 up` and `down` reach them only with `--profile observability`; Grafana is on
 `http://127.0.0.1:3000`. A service
@@ -340,3 +342,5 @@ curl -X POST http://localhost:8080/auth/verify-otp \
 If your database already has an admin account or a `student2` row from
 earlier, these steps are no-ops (register replies `409` on the duplicate,
 and the bootstrap skips itself) — nothing to clean up first.
+
+<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout, port table and commands (D-140 to D-146). -->

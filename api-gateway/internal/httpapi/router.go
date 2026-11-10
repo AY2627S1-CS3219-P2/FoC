@@ -58,6 +58,11 @@ const creditServiceAccountsPrefix = "/api/v1/credits/accounts"
 // credit-service checks for the ADMIN role itself on every one of them.
 const creditServiceAdminPrefix = "/api/v1/credits/admin"
 
+// AI-generated (edited by PENDING).
+// notificationServicePrefix is where notification-service mounts its routes;
+// the public /api/notifications path is rewritten onto it (D-144).
+const notificationServicePrefix = "/notifications"
+
 // authRoute is one of the six public /auth routes. They carry credentials,
 // not a verified identity, so they are registered outside RequireToken and
 // user-service authenticates them. newProxy sets the route's refresh-cookie
@@ -169,6 +174,10 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		{"/api/credits/accounts", downstream.Credit, creditServiceAccountsPrefix, proxy.NewRetainingToken},
 		{"/api/credits/admin", downstream.Credit, creditServiceAdminPrefix, proxy.NewRetainingToken},
 		{"/api/chat", downstream.Chat, "", proxy.NewRetainingToken},
+		// AI-generated (edited by PENDING).
+		// notification-service verifies the token itself and serves its routes
+		// under /notifications (D-144).
+		{"/api/notifications", downstream.Notification, notificationServicePrefix, proxy.NewRetainingToken},
 	}
 
 	// WebSocket upgrade endpoint: authenticates downstream via single-use ticket

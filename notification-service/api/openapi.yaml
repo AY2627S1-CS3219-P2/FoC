@@ -1,0 +1,172 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
+# Scope: Wrote notification-service's HTTP contract from the owner's choices
+#   (D-144) and backlog F5.1. Claude Code filled in the maximum limit, the
+#   `total` field, the 204 and the 404, as D-144 records.
+# Author review: PENDING — <reviewer to complete>
+
+openapi: 3.1.0
+info:
+  title: notification-service
+  version: 0.1.0
+  description: |
+    A user's in-app notifications (backlog F5.1, D-144).
+
+    The browser reaches these routes through the API Gateway at
+    `/api/notifications`; the gateway forwards that path to `/notifications`.
+
+    Every route except `/health` needs `Authorization: Bearer <access token>`,
+    the token `user-service` issued. notification-service verifies it itself
+    (D-041, D-054). The caller is the token's `sub`; `X-User-Id` and
+    `X-User-Role` are ignored. A missing, invalid, expired or revoked token is
+    401. When `user-service`'s keys cannot be loaded, or Redis answers the
+    revocation lookup with an error, the answer is 503.
+
+    Errors are `{"error": "<message>"}`. Times are RFC 3339 in UTC.
+servers:
+  - url: http://localhost:8086
+
+security:
+  - bearerAuth: []
+
+paths:
+  /health:
+    get:
+      operationId: getHealth
+      summary: Liveness and database readiness
+      security: []
+      responses:
+        "200":
+          description: The service and its database answer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /notifications:
+    get:
+      operationId: listNotifications
+      summary: The caller's notifications, newest first
+      parameters:
+        - name: limit
+          in: query
+          description: How many to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: offset
+          in: query
+          description: How many of the newest to skip.
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: One page of the caller's notifications.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPage"
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+  /notifications/{id}/read:
+    post:
+      operationId: markNotificationRead
+      summary: Mark one of the caller's notifications as read
+      description: Marking a notification that is already read changes nothing and is still 204.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "204":
+          description: The notification is read.
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Error"
+        "404":
+          description: The caller has no such notification (F5.1.2).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          $ref: "#/components/responses/Error"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  responses:
+    Error:
+      description: The request failed; `error` says why.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+
+    Notification:
+      type: object
+      required: [id, errandId, stateChange, message, read, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        errandId:
+          type: string
+          format: uuid
+        stateChange:
+          type: string
+          description: The event that produced it, such as `errand.accepted`.
+        message:
+          type: string
+          description: The text to show the user.
+        read:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+
+    NotificationPage:
+      type: object
+      required: [notifications, total]
+      properties:
+        notifications:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notification"
+        total:
+          type: integer
+          description: How many notifications the caller has in all.

@@ -26,6 +26,10 @@
 #   tokens and their revocation itself (D-041, D-054), and the note at the top
 #   no longer says it trusts the gateway's identity headers. SHARED FILE.
 # Author review: PENDING — <reviewer to complete>
+# Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
+# Scope: notification-service and its database (D-140), and the gateway's
+#   NOTIFICATION_BASE_URL (D-144). SHARED FILE.
+# Author review: PENDING — <reviewer to complete>
 
 services:
   user-db:
@@ -150,6 +154,7 @@ services:
       ORDER_BASE_URL: http://order-service:8083
       CREDIT_BASE_URL: http://credit-service:8084
       CHAT_BASE_URL: http://chat-service:8085
+      NOTIFICATION_BASE_URL: http://notification-service:8086
       # Refresh-cookie Max-Age, taken from JWT_REFRESH_TOKEN_TTL in .env
       # (default 168h) so it matches user-service's refresh-token lifetime.
       REFRESH_TOKEN_TTL: ${JWT_REFRESH_TOKEN_TTL:-168h}
@@ -450,6 +455,51 @@ services:
       retries: 3
       start_period: 30s
 
+  # ---- Notification service and its database ---------------------------
+  notification-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${NOTIFICATION_DB_USER:-notification}
+      POSTGRES_PASSWORD: ${NOTIFICATION_DB_PASSWORD:-notification}
+      POSTGRES_DB: notifications
+    volumes:
+      - notification-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${NOTIFICATION_DB_USER:-notification} -d notifications"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # An add-on (D-140): nothing depends on it, and its only dependency is its
+  # own database. It connects to the broker by itself and keeps retrying.
+  notification-service:
+    build:
+      context: ./notification-service
+      dockerfile: Dockerfile
+    depends_on:
+      notification-db:
+        condition: service_healthy
+    environment:
+      PORT: 8086
+      NOTIFICATION_DB_URL: postgres://${NOTIFICATION_DB_USER:-notification}:${NOTIFICATION_DB_PASSWORD:-notification}@notification-db:5432/notifications?sslmode=disable
+      RABBITMQ_URL: amqp://foc:foc-dev-password@rabbitmq:5672/foc
+      JWKS_URL: http://user-service:8081/.well-known/jwks.json
+      REDIS_URL: redis://redis:6379
+      # C, stated in the delivered notification; the same value order-service uses.
+      ORDER_CONFIRMATION_WINDOW: ${ORDER_CONFIRMATION_WINDOW:-24h}
+    restart: on-failure
+    # Above cmd/api's 20s shutdown budget.
+    stop_grace_period: 25s
+    # No `ports:` key: reachable only through the gateway, at /api/notifications.
+    # AI-generated (edited by PENDING): the same healthcheck as the other app
+    # services (D-134).
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 90s
+
 volumes:
   user-db-data:
   user-ranking-db-data:
@@ -461,5 +511,6 @@ volumes:
   chat-db-data:
   chat-redis-data:
   chat-media-data:
+  notification-db-data:
   loki-data:
   alloy-data:

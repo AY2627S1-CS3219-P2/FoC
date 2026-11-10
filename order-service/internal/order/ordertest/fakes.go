@@ -203,6 +203,10 @@ func (c *Credit) Adjusts() []AdjustCall {
 type outboxRow struct {
 	event     order.OutboxEvent
 	published bool
+	// AI-generated (edited by PENDING).
+	// seq keeps events staged at the same instant in the order they were
+	// staged, since the outbox is a map and the test clock can stand still.
+	seq int
 }
 
 // Repository is an in-memory order.Repository. One mutex serializes every
@@ -212,6 +216,7 @@ type Repository struct {
 	orders  map[uuid.UUID]order.Order
 	history []order.HistoryEntry
 	outbox  map[uuid.UUID]*outboxRow
+	nextSeq int
 	nextID  int64
 	fail    map[string]error
 	// audits are the admin audit rows saved, in order.
@@ -275,12 +280,28 @@ func (r *Repository) Put(o order.Order) {
 func (r *Repository) Events() []order.OutboxEvent {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]order.OutboxEvent, 0, len(r.outbox))
+	rows := make([]*outboxRow, 0, len(r.outbox))
 	for _, row := range r.outbox {
+		rows = append(rows, row)
+	}
+	slices.SortFunc(rows, func(a, b *outboxRow) int {
+		if c := a.event.AvailableAt.Compare(b.event.AvailableAt); c != 0 {
+			return c
+		}
+		return a.seq - b.seq
+	})
+	out := make([]order.OutboxEvent, 0, len(rows))
+	for _, row := range rows {
 		out = append(out, row.event)
 	}
-	slices.SortFunc(out, func(a, b order.OutboxEvent) int { return a.AvailableAt.Compare(b.AvailableAt) })
 	return out
+}
+
+// AI-generated (edited by PENDING).
+// stage adds e to the outbox. The caller holds r.mu.
+func (r *Repository) stage(e order.OutboxEvent) {
+	r.nextSeq++
+	r.outbox[e.EventID] = &outboxRow{event: e, seq: r.nextSeq}
 }
 
 // EventsFor returns the events whose payload names the errand.
@@ -511,7 +532,7 @@ func (r *Repository) QueueEvent(_ context.Context, e order.OutboxEvent) error {
 	if err := r.takeFail("QueueEvent"); err != nil {
 		return err
 	}
-	r.outbox[e.EventID] = &outboxRow{event: e}
+	r.stage(e)
 	return nil
 }
 
@@ -572,7 +593,7 @@ func (r *Repository) Transition(_ context.Context, t order.Transition) (order.Or
 	r.orders[o.ID] = o
 	r.appendHistory(t.History)
 	if t.Event != nil {
-		r.outbox[t.Event.EventID] = &outboxRow{event: *t.Event}
+		r.stage(*t.Event)
 	}
 	if t.Audit != nil {
 		r.audits = append(r.audits, t.Audit)
@@ -631,7 +652,7 @@ func (r *Repository) Accept(_ context.Context, c order.AcceptCommand) (order.Ord
 	r.orders[o.ID] = o
 	r.appendHistory(c.History)
 	if c.Event != nil {
-		r.outbox[c.Event.EventID] = &outboxRow{event: *c.Event}
+		r.stage(*c.Event)
 	}
 	// AI-generated (edited by James Teo).
 	return r.withHistory(o), nil
@@ -665,7 +686,7 @@ func (r *Repository) Amend(_ context.Context, id uuid.UUID, fn func(current orde
 		r.appendHistory(*res.History)
 	}
 	if res.Event != nil {
-		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
+		r.stage(*res.Event)
 	}
 	// AI-generated (edited by James Teo).
 	return r.withHistory(res.Order), nil
@@ -699,7 +720,7 @@ func (r *Repository) AmendScheduled(_ context.Context, id uuid.UUID, now time.Ti
 		r.appendHistory(*res.History)
 	}
 	if res.Event != nil {
-		r.outbox[res.Event.EventID] = &outboxRow{event: *res.Event}
+		r.stage(*res.Event)
 	}
 	return r.withHistory(res.Order), nil
 }

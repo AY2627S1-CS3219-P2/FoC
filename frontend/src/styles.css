@@ -2634,6 +2634,15 @@ textarea {
   cursor: pointer;
 }
 
+/* AI-generated (edited by PENDING): an unread notification (F5.1.4). */
+.notification-unread .ledger-label {
+  font-weight: 600;
+}
+
+.notification-unread {
+  background: var(--primary-soft);
+}
+
 /* ---------------------------------------------------------------------------
  * AI Assistance Disclosure:
  * Tool: Claude Code (model: Sonnet 5.5), date: 2026-11-09

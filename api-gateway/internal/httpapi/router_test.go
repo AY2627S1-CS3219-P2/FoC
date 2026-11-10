@@ -178,6 +178,7 @@ type harness struct {
 	orderRec    *recorder
 	creditRec   *recorder
 	chatRec     *recorder
+	notifRec    *recorder
 	// logs holds every line the router logged.
 	logs *logBuffer
 }
@@ -191,7 +192,7 @@ func newHarness(t *testing.T) *harness {
 	jwks := httptest.NewServer(iss.jwksHandler())
 	t.Cleanup(jwks.Close)
 
-	userRec, suppRec, orderRec, creditRec, chatRec := &recorder{}, &recorder{}, &recorder{}, &recorder{}, &recorder{}
+	userRec, suppRec, orderRec, creditRec, chatRec, notifRec := &recorder{}, &recorder{}, &recorder{}, &recorder{}, &recorder{}, &recorder{}
 	userSvc := stubService(userRec)
 	t.Cleanup(userSvc.Close)
 	suppSvc := stubService(suppRec)
@@ -202,16 +203,19 @@ func newHarness(t *testing.T) *harness {
 	t.Cleanup(creditSvc.Close)
 	chatSvc := stubService(chatRec)
 	t.Cleanup(chatSvc.Close)
+	notifSvc := stubService(notifRec)
+	t.Cleanup(notifSvc.Close)
 
 	verifier := auth.NewVerifier(jwks.URL, nil)
 	revocations := &fakeRevocations{}
 	logs := &logBuffer{}
 	router, err := httpapi.NewRouter(config.Downstream{
-		User:     userSvc.URL,
-		Supplier: suppSvc.URL,
-		Order:    orderSvc.URL,
-		Credit:   creditSvc.URL,
-		Chat:     chatSvc.URL,
+		User:         userSvc.URL,
+		Supplier:     suppSvc.URL,
+		Order:        orderSvc.URL,
+		Credit:       creditSvc.URL,
+		Chat:         chatSvc.URL,
+		Notification: notifSvc.URL,
 	}, verifier, revocations, testRefreshTTL, logs.logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -226,6 +230,7 @@ func newHarness(t *testing.T) *harness {
 		orderRec:    orderRec,
 		creditRec:   creditRec,
 		chatRec:     chatRec,
+		notifRec:    notifRec,
 		logs:        logs,
 	}
 }
@@ -696,7 +701,7 @@ func newAuthHarness(t *testing.T) (http.Handler, *recorder) {
 	t.Cleanup(svc.Close)
 
 	router, err := httpapi.NewRouter(config.Downstream{
-		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL, Chat: svc.URL,
+		User: svc.URL, Supplier: svc.URL, Order: svc.URL, Credit: svc.URL, Chat: svc.URL, Notification: svc.URL,
 	}, auth.NewVerifier(jwks.URL, nil), &fakeRevocations{}, testRefreshTTL, (&logBuffer{}).logger())
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
@@ -1074,10 +1079,47 @@ func TestAuthRoutesSkipTheRevocationCheck(t *testing.T) {
 
 func TestNewRouterNeedsARevocationChecker(t *testing.T) {
 	_, err := httpapi.NewRouter(config.Downstream{
-		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit", Chat: "http://chat",
+		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit", Chat: "http://chat", Notification: "http://notification",
 	}, auth.NewVerifier("http://jwks", nil), nil, testRefreshTTL, (&logBuffer{}).logger())
 	if err == nil {
 		t.Fatal("NewRouter with a nil checker: expected an error, got nil")
+	}
+}
+
+// AI-generated (edited by PENDING).
+func TestNotificationRoutesReachNotificationServiceAndRetainToken(t *testing.T) {
+	for _, tc := range []struct {
+		method, public, want string
+	}{
+		{http.MethodGet, "/api/notifications", "/notifications"},
+		{http.MethodPost, "/api/notifications/abc/read", "/notifications/abc/read"},
+	} {
+		t.Run(tc.public, func(t *testing.T) {
+			h := newHarness(t)
+			token := h.issuer.mint(t, tokenOpts{subject: "user-123", role: "STUDENT"})
+			req := httptest.NewRequest(tc.method, tc.public, nil)
+			req.Header.Set("Authorization", "Bearer "+token)
+
+			res := h.do(req)
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+			}
+			if h.notifRec.path != tc.want {
+				t.Errorf("path = %q, want %q", h.notifRec.path, tc.want)
+			}
+			if h.notifRec.header.Get("Authorization") != "Bearer "+token {
+				t.Errorf("Authorization = %q, want the bearer token", h.notifRec.header.Get("Authorization"))
+			}
+		})
+	}
+}
+
+// AI-generated (edited by PENDING).
+func TestNotificationRouteNeedsAToken(t *testing.T) {
+	h := newHarness(t)
+	res := h.do(httptest.NewRequest(http.MethodGet, "/api/notifications", nil))
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", res.Code, http.StatusUnauthorized)
 	}
 }
 

@@ -46,7 +46,7 @@ loki.process "compose" {
 	// The Go services. Postgres, Redis and RabbitMQ lines pass through as they
 	// are.
 	stage.match {
-		selector = `{service=~"api-gateway|user-service|supplier-service|order-service|credit-service|chat-service"}`
+		selector = `{service=~"api-gateway|user-service|supplier-service|order-service|credit-service|chat-service|notification-service"}`
 
 		// A panic prints its stack trace over many lines. Every other line these
 		// services write starts a new entry: JSON, a stdlib log timestamp, or
@@ -81,7 +81,7 @@ loki.process "compose" {
 		}
 
 		stage.match {
-			selector            = `{service=~"order-service|supplier-service|chat-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/health\"" |= "\"status\":"`
+			selector            = `{service=~"order-service|supplier-service|chat-service|notification-service"} |= "\"method\":\"GET\"" |= "\"path\":\"/health\"" |= "\"status\":"`
 			action              = "drop"
 			drop_counter_reason = "health_check"
 		}
@@ -163,6 +163,15 @@ prometheus.exporter.blackbox "health" {
 		address = "http://chat-service:8085/health"
 		module  = "http_2xx"
 		labels  = {service = "chat-service"}
+	}
+
+	// AI-generated (edited by PENDING): notification-service, here and in the
+	// two selectors above that name the Go services and their /health lines.
+	target {
+		name    = "notification-service"
+		address = "http://notification-service:8086/health"
+		module  = "http_2xx"
+		labels  = {service = "notification-service"}
 	}
 
 	target {

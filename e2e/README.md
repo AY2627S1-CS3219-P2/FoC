@@ -138,9 +138,25 @@ instead of every test timing out on its own.
 | `TestCreditAdminRoutesAreForAdminsOnly` | each of credit-service's four admin routes (`/api/credits/admin/*`, D-151) answers a student 403 and a request with no token 401 |
 | `TestReverifyOfAHealthyWalletChangesNothing` | an ADMIN reads a new student's wallet and Re-verifies it: `NOT_FLAGGED`, no change, not on the flagged list, no audit row. Clearing a real flag needs a corrupted balance, so that is covered by credit-service's integration tests |
 | `TestCreditAdminReadsAWalletThatDoesNotExistAs404` | an admin's read or Re-verify of a user with no credit account is 404 |
+| `TestNotificationsFollowAnErrandToCompletion` | the requester is told of accepted, picked up, delivered (stating C) and completed, once each, newest first; the courier is told of their credits |
+| `TestNotificationOfAWithdrawalReachesTheRequester` | a courier's withdrawal notifies the requester |
+| `TestNotificationOfAnExpiryReachesTheRequester` | an errand that expires notifies the requester |
+| `TestNotificationOfAnAdminCancelReachesBothParties` | an ADMIN's cancel of an accepted errand notifies the requester and the courier, in neutral wording |
+| `TestNotificationsAreTheirOwnersAlone` | a stranger sees none of a user's notifications and gets 404 marking one; the owner marks it read; no token is 401; paging works |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 <!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-03 — documents the admin audit log e2e tests. -->
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), date: 2026-11-05 — documents the notification e2e tests and the run without the service. -->
+
+## With notification-service stopped
+
+Nothing else depends on notification-service (D-140), so preflight does not check
+it and the rest of the suite passes without it. Its own tests are all named
+`TestNotification*`:
+
+```bash
+docker compose stop notification-service && go -C e2e test -tags=e2e -count=1 -skip TestNotification ./...
+```
 
 ## Notes
 
