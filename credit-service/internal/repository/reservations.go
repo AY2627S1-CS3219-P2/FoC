@@ -45,7 +45,7 @@ func (r *PostgresRepository) CreateReservation(ctx context.Context, errandID, re
 				return credit.ErrReservationConflict
 			}
 			if existing.Status != credit.ReservationStatusReserved {
-				return credit.ErrReservationConflict
+				return credit.ErrReservationStateConflict
 			}
 			res = existing
 			created = false
@@ -226,7 +226,7 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 
 		// 4. Require reservation status RESERVED.
 		if reservation.Status != credit.ReservationStatusReserved {
-			return credit.ErrReservationConflict
+			return credit.ErrReservationStateConflict
 		}
 		// Reject stale requests from an earlier order state.
 		// Requests where currVersion >= reservation.Version are accepted, allowing raises after non-credit edits.
