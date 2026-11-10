@@ -132,6 +132,9 @@ instead of every test timing out on its own.
 | `TestChatGoesReadOnlyWhenTheCourierWithdraws` | a courier's withdrawal freezes the conversation: sending is 423, and what was said stays readable |
 | `TestAdminErrandCancelIsAudited` | an ADMIN's cancel of an accepted errand appears in `GET /api/orders/audit-log` as `errand.cancel` |
 | `TestOnlyAnAdminReadsTheAuditLog` | each of the three audit logs answers a student 403 and a request with no token 401 |
+| `TestCreditAdminRoutesAreForAdminsOnly` | each of credit-service's four admin routes (`/api/credits/admin/*`, D-151) answers a student 403 and a request with no token 401 |
+| `TestReverifyOfAHealthyWalletChangesNothing` | an ADMIN reads a new student's wallet and Re-verifies it: `NOT_FLAGGED`, no change, not on the flagged list, no audit row. Clearing a real flag needs a corrupted balance, so that is covered by credit-service's integration tests |
+| `TestCreditAdminReadsAWalletThatDoesNotExistAs404` | an admin's read or Re-verify of a user with no credit account is 404 |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents the issue #31 E2E coverage. -->
 <!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-03 — documents the admin audit log e2e tests. -->
@@ -153,3 +156,4 @@ instead of every test timing out on its own.
 - Registering needs the emailed code. The register helper in `client_test.go`
   reads it with `docker compose logs user-service`, run in the repository root,
   so it finds the stack that `docker compose up` started there.
+<!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-09 — documents the credit admin e2e tests. -->

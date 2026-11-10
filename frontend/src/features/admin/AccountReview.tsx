@@ -6,6 +6,7 @@
 // Author review: PENDING — <reviewer to complete>
 
 import { useEffect, useState } from "react";
+import type { CreditAdminApi } from "../credits/creditAdminApi";
 import { orderErrorMessage, STATE_LABEL } from "../errands/format";
 import type { OrdersApi } from "../errands/ordersApi";
 import { stateBadgeClass } from "../errands/ErrandCard";
@@ -15,6 +16,7 @@ import { formatDateTime } from "../errands/time";
 import type { UsersApi } from "../profile/usersApi";
 import { AuditList } from "./AuditList";
 import { countsSummary, type AuditEntry } from "./auditTypes";
+import { WalletSection } from "./WalletSection";
 
 /** How many past errands and audit rows the review shows; the tabs hold the rest. */
 const REVIEW_ROWS = 10;
@@ -28,6 +30,11 @@ interface AccountReviewProps {
   uid: string;
   ordersApi: OrdersApi | null;
   usersApi: UsersApi;
+  // AI-generated (edited by Claude Code, 2026-11-09): the wallet block (D-150).
+  /** Null in a fixture build, which has no credit-service to call. */
+  creditAdminApi?: CreditAdminApi | null;
+  /** What to call the account's owner in a sentence; the account id is not known here. */
+  name?: string;
   /** A time; null when the account has never signed in; absent when that is not known. */
   lastLoginAt?: string | null;
 }
@@ -37,7 +44,7 @@ interface AccountReviewProps {
  * review readable. The errands and counts come from order-service, which holds
  * them; the audit rows about the account from user-service, whose log they are.
  */
-export function AccountReview({ uid, ordersApi, usersApi, lastLoginAt }: AccountReviewProps) {
+export function AccountReview({ uid, ordersApi, usersApi, creditAdminApi, name, lastLoginAt }: AccountReviewProps) {
   const [counts, setCounts] = useState<Section<ErrandCounts>>({ data: null, error: null });
   const [active, setActive] = useState<Section<Errand[]>>({ data: null, error: null });
   const [past, setPast] = useState<Section<Errand[]>>({ data: null, error: null });
@@ -78,6 +85,8 @@ export function AccountReview({ uid, ordersApi, usersApi, lastLoginAt }: Account
     <div className="review-section">
       <h3 className="section-label">Account review</h3>
       <p className="audit-meta">Last signed in: {lastLoginAt === null ? "never" : lastLoginAt ? formatDateTime(lastLoginAt) || lastLoginAt : "not known"}</p>
+
+      {creditAdminApi && <WalletSection creditAdminApi={creditAdminApi} uid={uid} name={name || "This account"} />}
 
       {ordersApi ? (
         <>

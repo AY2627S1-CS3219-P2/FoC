@@ -24,3 +24,14 @@ describe("tabAfterKey", () => {
     expect(tabAfterKey("active", "a")).toBeNull();
   });
 });
+
+// AI-generated (edited by Claude Code, 2026-11-09): the Flagged wallets tab sits
+// between Accounts and Audit log (D-150).
+describe("the Flagged wallets tab", () => {
+  it("is between Accounts and Audit log for the arrow keys", () => {
+    expect(DASHBOARD_TABS.map((t) => t.id)).toEqual(["active", "past", "accounts", "flagged", "audit"]);
+    expect(tabAfterKey("accounts", "ArrowRight")).toBe("flagged");
+    expect(tabAfterKey("flagged", "ArrowRight")).toBe("audit");
+    expect(tabAfterKey("audit", "ArrowLeft")).toBe("flagged");
+  });
+});
