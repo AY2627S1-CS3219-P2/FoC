@@ -13,9 +13,13 @@ import (
 )
 
 // The routing keys order-service publishes: lifecycle keys bound to
-// credit-service's queue (D-051), chat-service's queue, and errand.reward_set (D-057).
+// credit-service's queue (D-051), chat-service's queue, notification-service's
+// queue (D-142), and errand.reward_set (D-057).
 const (
-	RoutingAccepted  = "errand.accepted"
+	RoutingAccepted = "errand.accepted"
+	// AI-generated (edited by PENDING).
+	RoutingPickedUp  = "errand.picked_up"
+	RoutingDelivered = "errand.delivered"
 	RoutingWithdrawn = "errand.withdrawn"
 	RoutingCompleted = "errand.completed"
 	RoutingCancelled = "errand.cancelled"

@@ -21,6 +21,7 @@ import (
 	"foc/user-service/internal/httpapi/router"
 	"foc/user-service/internal/httpapi/routes"
 	"foc/user-service/internal/jwt"
+	"foc/user-service/internal/ranking"
 	"foc/user-service/internal/relay"
 	"foc/user-service/internal/repository"
 	"foc/user-service/internal/session"
@@ -60,6 +61,15 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		(!strings.HasPrefix(cfg.UserDBURL, "postgres://") && !strings.HasPrefix(cfg.UserDBURL, "postgresql://")) {
 		return errors.New("USER_DB_URL must be a postgres:// or postgresql:// URL with reserved characters in the user and password percent-encoded")
 	}
+	// AI-generated (edited by PENDING): transcribed from James Teo's PR #70
+	// comment of 2026-11-05. An unset USER_RANKING_DB_URL is reported where
+	// its database is opened.
+	if cfg.RankingDBURL != "" {
+		if _, err := url.Parse(cfg.RankingDBURL); err != nil ||
+			(!strings.HasPrefix(cfg.RankingDBURL, "postgres://") && !strings.HasPrefix(cfg.RankingDBURL, "postgresql://")) {
+			return errors.New("USER_RANKING_DB_URL must be a postgres:// or postgresql:// URL with reserved characters in the user and password percent-encoded")
+		}
+	}
 	redisOptions, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
 		return errors.New("REDIS_URL must be a redis:// or rediss:// URL with reserved characters in the user and password percent-encoded")
@@ -79,6 +89,20 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("ping database: %w", err)
 	}
 
+	// AI-generated (edited by nigeltzy): the ranking-model database, separate
+	// from the users database (D-095), with its own migrations.
+	if cfg.RankingDBURL == "" {
+		return errors.New("USER_RANKING_DB_URL must be set")
+	}
+	if err := repository.Apply(cfg.RankingDBURL, "file://migrations_ranking"); err != nil {
+		return fmt.Errorf("apply ranking migrations: %w", err)
+	}
+	rankingPool, err := pgxpool.New(ctx, cfg.RankingDBURL)
+	if err != nil {
+		return fmt.Errorf("create ranking database pool: %w", err)
+	}
+	defer rankingPool.Close()
+	rankingService := ranking.NewService(repository.NewRankingModelRepository(rankingPool), time.Now)
 	// go-redis ignores a context's deadline on socket reads and writes unless
 	// this is set, so the revocation check's 500 ms bound would not hold against
 	// a Redis that accepts the connection and then stops answering.
@@ -173,6 +197,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			AdminProfileUpdater: accountService,
 			Logger:              logger,
 		},
+		// AI-generated (edited by nigeltzy): each user's ranking model (D-095, D-099).
+		Ranking: handlers.RankingDependencies{Models: rankingService, Logger: logger},
 		// The admin dashboard's account list and audit log (D-110, D-121).
 		Admin: handlers.AdminDependencies{
 			// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — wire the

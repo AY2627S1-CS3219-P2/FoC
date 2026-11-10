@@ -37,6 +37,11 @@ func (s *Service) Accept(ctx context.Context, c Caller, id uuid.UUID, version in
 	if o.Version != version {
 		return Order{}, errChanged()
 	}
+	// AI-generated (edited by nigeltzy): D-093, a completed errand must be rated
+	// before accepting another.
+	if err := s.requireRated(ctx, c); err != nil {
+		return Order{}, err
+	}
 	updated, err := s.repo.Accept(ctx, AcceptCommand{
 		OrderID:         id,
 		CourierID:       c.UserID,
@@ -284,6 +289,12 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 	}
 
 	switch r.to {
+	// AI-generated (edited by PENDING).
+	// Only notification-service reads these two (D-142).
+	case StatePickedUp:
+		t.Event = newEvent(uuid.New(), RoutingPickedUp, o, o.CourierID, now, correlationID)
+	case StateDelivered:
+		t.Event = newEvent(uuid.New(), RoutingDelivered, o, o.CourierID, now, correlationID)
 	case StateCompleted:
 		t.Event = newEvent(uuid.New(), RoutingCompleted, o, o.CourierID, now, correlationID)
 	case StateCancelled:

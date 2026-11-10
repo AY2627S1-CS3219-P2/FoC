@@ -1,0 +1,12 @@
+# AI Assistance Disclosure:
+# Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
+# Scope: oapi-codegen settings, as in order-service.
+# Author review: PENDING — <reviewer to complete>
+
+# Settings for api/openapi.yaml. Regenerate with `go generate ./internal/gen`
+# from notification-service/.
+package: gen
+output: notification.gen.go
+generate:
+  chi-server: true
+  models: true

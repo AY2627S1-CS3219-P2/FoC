@@ -74,6 +74,12 @@ func TestPostgres(t *testing.T) {
 	t.Run("ConcurrentCreatesRespectTheOpenLimit", e.testConcurrentCreatesRespectTheOpenLimit)
 	t.Run("AcceptIsJudgedAtArrival", e.testAcceptIsJudgedAtArrival)
 	t.Run("CancelRacingAnUnconfirmedRaise", e.testCancelRacingAnUnconfirmedRaise)
+
+	// AI-generated (edited by nigeltzy): ratings and Find errands' records (D-092, D-093).
+	t.Run("Ratings", e.testRatings)
+	t.Run("Activity", e.testActivity)
+	t.Run("SupplierCopy", e.testSupplierCopy)
+	t.Run("RankingSource", e.testRankingSource)
 }
 
 // env is one test run's database: its URL, a pool and the adapter over it.
@@ -144,7 +150,7 @@ func startPostgres(t *testing.T) string {
 // reset empties every table.
 func (e *env) reset(t *testing.T) {
 	t.Helper()
-	_, err := e.pool.Exec(context.Background(), `TRUNCATE order_history, outbox, orders, admin_audit RESTART IDENTITY`)
+	_, err := e.pool.Exec(context.Background(), `TRUNCATE errand_ratings, errand_views, errand_searches, order_history, outbox, orders, admin_audit RESTART IDENTITY`)
 	require.NoError(t, err, "empty the tables")
 }
 
@@ -450,9 +456,9 @@ func (e *env) testMigrate(t *testing.T) {
 			dirty   bool
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
-		// AI Assistance Disclosure: Codex (GPT-6), 2026-10-28 — 000003 updates active indexes for SCHEDULED.
 		// 000004 creates the admin audit table (D-106 to D-115).
-		require.Equal(t, 4, version)
+		// AI-generated (edited by PENDING): 000005 adds ratings and Find errands' records; 000006 the supplier's type and position.
+		require.Equal(t, 6, version)
 		require.False(t, dirty)
 	})
 	t.Run("a missing directory is an error", func(t *testing.T) {

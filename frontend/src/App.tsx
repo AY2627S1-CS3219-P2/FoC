@@ -50,9 +50,19 @@ import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createCreditAdminApi } from "./features/credits/creditAdminApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
 import { createChatApi } from "./features/chat/chatApi";
+// AI-generated (edited by PENDING): the Notifications screen (D-145).
+import { pollOutcome } from "./features/notifications/newNotifications";
+import { createNotificationsApi } from "./features/notifications/notificationsApi";
+import {
+  NOTIFICATIONS_POLL_MS,
+  NotificationsView,
+  PAGE_SIZE,
+} from "./features/notifications/NotificationsView";
 import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
+import { createActivityReporter } from "./features/errands/activityReporter";
+import { PendingRatings } from "./features/errands/PendingRatings";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
 import { ProfileView } from "./features/profile/ProfileView";
@@ -120,7 +130,7 @@ export function App({ tokens }: AppProps) {
    * onSessionExpired runs when a refresh fails for any reason and clears only
    * local state.
    */
-  const { suppliers, usersApi, orders, creditAccounts, creditAdmin, chatApi } = useMemo(() => {
+  const { suppliers, usersApi, orders, creditAccounts, creditAdmin, chatApi, notifications } = useMemo(() => {
     // AI-generated (edited by nigeltzy).
     // A fixture build has no real token to send, so suppliers come from the
     // fixture too rather than from the gateway.
@@ -136,6 +146,7 @@ export function App({ tokens }: AppProps) {
         creditAccounts: null,
         creditAdmin: null,
         chatApi: null,
+        notifications: null,
       };
     }
     const authorizedSend = createAuthorizedSend({
@@ -165,8 +176,23 @@ export function App({ tokens }: AppProps) {
       // AI-generated (edited by Claude Code, 2026-11-09): credit-service's admin routes (D-150, D-151).
       creditAdmin: createCreditAdminApi(authorizedSend),
       chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
+      notifications: createNotificationsApi(authorizedSend),
     };
   }, [tokens]);
+
+  // AI-generated (edited by nigeltzy): sends Find errands' shown and search
+  // records to order-service (D-092), the shown ones in batches; whatever is
+  // queued goes out when the page is hidden or closed.
+  const activity = useMemo(() => (orders ? createActivityReporter(orders) : null), [orders]);
+  useEffect(() => {
+    if (!activity) return;
+    const flush = () => activity.flush();
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [activity]);
 
   // Restored from sessionStorage so a reload lands where the tab was, not on
   // the default view. Read once, at initial state: doing it in an effect would
@@ -227,6 +253,29 @@ export function App({ tokens }: AppProps) {
   // at once after the user's own errand actions. An ADMIN session has no
   // credit account and polls nothing. "No account yet" keeps polling, so a
   // new student's account appears without a reload.
+  // AI-generated (edited by PENDING): tells the user when a poll finds a new
+  // notification, on whichever screen they are (F7.6.1). A failed poll says
+  // nothing here: notifications are an add-on, and their screen shows failures.
+  const seenNotifications = useRef<Set<string> | null>(null);
+  // Before the poller below starts: another account's ids mean nothing here,
+  // and the next session's first poll must not announce what is already there.
+  useEffect(() => {
+    seenNotifications.current = null;
+  }, [session?.userId]);
+  usePolling(
+    session && notifications
+      ? async (isActive) => {
+          const latest = await notifications.list(PAGE_SIZE, 0);
+          if (!isActive()) return;
+          const outcome = pollOutcome(seenNotifications.current, latest.notifications);
+          seenNotifications.current = outcome.seen;
+          if (outcome.message) setToast({ text: outcome.message, kind: "success" });
+        }
+      : null,
+    NOTIFICATIONS_POLL_MS,
+    [notifications, session?.userId],
+  );
+
   const refreshBalance = usePolling(
     session?.role === "STUDENT" && creditAccounts
       ? async (isActive) => {
@@ -400,6 +449,13 @@ export function App({ tokens }: AppProps) {
         held={held}
         onLogOut={handleLogOut}
       >
+        {/* AI-generated (edited by nigeltzy): D-093, a student rates their
+            completed errands before posting or accepting another. Above every
+            screen, so it is in view wherever that refusal would come from. */}
+        {role === "STUDENT" && orders && (
+          <PendingRatings ordersApi={orders} usersApi={usersApi} onNotify={setToast} />
+        )}
+
         {/* AI-generated (edited by James Teo): the errand and credit screens
             get their clients, or NeedsService when the build has none. My
             errands remounts on a mode switch, so it starts on Active with
@@ -429,6 +485,8 @@ export function App({ tokens }: AppProps) {
               available={available}
               onNotify={setToast}
               onCreditsChanged={refreshBalance}
+              onShown={activity?.shown}
+              onSearch={activity?.search}
             />
           ) : (
             <NeedsService title="Find errands" service="order-service" />
@@ -484,6 +542,20 @@ export function App({ tokens }: AppProps) {
             onLogOut={handleLogOut}
           />
         )}
+
+        {/* AI-generated (edited by PENDING): the empty state's button goes to
+            where this session follows its errands (F7.3.1). */}
+        {shownView === "notifications" &&
+          (notifications ? (
+            <NotificationsView
+              api={notifications}
+              primaryView={session.role === "STUDENT" ? "my-errands" : "admin"}
+              primaryLabel={session.role === "STUDENT" ? "Go to My errands" : "Go to Dashboard"}
+              onNavigate={navigate}
+            />
+          ) : (
+            <NeedsService title="Notifications" service="notification-service" />
+          ))}
 
         {/* AI-generated (edited by nigeltzy). */}
         {/* AI-generated (edited by James Teo): keyed by the handed-over account,

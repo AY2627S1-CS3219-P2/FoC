@@ -70,7 +70,7 @@ propose answers; implement the decision the owner recorded. The rows in
   order — D-047;
 - what happens to an errand that stalls after acceptance — D-050;
 - which lifecycle events are published asynchronously, and what they carry —
-  D-048, D-051, D-057, D-059, D-102, D-139 (D-042 binds four of the keys, and
+  D-048, D-051, D-057, D-059, D-102, D-139, D-142 (D-042 binds four of the keys, and
   `rabbitmq/definitions.json` binds `errand.reward_set` too; D-102 is the
   cross-service row, built in #72 and #73).
 
@@ -112,8 +112,8 @@ using `""` for normal errands.
 - `SCHEDULED` errands do not count toward the requester's limit of five `OPEN`
   errands. If the limit prevents an errand becoming `OPEN`, whether at its
   scheduled time or when its schedule is removed, cancel it through the normal
-  cancellation flow. Notification delivery for this cancellation is deferred
-  until the notification service is created.
+  cancellation flow. notification-service tells the requester from the
+  `errand.cancelled` this emits (D-141).
 - Start the expiry period when the errand becomes `OPEN`. If it remains
   unaccepted until that period elapses, expire it and clean it up through the
   normal expiry flow.
@@ -147,3 +147,5 @@ The whole-stack suite lives in the root `e2e/` module.
   the token's `sub` and `role` on every action. Calls to `credit-service`
   forward the token the request arrived with; only the requester reserves or
   amends, so it is always the requester's.
+
+<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service and errand.picked_up/errand.delivered noted (D-140 to D-146). -->

@@ -88,6 +88,9 @@ src/
 │   │                  time.ts (countdowns), format.ts (labels, messages)
 │   ├── credits/       CreditsView, creditAccountsApi.ts + creditTypes.ts
 │   │                  (credit-service)
+│   ├── notifications/ NotificationsView, notificationsApi.ts
+│   │                  (notification-service), newNotifications.ts (what a
+│   │                  poll announces)
 │   ├── profile/       ProfileView, ProfileEditForms (one modal per
 │   │                  field), usersApi.ts (user-service /api/users/{uid})
 │   └── admin/         DashboardView (ADMIN sessions only; four tabs: active
@@ -128,9 +131,10 @@ forwards `/auth` and `/api` to the gateway (D-033). These rules apply:
 - Until a spec is committed, keep each service's calls in a single
   hand-written module with the same surface, so swapping in the generated
   client is a one-file change.
-- **The exception:** the user-service, order-service and credit-service
-  clients (`usersApi.ts`, `ordersApi.ts`, `creditAccountsApi.ts`, with
-  `orderTypes.ts` and `creditTypes.ts`) are hand-written from their services'
+- **The exception:** the user-service, order-service, credit-service and
+  notification-service clients (`usersApi.ts`, `ordersApi.ts`,
+  `creditAccountsApi.ts`, `notificationsApi.ts`, with `orderTypes.ts` and
+  `creditTypes.ts`) are hand-written from their services'
   committed specs rather than generated. The order-service and
   credit-service files' headers name the spec and the commit they
   transcribe; when a spec changes, the files written from it are checked
@@ -280,3 +284,5 @@ the login screen is credit-service's figure, copied by hand.
   phone width — forms, modals and tables included. Check at ~375px.
 - **Both roles must be complete.** M1 covers requester *and* courier
   workflows; building only the requester side is the easy failure here.
+
+<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout and the hand-written client exception (D-140 to D-146). -->

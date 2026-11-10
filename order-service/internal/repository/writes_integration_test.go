@@ -880,7 +880,7 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		LocationDescription: "next to the lift", Available: true,
 	}
 	credit := ordertest.NewCredit()
-	svc := order.NewService(e.repo, credit, ordertest.NewSuppliers(supplier), clock,
+	svc := order.NewService(e.repo, e.repo, credit, ordertest.NewSuppliers(supplier), clock,
 		order.Config{ExpiryPeriod: 2 * time.Hour, MaxActive: 2, ConfirmWindow: 24 * time.Hour},
 		slog.New(slog.DiscardHandler))
 	requester := order.Caller{UserID: uuid.New(), Role: order.RoleStudent}
@@ -938,7 +938,11 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	delivered := step("deliver", order.StateDelivered, func() (order.Order, error) { return svc.Deliver(ctx, other, first.ID, "corr-deliver") })
 	require.Equal(t, clock.Now().Add(24*time.Hour), *delivered.ConfirmBy)
 	step("confirm", order.StateCompleted, func() (order.Order, error) { return svc.Confirm(ctx, requester, first.ID, "corr-confirm") })
-	require.Equal(t, []string{order.RoutingAccepted, order.RoutingWithdrawn, order.RoutingAccepted, order.RoutingCompleted}, routingKeys(first.ID))
+	// AI-generated (edited by PENDING): picking up and delivering publish their own events (D-142).
+	require.Equal(t, []string{
+		order.RoutingAccepted, order.RoutingWithdrawn, order.RoutingAccepted,
+		order.RoutingPickedUp, order.RoutingDelivered, order.RoutingCompleted,
+	}, routingKeys(first.ID))
 	_, history, err := svc.Get(ctx, requester, first.ID)
 	require.NoError(t, err)
 	var actions []order.Action
@@ -949,6 +953,11 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 		order.ActionCreate, order.ActionAccept, order.ActionWithdraw, order.ActionAccept,
 		order.ActionPickUp, order.ActionDeliver, order.ActionConfirm,
 	}, actions)
+
+	// AI-generated (edited by nigeltzy): D-093, the requester rates the completed
+	// errand before posting another, here against PostgreSQL.
+	_, err = svc.Rate(ctx, requester, first.ID, 5)
+	require.NoError(t, err)
 
 	// Expiry once T has passed (D-049).
 	second, _ := post("second")
@@ -972,6 +981,12 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, confirmed)
 	require.Equal(t, order.StateCompleted, e.get(t, third.ID).State)
+	// AI-generated (edited by nigeltzy): D-093, both sides rate the auto-confirmed
+	// errand before the requester posts and the courier accepts again.
+	for _, rater := range []order.Caller{requester, courier} {
+		_, err = svc.Rate(ctx, rater, third.ID, 4)
+		require.NoError(t, err)
+	}
 
 	// An amended reward with its reward_set (D-057), then an admin
 	// cancel while the courier holds it (D-045).
