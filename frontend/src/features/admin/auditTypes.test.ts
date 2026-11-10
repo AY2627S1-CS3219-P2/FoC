@@ -186,6 +186,22 @@ describe("wording", () => {
     expect(AUDIT_ACTIONS.accounts).toContain("account.change_role");
   });
 
+  it("words a Re-verify and shows the status it changed", () => {
+    expect(actionLabel("credit.reverify")).toBe("Re-verified a wallet");
+    expect(AUDIT_ACTIONS.credits).toEqual(["credit.reverify"]);
+    const cleared = entry({
+      source: "credits",
+      action: "credit.reverify",
+      beforeState: { integrity_status: "FLAGGED" },
+      afterState: { integrity_status: "CONSISTENT" },
+      additionalComments: { reason_code: "AVAILABLE_PROJECTION_MISMATCH" },
+    });
+    expect(auditDetails(cleared)).toEqual([
+      { label: "Changed", value: "FLAGGED → CONSISTENT" },
+      { label: "reason_code", value: "AVAILABLE_PROJECTION_MISMATCH" },
+    ]);
+  });
+
   it("labels known actions and passes unknown ones through", () => {
     expect(actionLabel("errand.cancel")).toBe("Cancelled an errand");
     expect(actionLabel("something.new")).toBe("something.new");

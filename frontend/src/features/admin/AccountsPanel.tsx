@@ -8,6 +8,7 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
+import type { CreditAdminApi } from "../credits/creditAdminApi";
 import type { OrdersApi } from "../errands/ordersApi";
 import { formatDateTime } from "../errands/time";
 import type { AccountListItem, AccountStatus, UsersApi } from "../profile/usersApi";
@@ -23,6 +24,8 @@ const SEARCH_DELAY_MS = 250;
 interface AccountsPanelProps {
   usersApi: UsersApi;
   ordersApi: OrdersApi | null;
+  // AI-generated (edited by Claude Code, 2026-11-09): the wallet block of the review (D-150).
+  creditAdminApi: CreditAdminApi | null;
   currentUserId: string;
   /** An account to open on arrival, from an errand's detail or an audit row. */
   initialAccountId: string | null;
@@ -30,7 +33,7 @@ interface AccountsPanelProps {
 }
 
 /** Search and list; the chosen account's actions and review open under its row. */
-export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccountId, onNotify }: AccountsPanelProps) {
+export function AccountsPanel({ usersApi, ordersApi, creditAdminApi, currentUserId, initialAccountId, onNotify }: AccountsPanelProps) {
   const [draft, setDraft] = useState("");
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<AccountStatus | "">("");
@@ -105,6 +108,8 @@ export function AccountsPanel({ usersApi, ordersApi, currentUserId, initialAccou
         uid={selected.uid}
         ordersApi={ordersApi}
         usersApi={usersApi}
+        creditAdminApi={creditAdminApi}
+        name={chosen?.username}
         lastLoginAt={chosen ? (chosen.lastLoginAt ?? null) : selected.lastLoginAt}
       />
     </div>

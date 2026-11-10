@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,19 +27,37 @@ type ClientMessage struct {
 }
 
 type Client struct {
-	hub    *Hub
-	conn   *websocket.Conn
-	userID uuid.UUID
-	send   chan []byte
+	hub             *Hub
+	conn            *websocket.Conn
+	userID          uuid.UUID
+	mu              sync.RWMutex
+	authenticatedAt time.Time
+	send            chan []byte
 }
 
 func NewClient(hub *Hub, conn *websocket.Conn, userID uuid.UUID) *Client {
 	return &Client{
-		hub:    hub,
-		conn:   conn,
-		userID: userID,
-		send:   make(chan []byte, sendBufferSize),
+		hub:             hub,
+		conn:            conn,
+		userID:          userID,
+		authenticatedAt: time.Now().UTC(),
+		send:            make(chan []byte, sendBufferSize),
 	}
+}
+
+func (c *Client) getAuthenticatedAt() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.authenticatedAt.IsZero() {
+		return time.Now().UTC()
+	}
+	return c.authenticatedAt
+}
+
+func (c *Client) setAuthenticatedAt(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.authenticatedAt = t
 }
 
 func (c *Client) ReadPump() {
@@ -80,6 +99,7 @@ func (c *Client) ReadPump() {
 					break
 				}
 				// Verified: token is valid and belongs to this user.
+				c.setAuthenticatedAt(time.Now().UTC())
 			}
 		}
 	}
@@ -123,7 +143,7 @@ func (c *Client) WritePump() {
 			// Check user suspension before heartbeat
 			if c.hub.isSuspended != nil {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				suspended, err := c.hub.isSuspended(ctx, c.userID)
+				suspended, err := c.hub.isSuspended(ctx, c.userID, c.getAuthenticatedAt())
 				cancel()
 				if err == nil && suspended {
 					c.hub.log.Info("terminating websocket for suspended user", "user_id", c.userID.String())

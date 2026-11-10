@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { Pager } from "../../components/Pager";
+import type { CreditAdminApi } from "../credits/creditAdminApi";
 import type { OrdersApi } from "../errands/ordersApi";
 import type { UsersApi } from "../profile/usersApi";
 import type { SuppliersApi } from "../suppliers/suppliersApi";
@@ -31,6 +32,9 @@ interface AuditLogViewProps {
   usersApi: UsersApi | null;
   ordersApi: OrdersApi | null;
   suppliersApi: SuppliersApi;
+  // AI-generated (edited by Claude Code, 2026-11-09): credit-service's log is the fourth (D-152).
+  /** Null in a fixture build, which has no credit-service to call. */
+  creditAdminApi: CreditAdminApi | null;
   onOpenAccount: (uid: string) => void;
 }
 
@@ -47,7 +51,7 @@ interface Loaded {
  * filter reaches and merges their pages. With every source chosen the view is
  * "page N of each": page 2 holds rows 51–100 of each log, merged by time.
  */
-export function AuditLogView({ usersApi, ordersApi, suppliersApi, onOpenAccount }: AuditLogViewProps) {
+export function AuditLogView({ usersApi, ordersApi, suppliersApi, creditAdminApi, onOpenAccount }: AuditLogViewProps) {
   const [source, setSource] = useState<AuditSource | "">("");
   const [action, setAction] = useState("");
   const [outcome, setOutcome] = useState<AuditOutcome | "">("");
@@ -81,6 +85,7 @@ export function AuditLogView({ usersApi, ordersApi, suppliersApi, onOpenAccount 
       accounts: usersApi ? () => usersApi.listAuditLog(filter) : null,
       errands: ordersApi ? () => ordersApi.listAuditLog(filter) : null,
       suppliers: () => suppliersApi.listAuditLog(filter),
+      credits: creditAdminApi ? () => creditAdminApi.listAuditLog(filter) : null,
     };
     setLoading(true);
     void (async () => {
@@ -106,7 +111,7 @@ export function AuditLogView({ usersApi, ordersApi, suppliersApi, onOpenAccount 
       live = false;
     };
     // `sources` is derived from source and action.
-  }, [source, action, outcome, targetId, from, to, page, reload, usersApi, ordersApi, suppliersApi]);
+  }, [source, action, outcome, targetId, from, to, page, reload, usersApi, ordersApi, suppliersApi, creditAdminApi]);
 
   /** A new filter starts again from the first page. */
   function filtered<T>(set: (v: T) => void) {

@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"time"
 
@@ -21,6 +22,9 @@ type Service struct {
 	reservationRepo       ReservationRepository
 	settlementRepo        SettlementRepository
 	readRepo              ReadRepository
+	// AI-generated (edited by Claude Code, 2026-11-09): the admin routes (D-150).
+	adminRepo AdminRepository
+	log       *slog.Logger
 }
 
 // NewService constructs a credit service with required ports.
@@ -34,6 +38,9 @@ func NewService(initialAllocationRepo InitialAllocationRepository, opts ...func(
 	}
 	if rRepo, ok := initialAllocationRepo.(ReadRepository); ok {
 		s.readRepo = rRepo
+	}
+	if aRepo, ok := initialAllocationRepo.(AdminRepository); ok {
+		s.adminRepo = aRepo
 	}
 	for _, opt := range opts {
 		opt(s)

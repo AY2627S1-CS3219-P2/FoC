@@ -18,14 +18,15 @@ export interface Page<T> {
 }
 
 /** Which service's audit log a row came from. */
-export type AuditSource = "accounts" | "errands" | "suppliers";
+export type AuditSource = "accounts" | "errands" | "suppliers" | "credits";
 
-export const AUDIT_SOURCES: readonly AuditSource[] = ["accounts", "errands", "suppliers"];
+export const AUDIT_SOURCES: readonly AuditSource[] = ["accounts", "errands", "suppliers", "credits"];
 
 export const AUDIT_SOURCE_LABEL: Record<AuditSource, string> = {
   accounts: "Accounts",
   errands: "Errands",
   suppliers: "Suppliers",
+  credits: "Credits",
 };
 
 export type AuditOutcome = "succeeded" | "refused" | "failed";
@@ -79,12 +80,14 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "supplier.create": "Created a supplier",
   "supplier.update": "Edited a supplier",
   "supplier.delete": "Deleted a supplier",
+  "credit.reverify": "Re-verified a wallet",
 };
 
 export const AUDIT_ACTIONS: Record<AuditSource, readonly string[]> = {
   accounts: ["account.suspend", "account.reactivate", "account.password_reset", "account.update", "account.change_role"],
   errands: ["errand.cancel", "errand.complete"],
   suppliers: ["supplier.create", "supplier.update", "supplier.delete"],
+  credits: ["credit.reverify"],
 };
 
 type Json = Record<string, unknown>;

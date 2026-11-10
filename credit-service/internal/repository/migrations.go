@@ -14,7 +14,8 @@ import (
 )
 
 // ExpectedSchemaVersion is the latest known database migration version supported by this release.
-const ExpectedSchemaVersion uint = 1
+// AI-generated (edited by Claude Code, 2026-11-09): 2, with migration 000002 (admin_audit, D-152).
+const ExpectedSchemaVersion uint = 2
 
 // Apply runs all pending migrations from sourceURL against databaseURL.
 func Apply(databaseURL, sourceURL string) error {
