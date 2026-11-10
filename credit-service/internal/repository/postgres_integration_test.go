@@ -225,6 +225,29 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(90), amount)
 	})
 
+	t.Run("AdjustReservationReward rejects zero-delta adjustment as invalid request", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, time.Now().UTC()))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 50)
+		require.NoError(t, err)
+
+		opID := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, opID)
+		require.ErrorIs(t, err, credit.ErrInvalidRequest)
+
+		// Verify reservation version and amount remain completely untouched
+		var amount, version int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&amount, &version))
+		require.Equal(t, int64(50), amount)
+		require.Equal(t, int64(1), version)
+
+		// Verify no transaction ledger row was inserted
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, opID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+
 	t.Run("ApplyRewardSet releases only and ignores replayed PATCH operations", func(t *testing.T) {
 		userID, errandID := uuid.New(), uuid.New()
 		now := time.Now().UTC()
