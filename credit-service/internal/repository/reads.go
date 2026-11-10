@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Implemented PostgreSQL read repository queries for account projection and cursor-paginated grouped transactions per sourceOfTruth.md Phase 9.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package repository
 

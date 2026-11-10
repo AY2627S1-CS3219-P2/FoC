@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Implemented RabbitMQ ConnectionSupervisor with passive topology verification, reconnection loop with jittered backoff, and consumer pool management per sourceOfTruth.md Phase 11.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package messaging
 

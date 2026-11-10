@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (model: GPT-5), date: 2026-10-14
 // Scope: Added tests for credit-service JWT middleware behavior.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package httpapi_test
 

@@ -2,7 +2,7 @@
 // Tool: Antigravity, date: 2026-10-20
 // Scope: RS256 access-token verification against user-service's published JWKS keys (D-023, D-056).
 //   Adapted from order-service/internal/auth per D-041/D-056.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package auth
 

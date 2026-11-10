@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Unit tests for target-state reward adjustment validation, idempotency, and error propagation per sourceOfTruth.md Phase 5.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit
 

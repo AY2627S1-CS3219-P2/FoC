@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Unit tests for configuration parsing and validation per sourceOfTruth.md Phase 12.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package config_test
 

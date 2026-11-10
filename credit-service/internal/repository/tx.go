@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Implemented PostgreSQL transaction runner with lock_timeout, statement_timeout, and bounded 3-attempt retries for deadlock/serialization errors.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package repository
 

@@ -3,7 +3,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (model: GPT-5), date: 2026-10-14
 // Scope: Added RabbitMQ-to-Postgres integration test for initial credit allocation.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package messaging
 

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (model: GPT-5), date: 2026-10-12
 // Scope: Generated F4.1 unit tests for async registration allocation service behavior.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit
 

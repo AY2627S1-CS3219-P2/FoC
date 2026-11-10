@@ -6,7 +6,7 @@
 //   PostgreSQL (D-150 to D-153): Re-verify clears a flag only when the checks
 //   pass and writes its audit row in the same transaction, the flagged list,
 //   the stored wallet read, and the audit table's immutability and purge.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Reviewed by Seth
 
 package repository_test
 
