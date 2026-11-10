@@ -576,7 +576,7 @@ func TestAmendDecreaseSucceedsWhenTheReleaseFails(t *testing.T) {
 			o := f.post()
 			before := f.stored(o.ID)
 			logs := &logRecorder{}
-			svc := order.NewService(f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
+			svc := order.NewService(f.repo, f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
 			f.credit.ReleaseHook = func(ordertest.AdjustCall) (bool, error) { return tc.apply, ordertest.ErrInjected }
 
 			got, err := svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(3), CorrelationID: "corr-amend"})
@@ -706,7 +706,7 @@ func TestAmendUnconfirmedRaiseThatCannotBeSavedSavesNothing(t *testing.T) {
 	o := f.post()
 	before := f.stored(o.ID)
 	logs := &logRecorder{}
-	svc := order.NewService(f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
+	svc := order.NewService(f.repo, f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
 	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
 	f.repo.AfterAmendFn = ordertest.ErrInjected
 
@@ -774,7 +774,7 @@ func TestAmendLogsARaiseWithAnUnknownOutcome(t *testing.T) {
 	o := f.post()
 	before := f.stored(o.ID)
 	logs := &logRecorder{}
-	svc := order.NewService(f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
+	svc := order.NewService(f.repo, f.repo, f.credit, f.suppliers, f.clock, f.cfg, slog.New(logs))
 	f.credit.AdjustHook = func(ordertest.AdjustCall) (bool, error) { return true, ordertest.ErrInjected }
 
 	_, err := svc.Amend(f.ctx, f.requester, o.ID, order.AmendInput{Version: o.Version, Reward: ptr(8), CorrelationID: "corr-amend"})

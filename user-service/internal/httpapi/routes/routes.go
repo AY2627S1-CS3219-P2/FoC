@@ -24,6 +24,9 @@ type Dependencies struct {
 	RevocationChecker handlers.RevocationChecker
 	// Logger receives every request's access line and any panic report.
 	Logger *slog.Logger
+
+	// AI-generated (edited by nigeltzy): the ranking-model store (D-095, D-099).
+	Ranking handlers.RankingDependencies
 }
 
 // GetRoutes constructs grouped handlers and returns their route-registration function.
@@ -32,6 +35,7 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 	profileHandler := handlers.NewProfileHandler(deps.Profile)
 	adminHandler := handlers.NewAdminHandler(deps.Admin)
 	systemHandler := handlers.NewSystemHandler(deps.System)
+	rankingHandler := handlers.NewRankingHandler(deps.Ranking)
 
 	return func(router chi.Router) {
 		router.Get("/.well-known/jwks.json", systemHandler.JWKS)
@@ -53,6 +57,9 @@ func GetRoutes(deps Dependencies) func(chi.Router) {
 			// approved role-change route. Author review: ZI YANG - reviewed and verified.
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/role", adminHandler.UpdateRole)
 			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Patch("/users/{uid}/status", profileHandler.UpdateStatus)
+			// AI-generated (edited by nigeltzy): each user's own ranking model (D-095, D-099).
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Get("/users/{uid}/ranking-model", rankingHandler.Get)
+			router.With(handlers.RequireJWT(deps.TokenVerifier, deps.RevocationChecker, deps.Auth.Logger)).Put("/users/{uid}/ranking-model", rankingHandler.Put)
 		})
 	}
 }

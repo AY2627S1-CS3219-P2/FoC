@@ -71,6 +71,13 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 		}
 	}
 
+	// AI-generated (edited by nigeltzy): D-093, a completed errand must be rated
+	// before posting another. After the replay above, so a retried create that
+	// already went through still answers with its errand.
+	if err := s.requireRated(ctx, c); err != nil {
+		return Order{}, false, err
+	}
+
 	// D-058: a requester at the limit is told so here, before credit is
 	// touched. Two creates can both pass this count; the one repo.Create makes
 	// under the requester's lock is what stops the second.

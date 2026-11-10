@@ -1,0 +1,481 @@
+persona,probe,at,weekday,carrying_supplier,carrying_drop_off,supplier,drop_off,reward,posted_min_before,requester,requester_stars,expected
+type-food,type-food-01,2026-10-27T12:48:00+08:00,Tuesday,,,Nami,KEVII Hall lobby,2,30,req-14,,yes
+type-food,type-food-01,2026-10-27T12:48:00+08:00,Tuesday,,,Printer @ Com 2,"The Coffee Roaster, AS8",4,31,req-16,,no
+type-food,type-food-01,2026-10-27T12:48:00+08:00,Tuesday,,,Printer @ Com 2,Eusoff Hall lobby,10,5,req-07,3,no
+type-food,type-food-01,2026-10-27T12:48:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,LightHouse lobby,10,33,req-15,,no
+type-food,type-food-02,2026-10-29T17:58:00+08:00,Thursday,,,NUS Co-op,RVRC lobby,8,25,req-02,5,no
+type-food,type-food-02,2026-10-29T17:58:00+08:00,Thursday,,,Central Square @ YIH,Pioneer House lobby,7,16,req-01,5,yes
+type-food,type-food-02,2026-10-29T17:58:00+08:00,Thursday,,,NUS Co-op,"The Deck, FASS",11,25,req-12,2,no
+type-food,type-food-02,2026-10-29T17:58:00+08:00,Thursday,,,NUS Co-op,"Frontier Canteen, Science",7,12,req-11,2,no
+type-food,type-food-03,2026-10-29T09:13:00+08:00,Thursday,,,Frontier Canteen,UTown Residence lobby,3,12,req-02,5,yes
+type-food,type-food-03,2026-10-29T09:13:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,University Sports Centre entrance,9,37,req-14,,no
+type-food,type-food-03,2026-10-29T09:13:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,"The Deck, FASS",7,2,req-04,4,no
+type-food,type-food-03,2026-10-29T09:13:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,Valour House lobby,12,13,req-04,4,no
+type-food,type-food-04,2026-10-29T12:32:00+08:00,Thursday,,,Octobox,Central Library entrance,3,19,req-14,,no
+type-food,type-food-04,2026-10-29T12:32:00+08:00,Thursday,,,Printer @ Com 2,"Starbucks, UTown ERC",12,6,req-13,,no
+type-food,type-food-04,2026-10-29T12:32:00+08:00,Thursday,,,Anna's x Soup Union,PGP Residences lobby,11,15,req-07,3,yes
+type-food,type-food-04,2026-10-29T12:32:00+08:00,Thursday,,,Goh Bros E-Print Pte Ltd,EA Atrium,8,29,req-06,4,no
+type-food,type-food-05,2026-10-28T16:40:00+08:00,Wednesday,,,NUS Co-op,Helix House lobby,8,16,req-13,,no
+type-food,type-food-05,2026-10-28T16:40:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,Helix House lobby,8,18,req-12,2,no
+type-food,type-food-05,2026-10-28T16:40:00+08:00,Wednesday,,,Printer @ Com 2,LT27 bus stop,10,10,req-03,4,no
+type-food,type-food-05,2026-10-28T16:40:00+08:00,Wednesday,,,Nami,Raffles Hall lobby,7,14,req-07,3,yes
+type-food,type-food-06,2026-10-30T17:06:00+08:00,Friday,,,Goh Bros E-Print Pte Ltd,Acacia College lobby,2,20,req-06,4,no
+type-food,type-food-06,2026-10-30T17:06:00+08:00,Friday,,,Goh Bros E-Print Pte Ltd,KEVII Hall lobby,5,29,req-16,,no
+type-food,type-food-06,2026-10-30T17:06:00+08:00,Friday,,,he by He Brews,LightHouse lobby,2,6,req-14,,yes
+type-food,type-food-06,2026-10-30T17:06:00+08:00,Friday,,,Cheers Unmanned Convenience Store,COM3 Lobby,10,3,req-08,2,no
+type-food,type-food-07,2026-10-28T18:56:00+08:00,Wednesday,,,Cafe+ Robot Cafe,PGP Residences lobby,10,11,req-15,,yes
+type-food,type-food-07,2026-10-28T18:56:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,Eusoff Hall lobby,5,27,req-02,5,no
+type-food,type-food-07,2026-10-28T18:56:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,Sheares Hall lobby,12,37,req-09,1,no
+type-food,type-food-07,2026-10-28T18:56:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,NUSC Cendana lobby,5,13,req-05,5,no
+type-food,type-food-08,2026-10-29T13:18:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,"The Terrace, COM3",6,8,req-07,3,no
+type-food,type-food-08,2026-10-29T13:18:00+08:00,Thursday,,,NUS Co-op,"Central Square, YIH",6,17,req-01,5,no
+type-food,type-food-08,2026-10-29T13:18:00+08:00,Thursday,,,Octobox,"The Terrace, COM3",2,35,req-16,,no
+type-food,type-food-08,2026-10-29T13:18:00+08:00,Thursday,,,Cool Spot,PGP Residences lobby,7,31,req-14,,yes
+type-food,type-food-09,2026-10-28T11:41:00+08:00,Wednesday,,,NUS Co-op,"The Deck, FASS",8,26,req-02,5,no
+type-food,type-food-09,2026-10-28T11:41:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,Central Library entrance,5,33,req-06,4,no
+type-food,type-food-09,2026-10-28T11:41:00+08:00,Wednesday,,,The Deck,Helix House lobby,9,33,req-16,,yes
+type-food,type-food-09,2026-10-28T11:41:00+08:00,Wednesday,,,Octobox,"The Coffee Roaster, AS8",8,28,req-16,,no
+type-food,type-food-10,2026-10-26T12:06:00+08:00,Monday,,,Cheers Unmanned Convenience Store,Techno Edge Canteen,11,16,req-14,,no
+type-food,type-food-10,2026-10-26T12:06:00+08:00,Monday,,,Pasta Express,"The Coffee Roaster, AS8",10,34,req-10,3,yes
+type-food,type-food-10,2026-10-26T12:06:00+08:00,Monday,,,NUS Co-op,Acacia College lobby,4,7,req-13,,no
+type-food,type-food-10,2026-10-26T12:06:00+08:00,Monday,,,NUS Co-op,Helix House lobby,8,12,req-07,3,no
+type-food,type-food-11,2026-10-30T12:14:00+08:00,Friday,,,NUS Co-op,PGP Aircon Canteen,2,33,req-16,,no
+type-food,type-food-11,2026-10-30T12:14:00+08:00,Friday,,,Anna's x Soup Union,Pioneer House lobby,8,4,req-06,4,yes
+type-food,type-food-11,2026-10-30T12:14:00+08:00,Friday,,,Cheers Unmanned Convenience Store,LightHouse lobby,6,40,req-15,,no
+type-food,type-food-11,2026-10-30T12:14:00+08:00,Friday,,,NUS Co-op,NUSC Elm lobby,12,14,req-11,2,no
+type-food,type-food-12,2026-10-29T10:00:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,NUS Law Oculus drop-off,2,14,req-10,3,no
+type-food,type-food-12,2026-10-29T10:00:00+08:00,Thursday,,,Frontier Canteen,"Frontier Canteen, Science",4,4,req-13,,yes
+type-food,type-food-12,2026-10-29T10:00:00+08:00,Thursday,,,Octobox,NUSC Elm lobby,9,15,req-01,5,no
+type-food,type-food-12,2026-10-29T10:00:00+08:00,Thursday,,,NUS Co-op,Medicine+Science Library Atrium,5,4,req-05,5,no
+high-reward,high-reward-01,2026-10-27T13:03:00+08:00,Tuesday,,,The Coffee Roaster,Helix House lobby,2,38,req-12,2,no
+high-reward,high-reward-01,2026-10-27T13:03:00+08:00,Tuesday,,,The Terrace,Kent Ridge Hall lobby,5,19,req-05,5,no
+high-reward,high-reward-01,2026-10-27T13:03:00+08:00,Tuesday,,,NUS Co-op,KEVII Hall lobby,12,20,req-07,3,yes
+high-reward,high-reward-01,2026-10-27T13:03:00+08:00,Tuesday,,,Supersnacks,Central Library entrance,5,27,req-08,2,no
+high-reward,high-reward-02,2026-10-26T14:44:00+08:00,Monday,,,Supersnacks,NUS Law Oculus drop-off,11,3,req-13,,yes
+high-reward,high-reward-02,2026-10-26T14:44:00+08:00,Monday,,,Cafe+ Robot Cafe,COM1 Lobby,5,21,req-09,1,no
+high-reward,high-reward-02,2026-10-26T14:44:00+08:00,Monday,,,Octobox,EA Atrium,6,9,req-04,4,no
+high-reward,high-reward-02,2026-10-26T14:44:00+08:00,Monday,,,Central Square @ YIH,Techno Edge Canteen,2,2,req-13,,no
+high-reward,high-reward-03,2026-10-26T19:47:00+08:00,Monday,,,The Terrace,YST Conservatory Foyer,3,30,req-04,4,no
+high-reward,high-reward-03,2026-10-26T19:47:00+08:00,Monday,,,Techno Edge,RC4 lobby,11,22,req-11,2,yes
+high-reward,high-reward-03,2026-10-26T19:47:00+08:00,Monday,,,Bakehaus / Aurea,Acacia College lobby,5,5,req-03,4,no
+high-reward,high-reward-03,2026-10-26T19:47:00+08:00,Monday,,,Cafe+ Robot Cafe,LightHouse lobby,5,27,req-01,5,no
+high-reward,high-reward-04,2026-10-29T10:59:00+08:00,Thursday,,,Fine Food,"Fine Food, Town Plaza",4,7,req-09,1,no
+high-reward,high-reward-04,2026-10-29T10:59:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,Tembusu College lobby,4,38,req-04,4,no
+high-reward,high-reward-04,2026-10-29T10:59:00+08:00,Thursday,,,Fine Food,Sheares Hall lobby,9,7,req-03,4,yes
+high-reward,high-reward-04,2026-10-29T10:59:00+08:00,Thursday,,,Cafe+ Robot Cafe,Eusoff Hall lobby,3,32,req-01,5,no
+high-reward,high-reward-05,2026-10-29T09:48:00+08:00,Thursday,,,Anna's x Soup Union,YST Conservatory Foyer,3,5,req-09,1,no
+high-reward,high-reward-05,2026-10-29T09:48:00+08:00,Thursday,,,A Hot Hideout,RC4 lobby,6,8,req-06,4,no
+high-reward,high-reward-05,2026-10-29T09:48:00+08:00,Thursday,,,Octobox,University Sports Centre entrance,11,19,req-13,,yes
+high-reward,high-reward-05,2026-10-29T09:48:00+08:00,Thursday,,,TOMORO COFFEE,"The Terrace, COM3",6,38,req-15,,no
+high-reward,high-reward-06,2026-10-30T09:16:00+08:00,Friday,,,Cafe+ Robot Cafe,Helix House lobby,2,24,req-16,,no
+high-reward,high-reward-06,2026-10-30T09:16:00+08:00,Friday,,,Cafe+ Robot Cafe,EA Atrium,2,38,req-03,4,no
+high-reward,high-reward-06,2026-10-30T09:16:00+08:00,Friday,,,Cheers Unmanned Convenience Store,Techno Edge Canteen,8,39,req-16,,yes
+high-reward,high-reward-06,2026-10-30T09:16:00+08:00,Friday,,,Fine Food,Temasek Hall lobby,5,23,req-07,3,no
+high-reward,high-reward-07,2026-10-29T10:53:00+08:00,Thursday,,,Central Square @ YIH,LT27 bus stop,3,20,req-10,3,no
+high-reward,high-reward-07,2026-10-29T10:53:00+08:00,Thursday,,,Nami,NUSC Cendana lobby,10,10,req-11,2,yes
+high-reward,high-reward-07,2026-10-29T10:53:00+08:00,Thursday,,,PGP Food Court,Acacia College lobby,2,14,req-15,,no
+high-reward,high-reward-07,2026-10-29T10:53:00+08:00,Thursday,,,Octobox,NUS Law Oculus drop-off,4,18,req-11,2,no
+high-reward,high-reward-08,2026-10-29T09:23:00+08:00,Thursday,,,Pasta Express,"Central Square, YIH",6,21,req-02,5,no
+high-reward,high-reward-08,2026-10-29T09:23:00+08:00,Thursday,,,The Coffee Roaster,COM3 Lobby,3,16,req-07,3,no
+high-reward,high-reward-08,2026-10-29T09:23:00+08:00,Thursday,,,PGP Food Court,Acacia College lobby,5,20,req-08,2,no
+high-reward,high-reward-08,2026-10-29T09:23:00+08:00,Thursday,,,Arise and Shine,KEVII Hall lobby,10,15,req-09,1,yes
+high-reward,high-reward-09,2026-10-27T19:09:00+08:00,Tuesday,,,TOMORO COFFEE,COM3 Lobby,4,8,req-13,,no
+high-reward,high-reward-09,2026-10-27T19:09:00+08:00,Tuesday,,,The Coffee Roaster,NUSC Elm lobby,3,29,req-12,2,no
+high-reward,high-reward-09,2026-10-27T19:09:00+08:00,Tuesday,,,A Hot Hideout,Medicine+Science Library Atrium,5,21,req-10,3,no
+high-reward,high-reward-09,2026-10-27T19:09:00+08:00,Tuesday,,,Pasta Express,Pioneer House lobby,10,11,req-13,,yes
+high-reward,high-reward-10,2026-10-27T11:40:00+08:00,Tuesday,,,The Deck,"Frontier Canteen, Science",3,22,req-04,4,no
+high-reward,high-reward-10,2026-10-27T11:40:00+08:00,Tuesday,,,Cafe+ Robot Cafe,BIZ1 Atrium,12,38,req-01,5,yes
+high-reward,high-reward-10,2026-10-27T11:40:00+08:00,Tuesday,,,Flavours @ UTown,"Fine Food, Town Plaza",2,29,req-14,,no
+high-reward,high-reward-10,2026-10-27T11:40:00+08:00,Tuesday,,,Bakehaus / Aurea,Eusoff Hall lobby,5,21,req-09,1,no
+high-reward,high-reward-11,2026-10-29T14:17:00+08:00,Thursday,,,Central Square @ YIH,EA Atrium,2,4,req-01,5,no
+high-reward,high-reward-11,2026-10-29T14:17:00+08:00,Thursday,,,InstaChef,"Starbucks, UTown ERC",12,19,req-10,3,yes
+high-reward,high-reward-11,2026-10-29T14:17:00+08:00,Thursday,,,he by He Brews,"The Deck, FASS",4,23,req-02,5,no
+high-reward,high-reward-11,2026-10-29T14:17:00+08:00,Thursday,,,The Terrace,Techno Edge Canteen,3,6,req-16,,no
+high-reward,high-reward-12,2026-10-29T16:19:00+08:00,Thursday,,,Central Square @ YIH,BIZ1 Atrium,11,15,req-08,2,yes
+high-reward,high-reward-12,2026-10-29T16:19:00+08:00,Thursday,,,The Deck,BIZ1 Atrium,6,7,req-08,2,no
+high-reward,high-reward-12,2026-10-29T16:19:00+08:00,Thursday,,,Good Day Cafe,Central Library entrance,4,27,req-15,,no
+high-reward,high-reward-12,2026-10-29T16:19:00+08:00,Thursday,,,The Terrace,Central Library entrance,4,6,req-13,,no
+short-trips,short-trips-01,2026-10-28T15:43:00+08:00,Wednesday,,,he by He Brews,CAPT lobby,9,19,req-07,3,no
+short-trips,short-trips-01,2026-10-28T15:43:00+08:00,Wednesday,,,Octobox,Helix House lobby,2,7,req-14,,yes
+short-trips,short-trips-01,2026-10-28T15:43:00+08:00,Wednesday,,,Flavours @ UTown,LightHouse lobby,2,19,req-09,1,no
+short-trips,short-trips-01,2026-10-28T15:43:00+08:00,Wednesday,,,Central Square @ YIH,Tembusu College lobby,4,34,req-08,2,no
+short-trips,short-trips-02,2026-10-26T17:51:00+08:00,Monday,,,Smooy,Helix House lobby,4,29,req-04,4,no
+short-trips,short-trips-02,2026-10-26T17:51:00+08:00,Monday,,,Techno Edge,"The Coffee Roaster, AS8",7,12,req-02,5,yes
+short-trips,short-trips-02,2026-10-26T17:51:00+08:00,Monday,,,Central Square @ YIH,NUS Law Oculus drop-off,11,13,req-07,3,no
+short-trips,short-trips-02,2026-10-26T17:51:00+08:00,Monday,,,The Deck,PGP Aircon Canteen,12,2,req-16,,no
+short-trips,short-trips-03,2026-10-28T19:26:00+08:00,Wednesday,,,Arise and Shine,CAPT lobby,7,34,req-15,,no
+short-trips,short-trips-03,2026-10-28T19:26:00+08:00,Wednesday,,,Nami,RC4 lobby,2,8,req-11,2,no
+short-trips,short-trips-03,2026-10-28T19:26:00+08:00,Wednesday,,,he by He Brews,EA Atrium,6,6,req-07,3,yes
+short-trips,short-trips-03,2026-10-28T19:26:00+08:00,Wednesday,,,Smooy,KEVII Hall lobby,8,10,req-05,5,no
+short-trips,short-trips-04,2026-10-27T15:45:00+08:00,Tuesday,,,PGP Food Court,"Fine Food, Town Plaza",4,38,req-04,4,no
+short-trips,short-trips-04,2026-10-27T15:45:00+08:00,Tuesday,,,InstaChef,PGP Aircon Canteen,8,36,req-13,,no
+short-trips,short-trips-04,2026-10-27T15:45:00+08:00,Tuesday,,,Techno Edge,Techno Edge Canteen,8,12,req-15,,yes
+short-trips,short-trips-04,2026-10-27T15:45:00+08:00,Tuesday,,,PGP Food Court,NUS Law Oculus drop-off,8,11,req-04,4,no
+short-trips,short-trips-05,2026-10-29T15:44:00+08:00,Thursday,,,The Deck,Medicine+Science Library Atrium,6,21,req-14,,no
+short-trips,short-trips-05,2026-10-29T15:44:00+08:00,Thursday,,,A Hot Hideout,"Fine Food, Town Plaza",3,30,req-06,4,no
+short-trips,short-trips-05,2026-10-29T15:44:00+08:00,Thursday,,,Anna's x Soup Union,COM1 Lobby,4,27,req-01,5,yes
+short-trips,short-trips-05,2026-10-29T15:44:00+08:00,Thursday,,,he by He Brews,LightHouse lobby,10,20,req-09,1,no
+short-trips,short-trips-06,2026-10-29T14:24:00+08:00,Thursday,,,A Hot Hideout,Helix House lobby,4,18,req-07,3,yes
+short-trips,short-trips-06,2026-10-29T14:24:00+08:00,Thursday,,,Octobox,CAPT lobby,4,20,req-04,4,no
+short-trips,short-trips-06,2026-10-29T14:24:00+08:00,Thursday,,,Bakehaus / Aurea,"Frontier Canteen, Science",9,32,req-01,5,no
+short-trips,short-trips-06,2026-10-29T14:24:00+08:00,Thursday,,,TOMORO COFFEE,LightHouse lobby,9,40,req-05,5,no
+short-trips,short-trips-07,2026-10-28T12:08:00+08:00,Wednesday,,,Bakehaus / Aurea,Helix House lobby,5,6,req-08,2,no
+short-trips,short-trips-07,2026-10-28T12:08:00+08:00,Wednesday,,,Cafe+ Robot Cafe,"The Deck, FASS",8,34,req-07,3,yes
+short-trips,short-trips-07,2026-10-28T12:08:00+08:00,Wednesday,,,Cafe+ Robot Cafe,NUSC Saga lobby,7,14,req-14,,no
+short-trips,short-trips-07,2026-10-28T12:08:00+08:00,Wednesday,,,Printer @ Com 2,NUSC Cendana lobby,12,35,req-07,3,no
+short-trips,short-trips-08,2026-10-27T09:43:00+08:00,Tuesday,,,A Hot Hideout,Helix House lobby,4,4,req-11,2,yes
+short-trips,short-trips-08,2026-10-27T09:43:00+08:00,Tuesday,,,Supersnacks,RVRC lobby,7,28,req-15,,no
+short-trips,short-trips-08,2026-10-27T09:43:00+08:00,Tuesday,,,A Hot Hideout,EA Atrium,4,35,req-15,,no
+short-trips,short-trips-08,2026-10-27T09:43:00+08:00,Tuesday,,,Smooy,"Starbucks, UTown ERC",2,17,req-02,5,no
+short-trips,short-trips-09,2026-10-27T12:03:00+08:00,Tuesday,,,Nami,University Sports Centre entrance,5,40,req-06,4,no
+short-trips,short-trips-09,2026-10-27T12:03:00+08:00,Tuesday,,,Octobox,Tembusu College lobby,6,33,req-10,3,no
+short-trips,short-trips-09,2026-10-27T12:03:00+08:00,Tuesday,,,Central Square @ YIH,"Central Square, YIH",10,39,req-12,2,yes
+short-trips,short-trips-09,2026-10-27T12:03:00+08:00,Tuesday,,,Flavours @ UTown,PGP Aircon Canteen,5,31,req-08,2,no
+short-trips,short-trips-10,2026-10-30T12:58:00+08:00,Friday,,,Cafe+ Robot Cafe,"Flavours, Stephen Riady Centre",2,2,req-04,4,no
+short-trips,short-trips-10,2026-10-30T12:58:00+08:00,Friday,,,Fine Food,NUSC Elm lobby,12,21,req-10,3,yes
+short-trips,short-trips-10,2026-10-30T12:58:00+08:00,Friday,,,The Coffee Roaster,"Fine Food, Town Plaza",12,27,req-10,3,no
+short-trips,short-trips-10,2026-10-30T12:58:00+08:00,Friday,,,Frontier Canteen,Raffles Hall lobby,9,30,req-15,,no
+short-trips,short-trips-11,2026-10-29T14:14:00+08:00,Thursday,,,PGP Food Court,Sheares Hall lobby,12,40,req-11,2,no
+short-trips,short-trips-11,2026-10-29T14:14:00+08:00,Thursday,,,Central Square @ YIH,Sheares Hall lobby,4,5,req-11,2,no
+short-trips,short-trips-11,2026-10-29T14:14:00+08:00,Thursday,,,PGP Food Court,Acacia College lobby,9,19,req-10,3,no
+short-trips,short-trips-11,2026-10-29T14:14:00+08:00,Thursday,,,The Deck,"The Deck, FASS",4,14,req-10,3,yes
+short-trips,short-trips-12,2026-10-29T12:46:00+08:00,Thursday,,,Fine Food,"Starbucks, UTown ERC",10,8,req-16,,yes
+short-trips,short-trips-12,2026-10-29T12:46:00+08:00,Thursday,,,Flavours @ UTown,COM1 Lobby,10,26,req-06,4,no
+short-trips,short-trips-12,2026-10-29T12:46:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,NUSC Cendana lobby,3,7,req-14,,no
+short-trips,short-trips-12,2026-10-29T12:46:00+08:00,Thursday,,,Arise and Shine,Tembusu College lobby,5,32,req-01,5,no
+rated-requesters,rated-requesters-01,2026-10-26T15:18:00+08:00,Monday,,,InstaChef,Sheares Hall lobby,2,21,req-10,3,no
+rated-requesters,rated-requesters-01,2026-10-26T15:18:00+08:00,Monday,,,Cool Spot,NUSC Cendana lobby,4,14,req-11,2,no
+rated-requesters,rated-requesters-01,2026-10-26T15:18:00+08:00,Monday,,,TOMORO COFFEE,Tembusu College lobby,4,10,req-04,4,yes
+rated-requesters,rated-requesters-01,2026-10-26T15:18:00+08:00,Monday,,,The Deck,University Sports Centre entrance,2,2,req-09,1,no
+rated-requesters,rated-requesters-02,2026-10-28T17:46:00+08:00,Wednesday,,,Nami,LT27 bus stop,9,39,req-08,2,no
+rated-requesters,rated-requesters-02,2026-10-28T17:46:00+08:00,Wednesday,,,Fine Food,Temasek Hall lobby,6,2,req-10,3,no
+rated-requesters,rated-requesters-02,2026-10-28T17:46:00+08:00,Wednesday,,,Cafe+ Robot Cafe,RVRC lobby,5,17,req-09,1,no
+rated-requesters,rated-requesters-02,2026-10-28T17:46:00+08:00,Wednesday,,,InstaChef,"Central Square, YIH",9,20,req-06,4,yes
+rated-requesters,rated-requesters-03,2026-10-30T09:14:00+08:00,Friday,,,TOMORO COFFEE,"Starbucks, UTown ERC",5,25,req-02,5,yes
+rated-requesters,rated-requesters-03,2026-10-30T09:14:00+08:00,Friday,,,PGP Food Court,EA Atrium,8,35,req-12,2,no
+rated-requesters,rated-requesters-03,2026-10-30T09:14:00+08:00,Friday,,,Frontier Canteen,"Flavours, Stephen Riady Centre",7,14,req-09,1,no
+rated-requesters,rated-requesters-03,2026-10-30T09:14:00+08:00,Friday,,,The Terrace,LightHouse lobby,11,21,req-09,1,no
+rated-requesters,rated-requesters-04,2026-10-29T10:13:00+08:00,Thursday,,,Flavours @ UTown,EA Atrium,5,6,req-07,3,no
+rated-requesters,rated-requesters-04,2026-10-29T10:13:00+08:00,Thursday,,,Supersnacks,CAPT lobby,3,19,req-03,4,yes
+rated-requesters,rated-requesters-04,2026-10-29T10:13:00+08:00,Thursday,,,A Hot Hideout,"The Terrace, COM3",12,3,req-10,3,no
+rated-requesters,rated-requesters-04,2026-10-29T10:13:00+08:00,Thursday,,,Cool Spot,Temasek Hall lobby,5,27,req-11,2,no
+rated-requesters,rated-requesters-05,2026-10-30T15:29:00+08:00,Friday,,,Smooy,NUSC Saga lobby,8,17,req-11,2,no
+rated-requesters,rated-requesters-05,2026-10-30T15:29:00+08:00,Friday,,,Frontier Canteen,RC4 lobby,12,27,req-11,2,no
+rated-requesters,rated-requesters-05,2026-10-30T15:29:00+08:00,Friday,,,Central Square @ YIH,EA Atrium,6,29,req-10,3,no
+rated-requesters,rated-requesters-05,2026-10-30T15:29:00+08:00,Friday,,,Octobox,NUSC Cendana lobby,4,11,req-05,5,yes
+rated-requesters,rated-requesters-06,2026-10-30T14:44:00+08:00,Friday,,,Good Day Cafe,Temasek Hall lobby,9,5,req-08,2,no
+rated-requesters,rated-requesters-06,2026-10-30T14:44:00+08:00,Friday,,,he by He Brews,Eusoff Hall lobby,2,40,req-11,2,no
+rated-requesters,rated-requesters-06,2026-10-30T14:44:00+08:00,Friday,,,Supersnacks,"The Coffee Roaster, AS8",4,6,req-08,2,no
+rated-requesters,rated-requesters-06,2026-10-30T14:44:00+08:00,Friday,,,he by He Brews,EA Atrium,9,37,req-04,4,yes
+rated-requesters,rated-requesters-07,2026-10-27T11:13:00+08:00,Tuesday,,,Anna's x Soup Union,PGP Aircon Canteen,7,26,req-11,2,no
+rated-requesters,rated-requesters-07,2026-10-27T11:13:00+08:00,Tuesday,,,The Coffee Roaster,"The Deck, FASS",4,3,req-07,3,no
+rated-requesters,rated-requesters-07,2026-10-27T11:13:00+08:00,Tuesday,,,Octobox,NUSC Saga lobby,8,29,req-10,3,no
+rated-requesters,rated-requesters-07,2026-10-27T11:13:00+08:00,Tuesday,,,Good Day Cafe,KEVII Hall lobby,4,24,req-04,4,yes
+rated-requesters,rated-requesters-08,2026-10-28T18:14:00+08:00,Wednesday,,,Bakehaus / Aurea,Eusoff Hall lobby,2,28,req-11,2,no
+rated-requesters,rated-requesters-08,2026-10-28T18:14:00+08:00,Wednesday,,,TOMORO COFFEE,Raffles Hall lobby,9,20,req-06,4,yes
+rated-requesters,rated-requesters-08,2026-10-28T18:14:00+08:00,Wednesday,,,Frontier Canteen,EA Atrium,4,27,req-11,2,no
+rated-requesters,rated-requesters-08,2026-10-28T18:14:00+08:00,Wednesday,,,The Terrace,Techno Edge Canteen,8,27,req-10,3,no
+rated-requesters,rated-requesters-09,2026-10-29T09:14:00+08:00,Thursday,,,Techno Edge,BIZ1 Atrium,2,13,req-07,3,no
+rated-requesters,rated-requesters-09,2026-10-29T09:14:00+08:00,Thursday,,,Cool Spot,Tembusu College lobby,10,30,req-12,2,no
+rated-requesters,rated-requesters-09,2026-10-29T09:14:00+08:00,Thursday,,,Anna's x Soup Union,NUS Law Oculus drop-off,3,14,req-07,3,no
+rated-requesters,rated-requesters-09,2026-10-29T09:14:00+08:00,Thursday,,,PGP Food Court,"The Coffee Roaster, AS8",7,9,req-01,5,yes
+rated-requesters,rated-requesters-10,2026-10-28T17:08:00+08:00,Wednesday,,,InstaChef,University Sports Centre entrance,10,27,req-10,3,no
+rated-requesters,rated-requesters-10,2026-10-28T17:08:00+08:00,Wednesday,,,The Deck,KEVII Hall lobby,2,3,req-07,3,no
+rated-requesters,rated-requesters-10,2026-10-28T17:08:00+08:00,Wednesday,,,Bakehaus / Aurea,NUSC Saga lobby,4,32,req-07,3,no
+rated-requesters,rated-requesters-10,2026-10-28T17:08:00+08:00,Wednesday,,,Supersnacks,Medicine+Science Library Atrium,10,4,req-01,5,yes
+rated-requesters,rated-requesters-11,2026-10-30T18:07:00+08:00,Friday,,,Anna's x Soup Union,RC4 lobby,8,21,req-06,4,yes
+rated-requesters,rated-requesters-11,2026-10-30T18:07:00+08:00,Friday,,,Printer @ Com 2,Raffles Hall lobby,11,16,req-12,2,no
+rated-requesters,rated-requesters-11,2026-10-30T18:07:00+08:00,Friday,,,Central Square @ YIH,LT27 bus stop,4,30,req-07,3,no
+rated-requesters,rated-requesters-11,2026-10-30T18:07:00+08:00,Friday,,,The Deck,"Central Square, YIH",5,10,req-11,2,no
+rated-requesters,rated-requesters-12,2026-10-28T10:09:00+08:00,Wednesday,,,The Terrace,Tembusu College lobby,10,16,req-01,5,yes
+rated-requesters,rated-requesters-12,2026-10-28T10:09:00+08:00,Wednesday,,,The Coffee Roaster,"Central Square, YIH",7,2,req-12,2,no
+rated-requesters,rated-requesters-12,2026-10-28T10:09:00+08:00,Wednesday,,,Frontier Canteen,Medicine+Science Library Atrium,12,8,req-09,1,no
+rated-requesters,rated-requesters-12,2026-10-28T10:09:00+08:00,Wednesday,,,Frontier Canteen,Sheares Hall lobby,10,40,req-11,2,no
+home-bound,home-bound-01,2026-10-29T19:41:00+08:00,Thursday,,,Printer @ Com 2,Pioneer House lobby,5,5,req-10,3,no
+home-bound,home-bound-01,2026-10-29T19:41:00+08:00,Thursday,,,Pasta Express,LightHouse lobby,9,30,req-16,,no
+home-bound,home-bound-01,2026-10-29T19:41:00+08:00,Thursday,,,Supersnacks,Sheares Hall lobby,12,40,req-15,,no
+home-bound,home-bound-01,2026-10-29T19:41:00+08:00,Thursday,,,The Terrace,NUSC Saga lobby,2,38,req-08,2,yes
+home-bound,home-bound-02,2026-10-29T10:43:00+08:00,Thursday,,,The Coffee Roaster,Techno Edge Canteen,2,5,req-10,3,no
+home-bound,home-bound-02,2026-10-29T10:43:00+08:00,Thursday,,,Bakehaus / Aurea,UTown Residence lobby,12,30,req-08,2,yes
+home-bound,home-bound-02,2026-10-29T10:43:00+08:00,Thursday,,,The Coffee Roaster,LT27 bus stop,7,3,req-01,5,no
+home-bound,home-bound-02,2026-10-29T10:43:00+08:00,Thursday,,,TOMORO COFFEE,Medicine+Science Library Atrium,12,24,req-07,3,no
+home-bound,home-bound-03,2026-10-28T15:03:00+08:00,Wednesday,,,Flavours @ UTown,NUSC Saga lobby,8,4,req-07,3,yes
+home-bound,home-bound-03,2026-10-28T15:03:00+08:00,Wednesday,,,Smooy,"The Terrace, COM3",11,29,req-02,5,no
+home-bound,home-bound-03,2026-10-28T15:03:00+08:00,Wednesday,,,Flavours @ UTown,Pioneer House lobby,10,15,req-03,4,no
+home-bound,home-bound-03,2026-10-28T15:03:00+08:00,Wednesday,,,Fine Food,Techno Edge Canteen,12,33,req-06,4,no
+home-bound,home-bound-04,2026-10-30T18:17:00+08:00,Friday,,,Cafe+ Robot Cafe,YST Conservatory Foyer,10,37,req-10,3,no
+home-bound,home-bound-04,2026-10-30T18:17:00+08:00,Friday,,,Cafe+ Robot Cafe,NUSC Cendana lobby,10,37,req-16,,yes
+home-bound,home-bound-04,2026-10-30T18:17:00+08:00,Friday,,,Cool Spot,"The Coffee Roaster, AS8",11,34,req-13,,no
+home-bound,home-bound-04,2026-10-30T18:17:00+08:00,Friday,,,TOMORO COFFEE,LightHouse lobby,3,28,req-12,2,no
+home-bound,home-bound-05,2026-10-27T19:20:00+08:00,Tuesday,,,Fine Food,NUSC Saga lobby,3,14,req-03,4,yes
+home-bound,home-bound-05,2026-10-27T19:20:00+08:00,Tuesday,,,The Terrace,"Frontier Canteen, Science",11,9,req-04,4,no
+home-bound,home-bound-05,2026-10-27T19:20:00+08:00,Tuesday,,,Supersnacks,Eusoff Hall lobby,9,11,req-12,2,no
+home-bound,home-bound-05,2026-10-27T19:20:00+08:00,Tuesday,,,A Hot Hideout,COM3 Lobby,11,26,req-15,,no
+home-bound,home-bound-06,2026-10-28T17:16:00+08:00,Wednesday,,,The Coffee Roaster,"The Terrace, COM3",8,21,req-08,2,no
+home-bound,home-bound-06,2026-10-28T17:16:00+08:00,Wednesday,,,Printer @ Com 2,Raffles Hall lobby,4,10,req-08,2,no
+home-bound,home-bound-06,2026-10-28T17:16:00+08:00,Wednesday,,,The Terrace,NUSC Elm lobby,7,23,req-10,3,yes
+home-bound,home-bound-06,2026-10-28T17:16:00+08:00,Wednesday,,,Pasta Express,EA Atrium,7,11,req-11,2,no
+home-bound,home-bound-07,2026-10-30T09:33:00+08:00,Friday,,,Octobox,PGP Aircon Canteen,4,21,req-01,5,no
+home-bound,home-bound-07,2026-10-30T09:33:00+08:00,Friday,,,The Terrace,Acacia College lobby,3,10,req-07,3,yes
+home-bound,home-bound-07,2026-10-30T09:33:00+08:00,Friday,,,The Terrace,"The Coffee Roaster, AS8",7,6,req-03,4,no
+home-bound,home-bound-07,2026-10-30T09:33:00+08:00,Friday,,,TOMORO COFFEE,COM3 Lobby,7,5,req-01,5,no
+home-bound,home-bound-08,2026-10-27T13:46:00+08:00,Tuesday,,,Techno Edge,Acacia College lobby,12,7,req-03,4,yes
+home-bound,home-bound-08,2026-10-27T13:46:00+08:00,Tuesday,,,Bakehaus / Aurea,"The Coffee Roaster, AS8",11,13,req-07,3,no
+home-bound,home-bound-08,2026-10-27T13:46:00+08:00,Tuesday,,,Bakehaus / Aurea,COM1 Lobby,4,16,req-06,4,no
+home-bound,home-bound-08,2026-10-27T13:46:00+08:00,Tuesday,,,he by He Brews,RVRC lobby,10,17,req-07,3,no
+home-bound,home-bound-09,2026-10-29T18:44:00+08:00,Thursday,,,The Deck,NUSC Elm lobby,7,28,req-12,2,yes
+home-bound,home-bound-09,2026-10-29T18:44:00+08:00,Thursday,,,Pasta Express,"The Deck, FASS",10,27,req-01,5,no
+home-bound,home-bound-09,2026-10-29T18:44:00+08:00,Thursday,,,Nami,Central Library entrance,3,34,req-09,1,no
+home-bound,home-bound-09,2026-10-29T18:44:00+08:00,Thursday,,,Anna's x Soup Union,"The Deck, FASS",5,22,req-04,4,no
+home-bound,home-bound-10,2026-10-30T10:13:00+08:00,Friday,,,Cheers Unmanned Convenience Store,NUSC Saga lobby,4,15,req-01,5,yes
+home-bound,home-bound-10,2026-10-30T10:13:00+08:00,Friday,,,Fine Food,Eusoff Hall lobby,3,2,req-01,5,no
+home-bound,home-bound-10,2026-10-30T10:13:00+08:00,Friday,,,Bakehaus / Aurea,"The Terrace, COM3",4,17,req-13,,no
+home-bound,home-bound-10,2026-10-30T10:13:00+08:00,Friday,,,he by He Brews,PGP Aircon Canteen,5,28,req-11,2,no
+home-bound,home-bound-11,2026-10-28T17:33:00+08:00,Wednesday,,,Cool Spot,NUSC Cendana lobby,11,14,req-14,,yes
+home-bound,home-bound-11,2026-10-28T17:33:00+08:00,Wednesday,,,PGP Food Court,RVRC lobby,2,23,req-14,,no
+home-bound,home-bound-11,2026-10-28T17:33:00+08:00,Wednesday,,,Anna's x Soup Union,RVRC lobby,5,3,req-04,4,no
+home-bound,home-bound-11,2026-10-28T17:33:00+08:00,Wednesday,,,Octobox,Medicine+Science Library Atrium,11,20,req-08,2,no
+home-bound,home-bound-12,2026-10-27T09:25:00+08:00,Tuesday,,,Cheers Unmanned Convenience Store,University Sports Centre entrance,8,5,req-06,4,no
+home-bound,home-bound-12,2026-10-27T09:25:00+08:00,Tuesday,,,The Deck,PGP Aircon Canteen,3,40,req-15,,no
+home-bound,home-bound-12,2026-10-27T09:25:00+08:00,Tuesday,,,Central Square @ YIH,RC4 lobby,8,29,req-16,,yes
+home-bound,home-bound-12,2026-10-27T09:25:00+08:00,Tuesday,,,Cool Spot,Temasek Hall lobby,6,33,req-09,1,no
+monday-class,monday-class-01,2026-10-26T09:10:00+08:00,Monday,,,Printer @ Com 2,University Sports Centre entrance,2,23,req-06,4,no
+monday-class,monday-class-01,2026-10-26T09:10:00+08:00,Monday,,,Cool Spot,"Flavours, Stephen Riady Centre",6,31,req-03,4,no
+monday-class,monday-class-01,2026-10-26T09:10:00+08:00,Monday,,,NUS Co-op,"The Terrace, COM3",11,32,req-13,,yes
+monday-class,monday-class-01,2026-10-26T09:10:00+08:00,Monday,,,he by He Brews,PGP Residences lobby,5,13,req-08,2,no
+monday-class,monday-class-02,2026-10-26T09:40:00+08:00,Monday,,,InstaChef,NUSC Elm lobby,9,13,req-11,2,no
+monday-class,monday-class-02,2026-10-26T09:40:00+08:00,Monday,,,Anna's x Soup Union,COM1 Lobby,2,31,req-09,1,yes
+monday-class,monday-class-02,2026-10-26T09:40:00+08:00,Monday,,,Smooy,NUS Law Oculus drop-off,10,22,req-01,5,no
+monday-class,monday-class-02,2026-10-26T09:40:00+08:00,Monday,,,he by He Brews,Temasek Hall lobby,9,6,req-10,3,no
+monday-class,monday-class-03,2026-10-26T10:05:00+08:00,Monday,,,Cheers Unmanned Convenience Store,COM1 Lobby,2,31,req-14,,no
+monday-class,monday-class-03,2026-10-26T10:05:00+08:00,Monday,,,The Deck,NUSC Saga lobby,11,22,req-10,3,no
+monday-class,monday-class-03,2026-10-26T10:05:00+08:00,Monday,,,Anna's x Soup Union,"The Terrace, COM3",9,40,req-11,2,yes
+monday-class,monday-class-03,2026-10-26T10:05:00+08:00,Monday,,,Anna's x Soup Union,CAPT lobby,12,18,req-15,,no
+monday-class,monday-class-04,2026-10-26T10:30:00+08:00,Monday,,,Anna's x Soup Union,"The Terrace, COM3",7,36,req-09,1,yes
+monday-class,monday-class-04,2026-10-26T10:30:00+08:00,Monday,,,Good Day Cafe,"Central Square, YIH",7,2,req-06,4,no
+monday-class,monday-class-04,2026-10-26T10:30:00+08:00,Monday,,,Arise and Shine,"Flavours, Stephen Riady Centre",5,21,req-08,2,no
+monday-class,monday-class-04,2026-10-26T10:30:00+08:00,Monday,,,Cool Spot,Valour House lobby,11,23,req-11,2,no
+monday-class,monday-class-05,2026-10-26T10:50:00+08:00,Monday,,,Cafe+ Robot Cafe,COM3 Lobby,9,2,req-08,2,yes
+monday-class,monday-class-05,2026-10-26T10:50:00+08:00,Monday,,,Nami,LightHouse lobby,3,3,req-15,,no
+monday-class,monday-class-05,2026-10-26T10:50:00+08:00,Monday,,,Arise and Shine,COM3 Lobby,8,16,req-05,5,no
+monday-class,monday-class-05,2026-10-26T10:50:00+08:00,Monday,,,Smooy,NUS Law Oculus drop-off,8,10,req-13,,no
+monday-class,monday-class-06,2026-10-26T11:15:00+08:00,Monday,,,Fine Food,PGP Residences lobby,11,8,req-09,1,no
+monday-class,monday-class-06,2026-10-26T11:15:00+08:00,Monday,,,The Deck,NUS Law Oculus drop-off,3,19,req-01,5,no
+monday-class,monday-class-06,2026-10-26T11:15:00+08:00,Monday,,,Cafe+ Robot Cafe,COM1 Lobby,11,33,req-13,,yes
+monday-class,monday-class-06,2026-10-26T11:15:00+08:00,Monday,,,Central Square @ YIH,Tembusu College lobby,7,36,req-04,4,no
+monday-class,monday-class-07,2026-10-26T11:35:00+08:00,Monday,,,Octobox,PGP Residences lobby,11,28,req-06,4,no
+monday-class,monday-class-07,2026-10-26T11:35:00+08:00,Monday,,,The Terrace,"Central Square, YIH",12,23,req-02,5,no
+monday-class,monday-class-07,2026-10-26T11:35:00+08:00,Monday,,,InstaChef,"Flavours, Stephen Riady Centre",12,31,req-01,5,no
+monday-class,monday-class-07,2026-10-26T11:35:00+08:00,Monday,,,NUS Co-op,COM1 Lobby,12,23,req-14,,yes
+monday-class,monday-class-08,2026-10-26T11:55:00+08:00,Monday,,,TOMORO COFFEE,Eusoff Hall lobby,7,30,req-03,4,no
+monday-class,monday-class-08,2026-10-26T11:55:00+08:00,Monday,,,Anna's x Soup Union,BIZ1 Atrium,2,12,req-03,4,yes
+monday-class,monday-class-08,2026-10-26T11:55:00+08:00,Monday,,,Bakehaus / Aurea,"Central Square, YIH",7,14,req-01,5,no
+monday-class,monday-class-08,2026-10-26T11:55:00+08:00,Monday,,,Goh Bros E-Print Pte Ltd,Valour House lobby,12,4,req-12,2,no
+monday-class,monday-class-09,2026-10-26T15:30:00+08:00,Monday,,,Cheers Unmanned Convenience Store,Pioneer House lobby,10,35,req-09,1,no
+monday-class,monday-class-09,2026-10-26T15:30:00+08:00,Monday,,,The Coffee Roaster,BIZ1 Atrium,12,13,req-01,5,no
+monday-class,monday-class-09,2026-10-26T15:30:00+08:00,Monday,,,Cheers Unmanned Convenience Store,University Sports Centre entrance,6,2,req-13,,no
+monday-class,monday-class-09,2026-10-26T15:30:00+08:00,Monday,,,Printer @ Com 2,"The Coffee Roaster, AS8",9,7,req-16,,no
+monday-class,monday-class-10,2026-10-28T10:00:00+08:00,Wednesday,,,Frontier Canteen,LT27 bus stop,12,19,req-10,3,no
+monday-class,monday-class-10,2026-10-28T10:00:00+08:00,Wednesday,,,Anna's x Soup Union,"The Terrace, COM3",9,10,req-06,4,no
+monday-class,monday-class-10,2026-10-28T10:00:00+08:00,Wednesday,,,Central Square @ YIH,Kent Ridge Hall lobby,6,32,req-10,3,no
+monday-class,monday-class-10,2026-10-28T10:00:00+08:00,Wednesday,,,Smooy,"The Terrace, COM3",9,38,req-11,2,no
+monday-class,monday-class-11,2026-10-29T10:30:00+08:00,Thursday,,,Nami,"Frontier Canteen, Science",4,25,req-15,,no
+monday-class,monday-class-11,2026-10-29T10:30:00+08:00,Thursday,,,PGP Food Court,COM1 Lobby,12,21,req-08,2,no
+monday-class,monday-class-11,2026-10-29T10:30:00+08:00,Thursday,,,Cafe+ Robot Cafe,COM1 Lobby,12,20,req-03,4,no
+monday-class,monday-class-11,2026-10-29T10:30:00+08:00,Thursday,,,TOMORO COFFEE,NUS Law Oculus drop-off,5,20,req-10,3,no
+monday-class,monday-class-12,2026-10-30T16:00:00+08:00,Friday,,,Cafe+ Robot Cafe,"The Terrace, COM3",2,7,req-05,5,no
+monday-class,monday-class-12,2026-10-30T16:00:00+08:00,Friday,,,Flavours @ UTown,Raffles Hall lobby,6,34,req-10,3,no
+monday-class,monday-class-12,2026-10-30T16:00:00+08:00,Friday,,,Flavours @ UTown,NUSC Cendana lobby,5,23,req-10,3,no
+monday-class,monday-class-12,2026-10-30T16:00:00+08:00,Friday,,,The Coffee Roaster,Temasek Hall lobby,6,22,req-10,3,no
+lunch-food,lunch-food-01,2026-10-30T13:01:00+08:00,Friday,,,Printer @ Com 2,Acacia College lobby,8,24,req-07,3,no
+lunch-food,lunch-food-01,2026-10-30T13:01:00+08:00,Friday,,,he by He Brews,Sheares Hall lobby,10,9,req-13,,yes
+lunch-food,lunch-food-01,2026-10-30T13:01:00+08:00,Friday,,,Octobox,"Starbucks, UTown ERC",4,5,req-01,5,no
+lunch-food,lunch-food-01,2026-10-30T13:01:00+08:00,Friday,,,Goh Bros E-Print Pte Ltd,Valour House lobby,3,13,req-12,2,no
+lunch-food,lunch-food-02,2026-10-30T13:07:00+08:00,Friday,,,Central Square @ YIH,"Flavours, Stephen Riady Centre",7,34,req-14,,yes
+lunch-food,lunch-food-02,2026-10-30T13:07:00+08:00,Friday,,,Cheers Unmanned Convenience Store,Medicine+Science Library Atrium,12,15,req-01,5,no
+lunch-food,lunch-food-02,2026-10-30T13:07:00+08:00,Friday,,,NUS Co-op,Medicine+Science Library Atrium,7,40,req-15,,no
+lunch-food,lunch-food-02,2026-10-30T13:07:00+08:00,Friday,,,Printer @ Com 2,"Central Square, YIH",12,5,req-11,2,no
+lunch-food,lunch-food-03,2026-10-27T12:12:00+08:00,Tuesday,,,NUS Co-op,Eusoff Hall lobby,7,5,req-12,2,no
+lunch-food,lunch-food-03,2026-10-27T12:12:00+08:00,Tuesday,,,Pasta Express,UTown Residence lobby,10,34,req-11,2,yes
+lunch-food,lunch-food-03,2026-10-27T12:12:00+08:00,Tuesday,,,Printer @ Com 2,Tembusu College lobby,5,21,req-06,4,no
+lunch-food,lunch-food-03,2026-10-27T12:12:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,COM1 Lobby,10,25,req-09,1,no
+lunch-food,lunch-food-04,2026-10-28T13:01:00+08:00,Wednesday,,,Pasta Express,LightHouse lobby,10,22,req-11,2,yes
+lunch-food,lunch-food-04,2026-10-28T13:01:00+08:00,Wednesday,,,Printer @ Com 2,"Fine Food, Town Plaza",6,2,req-11,2,no
+lunch-food,lunch-food-04,2026-10-28T13:01:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,NUSC Elm lobby,10,22,req-13,,no
+lunch-food,lunch-food-04,2026-10-28T13:01:00+08:00,Wednesday,,,NUS Co-op,Raffles Hall lobby,12,11,req-14,,no
+lunch-food,lunch-food-05,2026-10-26T13:21:00+08:00,Monday,,,NUS Co-op,Central Library entrance,11,9,req-05,5,no
+lunch-food,lunch-food-05,2026-10-26T13:21:00+08:00,Monday,,,Goh Bros E-Print Pte Ltd,Acacia College lobby,7,5,req-12,2,no
+lunch-food,lunch-food-05,2026-10-26T13:21:00+08:00,Monday,,,Printer @ Com 2,"The Deck, FASS",10,29,req-07,3,no
+lunch-food,lunch-food-05,2026-10-26T13:21:00+08:00,Monday,,,Frontier Canteen,BIZ1 Atrium,10,19,req-08,2,yes
+lunch-food,lunch-food-06,2026-10-27T13:55:00+08:00,Tuesday,,,Octobox,COM1 Lobby,9,36,req-03,4,no
+lunch-food,lunch-food-06,2026-10-27T13:55:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,Techno Edge Canteen,6,28,req-12,2,no
+lunch-food,lunch-food-06,2026-10-27T13:55:00+08:00,Tuesday,,,Printer @ Com 2,NUSC Cendana lobby,5,22,req-12,2,no
+lunch-food,lunch-food-06,2026-10-27T13:55:00+08:00,Tuesday,,,Cafe+ Robot Cafe,PGP Residences lobby,2,3,req-02,5,yes
+lunch-food,lunch-food-07,2026-10-28T13:08:00+08:00,Wednesday,,,A Hot Hideout,Medicine+Science Library Atrium,6,28,req-05,5,yes
+lunch-food,lunch-food-07,2026-10-28T13:08:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,NUS Law Oculus drop-off,8,17,req-06,4,no
+lunch-food,lunch-food-07,2026-10-28T13:08:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,YST Conservatory Foyer,11,29,req-07,3,no
+lunch-food,lunch-food-07,2026-10-28T13:08:00+08:00,Wednesday,,,Printer @ Com 2,LT27 bus stop,2,5,req-13,,no
+lunch-food,lunch-food-08,2026-10-29T13:20:00+08:00,Thursday,,,Printer @ Com 2,Medicine+Science Library Atrium,6,16,req-03,4,no
+lunch-food,lunch-food-08,2026-10-29T13:20:00+08:00,Thursday,,,Octobox,Techno Edge Canteen,4,27,req-06,4,no
+lunch-food,lunch-food-08,2026-10-29T13:20:00+08:00,Thursday,,,Techno Edge,UTown Residence lobby,9,29,req-15,,yes
+lunch-food,lunch-food-08,2026-10-29T13:20:00+08:00,Thursday,,,NUS Co-op,COM1 Lobby,2,3,req-03,4,no
+lunch-food,lunch-food-09,2026-10-28T17:04:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,EA Atrium,3,37,req-02,5,no
+lunch-food,lunch-food-09,2026-10-28T17:04:00+08:00,Wednesday,,,Bakehaus / Aurea,Sheares Hall lobby,11,32,req-09,1,no
+lunch-food,lunch-food-09,2026-10-28T17:04:00+08:00,Wednesday,,,Octobox,University Sports Centre entrance,3,8,req-05,5,no
+lunch-food,lunch-food-09,2026-10-28T17:04:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,RC4 lobby,8,19,req-06,4,no
+lunch-food,lunch-food-10,2026-10-26T09:28:00+08:00,Monday,,,Cool Spot,NUSC Elm lobby,5,35,req-09,1,no
+lunch-food,lunch-food-10,2026-10-26T09:28:00+08:00,Monday,,,Octobox,NUSC Cendana lobby,8,19,req-16,,no
+lunch-food,lunch-food-10,2026-10-26T09:28:00+08:00,Monday,,,Goh Bros E-Print Pte Ltd,"Starbucks, UTown ERC",6,4,req-05,5,no
+lunch-food,lunch-food-10,2026-10-26T09:28:00+08:00,Monday,,,Goh Bros E-Print Pte Ltd,"Flavours, Stephen Riady Centre",9,12,req-08,2,no
+lunch-food,lunch-food-11,2026-10-27T19:53:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,"The Coffee Roaster, AS8",10,28,req-16,,no
+lunch-food,lunch-food-11,2026-10-27T19:53:00+08:00,Tuesday,,,Flavours @ UTown,Acacia College lobby,11,38,req-15,,no
+lunch-food,lunch-food-11,2026-10-27T19:53:00+08:00,Tuesday,,,NUS Co-op,NUSC Cendana lobby,9,37,req-10,3,no
+lunch-food,lunch-food-11,2026-10-27T19:53:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,NUSC Cendana lobby,9,33,req-05,5,no
+lunch-food,lunch-food-12,2026-10-26T18:55:00+08:00,Monday,,,Cool Spot,Temasek Hall lobby,10,25,req-12,2,no
+lunch-food,lunch-food-12,2026-10-26T18:55:00+08:00,Monday,,,NUS Co-op,Pioneer House lobby,4,10,req-07,3,no
+lunch-food,lunch-food-12,2026-10-26T18:55:00+08:00,Monday,,,Printer @ Com 2,KEVII Hall lobby,2,35,req-01,5,no
+lunch-food,lunch-food-12,2026-10-26T18:55:00+08:00,Monday,,,NUS Co-op,Tembusu College lobby,5,39,req-07,3,no
+on-the-way,on-the-way-01,2026-10-26T09:24:00+08:00,Monday,Flavours @ UTown,CAPT lobby,NUS Co-op,COM1 Lobby,4,38,req-01,5,no
+on-the-way,on-the-way-01,2026-10-26T09:24:00+08:00,Monday,Flavours @ UTown,CAPT lobby,Fine Food,Acacia College lobby,5,15,req-02,5,yes
+on-the-way,on-the-way-01,2026-10-26T09:24:00+08:00,Monday,Flavours @ UTown,CAPT lobby,Printer @ Com 2,Medicine+Science Library Atrium,3,7,req-01,5,no
+on-the-way,on-the-way-01,2026-10-26T09:24:00+08:00,Monday,Flavours @ UTown,CAPT lobby,Octobox,NUSC Elm lobby,6,8,req-04,4,no
+on-the-way,on-the-way-02,2026-10-27T10:28:00+08:00,Tuesday,Good Day Cafe,University Sports Centre entrance,A Hot Hideout,BIZ1 Atrium,5,22,req-07,3,no
+on-the-way,on-the-way-02,2026-10-27T10:28:00+08:00,Tuesday,Good Day Cafe,University Sports Centre entrance,Arise and Shine,"Fine Food, Town Plaza",8,8,req-05,5,no
+on-the-way,on-the-way-02,2026-10-27T10:28:00+08:00,Tuesday,Good Day Cafe,University Sports Centre entrance,TOMORO COFFEE,Temasek Hall lobby,5,7,req-15,,no
+on-the-way,on-the-way-02,2026-10-27T10:28:00+08:00,Tuesday,Good Day Cafe,University Sports Centre entrance,Good Day Cafe,NUSC Cendana lobby,10,21,req-02,5,yes
+on-the-way,on-the-way-03,2026-10-28T15:54:00+08:00,Wednesday,Techno Edge,University Sports Centre entrance,Cheers Unmanned Convenience Store,COM3 Lobby,8,9,req-04,4,no
+on-the-way,on-the-way-03,2026-10-28T15:54:00+08:00,Wednesday,Techno Edge,University Sports Centre entrance,PGP Food Court,EA Atrium,3,13,req-02,5,no
+on-the-way,on-the-way-03,2026-10-28T15:54:00+08:00,Wednesday,Techno Edge,University Sports Centre entrance,NUS Co-op,Sheares Hall lobby,7,40,req-14,,yes
+on-the-way,on-the-way-03,2026-10-28T15:54:00+08:00,Wednesday,Techno Edge,University Sports Centre entrance,A Hot Hideout,Raffles Hall lobby,8,36,req-01,5,no
+on-the-way,on-the-way-04,2026-10-30T16:41:00+08:00,Friday,Cool Spot,Eusoff Hall lobby,Good Day Cafe,Raffles Hall lobby,4,35,req-14,,no
+on-the-way,on-the-way-04,2026-10-30T16:41:00+08:00,Friday,Cool Spot,Eusoff Hall lobby,PGP Food Court,Sheares Hall lobby,2,25,req-04,4,no
+on-the-way,on-the-way-04,2026-10-30T16:41:00+08:00,Friday,Cool Spot,Eusoff Hall lobby,Fine Food,"The Coffee Roaster, AS8",4,15,req-02,5,no
+on-the-way,on-the-way-04,2026-10-30T16:41:00+08:00,Friday,Cool Spot,Eusoff Hall lobby,Nami,Raffles Hall lobby,12,17,req-03,4,yes
+on-the-way,on-the-way-05,2026-10-27T10:51:00+08:00,Tuesday,Anna's x Soup Union,Central Library entrance,Frontier Canteen,University Sports Centre entrance,2,16,req-02,5,no
+on-the-way,on-the-way-05,2026-10-27T10:51:00+08:00,Tuesday,Anna's x Soup Union,Central Library entrance,Fine Food,Temasek Hall lobby,7,4,req-14,,no
+on-the-way,on-the-way-05,2026-10-27T10:51:00+08:00,Tuesday,Anna's x Soup Union,Central Library entrance,Good Day Cafe,Medicine+Science Library Atrium,10,14,req-12,2,no
+on-the-way,on-the-way-05,2026-10-27T10:51:00+08:00,Tuesday,Anna's x Soup Union,Central Library entrance,The Coffee Roaster,RC4 lobby,3,29,req-13,,yes
+on-the-way,on-the-way-06,2026-10-26T16:33:00+08:00,Monday,PGP Food Court,Tembusu College lobby,The Coffee Roaster,Kent Ridge Hall lobby,9,22,req-14,,no
+on-the-way,on-the-way-06,2026-10-26T16:33:00+08:00,Monday,PGP Food Court,Tembusu College lobby,The Coffee Roaster,Central Library entrance,7,36,req-16,,no
+on-the-way,on-the-way-06,2026-10-26T16:33:00+08:00,Monday,PGP Food Court,Tembusu College lobby,Fine Food,NUSC Elm lobby,12,23,req-04,4,yes
+on-the-way,on-the-way-06,2026-10-26T16:33:00+08:00,Monday,PGP Food Court,Tembusu College lobby,Nami,YST Conservatory Foyer,12,24,req-10,3,no
+on-the-way,on-the-way-07,2026-10-29T12:09:00+08:00,Thursday,Supersnacks,"The Deck, FASS",Flavours @ UTown,CAPT lobby,2,18,req-14,,no
+on-the-way,on-the-way-07,2026-10-29T12:09:00+08:00,Thursday,Supersnacks,"The Deck, FASS",Anna's x Soup Union,Helix House lobby,10,32,req-13,,yes
+on-the-way,on-the-way-07,2026-10-29T12:09:00+08:00,Thursday,Supersnacks,"The Deck, FASS",Arise and Shine,Eusoff Hall lobby,3,36,req-01,5,no
+on-the-way,on-the-way-07,2026-10-29T12:09:00+08:00,Thursday,Supersnacks,"The Deck, FASS",Fine Food,Kent Ridge Hall lobby,7,24,req-13,,no
+on-the-way,on-the-way-08,2026-10-30T11:26:00+08:00,Friday,Cool Spot,RVRC lobby,Octobox,BIZ1 Atrium,5,14,req-16,,no
+on-the-way,on-the-way-08,2026-10-30T11:26:00+08:00,Friday,Cool Spot,RVRC lobby,Cool Spot,Helix House lobby,3,8,req-12,2,yes
+on-the-way,on-the-way-08,2026-10-30T11:26:00+08:00,Friday,Cool Spot,RVRC lobby,he by He Brews,"The Terrace, COM3",6,9,req-03,4,no
+on-the-way,on-the-way-08,2026-10-30T11:26:00+08:00,Friday,Cool Spot,RVRC lobby,Fine Food,Central Library entrance,11,10,req-01,5,no
+on-the-way,on-the-way-09,2026-10-30T18:18:00+08:00,Friday,Cool Spot,LightHouse lobby,Printer @ Com 2,Kent Ridge Hall lobby,4,40,req-06,4,yes
+on-the-way,on-the-way-09,2026-10-30T18:18:00+08:00,Friday,Cool Spot,LightHouse lobby,Good Day Cafe,PGP Residences lobby,2,15,req-03,4,no
+on-the-way,on-the-way-09,2026-10-30T18:18:00+08:00,Friday,Cool Spot,LightHouse lobby,Fine Food,COM1 Lobby,4,37,req-01,5,no
+on-the-way,on-the-way-09,2026-10-30T18:18:00+08:00,Friday,Cool Spot,LightHouse lobby,he by He Brews,RVRC lobby,8,15,req-09,1,no
+on-the-way,on-the-way-10,2026-10-28T10:08:00+08:00,Wednesday,,,Printer @ Com 2,LightHouse lobby,5,20,req-09,1,no
+on-the-way,on-the-way-10,2026-10-28T10:08:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,NUSC Saga lobby,9,7,req-05,5,no
+on-the-way,on-the-way-10,2026-10-28T10:08:00+08:00,Wednesday,,,TOMORO COFFEE,CAPT lobby,7,14,req-04,4,yes
+on-the-way,on-the-way-10,2026-10-28T10:08:00+08:00,Wednesday,,,Printer @ Com 2,"The Deck, FASS",9,24,req-05,5,no
+on-the-way,on-the-way-11,2026-10-29T11:13:00+08:00,Thursday,,,Goh Bros E-Print Pte Ltd,CAPT lobby,7,8,req-01,5,no
+on-the-way,on-the-way-11,2026-10-29T11:13:00+08:00,Thursday,,,Pasta Express,COM3 Lobby,2,20,req-02,5,yes
+on-the-way,on-the-way-11,2026-10-29T11:13:00+08:00,Thursday,,,Octobox,KEVII Hall lobby,2,4,req-08,2,no
+on-the-way,on-the-way-11,2026-10-29T11:13:00+08:00,Thursday,,,Goh Bros E-Print Pte Ltd,NUSC Cendana lobby,3,29,req-05,5,no
+on-the-way,on-the-way-12,2026-10-30T10:00:00+08:00,Friday,,,Cheers Unmanned Convenience Store,RC4 lobby,11,36,req-04,4,no
+on-the-way,on-the-way-12,2026-10-30T10:00:00+08:00,Friday,,,Goh Bros E-Print Pte Ltd,CAPT lobby,5,4,req-03,4,no
+on-the-way,on-the-way-12,2026-10-30T10:00:00+08:00,Friday,,,Good Day Cafe,Raffles Hall lobby,6,26,req-05,5,yes
+on-the-way,on-the-way-12,2026-10-30T10:00:00+08:00,Friday,,,Goh Bros E-Print Pte Ltd,BIZ1 Atrium,8,15,req-08,2,no
+type-food-noisy,type-food-noisy-01,2026-10-28T13:11:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,KEVII Hall lobby,4,23,req-02,5,no
+type-food-noisy,type-food-noisy-01,2026-10-28T13:11:00+08:00,Wednesday,,,NUS Co-op,Tembusu College lobby,9,15,req-07,3,no
+type-food-noisy,type-food-noisy-01,2026-10-28T13:11:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,Eusoff Hall lobby,2,12,req-04,4,no
+type-food-noisy,type-food-noisy-01,2026-10-28T13:11:00+08:00,Wednesday,,,Cool Spot,Valour House lobby,2,19,req-13,,yes
+type-food-noisy,type-food-noisy-02,2026-10-26T09:56:00+08:00,Monday,,,Printer @ Com 2,PGP Aircon Canteen,6,40,req-12,2,no
+type-food-noisy,type-food-noisy-02,2026-10-26T09:56:00+08:00,Monday,,,Printer @ Com 2,Helix House lobby,11,20,req-13,,no
+type-food-noisy,type-food-noisy-02,2026-10-26T09:56:00+08:00,Monday,,,Good Day Cafe,"Central Square, YIH",3,16,req-01,5,yes
+type-food-noisy,type-food-noisy-02,2026-10-26T09:56:00+08:00,Monday,,,NUS Co-op,Pioneer House lobby,3,4,req-08,2,no
+type-food-noisy,type-food-noisy-03,2026-10-27T14:18:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,Helix House lobby,4,14,req-14,,no
+type-food-noisy,type-food-noisy-03,2026-10-27T14:18:00+08:00,Tuesday,,,Cheers Unmanned Convenience Store,Raffles Hall lobby,6,32,req-11,2,no
+type-food-noisy,type-food-noisy-03,2026-10-27T14:18:00+08:00,Tuesday,,,Cheers Unmanned Convenience Store,COM1 Lobby,11,38,req-08,2,no
+type-food-noisy,type-food-noisy-03,2026-10-27T14:18:00+08:00,Tuesday,,,Frontier Canteen,KEVII Hall lobby,11,39,req-14,,yes
+type-food-noisy,type-food-noisy-04,2026-10-28T12:17:00+08:00,Wednesday,,,Printer @ Com 2,"The Terrace, COM3",12,23,req-03,4,no
+type-food-noisy,type-food-noisy-04,2026-10-28T12:17:00+08:00,Wednesday,,,The Deck,RVRC lobby,5,12,req-07,3,yes
+type-food-noisy,type-food-noisy-04,2026-10-28T12:17:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,"The Terrace, COM3",7,40,req-14,,no
+type-food-noisy,type-food-noisy-04,2026-10-28T12:17:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,CAPT lobby,6,19,req-09,1,no
+type-food-noisy,type-food-noisy-05,2026-10-28T18:22:00+08:00,Wednesday,,,Cool Spot,BIZ1 Atrium,6,14,req-11,2,yes
+type-food-noisy,type-food-noisy-05,2026-10-28T18:22:00+08:00,Wednesday,,,Goh Bros E-Print Pte Ltd,CAPT lobby,5,10,req-05,5,no
+type-food-noisy,type-food-noisy-05,2026-10-28T18:22:00+08:00,Wednesday,,,NUS Co-op,YST Conservatory Foyer,10,23,req-05,5,no
+type-food-noisy,type-food-noisy-05,2026-10-28T18:22:00+08:00,Wednesday,,,Octobox,COM3 Lobby,2,32,req-07,3,no
+type-food-noisy,type-food-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,Cheers Unmanned Convenience Store,LightHouse lobby,4,35,req-04,4,no
+type-food-noisy,type-food-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,A Hot Hideout,RC4 lobby,3,26,req-11,2,yes
+type-food-noisy,type-food-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,Cheers Unmanned Convenience Store,COM1 Lobby,11,20,req-06,4,no
+type-food-noisy,type-food-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,Cheers Unmanned Convenience Store,Sheares Hall lobby,3,29,req-02,5,no
+type-food-noisy,type-food-noisy-07,2026-10-26T17:11:00+08:00,Monday,,,Printer @ Com 2,"The Terrace, COM3",10,15,req-14,,no
+type-food-noisy,type-food-noisy-07,2026-10-26T17:11:00+08:00,Monday,,,A Hot Hideout,Tembusu College lobby,9,32,req-11,2,yes
+type-food-noisy,type-food-noisy-07,2026-10-26T17:11:00+08:00,Monday,,,Goh Bros E-Print Pte Ltd,RC4 lobby,11,38,req-13,,no
+type-food-noisy,type-food-noisy-07,2026-10-26T17:11:00+08:00,Monday,,,Cheers Unmanned Convenience Store,BIZ1 Atrium,4,31,req-02,5,no
+type-food-noisy,type-food-noisy-08,2026-10-29T13:12:00+08:00,Thursday,,,Printer @ Com 2,"Frontier Canteen, Science",9,22,req-13,,no
+type-food-noisy,type-food-noisy-08,2026-10-29T13:12:00+08:00,Thursday,,,Printer @ Com 2,University Sports Centre entrance,6,7,req-10,3,no
+type-food-noisy,type-food-noisy-08,2026-10-29T13:12:00+08:00,Thursday,,,Cheers Unmanned Convenience Store,Raffles Hall lobby,3,6,req-13,,no
+type-food-noisy,type-food-noisy-08,2026-10-29T13:12:00+08:00,Thursday,,,The Deck,"The Coffee Roaster, AS8",5,15,req-10,3,yes
+type-food-noisy,type-food-noisy-09,2026-10-28T19:32:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,Kent Ridge Hall lobby,11,26,req-08,2,no
+type-food-noisy,type-food-noisy-09,2026-10-28T19:32:00+08:00,Wednesday,,,NUS Co-op,LT27 bus stop,10,22,req-07,3,no
+type-food-noisy,type-food-noisy-09,2026-10-28T19:32:00+08:00,Wednesday,,,TOMORO COFFEE,LT27 bus stop,3,24,req-05,5,yes
+type-food-noisy,type-food-noisy-09,2026-10-28T19:32:00+08:00,Wednesday,,,NUS Co-op,Helix House lobby,10,29,req-10,3,no
+type-food-noisy,type-food-noisy-10,2026-10-30T16:48:00+08:00,Friday,,,Printer @ Com 2,PGP Aircon Canteen,5,15,req-05,5,no
+type-food-noisy,type-food-noisy-10,2026-10-30T16:48:00+08:00,Friday,,,Cheers Unmanned Convenience Store,Sheares Hall lobby,7,8,req-12,2,no
+type-food-noisy,type-food-noisy-10,2026-10-30T16:48:00+08:00,Friday,,,Flavours @ UTown,"Fine Food, Town Plaza",10,14,req-13,,yes
+type-food-noisy,type-food-noisy-10,2026-10-30T16:48:00+08:00,Friday,,,Printer @ Com 2,KEVII Hall lobby,8,10,req-02,5,no
+type-food-noisy,type-food-noisy-11,2026-10-27T15:38:00+08:00,Tuesday,,,Octobox,NUSC Elm lobby,6,13,req-03,4,no
+type-food-noisy,type-food-noisy-11,2026-10-27T15:38:00+08:00,Tuesday,,,Arise and Shine,NUS Law Oculus drop-off,6,24,req-12,2,yes
+type-food-noisy,type-food-noisy-11,2026-10-27T15:38:00+08:00,Tuesday,,,NUS Co-op,NUSC Elm lobby,3,27,req-13,,no
+type-food-noisy,type-food-noisy-11,2026-10-27T15:38:00+08:00,Tuesday,,,Cheers Unmanned Convenience Store,"Fine Food, Town Plaza",2,5,req-11,2,no
+type-food-noisy,type-food-noisy-12,2026-10-27T18:52:00+08:00,Tuesday,,,Goh Bros E-Print Pte Ltd,RC4 lobby,8,32,req-15,,no
+type-food-noisy,type-food-noisy-12,2026-10-27T18:52:00+08:00,Tuesday,,,Printer @ Com 2,"Fine Food, Town Plaza",5,12,req-16,,no
+type-food-noisy,type-food-noisy-12,2026-10-27T18:52:00+08:00,Tuesday,,,Octobox,"Starbucks, UTown ERC",8,26,req-13,,no
+type-food-noisy,type-food-noisy-12,2026-10-27T18:52:00+08:00,Tuesday,,,Smooy,Eusoff Hall lobby,8,13,req-03,4,yes
+monday-class-noisy,monday-class-noisy-01,2026-10-26T09:10:00+08:00,Monday,,,Fine Food,BIZ1 Atrium,11,27,req-02,5,no
+monday-class-noisy,monday-class-noisy-01,2026-10-26T09:10:00+08:00,Monday,,,The Coffee Roaster,"Fine Food, Town Plaza",3,39,req-12,2,no
+monday-class-noisy,monday-class-noisy-01,2026-10-26T09:10:00+08:00,Monday,,,The Coffee Roaster,"The Terrace, COM3",6,6,req-14,,yes
+monday-class-noisy,monday-class-noisy-01,2026-10-26T09:10:00+08:00,Monday,,,Supersnacks,"The Coffee Roaster, AS8",9,10,req-08,2,no
+monday-class-noisy,monday-class-noisy-02,2026-10-26T09:40:00+08:00,Monday,,,The Deck,YST Conservatory Foyer,12,32,req-12,2,no
+monday-class-noisy,monday-class-noisy-02,2026-10-26T09:40:00+08:00,Monday,,,The Coffee Roaster,COM3 Lobby,6,26,req-15,,yes
+monday-class-noisy,monday-class-noisy-02,2026-10-26T09:40:00+08:00,Monday,,,Cheers Unmanned Convenience Store,RVRC lobby,2,33,req-12,2,no
+monday-class-noisy,monday-class-noisy-02,2026-10-26T09:40:00+08:00,Monday,,,Techno Edge,Temasek Hall lobby,9,19,req-10,3,no
+monday-class-noisy,monday-class-noisy-03,2026-10-26T10:05:00+08:00,Monday,,,Cafe+ Robot Cafe,COM1 Lobby,5,15,req-15,,yes
+monday-class-noisy,monday-class-noisy-03,2026-10-26T10:05:00+08:00,Monday,,,InstaChef,COM3 Lobby,11,39,req-05,5,no
+monday-class-noisy,monday-class-noisy-03,2026-10-26T10:05:00+08:00,Monday,,,A Hot Hideout,NUSC Saga lobby,5,17,req-10,3,no
+monday-class-noisy,monday-class-noisy-03,2026-10-26T10:05:00+08:00,Monday,,,Nami,"The Deck, FASS",5,30,req-11,2,no
+monday-class-noisy,monday-class-noisy-04,2026-10-26T10:30:00+08:00,Monday,,,The Terrace,Techno Edge Canteen,12,8,req-04,4,no
+monday-class-noisy,monday-class-noisy-04,2026-10-26T10:30:00+08:00,Monday,,,Bakehaus / Aurea,COM3 Lobby,9,11,req-02,5,no
+monday-class-noisy,monday-class-noisy-04,2026-10-26T10:30:00+08:00,Monday,,,The Coffee Roaster,"The Terrace, COM3",8,4,req-10,3,yes
+monday-class-noisy,monday-class-noisy-04,2026-10-26T10:30:00+08:00,Monday,,,Octobox,COM3 Lobby,11,32,req-05,5,no
+monday-class-noisy,monday-class-noisy-05,2026-10-26T10:50:00+08:00,Monday,,,Bakehaus / Aurea,Tembusu College lobby,11,12,req-03,4,no
+monday-class-noisy,monday-class-noisy-05,2026-10-26T10:50:00+08:00,Monday,,,Goh Bros E-Print Pte Ltd,NUS Law Oculus drop-off,8,39,req-13,,no
+monday-class-noisy,monday-class-noisy-05,2026-10-26T10:50:00+08:00,Monday,,,Fine Food,"The Deck, FASS",3,18,req-09,1,no
+monday-class-noisy,monday-class-noisy-05,2026-10-26T10:50:00+08:00,Monday,,,Cafe+ Robot Cafe,BIZ1 Atrium,9,21,req-02,5,yes
+monday-class-noisy,monday-class-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,InstaChef,NUSC Elm lobby,3,19,req-04,4,no
+monday-class-noisy,monday-class-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,Smooy,Acacia College lobby,2,16,req-05,5,no
+monday-class-noisy,monday-class-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,Anna's x Soup Union,BIZ1 Atrium,6,40,req-05,5,yes
+monday-class-noisy,monday-class-noisy-06,2026-10-26T11:15:00+08:00,Monday,,,A Hot Hideout,"The Terrace, COM3",7,3,req-12,2,no
+monday-class-noisy,monday-class-noisy-07,2026-10-26T11:35:00+08:00,Monday,,,PGP Food Court,PGP Aircon Canteen,9,2,req-12,2,no
+monday-class-noisy,monday-class-noisy-07,2026-10-26T11:35:00+08:00,Monday,,,Bakehaus / Aurea,Eusoff Hall lobby,10,33,req-10,3,no
+monday-class-noisy,monday-class-noisy-07,2026-10-26T11:35:00+08:00,Monday,,,The Coffee Roaster,"The Terrace, COM3",6,25,req-02,5,yes
+monday-class-noisy,monday-class-noisy-07,2026-10-26T11:35:00+08:00,Monday,,,Frontier Canteen,"The Coffee Roaster, AS8",7,33,req-01,5,no
+monday-class-noisy,monday-class-noisy-08,2026-10-26T11:55:00+08:00,Monday,,,Techno Edge,Valour House lobby,9,37,req-12,2,no
+monday-class-noisy,monday-class-noisy-08,2026-10-26T11:55:00+08:00,Monday,,,Cafe+ Robot Cafe,"The Terrace, COM3",2,25,req-07,3,yes
+monday-class-noisy,monday-class-noisy-08,2026-10-26T11:55:00+08:00,Monday,,,Printer @ Com 2,CAPT lobby,5,14,req-10,3,no
+monday-class-noisy,monday-class-noisy-08,2026-10-26T11:55:00+08:00,Monday,,,Octobox,University Sports Centre entrance,9,28,req-04,4,no
+monday-class-noisy,monday-class-noisy-09,2026-10-26T15:30:00+08:00,Monday,,,The Terrace,Temasek Hall lobby,2,10,req-10,3,no
+monday-class-noisy,monday-class-noisy-09,2026-10-26T15:30:00+08:00,Monday,,,Printer @ Com 2,KEVII Hall lobby,9,32,req-10,3,no
+monday-class-noisy,monday-class-noisy-09,2026-10-26T15:30:00+08:00,Monday,,,Cafe+ Robot Cafe,COM1 Lobby,5,20,req-15,,no
+monday-class-noisy,monday-class-noisy-09,2026-10-26T15:30:00+08:00,Monday,,,Cheers Unmanned Convenience Store,BIZ1 Atrium,8,11,req-13,,no
+monday-class-noisy,monday-class-noisy-10,2026-10-28T10:00:00+08:00,Wednesday,,,Bakehaus / Aurea,"Flavours, Stephen Riady Centre",7,31,req-06,4,no
+monday-class-noisy,monday-class-noisy-10,2026-10-28T10:00:00+08:00,Wednesday,,,Flavours @ UTown,University Sports Centre entrance,12,21,req-14,,no
+monday-class-noisy,monday-class-noisy-10,2026-10-28T10:00:00+08:00,Wednesday,,,Cheers Unmanned Convenience Store,"Frontier Canteen, Science",8,34,req-12,2,no
+monday-class-noisy,monday-class-noisy-10,2026-10-28T10:00:00+08:00,Wednesday,,,Cafe+ Robot Cafe,COM3 Lobby,4,37,req-12,2,no
+monday-class-noisy,monday-class-noisy-11,2026-10-29T10:30:00+08:00,Thursday,,,Anna's x Soup Union,BIZ1 Atrium,7,27,req-15,,no
+monday-class-noisy,monday-class-noisy-11,2026-10-29T10:30:00+08:00,Thursday,,,Techno Edge,Medicine+Science Library Atrium,5,2,req-07,3,no
+monday-class-noisy,monday-class-noisy-11,2026-10-29T10:30:00+08:00,Thursday,,,Bakehaus / Aurea,COM1 Lobby,7,34,req-03,4,no
+monday-class-noisy,monday-class-noisy-11,2026-10-29T10:30:00+08:00,Thursday,,,The Terrace,EA Atrium,8,12,req-06,4,no
+monday-class-noisy,monday-class-noisy-12,2026-10-30T16:00:00+08:00,Friday,,,A Hot Hideout,Raffles Hall lobby,7,20,req-14,,no
+monday-class-noisy,monday-class-noisy-12,2026-10-30T16:00:00+08:00,Friday,,,Anna's x Soup Union,"The Terrace, COM3",12,10,req-06,4,no
+monday-class-noisy,monday-class-noisy-12,2026-10-30T16:00:00+08:00,Friday,,,TOMORO COFFEE,KEVII Hall lobby,9,4,req-12,2,no
+monday-class-noisy,monday-class-noisy-12,2026-10-30T16:00:00+08:00,Friday,,,Anna's x Soup Union,Acacia College lobby,10,40,req-13,,no

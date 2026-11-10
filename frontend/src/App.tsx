@@ -53,6 +53,8 @@ import { createChatApi } from "./features/chat/chatApi";
 import { ChatSocketProvider } from "./features/chat/ChatSocketContext";
 import { balanceFigures, CreditsView, type Balance } from "./features/credits/CreditsView";
 import { FindErrandsView } from "./features/errands/FindErrandsView";
+import { createActivityReporter } from "./features/errands/activityReporter";
+import { PendingRatings } from "./features/errands/PendingRatings";
 import { MyErrandsView } from "./features/errands/MyErrandsView";
 import { NewErrandView } from "./features/errands/NewErrandView";
 import { ProfileView } from "./features/profile/ProfileView";
@@ -167,6 +169,20 @@ export function App({ tokens }: AppProps) {
       chatApi: createChatApi(authorizedSend, () => tokens.getAccessToken()),
     };
   }, [tokens]);
+
+  // AI-generated (edited by nigeltzy): sends Find errands' shown and search
+  // records to order-service (D-092), the shown ones in batches; whatever is
+  // queued goes out when the page is hidden or closed.
+  const activity = useMemo(() => (orders ? createActivityReporter(orders) : null), [orders]);
+  useEffect(() => {
+    if (!activity) return;
+    const flush = () => activity.flush();
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [activity]);
 
   // Restored from sessionStorage so a reload lands where the tab was, not on
   // the default view. Read once, at initial state: doing it in an effect would
@@ -400,6 +416,13 @@ export function App({ tokens }: AppProps) {
         held={held}
         onLogOut={handleLogOut}
       >
+        {/* AI-generated (edited by nigeltzy): D-093, a student rates their
+            completed errands before posting or accepting another. Above every
+            screen, so it is in view wherever that refusal would come from. */}
+        {role === "STUDENT" && orders && (
+          <PendingRatings ordersApi={orders} usersApi={usersApi} onNotify={setToast} />
+        )}
+
         {/* AI-generated (edited by James Teo): the errand and credit screens
             get their clients, or NeedsService when the build has none. My
             errands remounts on a mode switch, so it starts on Active with
@@ -429,6 +452,8 @@ export function App({ tokens }: AppProps) {
               available={available}
               onNotify={setToast}
               onCreditsChanged={refreshBalance}
+              onShown={activity?.shown}
+              onSearch={activity?.search}
             />
           ) : (
             <NeedsService title="Find errands" service="order-service" />
