@@ -1,6 +1,7 @@
 package chat_test
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -92,6 +93,41 @@ func TestConversationIsReadOnly(t *testing.T) {
 			ErrandCompletedAt: &completedAt,
 		}
 		assert.True(t, conv.IsReadOnly(now))
+	})
+}
+
+func TestConversationMarshalJSON(t *testing.T) {
+	t.Run("active conversation serializes read_only false", func(t *testing.T) {
+		conv := &chat.Conversation{
+			ID:     uuid.New(),
+			Status: chat.StatusActive,
+		}
+		bytes, err := json.Marshal(conv)
+		require.NoError(t, err)
+
+		var parsed map[string]interface{}
+		require.NoError(t, json.Unmarshal(bytes, &parsed))
+		assert.Equal(t, false, parsed["read_only"])
+	})
+
+	t.Run("frozen conversation serializes read_only true", func(t *testing.T) {
+		conv := &chat.Conversation{
+			ID:     uuid.New(),
+			Status: chat.StatusFrozen,
+		}
+		bytes, err := json.Marshal(conv)
+		require.NoError(t, err)
+
+		var parsed map[string]interface{}
+		require.NoError(t, json.Unmarshal(bytes, &parsed))
+		assert.Equal(t, true, parsed["read_only"])
+	})
+
+	t.Run("unmarshal accepts read_only without error", func(t *testing.T) {
+		raw := `{"id":"` + uuid.New().String() + `","status":"ACTIVE","read_only":false}`
+		var conv chat.Conversation
+		require.NoError(t, json.Unmarshal([]byte(raw), &conv))
+		assert.Equal(t, chat.StatusActive, conv.Status)
 	})
 }
 
