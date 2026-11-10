@@ -52,8 +52,10 @@ func (s *server) GetHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthTimeout)
 	defer cancel()
 	if err := s.db.Ping(ctx); err != nil {
-		s.log.WarnContext(r.Context(), "health check: database did not answer",
-			"request_id", order.CorrelationID(r.Context()), "err", err)
+		if !clientHungUp(r.Context()) {
+			s.log.ErrorContext(r.Context(), "health check: database did not answer",
+				"request_id", order.CorrelationID(r.Context()), "err", err)
+		}
 		writeJSON(w, http.StatusServiceUnavailable, gen.Health{Status: gen.Unhealthy})
 		return
 	}
@@ -397,18 +399,22 @@ func (s *server) writeList(w http.ResponseWriter, c order.Caller, orders []order
 
 // writeServiceError maps a service error to its status by kind, with the
 // error's caller-safe message. Anything that is not a domain error is a 500
-// whose cause goes to the log, never to the client.
+// whose cause goes to the log, never to the client. A 5xx's cause is logged
+// here, once, at ERROR, unless the client hung up: that is not a fault of this
+// service, and the access line records it at WARN.
 func (s *server) writeServiceError(w http.ResponseWriter, r *http.Request, err error) {
 	ctx := r.Context()
 	status := statusFor(order.KindOf(err))
-	switch status {
-	case http.StatusInternalServerError:
-		s.log.ErrorContext(ctx, "request failed", "request_id", order.CorrelationID(ctx), "err", err)
+	if status >= http.StatusInternalServerError && !clientHungUp(ctx) {
+		msg := "request failed"
+		if status == http.StatusServiceUnavailable {
+			msg = "request failed: a dependency is unavailable"
+		}
+		s.log.ErrorContext(ctx, msg, "request_id", order.CorrelationID(ctx), "err", err)
+	}
+	if status == http.StatusInternalServerError {
 		writeError(w, status, msgInternal)
 		return
-	case http.StatusServiceUnavailable:
-		s.log.WarnContext(ctx, "request failed: a dependency is unavailable",
-			"request_id", order.CorrelationID(ctx), "err", err)
 	}
 	writeError(w, status, order.MessageOf(err))
 }

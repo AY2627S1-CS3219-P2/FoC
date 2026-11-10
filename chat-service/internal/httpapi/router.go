@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"log/slog"
 	"net/http"
 
 	"foc/chat-service/internal/auth"
@@ -10,13 +11,15 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter(h *Handler, wsHub *hub.Hub, verifier *auth.Verifier) http.Handler {
+func NewRouter(h *Handler, wsHub *hub.Hub, verifier *auth.Verifier, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
+	// The request id is outermost so every line about the request carries it;
+	// the access log wraps the recoverer so it records the 500 a panic becomes.
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(accessLog(log))
+	r.Use(recoverPanics(log))
 
 	// Health check endpoints
 	r.Get("/health", h.HealthCheck)
@@ -46,13 +49,13 @@ func NewRouter(h *Handler, wsHub *hub.Hub, verifier *auth.Verifier) http.Handler
 
 	// Protected routes under root (standard when gateway strips prefix)
 	r.Group(func(sub chi.Router) {
-		sub.Use(auth.RequireToken(verifier))
+		sub.Use(auth.RequireToken(verifier, log), callerOnAccessLine)
 		registerProtected(sub)
 	})
 
 	// Also support under /api/chat prefix (in case gateway forwards unstripped)
 	r.Route("/api/chat", func(sub chi.Router) {
-		sub.Use(auth.RequireToken(verifier))
+		sub.Use(auth.RequireToken(verifier, log), callerOnAccessLine)
 		registerProtected(sub)
 	})
 

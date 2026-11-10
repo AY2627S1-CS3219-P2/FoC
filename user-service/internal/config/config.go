@@ -1,4 +1,9 @@
 // AI Assistance Disclosure:
+// Tool: Codex (model: GPT-6), date: 2026-11-08
+// Scope: Replaced Mailgun delivery configuration and selection with SendGrid.
+// Author review: ZI YANG — reviewed and verified.
+
+// AI Assistance Disclosure:
 // Tool: Codex (GPT-5), date: 2026-09-18
 // Scope: Added environment configuration plumbing for the user-service scaffold.
 // Author review: COMPLETED BY ZI YANG
@@ -19,10 +24,9 @@ type Config struct {
 	InitialAdminEmail    string
 	InitialAdminUsername string
 	InitialAdminPassword string
-	MailgunAPIKey        string
-	MailgunDomain        string
-	MailgunSenderEmail   string
-	// AI-generated (edited by James Teo): OTP_DELIVERY, "mailgun" (the default
+	SendGridAPIKey       string
+	SendGridSenderEmail  string
+	// AI-generated (edited by James Teo): OTP_DELIVERY, "sendgrid" (the default
 	// when empty) or "log"; cmd/api validates it at startup.
 	OTPDelivery string
 	// AI-generated (edited by James Teo).
@@ -49,10 +53,10 @@ func Load() Config {
 		// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — loads the
 		// owner-recorded Mailgun delivery configuration once at startup.
 		// Author review: ZI YANG - validated correctness.
-		MailgunAPIKey:      os.Getenv("MAILGUN_API_KEY"),
-		MailgunDomain:      os.Getenv("MAILGUN_DOMAIN"),
-		MailgunSenderEmail: os.Getenv("MAILGUN_SENDER_EMAIL"),
-		OTPDelivery:        os.Getenv("OTP_DELIVERY"), // AI-generated (edited by James Teo).
+		// SendGrid replaces the historical Mailgun configuration above (current disclosure at file top).
+		SendGridAPIKey:      os.Getenv("SENDGRID_API_KEY"),
+		SendGridSenderEmail: os.Getenv("SENDGRID_SENDER_EMAIL"),
+		OTPDelivery:         os.Getenv("OTP_DELIVERY"), // AI-generated (edited by James Teo).
 		// AI-generated (edited by James Teo).
 		RabbitMQURL: os.Getenv("RABBITMQ_URL"),
 		// AI-generated (edited by nigeltzy).

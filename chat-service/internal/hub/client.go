@@ -3,12 +3,15 @@ package hub
 import (
 	"context"
 	"encoding/json"
-	"log"
+	"errors"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
+
+var errTokenOfAnotherUser = errors.New("token belongs to another user")
 
 const (
 	writeWait      = 10 * time.Second
@@ -24,19 +27,37 @@ type ClientMessage struct {
 }
 
 type Client struct {
-	hub    *Hub
-	conn   *websocket.Conn
-	userID uuid.UUID
-	send   chan []byte
+	hub             *Hub
+	conn            *websocket.Conn
+	userID          uuid.UUID
+	mu              sync.RWMutex
+	authenticatedAt time.Time
+	send            chan []byte
 }
 
 func NewClient(hub *Hub, conn *websocket.Conn, userID uuid.UUID) *Client {
 	return &Client{
-		hub:    hub,
-		conn:   conn,
-		userID: userID,
-		send:   make(chan []byte, sendBufferSize),
+		hub:             hub,
+		conn:            conn,
+		userID:          userID,
+		authenticatedAt: time.Now().UTC(),
+		send:            make(chan []byte, sendBufferSize),
 	}
+}
+
+func (c *Client) getAuthenticatedAt() time.Time {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.authenticatedAt.IsZero() {
+		return time.Now().UTC()
+	}
+	return c.authenticatedAt
+}
+
+func (c *Client) setAuthenticatedAt(t time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.authenticatedAt = t
 }
 
 func (c *Client) ReadPump() {
@@ -55,8 +76,11 @@ func (c *Client) ReadPump() {
 	for {
 		_, message, err := c.conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
-				log.Printf("websocket read error: %v", err)
+			// A browser's ws.close() with no code arrives as 1005, so 1000 and
+			// 1005 are routine closes too.
+			if ce, ok := err.(*websocket.CloseError); ok && websocket.IsUnexpectedCloseError(ce, websocket.CloseNormalClosure, websocket.CloseNoStatusReceived, websocket.CloseGoingAway, websocket.CloseAbnormalClosure) {
+				// The code only: the close reason is whatever text the client sent.
+				c.hub.log.Warn("websocket read error", "user_id", c.userID.String(), "close_code", ce.Code)
 			}
 			break
 		}
@@ -67,11 +91,15 @@ func (c *Client) ReadPump() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				tokenUserID, err := c.hub.verifyToken(ctx, clientMsg.Token)
 				cancel()
-				if err != nil || tokenUserID != c.userID {
-					log.Printf("mid-session auth_refresh failed for user %s: %v", c.userID, err)
+				if err == nil && tokenUserID != c.userID {
+					err = errTokenOfAnotherUser
+				}
+				if err != nil {
+					c.hub.log.Warn("mid-session auth_refresh failed", "user_id", c.userID.String(), "err", err)
 					break
 				}
 				// Verified: token is valid and belongs to this user.
+				c.setAuthenticatedAt(time.Now().UTC())
 			}
 		}
 	}
@@ -115,10 +143,10 @@ func (c *Client) WritePump() {
 			// Check user suspension before heartbeat
 			if c.hub.isSuspended != nil {
 				ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-				suspended, err := c.hub.isSuspended(ctx, c.userID)
+				suspended, err := c.hub.isSuspended(ctx, c.userID, c.getAuthenticatedAt())
 				cancel()
 				if err == nil && suspended {
-					log.Printf("terminating websocket for suspended user %s", c.userID)
+					c.hub.log.Info("terminating websocket for suspended user", "user_id", c.userID.String())
 					_ = c.conn.WriteControl(
 						websocket.CloseMessage,
 						websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "user account suspended"),

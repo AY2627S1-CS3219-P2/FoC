@@ -1,0 +1,236 @@
+{
+  "uid": "foc-overview",
+  "title": "FoC overview",
+  "description": "Service health, the service-down alert and the centralised logs.",
+  "tags": ["foc"],
+  "editable": false,
+  "graphTooltip": 0,
+  "refresh": "10s",
+  "schemaVersion": 41,
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "version": 1,
+  "links": [],
+  "annotations": { "list": [] },
+  "templating": {
+    "list": [
+      {
+        "type": "textbox",
+        "name": "request_id",
+        "label": "Request id",
+        "description": "Shows every line that contains this id, from any service.",
+        "query": "",
+        "current": { "text": "", "value": "" },
+        "options": [{ "selected": true, "text": "", "value": "" }],
+        "hide": 0
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Service health",
+      "description": "The last health probe of each service, every 15 s.",
+      "gridPos": { "h": 6, "w": 16, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "probe_success",
+          "instant": true,
+          "range": false,
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "index": 0, "text": "DOWN", "color": "red" },
+                "1": { "index": 1, "text": "UP", "color": "green" }
+              }
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "showPercentChange": false,
+        "textMode": "value_and_name",
+        "wideLayout": true
+      }
+    },
+    {
+      "id": 2,
+      "type": "alertlist",
+      "title": "Service down alert",
+      "description": "Fires when a service has failed its health check for at least 1 minute, or when no probe results arrive.",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 0 },
+      "options": {
+        "alertInstanceLabelFilter": "",
+        "alertName": "Service down",
+        "dashboardAlerts": false,
+        "groupBy": [],
+        "groupMode": "default",
+        "maxItems": 20,
+        "showInstances": true,
+        "sortOrder": 1,
+        "stateFilter": {
+          "error": true,
+          "firing": true,
+          "noData": true,
+          "normal": true,
+          "pending": true
+        },
+        "viewMode": "list"
+      }
+    },
+    {
+      "id": 3,
+      "type": "logs",
+      "title": "High-severity errors",
+      "description": "Any ERROR line, any panic, and any 5xx line not logged at WARN (a WARN 5xx is a client that hung up). Also catches the 5xx lines of a service that logs plain text.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 6 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=~\".+\"} | regexp `(?:\"status\":|\" from \\S+ - )(?P<http_status>5\\d\\d)\\b` | level=\"ERROR\" or (http_status!=\"\" and level!=\"WARN\")",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 4,
+      "type": "logs",
+      "title": "Logs by request id",
+      "description": "Every line containing the request id typed above. Loki, Alloy, Prometheus and Grafana are left out: Loki and Grafana log every search, the id included. Empty shows every line of the other services.",
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 18 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=~\".+\", service!~\"loki|alloy|prometheus|grafana\"} |= `$request_id`",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Ascending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "RabbitMQ queue depth",
+      "description": "Messages in each queue, ready or unacknowledged, the dead-letter queues included, from RabbitMQ's own metrics.",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by (queue) (rabbitmq_detailed_queue_messages{vhost=\"foc\"})",
+          "legendFormat": "{{queue}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "decimals": 0, "min": 0, "unit": "short" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "logs",
+      "title": "Browser errors",
+      "description": "Uncaught errors reported by signed-in browsers through the gateway, logged at WARN, so they stay out of the high-severity view.",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{service=\"api-gateway\", level=\"WARN\"} |= `\"source\":\"browser\"`",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": true,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      }
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Response time (p95)",
+      "description": "95% of each service's requests in the last 5 minutes finished within this time, as the service itself timed them. The gateway's time includes the service behind it. Health checks are not counted, nor are WebSocket upgrades, which the gateway logs only when the connection closes.",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 39 },
+      "interval": "15s",
+      "maxDataPoints": 2016,
+      "datasource": { "type": "loki", "uid": "loki" },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "quantile_over_time(0.95, {service=~\".+\", service!~\"loki|alloy|prometheus|grafana\"} |= `\"msg\":\"http request\"` | json status, duration_ms | status != 101 | unwrap duration_ms | __error__=\"\" [5m]) by (service)",
+          "queryType": "range",
+          "legendFormat": "{{service}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "min": 0, "unit": "ms" },
+        "overrides": []
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      }
+    }
+  ]
+}

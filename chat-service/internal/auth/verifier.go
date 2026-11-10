@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math/big"
 	"net/http"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"foc/chat-service/internal/chat"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
@@ -192,18 +194,30 @@ func (v *Verifier) isRevoked(ctx context.Context, c *Claims) (bool, error) {
 	return false, nil
 }
 
-func (v *Verifier) IsUserSuspended(ctx context.Context, userID uuid.UUID) (bool, error) {
+func (v *Verifier) IsUserSuspended(ctx context.Context, userID uuid.UUID, authenticatedAt time.Time) (bool, error) {
 	if v.authRedis == nil {
 		return false, nil
 	}
 	rctx, cancel := context.WithTimeout(ctx, revocationTimeout)
 	defer cancel()
 
-	exists, err := v.authRedis.Exists(rctx, suspensionPrefix+userID.String()).Result()
+	val, err := v.authRedis.Get(rctx, suspensionPrefix+userID.String()).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
 	if err != nil {
 		return false, fmt.Errorf("%w: %v", ErrRedisUnreachable, err)
 	}
-	return exists > 0, nil
+
+	suspendedAt, err := time.Parse(time.RFC3339Nano, val)
+	if err != nil {
+		// Unreadable suspension timestamp -> fail closed (revoked)
+		return true, nil
+	}
+	if authenticatedAt.IsZero() {
+		return true, nil
+	}
+	return !authenticatedAt.After(suspendedAt), nil
 }
 
 func (v *Verifier) key(ctx context.Context, kid string) (*rsa.PublicKey, error) {
@@ -333,7 +347,7 @@ func CallerFromContext(ctx context.Context) (chat.Caller, bool) {
 	return caller, ok
 }
 
-func RequireToken(v *Verifier) func(http.Handler) http.Handler {
+func RequireToken(v *Verifier, log *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -345,6 +359,12 @@ func RequireToken(v *Verifier) func(http.Handler) http.Handler {
 			claims, err := v.Verify(r.Context(), tokenString)
 			if err != nil {
 				if errors.Is(err, ErrRedisUnreachable) {
+					// A client that hung up is no fault of this service; its
+					// access line records it at WARN.
+					if !errors.Is(r.Context().Err(), context.Canceled) {
+						log.ErrorContext(r.Context(), "cannot check token revocation: Redis could not be reached",
+							"request_id", middleware.GetReqID(r.Context()), "err", err)
+					}
 					http.Error(w, `{"error":"auth verification service unavailable"}`, http.StatusServiceUnavailable)
 					return
 				}

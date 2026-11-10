@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"time"
 
 	"foc/user-service/internal/config"
@@ -52,6 +53,28 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	// USER_DB_URL and REDIS_URL carry passwords, and golang-migrate, lib/pq,
+	// pgx and go-redis each quote some or all of a value they cannot read in
+	// their errors, so both are checked first and a bad one gets fixed text.
+	// lib/pq and pgx read a value as a URL only when it has one of these prefixes.
+	if _, err := url.Parse(cfg.UserDBURL); err != nil ||
+		(!strings.HasPrefix(cfg.UserDBURL, "postgres://") && !strings.HasPrefix(cfg.UserDBURL, "postgresql://")) {
+		return errors.New("USER_DB_URL must be a postgres:// or postgresql:// URL with reserved characters in the user and password percent-encoded")
+	}
+	// AI-generated (edited by PENDING): transcribed from James Teo's PR #70
+	// comment of 2026-11-05. An unset USER_RANKING_DB_URL is reported where
+	// its database is opened.
+	if cfg.RankingDBURL != "" {
+		if _, err := url.Parse(cfg.RankingDBURL); err != nil ||
+			(!strings.HasPrefix(cfg.RankingDBURL, "postgres://") && !strings.HasPrefix(cfg.RankingDBURL, "postgresql://")) {
+			return errors.New("USER_RANKING_DB_URL must be a postgres:// or postgresql:// URL with reserved characters in the user and password percent-encoded")
+		}
+	}
+	redisOptions, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		return errors.New("REDIS_URL must be a redis:// or rediss:// URL with reserved characters in the user and password percent-encoded")
+	}
+
 	if err := repository.Apply(cfg.UserDBURL, "file://migrations"); err != nil {
 		return fmt.Errorf("apply migrations: %w", err)
 	}
@@ -80,11 +103,6 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer rankingPool.Close()
 	rankingService := ranking.NewService(repository.NewRankingModelRepository(rankingPool), time.Now)
-
-	redisOptions, err := redis.ParseURL(cfg.RedisURL)
-	if err != nil {
-		return fmt.Errorf("parse Redis URL: %w", err)
-	}
 	// go-redis ignores a context's deadline on socket reads and writes unless
 	// this is set, so the revocation check's 500 ms bound would not hold against
 	// a Redis that accepts the connection and then stops answering.
@@ -114,8 +132,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	userRepository := repository.NewPostgresRepository(pool)
 	sessionRepository := repository.NewPostgresSessionRepository(pool)
-	// AI-generated (edited by James Teo): OTP_DELIVERY picks Mailgun or, for
-	// local runs, the service log.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — SendGrid delivery wiring; Author review: ZI YANG - reviewed and verified correctness.
+	// OTP_DELIVERY picks SendGrid or, for local runs, the service log.
 	otpDeliverer, err := newOTPDeliverer(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("configure OTP delivery: %w", err)
@@ -123,6 +141,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	// AI Assistance Disclosure: Codex (GPT-5), 2026-10-10 — wires the
 	// owner-recorded OTP Redis and Mailgun boundaries into registration.
 	// Author review: ZI YANG - validated correctness.
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — email adapter now uses SendGrid; Author review: ZI YANG - reviewed and validated.
 	accountService := user.NewAccountServiceWithOTPAndDelivery(
 		userRepository,
 		repository.NewRedisBlocklistWriter(redisClient),
@@ -130,6 +149,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		accessTokenTTL+jwt.ClockSkew,
 		repository.NewRedisOTPStore(redisClient),
 		otpDeliverer, // AI-generated (edited by James Teo).
+		logger,
 	)
 	if err := bootstrapInitialAdmin(ctx, accountService, cfg.InitialAdminEmail, cfg.InitialAdminUsername, cfg.InitialAdminPassword); err != nil {
 		return fmt.Errorf("bootstrap initial admin: %w", err)
@@ -153,7 +173,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	stopAuditPurge := startBackground(ctx, func(ctx context.Context) { accountService.RunAuditPurge(ctx, user.PurgeInterval) })
 	defer stopAuditPurge()
 	authenticator := session.NewAuthenticator(userRepository, jwtService)
-	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now)
+	loginService := session.NewLoginService(authenticator, sessionRepository, time.Now, logger)
 	// AI-generated (edited by ZI YANG): supply the recorded Redis refresh lock through the composition root.
 	refreshService := session.NewRefreshService(userRepository, sessionRepository, jwtService, jwtService, repository.NewRedisRefreshLock(redisClient), time.Now)
 	logoutService := session.NewLogoutService(sessionRepository, repository.NewRedisBlocklistWriter(redisClient), time.Now)
@@ -195,9 +215,10 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		},
 		TokenVerifier:     jwtPrincipalVerifier{service: jwtService},
 		RevocationChecker: jwtRevocationChecker{reader: revocationReader},
+		Logger:            logger,
 	})
 
-	server := newHTTPServer(":"+cfg.Port, httpHandler)
+	server := newHTTPServer(":"+cfg.Port, httpHandler, logger)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("serve HTTP: %w", err)
 	}
@@ -205,11 +226,14 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 }
 
 // newHTTPServer constructs the API server with the recorded defensive timeouts.
-func newHTTPServer(addr string, handler http.Handler) *http.Server {
+// net/http's own errors, such as a failed accept, reach logger as JSON lines
+// instead of the stdlib log's plain text.
+func newHTTPServer(addr string, handler http.Handler, logger *slog.Logger) *http.Server {
 	// AI-generated (edited by ZI YANG): apply the owner-recorded HTTP timeout policy at server construction.
 	return &http.Server{
 		Addr:              addr,
 		Handler:           handler,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

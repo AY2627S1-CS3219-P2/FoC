@@ -15,6 +15,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"foc/credit-service/internal/observability"
+
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -92,7 +94,7 @@ func (s *Supervisor) Run(ctx context.Context) error {
 		waitDuration := time.Duration(float64(baseInterval) * jitterFactor)
 
 		s.logger.Warn("RabbitMQ connection lost or failed, reconnecting",
-			"error", err,
+			"error", observability.Sanitize(err.Error()),
 			"wait", waitDuration.String(),
 		)
 

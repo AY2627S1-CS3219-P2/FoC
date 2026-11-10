@@ -3,8 +3,9 @@ package main
 import (
 	"context"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -26,16 +27,23 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("failed to load configuration: %v", err)
+	log := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// fatal logs why chat-service cannot run and exits, as log.Fatalf did.
+	fatal := func(msg string, err error) {
+		log.Error(msg, "err", err)
+		os.Exit(1)
 	}
 
-	log.Printf("running database migrations from %s...", cfg.MigrationsDir)
-	if err := repository.Migrate(cfg.ChatDBURL, cfg.MigrationsDir); err != nil {
-		log.Fatalf("migration failed: %v", err)
+	cfg, err := config.Load()
+	if err != nil {
+		fatal("failed to load configuration", err)
 	}
-	log.Printf("database migrations applied successfully")
+
+	log.Info("running database migrations", "dir", cfg.MigrationsDir)
+	if err := repository.Migrate(cfg.ChatDBURL, cfg.MigrationsDir); err != nil {
+		fatal("migration failed", err)
+	}
+	log.Info("database migrations applied successfully")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -43,14 +51,14 @@ func main() {
 	// Connect PostgreSQL
 	dbPool, err := repository.ConnectPool(ctx, cfg.ChatDBURL)
 	if err != nil {
-		log.Fatalf("failed to connect database pool: %v", err)
+		fatal("failed to connect database pool", err)
 	}
 	defer dbPool.Close()
 
 	// Connect Chat Redis (dedicated for handshake tickets and WebSocket pub/sub)
 	chatRedisOpt, err := redis.ParseURL(cfg.ChatRedisURL)
 	if err != nil {
-		log.Fatalf("failed to parse CHAT_REDIS_URL: %v", err)
+		fatal("failed to parse CHAT_REDIS_URL", redactURLError(err))
 	}
 	chatRedisClient := redis.NewClient(chatRedisOpt)
 	defer func() { _ = chatRedisClient.Close() }()
@@ -58,7 +66,7 @@ func main() {
 	// Connect Auth Redis (shared, read-only for session revocation and suspension)
 	authRedisOpt, err := redis.ParseURL(cfg.AuthRedisURL)
 	if err != nil {
-		log.Fatalf("failed to parse AUTH_REDIS_URL: %v", err)
+		fatal("failed to parse AUTH_REDIS_URL", redactURLError(err))
 	}
 	authRedisClient := redis.NewClient(authRedisOpt)
 	defer func() { _ = authRedisClient.Close() }()
@@ -68,7 +76,7 @@ func main() {
 	ticketStore := ticket.NewStore(chatRedisClient)
 	mediaStore, err := media.NewStorage(cfg.MediaStoragePath)
 	if err != nil {
-		log.Fatalf("failed to initialize media storage: %v", err)
+		fatal("failed to initialize media storage", err)
 	}
 
 	// Zero-trust verifier
@@ -82,63 +90,79 @@ func main() {
 		}
 		return claims.UserID, nil
 	}
-	wsHub := hub.NewHub(chatRedisClient, verifier.IsUserSuspended, tokenRefresher)
+	wsHub := hub.NewHub(chatRedisClient, verifier.IsUserSuspended, tokenRefresher, log)
 	go wsHub.Run(ctx)
 
 	// Domain Service
 	chatService := chat.NewService(repo, wsHub, nil)
 
 	// Background Sweeper
-	expSweeper := sweeper.NewSweeper(chatService, 60*time.Second)
+	expSweeper := sweeper.NewSweeper(chatService, 60*time.Second, log)
 	expSweeper.Start(ctx)
 	defer expSweeper.Stop()
 
 	// RabbitMQ Lifecycle Event Consumer
-	lifecycleHandler := consumer.NewLifecycleHandler(chatService)
+	lifecycleHandler := consumer.NewLifecycleHandler(chatService, log)
 	go func() {
 		for {
 			if ctx.Err() != nil {
 				return
 			}
-			log.Printf("connecting RabbitMQ consumer on %s...", consumer.ChatQueue)
+			log.Info("connecting RabbitMQ consumer", "queue", consumer.ChatQueue)
 			if err := consumer.RunConsumer(ctx, cfg.RabbitMQURL, lifecycleHandler); err != nil && ctx.Err() == nil {
-				log.Printf("rabbitmq consumer error: %v, retrying in 5 seconds...", err)
+				log.Warn("rabbitmq consumer error, retrying in 5 seconds", "queue", consumer.ChatQueue, "err", redactURLError(err))
 				time.Sleep(5 * time.Second)
 			}
 		}
 	}()
 
 	// HTTP API Handler & Router
-	handler := httpapi.NewHandler(chatService, ticketStore, mediaStore)
-	router := httpapi.NewRouter(handler, wsHub, verifier)
+	handler := httpapi.NewHandler(chatService, ticketStore, mediaStore, log)
+	router := httpapi.NewRouter(handler, wsHub, verifier, log)
 
-	server := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      router,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-	}
+	server := newHTTPServer(":"+cfg.Port, router, log)
 
 	// Graceful shutdown listener
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		log.Printf("chat-service listening on port %s", cfg.Port)
+		log.Info("chat-service listening", "port", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatalf("http server error: %v", err)
+			fatal("http server error", err)
 		}
 	}()
 
 	<-shutdown
-	log.Printf("shutdown signal received, draining connections...")
+	log.Info("shutdown signal received, draining connections")
 	cancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		log.Printf("server shutdown error: %v", err)
+		log.Error("server shutdown error", "err", err)
 	}
-	log.Printf("chat-service shut down cleanly")
+	log.Info("chat-service shut down cleanly")
+}
+
+// newHTTPServer serves handler on addr, with net/http's own errors written to
+// log as JSON at ERROR rather than as text through the standard log package.
+func newHTTPServer(addr string, handler http.Handler, log *slog.Logger) *http.Server {
+	return &http.Server{
+		Addr:         addr,
+		Handler:      handler,
+		ReadTimeout:  30 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		ErrorLog:     slog.NewLogLogger(log.Handler(), slog.LevelError),
+	}
+}
+
+// redactURLError keeps a URL parse error's text out of the log: it quotes the
+// whole URL, password included.
+func redactURLError(err error) error {
+	if errors.As(err, new(*url.Error)) {
+		return errors.New("not a valid URL")
+	}
+	return err
 }

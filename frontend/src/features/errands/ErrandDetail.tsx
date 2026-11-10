@@ -548,7 +548,14 @@ export function ErrandDetail({
           onValuesChange={rememberEditValues}
           alreadyHeld={editBase.reward}
           available={available}
-          notice="Editing doesn't move the expiry time."
+          // AI-generated (edited by nigeltzy): a SCHEDULED errand's time can be
+          // changed, and its expiry starts only when it opens (PR #67).
+          canSchedule={editBase.state === "SCHEDULED"}
+          notice={
+            editBase.state === "SCHEDULED"
+              ? "Its expiry time starts when it opens."
+              : "Editing doesn't move the expiry time."
+          }
           submitting={busy === "amend"}
           submitLabel={() => "Save changes"}
           busyLabel="Saving…"
@@ -609,6 +616,11 @@ export function ErrandDetail({
               </Row>
             )}
             <Row label="Reward">{creditsText(errand.reward)}</Row>
+            {/* AI-generated (edited by nigeltzy): the time a scheduled errand
+                opens, kept after it opened (PR #67). */}
+            {errand.scheduled && (
+              <Row label="Scheduled for">{formatDateTime(errand.scheduled)}</Row>
+            )}
             {shownParties.map((party) => (
               <Row key={party.uid} label={party.role}>
                 <PartyDetails

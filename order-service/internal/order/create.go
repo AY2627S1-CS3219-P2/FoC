@@ -163,7 +163,8 @@ func (s *Service) Create(ctx context.Context, c Caller, in CreateInput) (o Order
 	if errors.Is(err, ErrCreditRejected) {
 		// A definite refusal (e.g. 401 while credit-service does not yet read
 		// a forwarded token, D-056) is a misconfiguration retrying cannot fix.
-		s.log.ErrorContext(ctx, "credit-service refused a reservation; queued refund will release any hold",
+		// WARN: the handler logs the 503's cause at ERROR; this adds the errand.
+		s.log.WarnContext(ctx, "credit-service refused a reservation; queued refund will release any hold",
 			"errand_id", o.ID, "request_id", in.CorrelationID, "err", err)
 		return Order{}, false, unavailable("credits are unavailable right now; please try again", err)
 	}

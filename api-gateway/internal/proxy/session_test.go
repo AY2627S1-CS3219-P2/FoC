@@ -9,6 +9,7 @@ package proxy_test
 
 import (
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -41,11 +42,13 @@ func cookieExpired(rec *httptest.ResponseRecorder) bool {
 func TestSessionCookieFollowsTheDownstreamAnswer(t *testing.T) {
 	t.Parallel()
 
-	rotating := func(r proxy.Route) (*proxy.Proxy, error) { return proxy.NewSessionRotating(r, time.Hour) }
+	rotating := func(r proxy.Route, log *slog.Logger) (*proxy.Proxy, error) {
+		return proxy.NewSessionRotating(r, time.Hour, log)
+	}
 
 	tests := []struct {
 		name        string
-		newProxy    func(proxy.Route) (*proxy.Proxy, error)
+		newProxy    func(proxy.Route, *slog.Logger) (*proxy.Proxy, error)
 		path        string
 		status      int
 		wantExpired bool
@@ -72,7 +75,7 @@ func TestSessionCookieFollowsTheDownstreamAnswer(t *testing.T) {
 			}))
 			t.Cleanup(downstream.Close)
 
-			p, err := tt.newProxy(authRoute(downstream.URL))
+			p, err := tt.newProxy(authRoute(downstream.URL), quietLog())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -99,7 +102,7 @@ func TestLogoutExpiresTheCookieWhenUserServiceIsUnreachable(t *testing.T) {
 	down := httptest.NewServer(http.NotFoundHandler())
 	down.Close()
 
-	p, err := proxy.NewSessionEnding(authRoute(down.URL))
+	p, err := proxy.NewSessionEnding(authRoute(down.URL), quietLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +127,7 @@ func TestUnreachableRefreshKeepsTheCookie(t *testing.T) {
 	down := httptest.NewServer(http.NotFoundHandler())
 	down.Close()
 
-	p, err := proxy.NewSessionRotating(authRoute(down.URL), time.Hour)
+	p, err := proxy.NewSessionRotating(authRoute(down.URL), time.Hour, quietLog())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +160,7 @@ func TestRefreshForwardsANonJSONBodyUnchanged(t *testing.T) {
 	}))
 	t.Cleanup(downstream.Close)
 
-	p, err := proxy.NewSessionRotating(authRoute(downstream.URL), time.Hour)
+	p, err := proxy.NewSessionRotating(authRoute(downstream.URL), time.Hour, quietLog())
 	if err != nil {
 		t.Fatal(err)
 	}

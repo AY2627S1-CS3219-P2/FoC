@@ -14,7 +14,13 @@ import type { RealtimeEvent } from "./chatTypes";
 interface ChatSocketContextValue {
   hasUnread: boolean;
   unreadErrandIds: Set<string>;
+  requesterHasUnread: boolean;
+  courierHasUnread: boolean;
+  requesterUnreadErrandIds: Set<string>;
+  courierUnreadErrandIds: Set<string>;
   markErrandRead: (errandId: string) => void;
+  refreshUnreadSummary: () => Promise<void>;
+  setActiveConversationId: (id: string | null) => void;
   subscribeToEvents: (listener: (event: RealtimeEvent) => void) => () => void;
   chatApi: ChatApi;
 }
@@ -22,7 +28,13 @@ interface ChatSocketContextValue {
 const defaultContextValue: ChatSocketContextValue = {
   hasUnread: false,
   unreadErrandIds: new Set(),
+  requesterHasUnread: false,
+  courierHasUnread: false,
+  requesterUnreadErrandIds: new Set(),
+  courierUnreadErrandIds: new Set(),
   markErrandRead: () => {},
+  refreshUnreadSummary: async () => {},
+  setActiveConversationId: () => {},
   subscribeToEvents: () => () => {},
   chatApi: {} as ChatApi,
 };
@@ -44,10 +56,19 @@ export function ChatSocketProvider({
 }: ChatSocketProviderProps) {
   const [hasUnread, setHasUnread] = useState(false);
   const [unreadErrandIds, setUnreadErrandIds] = useState<Set<string>>(new Set());
+  const [requesterHasUnread, setRequesterHasUnread] = useState(false);
+  const [courierHasUnread, setCourierHasUnread] = useState(false);
+  const [requesterUnreadErrandIds, setRequesterUnreadErrandIds] = useState<Set<string>>(new Set());
+  const [courierUnreadErrandIds, setCourierUnreadErrandIds] = useState<Set<string>>(new Set());
 
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const listenersRef = useRef<Set<(event: RealtimeEvent) => void>>(new Set());
+  const activeConversationIdRef = useRef<string | null>(null);
+
+  const setActiveConversationId = useCallback((id: string | null) => {
+    activeConversationIdRef.current = id;
+  }, []);
 
   // Synchronize unread state via REST
   const refreshUnreadSummary = useCallback(async () => {
@@ -55,7 +76,11 @@ export function ChatSocketProvider({
     try {
       const summary = await chatApi.fetchUnreadSummary();
       setHasUnread(summary.has_unread);
-      setUnreadErrandIds(new Set(summary.unread_errand_ids));
+      setUnreadErrandIds(new Set(summary.unread_errand_ids ?? []));
+      setRequesterHasUnread(Boolean(summary.requester_has_unread));
+      setCourierHasUnread(Boolean(summary.courier_has_unread));
+      setRequesterUnreadErrandIds(new Set(summary.requester_unread_errand_ids ?? []));
+      setCourierUnreadErrandIds(new Set(summary.courier_unread_errand_ids ?? []));
     } catch {
       // Ignore background unread sync errors
     }
@@ -68,6 +93,24 @@ export function ChatSocketProvider({
       next.delete(errandId);
       if (next.size === 0) {
         setHasUnread(false);
+      }
+      return next;
+    });
+    setRequesterUnreadErrandIds((prev) => {
+      if (!prev.has(errandId)) return prev;
+      const next = new Set(prev);
+      next.delete(errandId);
+      if (next.size === 0) {
+        setRequesterHasUnread(false);
+      }
+      return next;
+    });
+    setCourierUnreadErrandIds((prev) => {
+      if (!prev.has(errandId)) return prev;
+      const next = new Set(prev);
+      next.delete(errandId);
+      if (next.size === 0) {
+        setCourierHasUnread(false);
       }
       return next;
     });
@@ -104,6 +147,10 @@ export function ChatSocketProvider({
       }
       setHasUnread(false);
       setUnreadErrandIds(new Set());
+      setRequesterHasUnread(false);
+      setCourierHasUnread(false);
+      setRequesterUnreadErrandIds(new Set());
+      setCourierUnreadErrandIds(new Set());
       return;
     }
 
@@ -145,10 +192,12 @@ export function ChatSocketProvider({
               }
             });
 
-            // Update unread state on new message
+            // Update unread state on new message if user is not actively in this conversation
             if (realtimeEvent.type === "message.created") {
-              setHasUnread(true);
-              void refreshUnreadSummary();
+              if (activeConversationIdRef.current !== realtimeEvent.data.conversation_id) {
+                setHasUnread(true);
+                void refreshUnreadSummary();
+              }
             }
           } catch {
             // Non-JSON frame
@@ -192,7 +241,13 @@ export function ChatSocketProvider({
       value={{
         hasUnread,
         unreadErrandIds,
+        requesterHasUnread,
+        courierHasUnread,
+        requesterUnreadErrandIds,
+        courierUnreadErrandIds,
         markErrandRead,
+        refreshUnreadSummary,
+        setActiveConversationId,
         subscribeToEvents,
         chatApi,
       }}

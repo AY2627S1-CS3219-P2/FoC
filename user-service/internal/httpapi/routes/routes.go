@@ -7,6 +7,8 @@
 package routes
 
 import (
+	"log/slog"
+
 	"foc/user-service/internal/httpapi/handlers"
 
 	"github.com/go-chi/chi/v5"
@@ -20,6 +22,8 @@ type Dependencies struct {
 	System            handlers.SystemDependencies
 	TokenVerifier     handlers.TokenVerifier
 	RevocationChecker handlers.RevocationChecker
+	// Logger receives every request's access line and any panic report.
+	Logger *slog.Logger
 
 	// AI-generated (edited by nigeltzy): the ranking-model store (D-095, D-099).
 	Ranking handlers.RankingDependencies

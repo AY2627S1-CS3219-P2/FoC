@@ -74,7 +74,7 @@ func TestLifecycleHandler_DispatchCompleted(t *testing.T) {
 
 	t.Run("valid completed payload dispatches successfully", func(t *testing.T) {
 		requesterID := uuid.New()
-	body := fmt.Sprintf(`{
+		body := fmt.Sprintf(`{
 			"schemaVersion": 1,
 			"eventId": "%s",
 			"errandId": "%s",
@@ -290,6 +290,26 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 			Body:        body,
 		}
 		handler.HandleDelivery(ctx, d)
+	})
+
+	t.Run("account integrity flagged rejected immediately to DLQ without retries", func(t *testing.T) {
+		flaggedSvc := &mockLifecycleService{
+			refundFn: func(ctx context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, reason credit.TransactionReason, occurredAt time.Time) error {
+				return credit.ErrAccountIntegrityFlagged
+			},
+		}
+		var backoffCalled bool
+		handler := messaging.NewLifecycleHandler(flaggedSvc, logger, messaging.WithLifecycleBackoff(func(ctx context.Context, attempt int) bool {
+			backoffCalled = true
+			return true
+		}))
+		d := amqp.Delivery{
+			RoutingKey:  messaging.RoutingCancelled,
+			ContentType: "application/json",
+			Body:        body,
+		}
+		handler.HandleDelivery(ctx, d)
+		if backoffCalled { t.Fatal("backoff retry must not be called when account integrity is flagged") }
 	})
 }
 

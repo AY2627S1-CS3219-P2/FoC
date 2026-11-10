@@ -64,11 +64,18 @@ describe("chatApi", () => {
     );
   });
 
-  it("fetchUnreadSummary returns unread status and errands", async () => {
+  it("fetchUnreadSummary returns unread status and errands with role separation", async () => {
     const mockSend = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      body: { has_unread: true, unread_errand_ids: ["err-1", "err-2"] },
+      body: {
+        has_unread: true,
+        unread_errand_ids: ["err-1", "err-2"],
+        requester_has_unread: true,
+        courier_has_unread: false,
+        requester_unread_errand_ids: ["err-1", "err-2"],
+        courier_unread_errand_ids: [],
+      },
     } as HttpResponse);
 
     const api = createChatApi(mockSend, () => "test-token");
@@ -76,5 +83,9 @@ describe("chatApi", () => {
 
     expect(summary.has_unread).toBe(true);
     expect(summary.unread_errand_ids).toEqual(["err-1", "err-2"]);
+    expect(summary.requester_has_unread).toBe(true);
+    expect(summary.courier_has_unread).toBe(false);
+    expect(summary.requester_unread_errand_ids).toEqual(["err-1", "err-2"]);
+    expect(summary.courier_unread_errand_ids).toEqual([]);
   });
 });

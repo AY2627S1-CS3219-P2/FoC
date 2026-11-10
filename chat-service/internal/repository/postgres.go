@@ -418,9 +418,12 @@ func (r *PostgresRepository) UpdateLastRead(ctx context.Context, conversationID,
 	return nil
 }
 
-func (r *PostgresRepository) GetUnreadSummary(ctx context.Context, userID uuid.UUID) (bool, []uuid.UUID, error) {
+func (r *PostgresRepository) GetUnreadSummary(ctx context.Context, userID uuid.UUID) (*chat.UnreadSummary, error) {
 	query := `
-		SELECT DISTINCT c.errand_id
+		SELECT
+			c.errand_id,
+			BOOL_OR(c.requester_id = $1 AND m.sender_id != $1 AND m.created_at > c.requester_last_read_at) AS is_requester_unread,
+			BOOL_OR(c.courier_id = $1 AND m.sender_id != $1 AND m.created_at > c.courier_last_read_at) AS is_courier_unread
 		FROM conversations c
 		JOIN chat_messages m ON m.conversation_id = c.id
 		WHERE (
@@ -428,26 +431,44 @@ func (r *PostgresRepository) GetUnreadSummary(ctx context.Context, userID uuid.U
 			OR
 			(c.courier_id = $1 AND m.sender_id != $1 AND m.created_at > c.courier_last_read_at)
 		)
+		GROUP BY c.errand_id
 	`
 	rows, err := r.pool.Query(ctx, query, userID)
 	if err != nil {
-		return false, nil, fmt.Errorf("get unread summary: %w", err)
+		return nil, fmt.Errorf("get unread summary: %w", err)
 	}
 	defer rows.Close()
 
-	var unreadErrandIDs []uuid.UUID
+	summary := &chat.UnreadSummary{
+		UnreadErrandIDs:    []uuid.UUID{},
+		RequesterErrandIDs: []uuid.UUID{},
+		CourierErrandIDs:   []uuid.UUID{},
+	}
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
-			return false, nil, err
+		var (
+			errandID uuid.UUID
+			asReq    bool
+			asCour   bool
+		)
+		if err := rows.Scan(&errandID, &asReq, &asCour); err != nil {
+			return nil, err
 		}
-		unreadErrandIDs = append(unreadErrandIDs, id)
+		summary.UnreadErrandIDs = append(summary.UnreadErrandIDs, errandID)
+		if asReq {
+			summary.RequesterErrandIDs = append(summary.RequesterErrandIDs, errandID)
+			summary.RequesterHasUnread = true
+		}
+		if asCour {
+			summary.CourierErrandIDs = append(summary.CourierErrandIDs, errandID)
+			summary.CourierHasUnread = true
+		}
 	}
 	if err := rows.Err(); err != nil {
-		return false, nil, err
+		return nil, err
 	}
 
-	return len(unreadErrandIDs) > 0, unreadErrandIDs, nil
+	summary.HasUnread = len(summary.UnreadErrandIDs) > 0
+	return summary, nil
 }
 
 func (r *PostgresRepository) RecordAudit(ctx context.Context, entry *chat.AuditEntry) error {

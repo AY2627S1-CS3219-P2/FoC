@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime"
 	"net/http"
 
@@ -25,13 +26,16 @@ import (
 type Handler struct {
 	creditService *credit.Service
 	healthCheck   HealthCheck
+	logger        *slog.Logger
 }
 
-// NewHandler returns a new HTTP API handler.
-func NewHandler(creditService *credit.Service, healthCheck HealthCheck) *Handler {
+// NewHandler returns a new HTTP API handler that logs the cause of each 5xx to
+// logger. A nil logger discards the lines.
+func NewHandler(creditService *credit.Service, healthCheck HealthCheck, logger *slog.Logger) *Handler {
 	return &Handler{
 		creditService: creditService,
 		healthCheck:   healthCheck,
+		logger:        orDiscard(logger),
 	}
 }
 
@@ -46,6 +50,7 @@ func (h *Handler) GetLiveness(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) GetReadiness(w http.ResponseWriter, r *http.Request) {
 	if h.healthCheck != nil {
 		if err := h.healthCheck(r.Context()); err != nil {
+			logCause(h.logger, r, "readiness check failed", err)
 			writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, err.Error())
 			return
 		}
@@ -75,6 +80,7 @@ func (h *Handler) GetMyCreditAccount(w http.ResponseWriter, r *http.Request) {
 		case errors.Is(err, credit.ErrWalletNotReady):
 			writeError(w, http.StatusNotFound, gen.WALLETNOTREADY, "wallet is not ready")
 		default:
+			logCause(h.logger, r, "request failed", err)
 			writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "service unavailable")
 		}
 		return
@@ -127,6 +133,7 @@ func (h *Handler) ListMyCreditTransactions(w http.ResponseWriter, r *http.Reques
 		case errors.Is(err, credit.ErrAccountIntegrityFlagged):
 			writeError(w, http.StatusConflict, gen.ACCOUNTINTEGRITYFAILURE, "account integrity failure")
 		default:
+			logCause(h.logger, r, "request failed", err)
 			writeError(w, http.StatusInternalServerError, gen.INTERNALERROR, "failed to list transactions")
 		}
 		return
@@ -165,19 +172,19 @@ func (h *Handler) CreateReservation(w http.ResponseWriter, r *http.Request) {
 
 	req, err := decodeStrictJSON[gen.CreateReservationRequest](w, r)
 	if err != nil {
-		h.mapDomainError(w, err)
+		h.mapDomainError(w, r, err)
 		return
 	}
 
 	requesterID := identity.UserID
 	if req.ErrandId == uuid.Nil || requesterID == uuid.Nil {
-		h.mapDomainError(w, fmt.Errorf("%w: nil UUID is not allowed", credit.ErrInvalidRequest))
+		h.mapDomainError(w, r, fmt.Errorf("%w: nil UUID is not allowed", credit.ErrInvalidRequest))
 		return
 	}
 
 	res, isNew, err := h.creditService.CreateReservation(r.Context(), req.ErrandId, requesterID, req.Amount)
 	if err != nil {
-		h.mapDomainError(w, err)
+		h.mapDomainError(w, r, err)
 		return
 	}
 
@@ -211,13 +218,13 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 	}
 
 	if errandId == uuid.Nil {
-		h.mapDomainError(w, fmt.Errorf("%w: nil errand ID", credit.ErrInvalidErrandID))
+		h.mapDomainError(w, r, fmt.Errorf("%w: nil errand ID", credit.ErrInvalidErrandID))
 		return
 	}
 
 	req, err := decodeStrictJSON[gen.AdjustRewardRequest](w, r)
 	if err != nil {
-		h.mapDomainError(w, err)
+		h.mapDomainError(w, r, err)
 		return
 	}
 
@@ -232,7 +239,7 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 
 	_, res, err := h.creditService.AdjustReservationReward(r.Context(), errandId, identity.UserID, req.NewReward, req.CurrVersion, operationID)
 	if err != nil {
-		h.mapDomainError(w, err)
+		h.mapDomainError(w, r, err)
 		return
 	}
 
@@ -248,7 +255,7 @@ func (h *Handler) AdjustReservationReward(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, resp)
 }
 
-func (h *Handler) mapDomainError(w http.ResponseWriter, err error) {
+func (h *Handler) mapDomainError(w http.ResponseWriter, r *http.Request, err error) {
 	switch {
 	case errors.Is(err, credit.ErrInvalidRequest),
 		errors.Is(err, credit.ErrInvalidRewardAmount),
@@ -272,8 +279,10 @@ func (h *Handler) mapDomainError(w http.ResponseWriter, err error) {
 	case errors.Is(err, credit.ErrCreditLimitExceeded):
 		writeError(w, http.StatusUnprocessableEntity, gen.CREDITLIMITEXCEEDED, "credit limit exceeded")
 	case errors.Is(err, credit.ErrServiceUnavailable):
+		logCause(h.logger, r, "request failed", err)
 		writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "service unavailable")
 	default:
+		logCause(h.logger, r, "request failed", err)
 		writeError(w, http.StatusInternalServerError, gen.INTERNALERROR, "internal error")
 	}
 }
@@ -285,7 +294,7 @@ func decodeStrictJSON[T any](w http.ResponseWriter, r *http.Request) (*T, error)
 		return nil, fmt.Errorf("%w: Content-Type must be application/json", credit.ErrInvalidRequest)
 	}
 
-	bodyBytes, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16384))
+	bodyBytes, err := io.ReadAll(http.MaxBytesReader(innermostWriter(w), r.Body, 16384))
 	if err != nil {
 		return nil, fmt.Errorf("%w: failed to read request body (limit 16KiB): %v", credit.ErrInvalidRequest, err)
 	}
@@ -308,6 +317,20 @@ func decodeStrictJSON[T any](w http.ResponseWriter, r *http.Request) (*T, error)
 	}
 
 	return &val, nil
+}
+
+// innermostWriter follows Unwrap, as http.ResponseController does, to the
+// writer net/http made for the request: only through it can
+// http.MaxBytesReader drop the connection of an oversized body. The error
+// response still goes through w, so the access line records its status.
+func innermostWriter(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		wrapper, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return w
+		}
+		w = wrapper.Unwrap()
+	}
 }
 
 func validateJSONDuplicateKeys(data []byte) error {

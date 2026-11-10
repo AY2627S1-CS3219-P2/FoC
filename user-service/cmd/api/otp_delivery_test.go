@@ -1,4 +1,9 @@
 // AI Assistance Disclosure:
+// Tool: Codex (model: GPT-6), date: 2026-11-08
+// Scope: Updated provider selection tests for SendGrid and retained local log delivery.
+// Author review: ZI YANG — reviewed and validated.
+
+// AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-10-17
 // Scope: Tests for OTP_DELIVERY selection and the log deliverer.
 // Author review: James Teo — reviewed and verified.
@@ -14,36 +19,37 @@ import (
 	"testing"
 
 	"foc/user-service/internal/config"
-	"foc/user-service/internal/mailgun"
+	"foc/user-service/internal/sendgrid"
 )
 
 func TestNewOTPDeliverer(t *testing.T) {
-	mailgunSettings := config.Config{MailgunAPIKey: "key", MailgunDomain: "mg.example.test", MailgunSenderEmail: "verify@example.test"}
+	sendgridSettings := config.Config{SendGridAPIKey: "key", SendGridSenderEmail: "verify@example.test"}
 	withDelivery := func(cfg config.Config, mode string) config.Config {
 		cfg.OTPDelivery = mode
 		return cfg
 	}
 	tests := map[string]struct {
-		cfg         config.Config
-		wantMailgun bool
-		wantLog     bool
+		cfg          config.Config
+		wantSendGrid bool
+		wantLog      bool
 	}{
-		"defaults to Mailgun":                {cfg: mailgunSettings, wantMailgun: true},
-		"selects Mailgun by name":            {cfg: withDelivery(mailgunSettings, "mailgun"), wantMailgun: true},
-		"default Mailgun needs its settings": {cfg: config.Config{}},
-		"named Mailgun needs its settings":   {cfg: withDelivery(config.Config{}, "mailgun")},
-		"log needs no Mailgun settings":      {cfg: withDelivery(config.Config{}, "log"), wantLog: true},
-		"rejects an unknown mode":            {cfg: withDelivery(mailgunSettings, "smtp")},
+		"defaults to SendGrid":                {cfg: sendgridSettings, wantSendGrid: true},
+		"selects SendGrid by name":            {cfg: withDelivery(sendgridSettings, "sendgrid"), wantSendGrid: true},
+		"default SendGrid needs its settings": {cfg: config.Config{}},
+		"named SendGrid needs its settings":   {cfg: withDelivery(config.Config{}, "sendgrid")},
+		"log needs no SendGrid settings":      {cfg: withDelivery(config.Config{}, "log"), wantLog: true},
+		"rejects the retired Mailgun mode":    {cfg: withDelivery(sendgridSettings, "mailgun")},
+		"rejects an unknown mode":             {cfg: withDelivery(sendgridSettings, "smtp")},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			var logs bytes.Buffer
 			deliverer, err := newOTPDeliverer(tt.cfg, slog.New(slog.NewJSONHandler(&logs, nil)))
-			if wantErr := !tt.wantMailgun && !tt.wantLog; (err != nil) != wantErr {
+			if wantErr := !tt.wantSendGrid && !tt.wantLog; (err != nil) != wantErr {
 				t.Fatalf("newOTPDeliverer() error = %v, want error %t", err, wantErr)
 			}
-			if _, ok := deliverer.(*mailgun.Client); ok != tt.wantMailgun {
-				t.Fatalf("deliverer = %T, want Mailgun client %t", deliverer, tt.wantMailgun)
+			if _, ok := deliverer.(*sendgrid.Client); ok != tt.wantSendGrid {
+				t.Fatalf("deliverer = %T, want SendGrid client %t", deliverer, tt.wantSendGrid)
 			}
 			if _, ok := deliverer.(logOTPDeliverer); ok != tt.wantLog {
 				t.Fatalf("deliverer = %T, want log deliverer %t", deliverer, tt.wantLog)

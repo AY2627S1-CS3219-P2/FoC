@@ -385,7 +385,8 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   **Modify `POST /api/v1/users/register`:**
     *   Inserts the `UNVERIFIED` user into PostgreSQL.
     *   Generates the OTP, hashes it, and stores it in Redis.
-    *   Dispatches the plaintext OTP to the Email Service (via Mailgun).
+    *   <!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — user-authorized SendGrid delivery update; Author review: ZI YANG - verified correctness. -->
+        Dispatches the plaintext OTP to the Email Service (via SendGrid).
     *   Does *not* publish the `UserRegistered` event for the Credit Service. (`verify-otp` queues it once the account is activated.)
 *   **New `POST /api/v1/users/resend-otp`:**
     *   Accepts `{"email": "string"}`.
@@ -407,8 +408,9 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   **Redis (Write Hash inside Callback):** The repository executes the closure. The closure attempts to write `otp:hash:<email>` with a 5-minute TTL to Redis.
     *   **Failure:** If Redis is unreachable, the closure returns an error to the repository. The repository executes a PostgreSQL rollback and returns the error to the domain service, resulting in a `500 Internal Server Error`.
 *   **PostgreSQL (Commit):** If the closure succeeds, the repository commits the database transaction. The system of record is now secure.
-*   **Mailgun:** After `CreateWithTask` returns successfully, the domain service dispatches the plaintext OTP via Mailgun.
-    *   **Failure:** If Mailgun times out or returns a 5xx error, do not roll back the database. The user is safely stored as `UNVERIFIED`. Return a `500 Internal Server Error` to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which safely overwrites the Redis hash.
+*   <!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — user-authorized SendGrid delivery update; Author review: ZI YANG - verified correctness. -->
+    **SendGrid:** After `CreateWithTask` returns successfully, the domain service dispatches the plaintext OTP via SendGrid.
+    *   **Failure:** If SendGrid times out or returns a 5xx error, do not roll back the database. The user is safely stored as `UNVERIFIED`. Return a `500 Internal Server Error` to the frontend so it can display "Failed to send email." The user can simply click "Resend OTP" to trigger the resend flow, which safely overwrites the Redis hash.
 
 **7. Verification Flow**
 *   Redis: Fetch the `otp:hash:<email>`. Compare it to the client's hashed input.
@@ -423,12 +425,20 @@ Pass the input to Go's `net/mail` package and pass the input to `mail.ParseAddre
 *   Redis (Cleanup): Delete the `otp:hash:<email>`, `otp:count:<email>` and `otp:attempts:<email>` keys to prevent reuse.
     * Failure: If Redis fails to delete the key, ignore the error. Do not fail the request. If the user accidentally submits the same OTP again before the TTL expires, Step 2 will catch that the user is already ACTIVE and safely return a 409 Conflict, neutralizing the risk of a replay attack.
 
-**8. Mailgun Delivery Contract**
-*   **Configuration:** With `OTP_DELIVERY=mailgun` (the default), the service requires `MAILGUN_API_KEY`, `MAILGUN_DOMAIN`, and `MAILGUN_SENDER_EMAIL` in the environment. With `OTP_DELIVERY=log` (local development only), it writes each code to its log instead and needs none of them.
-*   **API Endpoint & Authentication:** Use the standard Mailgun Messages API (`POST https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages`). Authenticate using HTTP Basic Auth with the username `api` and the password from `MAILGUN_API_KEY`.
-*   **Message Content:** Use a concise plaintext and HTML template: `"Your CampusRun verification code is: <OTP>. This code expires in 5 minutes."`
-*   **Message Body:** `from` should be `MAILGUN_SENDER_EMAIL` and `to` should be the OTP recipient email received from registration. `subject` should be `"CampusRun Email Verification"`
-*   **Timeout & Retry Behavior:** Configure the `http.Client` for the Mailgun call with a strict 5-second timeout. Do not implement automatic application-level retries for timeouts or 5xx errors; rely on the frontend client to prompt the user to manually click "Resend" to avoid stalling the synchronous API response.
+<!--
+AI Assistance Disclosure:
+Tool: Codex (model: GPT-6), date: 2026-11-08
+Scope: Recorded the user's explicit authorization to replace Mailgun with Twilio SendGrid and update the delivery/configuration contract.
+Author review: ZI YANG — Verified correctness
+-->
+**8. SendGrid Delivery Contract**
+*   **Decision record:** On 2026-11-08, the user authorized updating this contract and implementing Twilio SendGrid in place of Mailgun. The existing OTP delivery interface and verification flow remain the integration boundary.
+*   **Configuration:** With `OTP_DELIVERY=sendgrid` (the default when unset), the service requires `SENDGRID_API_KEY` and `SENDGRID_SENDER_EMAIL`. The sender must be a verified SendGrid sender identity. With `OTP_DELIVERY=log` (local development only), it writes each code to its log and needs no SendGrid credentials. `mailgun` is no longer a supported delivery mode. Compose and the environment templates continue to default to `log` for local runs.
+*   **API Endpoint & Authentication:** Use SendGrid's global Mail Send API (`POST https://api.sendgrid.com/v3/mail/send`), with `Authorization: Bearer <SENDGRID_API_KEY>` and `Content-Type: application/json`. Use the Go standard library; no additional SDK dependency is required.
+*   **Message Content:** Send plaintext and HTML content containing `"Your CampusRun verification code is: <OTP>. This code expires in 5 minutes."` The subject is `"CampusRun Email Verification"`.
+*   **Message Body:** Set `from.email` to `SENDGRID_SENDER_EMAIL`, `personalizations[0].to[0].email` to the OTP recipient, and supply `text/plain` then `text/html` content entries. No Mailgun domain setting is required.
+*   **Timeout & Retry Behavior:** Use a five-second HTTP timeout, propagate the caller's context, and do not automatically retry. Treat HTTP 202 as accepted for delivery; any other response is a delivery error. Report the status without logging the API key, OTP, request body, or provider response body. Acceptance does not confirm inbox delivery. Existing registration/resend failure handling remains in effect.
+*   **Reference:** [Twilio SendGrid Mail Send API](https://www.twilio.com/docs/sendgrid/api-reference/mail-send/mail-send).
 
 **9. Resend Edge Cases**
 *   If an email is submitted to `/resend-otp` that does not exist in the `users` table, the service must return `404 Not Found`.
