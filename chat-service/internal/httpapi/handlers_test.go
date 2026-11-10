@@ -173,6 +173,9 @@ func TestGetConversation_Authorized(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+	assert.Equal(t, false, resp["read_only"])
 }
 
 func TestSendMessage_Success(t *testing.T) {

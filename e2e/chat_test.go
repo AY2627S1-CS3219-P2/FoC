@@ -13,6 +13,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,6 +30,7 @@ type chatConversation struct {
 	RequesterID string `json:"requester_id"`
 	CourierID   string `json:"courier_id"`
 	Status      string `json:"status"`
+	ReadOnly    bool   `json:"read_only"`
 }
 
 type chatMessage struct {
@@ -179,9 +181,7 @@ func TestChatGoesReadOnlyWhenTheCourierWithdraws(t *testing.T) {
 		if r.status != http.StatusOK || r.decode(&c) != nil {
 			return false, r.String()
 		}
-		// The spec lists a required read_only field the service does not send, so
-		// the status is what says it.
-		return c.Status == "FROZEN", "status " + c.Status
+		return c.Status == "FROZEN" && c.ReadOnly, fmt.Sprintf("status %s, read_only %v", c.Status, c.ReadOnly)
 	})
 	expectStatus(t, s.sendChat(t, requester, conv.ID, randomUUID(), "still there?"), http.StatusLocked)
 	expectStatus(t, s.sendChat(t, courier, conv.ID, randomUUID(), "sorry"), http.StatusLocked, http.StatusForbidden)

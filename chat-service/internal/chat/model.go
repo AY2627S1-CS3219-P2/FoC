@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -34,6 +35,33 @@ type Conversation struct {
 	LastEventOccurredAt time.Time  `json:"last_event_occurred_at"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
+}
+
+// MarshalJSON ensures the JSON payload contains the required read_only boolean per OpenAPI.
+func (c *Conversation) MarshalJSON() ([]byte, error) {
+	if c == nil {
+		return []byte("null"), nil
+	}
+	type Alias Conversation
+	return json.Marshal(&struct {
+		*Alias
+		ReadOnly bool `json:"read_only"`
+	}{
+		Alias:    (*Alias)(c),
+		ReadOnly: c.IsReadOnly(time.Now().UTC()),
+	})
+}
+
+// UnmarshalJSON unmarshals a Conversation from JSON, accepting read_only without error.
+func (c *Conversation) UnmarshalJSON(data []byte) error {
+	type Alias Conversation
+	aux := struct {
+		*Alias
+		ReadOnly *bool `json:"read_only,omitempty"`
+	}{
+		Alias: (*Alias)(c),
+	}
+	return json.Unmarshal(data, &aux)
 }
 
 // IsReadOnly determines if messages can no longer be sent.
