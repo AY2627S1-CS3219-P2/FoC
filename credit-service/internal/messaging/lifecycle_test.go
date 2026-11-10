@@ -309,7 +309,9 @@ func TestLifecycleHandler_HandleDelivery(t *testing.T) {
 			Body:        body,
 		}
 		handler.HandleDelivery(ctx, d)
-		if backoffCalled { t.Fatal("backoff retry must not be called when account integrity is flagged") }
+		if backoffCalled {
+			t.Fatal("backoff retry must not be called when account integrity is flagged")
+		}
 	})
 }
 
