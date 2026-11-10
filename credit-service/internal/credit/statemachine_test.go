@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Deterministic generated state-machine property unit test for credit service financial invariants per sourceOfTruth.md Phase 13.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit_test
 

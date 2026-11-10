@@ -3,7 +3,7 @@
 // Scope: The admin side of credit-service (D-150 to D-153): the flagged-accounts
 //   list, an account's wallet as an admin sees it, Re-verify, and the admin
 //   audit log; the audit record has the same shape as the other services' (D-107, D-113).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Reviewed by Seth
 
 package credit
 

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Updated errand lifecycle RabbitMQ consumers with transport validation, clock skew logging, and retry/DLQ policy per sourceOfTruth.md Phase 11.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package messaging
 

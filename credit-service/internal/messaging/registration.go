@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Removed obsolete Direct Reply-to dead code; user.registered is handled as a standard unidirectional event.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 // Package messaging adapts broker events into credit-service use cases.
 package messaging

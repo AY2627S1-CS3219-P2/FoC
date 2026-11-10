@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Added unit tests for lifecycle events dispatch, tolerant decoding, retry/DLQ policy, and clock skew per sourceOfTruth.md Phase 11.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package messaging_test
 

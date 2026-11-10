@@ -164,7 +164,7 @@ components:
           type: [string, "null"]
     # AI Assistance Disclosure: Claude Code (Sonnet 5.5), 2026-11-09 — the admin
     # routes of D-150 to D-153 (flagged accounts, an account's wallet, Re-verify,
-    # the audit log). Author review: PENDING — Seth Tay, credit-service owner.
+    # the audit log). Author review: Reviewed by Seth
     IntegrityStatus:
       type: string
       enum: [CONSISTENT, FLAGGED]

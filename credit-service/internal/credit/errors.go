@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-19
 // Scope: Defined distinguishable domain errors per sourceOfTruth.md.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package credit
 

@@ -4,7 +4,7 @@
 //   the flagged-accounts list, an account read that never invents a wallet,
 //   Re-verify under the row lock and observed-version rule, and the admin
 //   audit log's writes, paged read and purge (copied from order-service's).
-// Author review: PENDING — <reviewer to complete>
+// Author review: Reviewed by Seth
 
 package repository
 
