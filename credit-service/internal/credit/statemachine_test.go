@@ -261,13 +261,16 @@ func (m *inMemoryStateMachineRepo) AdjustReservationReward(_ context.Context, er
 	return opRes, res, nil
 }
 
-func (m *inMemoryStateMachineRepo) ApplyRewardSet(_ context.Context, errandID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
+func (m *inMemoryStateMachineRepo) ApplyRewardSet(_ context.Context, errandID uuid.UUID, requesterID *uuid.UUID, eventID uuid.UUID, newReward int64, version int64, occurredAt time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	res, exists := m.reservations[errandID]
 	if !exists {
 		return credit.ErrReservationNotFound
+	}
+	if requesterID != nil && *requesterID != uuid.Nil && *requesterID != res.RequesterID {
+		return credit.ErrRequesterMismatch
 	}
 	if res.Status != credit.ReservationStatusReserved {
 		return nil
