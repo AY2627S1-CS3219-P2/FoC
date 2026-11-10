@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
@@ -14,7 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-type SuspensionChecker func(ctx context.Context, userID uuid.UUID) (bool, error)
+type SuspensionChecker func(ctx context.Context, userID uuid.UUID, authenticatedAt time.Time) (bool, error)
 type TokenVerifier func(ctx context.Context, token string) (uuid.UUID, error)
 
 type RealtimeEnvelope struct {
@@ -41,9 +42,10 @@ type Hub struct {
 	redisClient redis.UniversalClient
 	isSuspended SuspensionChecker
 	verifyToken TokenVerifier
+	log         *slog.Logger
 }
 
-func NewHub(redisClient redis.UniversalClient, isSuspended SuspensionChecker, verifyToken TokenVerifier) *Hub {
+func NewHub(redisClient redis.UniversalClient, isSuspended SuspensionChecker, verifyToken TokenVerifier, log *slog.Logger) *Hub {
 	return &Hub{
 		clients:     make(map[uuid.UUID]map[*Client]bool),
 		register:    make(chan *Client),
@@ -51,6 +53,7 @@ func NewHub(redisClient redis.UniversalClient, isSuspended SuspensionChecker, ve
 		redisClient: redisClient,
 		isSuspended: isSuspended,
 		verifyToken: verifyToken,
+		log:         log,
 	}
 }
 

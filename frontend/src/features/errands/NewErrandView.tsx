@@ -15,9 +15,10 @@ import type { SuppliersApi } from "../suppliers/suppliersApi";
 import { emptyErrandForm, ErrandForm, toCreateRequest, type ErrandFormValues } from "./ErrandForm";
 import { createErrorMessage, creditsText, isShortOfCredits } from "./format";
 import { newRequestId, type OrdersApi } from "./ordersApi";
+import { formatDateTime } from "./time";
 
 interface NewErrandViewProps {
-  /** Injected by App, which owns the token store the transport reads. */
+  /** Injected by App. main.tsx creates the token store the transport reads and passes it to App. */
   suppliersApi: SuppliersApi;
   // AI-generated (edited by James Teo).
   /** order-service's client, built by App over the same transport. */
@@ -65,11 +66,15 @@ export function NewErrandView({
     setPosting(true);
     setFailure(null);
     let reward: number;
+    // AI-generated (edited by nigeltzy): the time a scheduled errand opens,
+    // for the toast (PR #67).
+    let opensAt = "";
     try {
       const detail = await ordersApi.createErrand(toCreateRequest(values), requestId);
       // A 200 for a key already used answers with the errand the first
       // attempt created, so its reward is the one held.
       reward = detail.errand.reward;
+      if (detail.errand.state === "SCHEDULED") opensAt = formatDateTime(detail.errand.scheduled);
     } catch (err) {
       setFailure({ message: createErrorMessage(err), shortOfCredits: isShortOfCredits(err) });
       setPosting(false);
@@ -77,7 +82,12 @@ export function NewErrandView({
     }
     setRequestId(newRequestId());
     setPosting(false);
-    onNotify({ text: `Errand posted · ${creditsText(reward)} held`, kind: "success" });
+    onNotify({
+      text: opensAt
+        ? `Errand scheduled for ${opensAt} · ${creditsText(reward)} held`
+        : `Errand posted · ${creditsText(reward)} held`,
+      kind: "success",
+    });
     onPosted();
   }
 
@@ -88,9 +98,11 @@ export function NewErrandView({
     <section>
       <div className="page-head">
         <h1>Post an errand</h1>
+        {/* AI-generated (edited by nigeltzy): says credits are held for a
+            scheduled errand too (PR #67). */}
         <p className="page-sub">
-          Credits are held the moment you post. They come back to you if you cancel, or if
-          nobody accepts the errand before it expires.
+          Credits are held the moment you post, even for an errand that opens later. They
+          come back to you if you cancel, or if nobody accepts the errand before it expires.
         </p>
       </div>
 
@@ -100,10 +112,13 @@ export function NewErrandView({
         initial={emptyErrandForm()}
         alreadyHeld={0}
         available={available}
+        canSchedule
         submitting={posting}
-        submitLabel={(reward) =>
-          reward === null ? "Post errand" : `Post errand · hold ${creditsText(reward)}`
-        }
+        // AI-generated (edited by nigeltzy): "Schedule errand" when it opens later.
+        submitLabel={(reward, later) => {
+          const verb = later ? "Schedule errand" : "Post errand";
+          return reward === null ? verb : `${verb} · hold ${creditsText(reward)}`;
+        }}
         busyLabel="Posting…"
         cancelLabel="Cancel"
         onSubmit={(values) => void post(values)}

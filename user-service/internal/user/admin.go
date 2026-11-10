@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -97,8 +96,8 @@ func profileAuditEntries(ac AuditContext, uid uuid.UUID, changed []string, passw
 
 // recordAttempt writes the audit row for an attempt that did not commit
 // (D-109). It cannot share the action's transaction, which rolled back or never
-// began, so it is a write of its own; if that fails too the attempt is logged to
-// stderr and the caller still gets the real error. The write ignores the
+// began, so it is a write of its own; if that fails too the attempt is logged at
+// ERROR and the caller still gets the real error. The write ignores the
 // request's cancellation, so a client that hangs up does not lose the row.
 func (s *AccountService) recordAttempt(ctx context.Context, ac AuditContext, action, targetID string, comments map[string]any, cause error) {
 	if s.repository == nil {
@@ -111,7 +110,9 @@ func (s *AccountService) recordAttempt(ctx context.Context, ac AuditContext, act
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.repository.RecordAudit(ctx, e); err != nil {
-		log.Printf("audit: could not record %s %s of %q by %s (%s): %v", action, outcome, targetID, ac.ActorID, reason, err)
+		s.logger.ErrorContext(ctx, "could not record audit entry",
+			"request_id", ac.CorrelationID, "action", action, "outcome", outcome,
+			"target_id", targetID, "actor_id", ac.ActorID, "reason", reason, "error", err.Error())
 	}
 }
 
@@ -172,11 +173,11 @@ func (s *AccountService) RunAuditPurge(ctx context.Context, interval time.Durati
 	run := func() {
 		n, err := s.repository.PurgeAudit(ctx)
 		if err != nil {
-			log.Printf("audit: purge failed: %v", err)
+			s.logger.ErrorContext(ctx, "audit purge failed", "error", err.Error())
 			return
 		}
 		if n > 0 {
-			log.Printf("audit: purged %d entries older than 6 months", n)
+			s.logger.InfoContext(ctx, "purged audit entries older than 6 months", "count", n)
 		}
 	}
 	run()

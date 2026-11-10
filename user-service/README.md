@@ -98,8 +98,36 @@ The service is then available at `http://localhost:8081`.
 5. Read the verification code
 
 Registration sends a one-time code that `POST /api/v1/users/verify-otp` checks.
-`OTP_DELIVERY=mailgun`, the default when it is unset, emails the code and needs
-`MAILGUN_API_KEY`, `MAILGUN_DOMAIN` and `MAILGUN_SENDER_EMAIL`.
+<!-- AI Assistance Disclosure: Codex (GPT-6), 2026-11-08 — SendGrid OTP configuration and setup; Author review: ZI YANG - verified correctness. -->
+`OTP_DELIVERY=sendgrid`, the default when it is unset, emails the code and needs
+`SENDGRID_API_KEY` and `SENDGRID_SENDER_EMAIL`. Mailgun delivery is no longer supported.
+Use a SendGrid API key with Mail Send permission and a verified sender identity.
+For testing without a domain, SendGrid supports Single Sender Verification for an
+email address you control; production sending requires domain authentication.
+See [SendGrid sender identity](https://www.twilio.com/docs/sendgrid/for-developers/sending-email/sender-identity).
+
+For Compose, put these values in the root `.env` (not a frontend environment file):
+
+```dotenv
+OTP_DELIVERY=sendgrid
+SENDGRID_API_KEY=replace-with-your-sendgrid-api-key
+SENDGRID_SENDER_EMAIL=replace-with-your-verified-sender-address
+```
+
+Apply code and environment changes with:
+
+```bash
+docker compose up -d --build --force-recreate user-service
+```
+
+Register using a real `@u.nus.edu` address through the frontend, or call
+`POST /auth/register` through the gateway. For an existing unverified account,
+use `POST /auth/resend-otp` with `{"email":"your-address@u.nus.edu"}`.
+Read the emailed code and submit it to `POST /auth/verify-otp` with `email` and
+`otp` within five minutes. SendGrid HTTP 202 means accepted for processing;
+check SendGrid Email Activity and the recipient's spam/quarantine if it never
+arrives. The adapter sends once per attempt with a five-second timeout.
+
 `OTP_DELIVERY=log`, which Compose uses unless `.env` says otherwise, writes the
 code to the service log instead, as a `WARN` entry with the `email` and `otp`:
 

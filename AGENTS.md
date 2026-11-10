@@ -90,6 +90,7 @@ trade-off rationale and it is the team's to write.
 | Message broker | RabbitMQ |
 | Tests | stdlib `testing` + `testify`; `testcontainers-go` for integration |
 | Containers | Docker + Docker Compose |
+| Logs and health | Grafana Alloy collects every container's log into Loki and probes health endpoints into Prometheus; Grafana shows both. Opt-in Compose profile `observability`, config in `observability/` |
 | CI | GitHub Actions — agreed, but no workflow is committed yet |
 | Frontend | React + Vite, TypeScript, `vitest` for tests |
 | Cloud | AWS (target and IaC tool not yet decided — do not scaffold either) |
@@ -104,7 +105,7 @@ user-service/      order-service/      frontend/
 supplier-service/  credit-service/     api-gateway/
 chat-service/      notification-service/
 data/              compose.yaml        .env.example
-e2e/               rabbitmq/
+e2e/               rabbitmq/           observability/
 ai/usage-log.md    ai/decisions.md
 ```
 
@@ -122,9 +123,11 @@ state its own port but must not restate this table.
 | `supplier-service` | 8082 | `SUPPLIER_DB_URL` |
 | `order-service` | 8083 | `ORDER_DB_URL` |
 | `credit-service` | 8084 | `CREDIT_DB_URL` |
+| `chat-service` | 8085 | `CHAT_DB_URL` |
 | `notification-service` | 8086 (D-140) | `NOTIFICATION_DB_URL` |
 | `frontend` | 3001: where `npm run dev` serves the app; in production a static host serves it (D-033) | — |
 | `api-gateway` | 8080 (provisional, D-018); Compose publishes it on host 8080 | — (no database of its own; it reads the shared Redis revocation keys, §4.1) |
+| `observability` | Grafana 3000 and Loki 3100, published on 127.0.0.1 only (`GRAFANA_PORT`, `LOKI_PORT`) | — |
 
 Every service also reads `PORT`. A service that calls another reads one
 `<SERVICE>_BASE_URL` per callee. All of these belong in the root `.env.example`
@@ -273,7 +276,10 @@ What runs today: from a service folder that has a `go.mod`, `go run ./cmd/api`
 and `go test ./...`; from the repo root, `docker compose up`. `compose.yaml`
 carries Redis, RabbitMQ, the API Gateway, and user-service, supplier-service,
 order-service, credit-service, chat-service and notification-service with their
-databases. A service
+databases, plus chat-service's own Redis. Loki, Grafana Alloy,
+Prometheus and Grafana sit under the `observability` profile, so `docker compose
+up` and `down` reach them only with `--profile observability`; Grafana is on
+`http://127.0.0.1:3000`. A service
 is reachable from the host only if it has a `ports:` key — that is how D-010's
 trust zones are enforced. The frontend is not in Compose: `npm run dev` in
 `frontend/` serves it on 3001 and forwards `/auth` and `/api` to the gateway on

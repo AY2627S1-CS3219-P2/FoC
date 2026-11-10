@@ -26,13 +26,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	// AI-generated (edited by James Teo).
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
 
 	"foc/api-gateway/internal/auth"
 	"foc/api-gateway/internal/config"
@@ -64,13 +64,13 @@ const notificationServicePrefix = "/notifications"
 // replaced on refresh, read and cleared on logout.
 type authRoute struct {
 	name     string
-	newProxy func(proxy.Route, time.Duration) (*proxy.Proxy, error)
+	newProxy func(proxy.Route, time.Duration, *slog.Logger) (*proxy.Proxy, error)
 }
 
 // passthrough is the constructor for auth routes that issue no tokens and
 // read no refresh cookie.
-func passthrough(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
-	return proxy.NewPassthrough(r)
+func passthrough(r proxy.Route, _ time.Duration, log *slog.Logger) (*proxy.Proxy, error) {
+	return proxy.NewPassthrough(r, log)
 }
 
 func authRoutes() []authRoute {
@@ -83,27 +83,34 @@ func authRoutes() []authRoute {
 		{"verify-otp", passthrough},
 		{"login", proxy.NewSessionIssuing},
 		{"refresh", proxy.NewSessionRotating},
-		{"logout", func(r proxy.Route, _ time.Duration) (*proxy.Proxy, error) {
-			return proxy.NewSessionEnding(r)
+		{"logout", func(r proxy.Route, _ time.Duration, log *slog.Logger) (*proxy.Proxy, error) {
+			return proxy.NewSessionEnding(r, log)
 		}},
 	}
 }
 
 // AI-generated (edited by James Teo).
 // NewRouter builds the gateway's handler: /healthz, the six public /auth
-// routes and the /api/<service> prefixes behind RequireToken. Clients call
-// these public paths, so renaming one, or moving one out of RequireToken,
-// changes the gateway's API (D-027, D-043 and D-056 in ai/decisions.md).
-// revocations is consulted on every token RequireToken verifies (D-054).
-func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocations RevocationChecker, refreshTokenTTL time.Duration) (http.Handler, error) {
+// routes, and behind RequireToken the /api/<service> prefixes and the
+// gateway's own POST /api/client-errors. Clients call these public paths, so
+// renaming one, or moving one out of RequireToken, changes the gateway's API
+// (D-027, D-043, D-056 and D-138 in ai/decisions.md). revocations is
+// consulted on every token RequireToken verifies (D-054). Every request is
+// logged to log.
+func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocations RevocationChecker, refreshTokenTTL time.Duration, log *slog.Logger) (http.Handler, error) {
 	if revocations == nil {
 		return nil, errors.New("httpapi: NewRouter needs a revocation checker")
 	}
+	if log == nil {
+		return nil, errors.New("httpapi: NewRouter needs a logger")
+	}
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
+	// The request id is outermost so every line logged below carries it, and
+	// the access log wraps recovery so it records the 500 a panic becomes.
+	r.Use(requestID)
 	// AI-generated (edited by nigeltzy).
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(accessLog(log))
+	r.Use(recoverPanics(log))
 	// AI-generated (edited by James Teo).
 	// Ahead of every route, and after the logger so a refused path is logged.
 	r.Use(rejectDotSegments)
@@ -122,12 +129,19 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 			BaseURL:     downstream.User,
 			StripPrefix: "/auth",
 			AddPrefix:   userServiceAPIPrefix,
-		}, refreshTokenTTL)
+		}, refreshTokenTTL, log)
 		if err != nil {
 			return nil, fmt.Errorf("httpapi: auth route %s: %w", public, err)
 		}
 		r.Method(http.MethodPost, public, p)
 	}
+
+	// The gateway's own route for a signed-in browser's error reports: behind
+	// RequireToken like the service routes, answered here and never proxied.
+	r.Group(func(gr chi.Router) {
+		gr.Use(RequireToken(verifier, revocations, log))
+		gr.Post("/api/client-errors", clientErrors(log))
+	})
 
 	// Authenticated service routes, each behind RequireToken. A row strips its
 	// public prefix and prepends addPrefix (empty forwards the rest unchanged);
@@ -136,7 +150,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		prefix    string
 		baseURL   string
 		addPrefix string
-		newProxy  func(proxy.Route) (*proxy.Proxy, error)
+		newProxy  func(proxy.Route, *slog.Logger) (*proxy.Proxy, error)
 	}{
 		// user-service verifies the bearer token itself, so its row keeps
 		// Authorization.
@@ -164,7 +178,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		BaseURL:     downstream.Chat,
 		StripPrefix: "/api/chat",
 		AddPrefix:   "",
-	})
+	}, log)
 	if err != nil {
 		return nil, fmt.Errorf("httpapi: route /api/chat/ws: %w", err)
 	}
@@ -175,7 +189,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		BaseURL:     downstream.Chat,
 		StripPrefix: "/api/chat",
 		AddPrefix:   "",
-	})
+	}, log)
 	if err != nil {
 		return nil, fmt.Errorf("httpapi: route /api/chat/images: %w", err)
 	}
@@ -187,13 +201,13 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 			BaseURL:     route.baseURL,
 			StripPrefix: route.prefix,
 			AddPrefix:   route.addPrefix,
-		})
+		}, log)
 		if err != nil {
 			return nil, fmt.Errorf("httpapi: route %s: %w", route.prefix, err)
 		}
 
 		r.Group(func(gr chi.Router) {
-			gr.Use(RequireToken(verifier, revocations))
+			gr.Use(RequireToken(verifier, revocations, log))
 			// Both forms: the bare prefix and everything beneath it.
 			gr.Handle(route.prefix, p)
 			gr.Handle(route.prefix+"/*", p)

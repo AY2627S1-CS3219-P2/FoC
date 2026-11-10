@@ -208,6 +208,9 @@ func TestEventPayloadUsesCreditServiceFieldNames(t *testing.T) {
 		{"errand.withdrawn", func(f *fixture) order.OutboxEvent {
 			o := f.post()
 			require.NoError(f.t, just(f.svc.Accept(f.ctx, f.courier, o.ID, o.Version, "corr")))
+			// EventsFor orders by time alone, so a withdraw at the accept's
+			// instant could come first.
+			f.clock.Advance(time.Minute)
 			require.NoError(f.t, just(f.svc.Withdraw(f.ctx, f.courier, o.ID, "corr")))
 			return f.repo.EventsFor(o.ID)[1]
 		}, append(slices.Clone(base), "courierId")},

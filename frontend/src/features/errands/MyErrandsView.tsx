@@ -14,6 +14,8 @@ import type { ActingMode } from "../auth/types";
 import type { UsersApi } from "../profile/usersApi";
 import type { SuppliersApi } from "../suppliers/suppliersApi";
 import type { ViewName } from "../../views";
+import { useChatSocket } from "../chat/ChatSocketContext";
+import { UnreadBadge } from "../chat/UnreadBadge";
 import { ErrandCard, RewardText } from "./ErrandCard";
 import { ERRAND_DETAIL_TITLE_ID, ErrandDetail, type ErrandSnapshot } from "./ErrandDetail";
 import {
@@ -97,6 +99,20 @@ export function MyErrandsView({
   const [open, setOpen] = useState<{ id: string; initial?: ErrandSnapshot } | null>(null);
   const now = useNow(1000);
   const requesting = mode === "requesting";
+  const { requesterUnreadErrandIds, courierUnreadErrandIds } = useChatSocket();
+  const unreadIds = requesting ? requesterUnreadErrandIds : courierUnreadErrandIds;
+
+  const activeHasUnread =
+    active !== null ? active.items.some((e) => unreadIds.has(e.id)) : false;
+
+  const historyHasUnread =
+    history !== null
+      ? history.kind === "errands"
+        ? history.items.some((e) => unreadIds.has(e.id))
+        : history.records.some((r) => unreadIds.has(r.errandId))
+      : active !== null
+        ? Array.from(unreadIds).some((id) => !active.items.some((e) => e.id === id))
+        : unreadIds.size > 0;
   // AI-generated (edited by James Teo): takes focus when a closed detail's
   // card has left the list, as after a cancel.
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -203,7 +219,8 @@ export function MyErrandsView({
           aria-pressed={scope === "active"}
           onClick={() => showScope("active")}
         >
-          Active
+          <span>Active</span>
+          {activeHasUnread && <UnreadBadge />}
         </button>
         <button
           type="button"
@@ -211,7 +228,8 @@ export function MyErrandsView({
           aria-pressed={scope === "history"}
           onClick={() => showScope("history")}
         >
-          History
+          <span>History</span>
+          {historyHasUnread && <UnreadBadge />}
         </button>
       </div>
 
@@ -328,12 +346,17 @@ export function MyErrandsView({
  * still its party; a released one cannot be opened (canOpenAssignment).
  */
 function AssignmentRow({ record, onOpen }: { record: AssignmentRecord; onOpen: () => void }) {
+  const { unreadErrandIds } = useChatSocket();
+  const hasUnread = unreadErrandIds.has(record.errandId);
   const ended = formatDateTime(record.endedAt);
   const outcome = OUTCOME_LABEL[record.outcome] ?? record.outcome;
   const body = (
     <>
       <span className="errand-card-body">
-        <span className="errand-title">{record.itemDescription}</span>
+        <span className="errand-title">
+          {record.itemDescription}
+          {hasUnread && <UnreadBadge />}
+        </span>
         <span className="errand-meta">
           {record.supplier.name} → {record.deliveryLocation}
         </span>

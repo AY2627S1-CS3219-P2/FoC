@@ -9,6 +9,7 @@ package router
 import (
 	"net/http"
 
+	"foc/user-service/internal/httpapi/handlers"
 	"foc/user-service/internal/httpapi/routes"
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -17,7 +18,9 @@ import (
 // Setup constructs the configured user-service HTTP router.
 func Setup(deps routes.Dependencies) http.Handler {
 	router := chi.NewRouter()
-	router.Use(middleware.RequestID)
+	// The access log wraps the recoverer, so a recovered panic is logged as the
+	// 500 it became; both sit inside RequestID to carry the request's id.
+	router.Use(middleware.RequestID, handlers.AccessLog(deps.Logger), handlers.RecoverPanics(deps.Logger))
 	setUpRoutes(router, deps)
 	return router
 }

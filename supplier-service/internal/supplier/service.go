@@ -10,6 +10,7 @@ package supplier
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"strings"
 	"time"
@@ -34,13 +35,15 @@ type Service struct {
 	repo Repository
 	// AI-generated (edited by James Teo).
 	errands ErrandCounter
+	log     *slog.Logger
 }
 
 // AI-generated (edited by James Teo).
-// NewService returns a Service that stores suppliers in repo and asks
-// errands before every delete. Both must be non-nil.
-func NewService(repo Repository, errands ErrandCounter) *Service {
-	return &Service{repo: repo, errands: errands}
+// NewService returns a Service that stores suppliers in repo, asks errands
+// before every delete, and logs to log what no caller is told: an audit row it
+// could not write and the purge job's runs. All three must be non-nil.
+func NewService(repo Repository, errands ErrandCounter, log *slog.Logger) *Service {
+	return &Service{repo: repo, errands: errands, log: log}
 }
 
 func (s *Service) List(ctx context.Context, filter ListFilter) ([]*Supplier, error) {

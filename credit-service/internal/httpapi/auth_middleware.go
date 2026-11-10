@@ -14,7 +14,9 @@ import (
 
 	"foc/credit-service/internal/auth"
 	"foc/credit-service/internal/gen"
+	"foc/credit-service/internal/observability"
 
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
 )
 
@@ -43,7 +45,9 @@ func IdentityFromContext(ctx context.Context) (Identity, bool) {
 }
 
 // RequireToken verifies a Bearer access token and checks Redis token revocation.
+// A nil logger discards its lines.
 func RequireToken(verifier *auth.Verifier, rev *auth.Revocations, logger *slog.Logger) func(http.Handler) http.Handler {
+	logger = orDiscard(logger)
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			token, ok := bearerToken(r.Header)
@@ -56,9 +60,7 @@ func RequireToken(verifier *auth.Verifier, rev *auth.Revocations, logger *slog.L
 			claims, err := verifier.Verify(ctx, token)
 			if err != nil {
 				if errors.Is(err, auth.ErrKeysUnavailable) {
-					if logger != nil {
-						logger.ErrorContext(ctx, "cannot load user-service's signing keys; refusing request", "err", err)
-					}
+					logCause(logger, r, "cannot load user-service's signing keys; refusing request", err)
 					writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "cannot verify tokens right now")
 					return
 				}
@@ -77,16 +79,16 @@ func RequireToken(verifier *auth.Verifier, rev *auth.Revocations, logger *slog.L
 				revoked, revErr := rev.Revoked(ctx, claims)
 				switch {
 				case revErr != nil && ctx.Err() != nil:
+					// Silent when the client hung up; logged if a deadline ended it.
+					logCause(logger, r, "revocation check ended with the request; refusing it", revErr)
 					writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "request cancelled during revocation check")
 					return
 				case errors.Is(revErr, auth.ErrRedisUnreachable):
-					if logger != nil {
-						logger.WarnContext(ctx, "revocation check skipped: Redis could not be reached", "err", revErr)
-					}
+					logger.LogAttrs(ctx, slog.LevelWarn, "revocation check skipped: Redis could not be reached",
+						slog.String("request_id", middleware.GetReqID(ctx)),
+						slog.String("error", observability.Sanitize(revErr.Error())))
 				case revErr != nil:
-					if logger != nil {
-						logger.ErrorContext(ctx, "cannot read revocation keys in Redis", "err", revErr)
-					}
+					logCause(logger, r, "cannot read revocation keys in Redis; refusing request", revErr)
 					writeError(w, http.StatusServiceUnavailable, gen.SERVICEUNAVAILABLE, "cannot check token revocation right now")
 					return
 				case revoked:
@@ -95,6 +97,9 @@ func RequireToken(verifier *auth.Verifier, rev *auth.Revocations, logger *slog.L
 				}
 			}
 
+			if info, ok := ctx.Value(requestInfoKey{}).(*requestInfo); ok {
+				info.userID = claims.UserID.String()
+			}
 			next.ServeHTTP(w, r.WithContext(WithIdentity(ctx, Identity{
 				UserID: claims.UserID,
 				Role:   claims.Role,
