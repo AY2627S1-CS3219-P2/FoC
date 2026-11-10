@@ -27,6 +27,11 @@ may have changed. Most of the run is spent waiting out T and C, which is why the
 stack runs with them in seconds; the tests run in parallel, so the waits
 overlap.
 
+If the build stops with `signal: killed`, Docker's virtual machine ran out of
+memory building the Go services side by side (Colima's default is small). Give it
+more memory, or build one at a time first:
+`COMPOSE_PARALLEL_LIMIT=1 docker compose build`.
+
 The stack keeps those timers afterwards. To put the default timers back,
 recreate order-service without them: `docker compose up -d order-service`.
 
@@ -118,11 +123,21 @@ instead of every test timing out on its own.
 | `TestStudentCannotWriteSuppliers` | a student's create, update and delete are each 403, also with `X-User-Role: ADMIN` and `X-User-Id` forged; the admin's read shows the supplier unchanged |
 | `TestSupplierWithUnfinishedErrandIsKept` | with an unfinished errand naming the supplier, `DELETE` is 409 and the supplier is still readable; after the requester cancels, `DELETE` is 204 and the errand still carries the supplier's name (D-052) |
 | `TestLoggedOutAdminCannotWriteSuppliers` | after `POST /auth/logout`, the admin's access token, not yet expired, gets 401 on `POST /api/suppliers`, and the write created nothing |
+| `TestRatingGateHoldsBothSidesUntilTheyRate` | rating an unfinished errand is 409; once it completes, `GET /api/orders/ratings/pending` lists it for both sides, the requester's next create and the courier's next accept are 409, 6 stars is 400, and a third student's rating is 404 on the completed errand, which they cannot see, and 403 on an `OPEN` one; each side's `POST /api/orders/{id}/rating` is 201 once and 409 the second time, after which that side may post or accept again; `GET /api/orders/users/{userId}/rating` shows each count and average (D-093) |
+| `TestCourierIsRecommendedTheTypeTheyTake` | over 4 rounds a courier is shown (`POST /api/orders/activity/shown`) a Printing and a Food errand and always completes the Printing one; then `GET /api/orders/open` recommends the new Printing errand with a confidence of at least 0.4 and a reason, `?recommend=false` sends no `recommendation`, and `GET /api/users/{uid}/ranking-model` returns the courier's model under 10 KB to them and 403 to anyone else (D-094, D-099, D-100, D-101) |
+<!-- AI Assistance Disclosure: Claude Code (Opus 5.5), date: 2026-10-31 — documents the ratings and errand-ranking e2e coverage. -->
 | `TestSupplierWritesAreAudited` | an ADMIN's supplier create, update and delete each leave a row in `GET /api/suppliers/audit-log?target_id=`, newest first, with the admin's id from the token and a correlation id |
 | `TestRefusedSupplierDeleteIsAudited` | a delete the unfinished-errand rule refuses (409) is logged as `refused` with a reason, beside the `succeeded` create |
 | `TestAccountStatusChangesAreAudited` | an ADMIN's suspend and reactivate of a student appear in `GET /api/users/audit-log`; the admin suspending themself is 403, logged as `refused`, and leaves the admin active |
+| `TestAdminPromotesAndDemotesAStudent` | an ADMIN promotes a student: the old token gets 401, a new token carries `ADMIN` and reaches the admin routes, the new admin demoting themself is 403, the ADMIN demotes them back and the token ends again; the log has both changes and the refusal |
+| `TestRoleChangeRefusals` | a student changing a role is 403 and no token 401; promoting a suspended student is 409, an unknown role 400, an unknown account 404, a malformed id 400; none of them changes an account |
+| `TestChatFollowsAnAcceptedErrand` | accepting an errand opens one conversation both sides see; a message is stored once even when sent twice; the other side sees it unread until they read it; over 250 characters is 400; a stranger and a signed-out caller are refused |
+| `TestChatGoesReadOnlyWhenTheCourierWithdraws` | a courier's withdrawal freezes the conversation: sending is 423, and what was said stays readable |
 | `TestAdminErrandCancelIsAudited` | an ADMIN's cancel of an accepted errand appears in `GET /api/orders/audit-log` as `errand.cancel` |
 | `TestOnlyAnAdminReadsTheAuditLog` | each of the three audit logs answers a student 403 and a request with no token 401 |
+| `TestCreditAdminRoutesAreForAdminsOnly` | each of credit-service's four admin routes (`/api/credits/admin/*`, D-151) answers a student 403 and a request with no token 401 |
+| `TestReverifyOfAHealthyWalletChangesNothing` | an ADMIN reads a new student's wallet and Re-verifies it: `NOT_FLAGGED`, no change, not on the flagged list, no audit row. Clearing a real flag needs a corrupted balance, so that is covered by credit-service's integration tests |
+| `TestCreditAdminReadsAWalletThatDoesNotExistAs404` | an admin's read or Re-verify of a user with no credit account is 404 |
 | `TestNotificationsFollowAnErrandToCompletion` | the requester is told of accepted, picked up, delivered (stating C) and completed, once each, newest first; the courier is told of their credits |
 | `TestNotificationOfAWithdrawalReachesTheRequester` | a courier's withdrawal notifies the requester |
 | `TestNotificationOfAnExpiryReachesTheRequester` | an errand that expires notifies the requester |
@@ -154,9 +169,17 @@ docker compose stop notification-service && go -C e2e test -tags=e2e -count=1 -s
   fine). `availableSupplier` skips names starting `e2e-`, so an errand test never
   picks a supplier one of them is about to delete. A failed run can leave one
   behind; it never matches a later run's, and `docker compose down -v` wipes it.
+- `GET /api/orders/open` lists every test's open errands, and the ranking test
+  runs alongside tests that post at `errandInput`'s supplier (a Food one, first
+  by name). Its courier takes Printing errands and passes over that supplier, so
+  no other test's errand can score as high as the one it expects; it fails at
+  once, saying so, if that supplier is ever a Printing one. It cancels its own
+  errands when it ends, so a run straight after it is not recommended one.
+  <!-- AI Assistance Disclosure: Claude Code (Opus 5.5), date: 2026-10-31 — this bullet. -->
 - Those accounts and errands stay in your local databases. Errands left
   `ACCEPTED` or `PICKED_UP` have no timer, so they stay active.
   `docker compose down -v` wipes everything.
 - Registering needs the emailed code. The register helper in `client_test.go`
   reads it with `docker compose logs user-service`, run in the repository root,
   so it finds the stack that `docker compose up` started there.
+<!-- AI Assistance Disclosure: Claude Code (Sonnet 5.5), date: 2026-11-09 — documents the credit admin e2e tests. -->

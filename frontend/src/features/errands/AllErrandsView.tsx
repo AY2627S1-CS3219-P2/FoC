@@ -6,7 +6,7 @@
 // Author review: James Teo — reviewed and verified.
 
 import { useRef, useState } from "react";
-import { Modal } from "../../components/Modal";
+import { Workspace } from "../../components/Workspace";
 import { Pager } from "../../components/Pager";
 import type { ToastMessage } from "../../components/Toast";
 import { usePolling } from "../../lib/polling";
@@ -143,77 +143,85 @@ export function AllErrandsView({
         }}
       />
 
+      {/* AI-generated (edited by Claude Code, 2026-11-09): the list and the errand's
+          detail side by side on a wide window, the detail in a dialog on a narrow
+          one (D-154). */}
+      <Workspace
+        list={
+          <>
       {error && (
-        <p className="status error" role="alert">
-          {list ? "Couldn't refresh the list. " : "Couldn't load errands. "}
-          {error}{" "}
-          <button type="button" className="link-btn" onClick={refresh}>
-            Retry
-          </button>
-        </p>
-      )}
-
-      {!list && !error && (
-        <p className="status" role="status">
-          Loading errands…
-        </p>
-      )}
-
-      {list && list.items.length === 0 && (
-        <p className="status" role="status">
-          {filtering ? "No errands match." : "No errands in progress."}
-        </p>
-      )}
-
-      {list?.items.map((errand) => (
-        <ErrandCard
-          key={errand.id}
-          errand={errand}
-          line={timeInStateText(errand, at)}
-          onOpen={() =>
-            setOpen({
-              id: errand.id,
-              initial: { errand, serverTime: new Date(at).toISOString() },
-            })
-          }
-        />
-      ))}
-
-      {list && (
-        <Pager
-          page={page}
-          pageCount={pageCount(list.total, list.limit)}
-          total={list.total}
-          busy={false}
-          onPage={setPage}
-        />
-      )}
-
-      {open && (
-        <Modal
-          onClose={() => setOpen(null)}
-          labelledBy={ERRAND_DETAIL_TITLE_ID}
-          fallbackFocus={headingRef}
-        >
-          <ErrandDetail
-            errandId={open.id}
-            initial={open.initial}
-            ordersApi={ordersApi}
-            suppliersApi={suppliersApi}
-            usersApi={usersApi}
-            viewerId={userId}
-            viewerRole="ADMIN"
-            available={null}
-            onChanged={refresh}
-            onGone={(message) => {
-              setOpen(null);
-              onNotify({ text: message, kind: "error" });
-              refresh();
-            }}
-            onLookUpAccount={onLookUpAccount}
+          <p className="status error" role="alert">
+            {list ? "Couldn't refresh the list. " : "Couldn't load errands. "}
+            {error}{" "}
+            <button type="button" className="link-btn" onClick={refresh}>
+              Retry
+            </button>
+          </p>
+        )}
+  
+        {!list && !error && (
+          <p className="status" role="status">
+            Loading errands…
+          </p>
+        )}
+  
+        {list && list.items.length === 0 && (
+          <p className="status" role="status">
+            {filtering ? "No errands match." : "No errands in progress."}
+          </p>
+        )}
+  
+        {list?.items.map((errand) => (
+          <ErrandCard
+            key={errand.id}
+            errand={errand}
+            line={timeInStateText(errand, at)}
+            onOpen={() =>
+              setOpen({
+                id: errand.id,
+                initial: { errand, serverTime: new Date(at).toISOString() },
+              })
+            }
           />
-        </Modal>
-      )}
+        ))}
+  
+        {list && (
+          <Pager
+            page={page}
+            pageCount={pageCount(list.total, list.limit)}
+            total={list.total}
+            busy={false}
+            onPage={setPage}
+          />
+        )}
+          </>
+        }
+        detail={
+          open ? (
+            <ErrandDetail
+                errandId={open.id}
+                initial={open.initial}
+                ordersApi={ordersApi}
+                suppliersApi={suppliersApi}
+                usersApi={usersApi}
+                viewerId={userId}
+                viewerRole="ADMIN"
+                available={null}
+                onChanged={refresh}
+                onGone={(message) => {
+                  setOpen(null);
+                  onNotify({ text: message, kind: "error" });
+                  refresh();
+                }}
+                onLookUpAccount={onLookUpAccount}
+              />
+          ) : null
+        }
+        onCloseDetail={() => setOpen(null)}
+        emptyText="Pick an errand to see it here."
+        detailTitleId={ERRAND_DETAIL_TITLE_ID}
+        fallbackFocus={headingRef}
+      />
     </section>
   );
 }

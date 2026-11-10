@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5), date: 2026-09-22
 // Scope: Remembers which view a tab was on, so a page reload lands where the
-//   user left off rather than on Home.
+//   user left off rather than on the default view.
 // Author review: Nigeltzy - AI built this according to my requirements and the feature works as intended. Tried to keep implementation simple.
 
 import { VIEW_NAMES, type ViewName } from "../views";
@@ -40,7 +40,7 @@ export function writeLastView(view: ViewName): void {
 }
 
 // AI-generated (edited by James Teo): also forgets the acting mode.
-/** Forgets it and the acting mode, so the next sign-in starts at Home, Requesting. */
+/** Forgets it and the acting mode, so the next sign-in starts at the default view, Requesting. */
 export function clearLastView(): void {
   try {
     sessionStorage.removeItem(KEY);

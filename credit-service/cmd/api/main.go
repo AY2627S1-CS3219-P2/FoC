@@ -90,7 +90,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	// Repository and Domain Service
 	creditRepo := repository.NewPostgresRepository(pool)
-	creditService := credit.NewService(creditRepo)
+	// AI-generated (edited by Claude Code, 2026-11-09): the logger is for the audit writes (D-152).
+	creditService := credit.NewService(creditRepo, credit.WithLogger(logger.With("component", "credit_service")))
 
 	// Redis Client & Revocation Checker (D-014, D-054, D-056)
 	redisOpts, err := redis.ParseURL(cfg.RedisURL)
@@ -180,6 +181,14 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}()
 
 	// Signal and Lifecycle Management
+	// AI-generated (edited by Claude Code, 2026-11-09): removes audit entries
+	// older than 6 months, once a day (D-115, D-152).
+	coord.wg.Add(1)
+	go func() {
+		defer coord.wg.Done()
+		creditService.RunAuditPurge(intakeCtx, credit.AuditPurgeInterval)
+	}()
+
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(sigCh)

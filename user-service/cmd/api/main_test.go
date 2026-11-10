@@ -171,6 +171,10 @@ func TestRunKeepsConnectionPasswordsOutOfTheFatalLine(t *testing.T) {
 		"database URL with no slashes after its scheme": {config.Config{UserDBURL: "postgres:svc:Xq7:Zr9@db:5432/users", RedisURL: redisURL}, "USER_DB_URL", []string{"Xq7", "Zr9"}},
 		"Redis password with a slash":                   {config.Config{UserDBURL: userDBURL, RedisURL: "redis://default:Pq8/Ws3@redis:6379/0"}, "REDIS_URL", []string{"Pq8", "Ws3"}},
 		"Redis URL with one slash after its scheme":     {config.Config{UserDBURL: userDBURL, RedisURL: "redis:/default:Xq7Zr9@redis:6379"}, "REDIS_URL", []string{"Xq7", "Zr9"}},
+		// AI-generated (edited by PENDING): USER_RANKING_DB_URL gets the same
+		// check, per James Teo's PR #70 comment of 2026-11-05.
+		"ranking database password with a slash":          {config.Config{UserDBURL: userDBURL, RankingDBURL: "postgres://svc:Pq8/Ws3@db:5432/ranking", RedisURL: redisURL}, "USER_RANKING_DB_URL", []string{"Pq8", "Ws3"}},
+		"ranking database settings in keyword=value form": {config.Config{UserDBURL: userDBURL, RankingDBURL: "user=svc password=Xq7:Zr9 host=db dbname=ranking", RedisURL: redisURL}, "USER_RANKING_DB_URL", []string{"Xq7", "Zr9"}},
 	}
 
 	for name, tt := range tests {

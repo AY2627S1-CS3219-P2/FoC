@@ -14,6 +14,7 @@ export interface Conversation {
   last_event_occurred_at: string;
   created_at: string;
   updated_at: string;
+  read_only?: boolean;
   is_read_only?: boolean;
 }
 

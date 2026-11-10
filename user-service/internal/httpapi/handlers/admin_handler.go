@@ -30,9 +30,12 @@ type AuditReader interface {
 
 // AdminDependencies contains only the operations AdminHandler needs.
 type AdminDependencies struct {
-	Searcher AccountSearcher
-	Audit    AuditReader
-	Logger   *slog.Logger
+	// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — approved role
+	// updater dependency. Author review: ZI YANG - reviewed and verified.
+	RoleUpdater RoleUpdater
+	Searcher    AccountSearcher
+	Audit       AuditReader
+	Logger      *slog.Logger
 }
 
 // AdminHandler serves the admin-only account list and audit log.

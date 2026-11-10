@@ -19,7 +19,6 @@ import type { AccountRole, ActingMode } from "./features/auth/types";
  * rather than by URL, since no router is chosen yet (frontend/AGENTS.md).
  */
 export const VIEW_NAMES = [
-  "home",
   "new-errand",
   // AI-generated (edited by James Teo): the courier's open list.
   "find-errands",
@@ -56,11 +55,9 @@ export interface NavItem {
 }
 
 // AI-generated (edited by James Teo): Find errands and All errands, and each
-// item's audience and modes. The admin's two screens come straight after
-// Home, so an ADMIN session's nav starts with its own tools; a STUDENT
-// session never lists them, so its order is unchanged.
+// item's audience and modes. An ADMIN session's nav starts with its own
+// tool, the Dashboard; a STUDENT session never lists it.
 export const NAV_ITEMS: NavItem[] = [
-  { view: "home", label: "Home", enabled: true },
   // AI-generated (edited by nigeltzy).
   // AI-generated (edited by James Teo): `audience` in place of `adminOnly`.
   // AI-generated (edited by Claude Code, 2026-11-03): the admin dashboard
@@ -95,8 +92,8 @@ export const NAV_ITEMS: NavItem[] = [
 /**
  * Whether `view` belongs to this session's nav: its role, and for a STUDENT
  * the acting mode. AppShell lists exactly these views (a disabled one greyed
- * out), and App falls back to Home for any other, such as a remembered view
- * the session can no longer see. Presentation only; the services enforce
+ * out), and App falls back to the session's default view for any other, such
+ * as a remembered view the session can no longer see. Presentation only; the services enforce
  * every rule.
  */
 export function isViewAvailable(view: ViewName, role: AccountRole, mode: ActingMode): boolean {
@@ -105,4 +102,14 @@ export function isViewAvailable(view: ViewName, role: AccountRole, mode: ActingM
   if (item.audience && item.audience !== role) return false;
   if (role === "STUDENT" && item.modes && !item.modes.includes(mode)) return false;
   return true;
+}
+
+// AI-generated (edited by Claude Code, 2026-11-09): there is no Home page; a
+// session opens on the screen it works from (D-154).
+/**
+ * Where a session lands when no view is remembered or the remembered one is not
+ * its own: My errands for a student, the Dashboard for an admin.
+ */
+export function defaultView(role: AccountRole): ViewName {
+  return role === "ADMIN" ? "admin" : "my-errands";
 }

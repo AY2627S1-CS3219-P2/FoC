@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"foc/user-service/internal/user"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,8 +55,10 @@ const (
 )
 
 // PostgresSessionRepository persists refresh-token sessions in PostgreSQL.
+// AI Assistance Disclosure: Codex (GPT-6), 2026-11-09 — implements the
+// approved role-change concurrency and credential safeguards. Author review: ZI YANG - reviewed and verified.
 type PostgresSessionRepository struct {
-	pool *pgxpool.Pool
+	pool sessionDatabase
 }
 
 // NewPostgresSessionRepository constructs a PostgreSQL session repository.

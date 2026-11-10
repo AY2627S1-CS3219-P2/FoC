@@ -20,10 +20,9 @@ import { useState, type ReactNode } from "react";
 import type { ActingMode, Session } from "../features/auth/types";
 import { useChatSocket } from "../features/chat/ChatSocketContext";
 import { UnreadBadge } from "../features/chat/UnreadBadge";
-import { isViewAvailable, NAV_ITEMS, type ViewName } from "../views";
+import { defaultView, isViewAvailable, NAV_ITEMS, type ViewName } from "../views";
 import {
   BellIcon,
-  HomeIcon,
   ListIcon,
   LogoutIcon,
   MenuIcon,
@@ -38,7 +37,6 @@ import {
 // AI-generated (edited by James Teo): Find errands and All errands reuse the
 // search and list icons.
 const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
-  home: HomeIcon,
   "new-errand": PlusIcon,
   "find-errands": SearchIcon,
   "my-errands": ListIcon,
@@ -48,6 +46,27 @@ const ICONS: Record<ViewName, (p: { size?: number }) => ReactNode> = {
   notifications: BellIcon,
   admin: ShieldIcon,
 };
+
+// AI-generated (edited by Claude Code, 2026-11-09): the sidebar is an icon rail
+// until the user expands it (D-154); the choice is remembered. Storage may be
+// missing or refuse (private window, a test), so every use is guarded.
+const RAIL_KEY = "foc.rail";
+
+function readExpanded(): boolean {
+  try {
+    return window.localStorage.getItem(RAIL_KEY) === "expanded";
+  } catch {
+    return false;
+  }
+}
+
+function writeExpanded(expanded: boolean): void {
+  try {
+    window.localStorage.setItem(RAIL_KEY, expanded ? "expanded" : "rail");
+  } catch {
+    // The rail still works for this visit.
+  }
+}
 
 interface AppShellProps {
   session: Session;
@@ -75,10 +94,18 @@ export function AppShell({
   children,
 }: AppShellProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [expanded, setExpanded] = useState(readExpanded);
   const { requesterHasUnread, courierHasUnread } = useChatSocket();
   // AI-generated (edited by James Teo): an admin never posts or carries an
   // errand and has no credit account, so gets no mode toggle and no balance.
   const isStudent = session.role === "STUDENT";
+
+  const toggleRail = () => {
+    setExpanded((was) => {
+      writeExpanded(!was);
+      return !was;
+    });
+  };
 
   const navigateAndClose = (next: ViewName) => {
     onNavigate(next);
@@ -86,7 +113,7 @@ export function AppShell({
   };
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${expanded ? "" : "rail"}`}>
       {mobileNavOpen && (
         <button
           className="sidebar-backdrop"
@@ -96,7 +123,7 @@ export function AppShell({
       )}
 
       <aside className={`sidebar ${mobileNavOpen ? "open" : ""}`}>
-        <button className="sidebar-brand" onClick={() => navigateAndClose("home")}>
+        <button className="sidebar-brand" onClick={() => navigateAndClose(defaultView(session.role))}>
           <span className="brand-mark">FoC</span>
           <span>Friend on Campus</span>
         </button>
@@ -116,7 +143,7 @@ export function AppShell({
                 aria-current={view === item.view ? "page" : undefined}
                 onClick={() => navigateAndClose(item.view)}
                 disabled={!item.enabled}
-                title={item.enabled ? undefined : "Coming soon"}
+                title={item.enabled ? (expanded ? undefined : item.label) : "Coming soon"}
               >
                 <Icon />
                 <span>{item.label}</span>
@@ -145,9 +172,21 @@ export function AppShell({
               )}
             </div>
           )}
-          <button className="sidebar-link" onClick={onLogOut}>
+          <button className="sidebar-link" onClick={onLogOut} title={expanded ? undefined : "Log out"}>
             <LogoutIcon />
             <span>Log out</span>
+          </button>
+          <button
+            type="button"
+            className="sidebar-link rail-toggle"
+            onClick={toggleRail}
+            aria-expanded={expanded}
+            title={expanded ? "Collapse the menu" : "Expand the menu"}
+          >
+            <span className="rail-chevron" aria-hidden="true">
+              {expanded ? "\u2039" : "\u203a"}
+            </span>
+            <span>{expanded ? "Collapse menu" : "Expand menu"}</span>
           </button>
         </div>
       </aside>
@@ -201,6 +240,7 @@ export function AppShell({
               <strong>{available === null ? "—" : available}</strong>
               <span aria-hidden="true">cr</span>
               <span className="visually-hidden"> credits available</span>
+              {held !== null && held > 0 && <span className="credit-held">{held} held</span>}
             </span>
           )}
         </header>

@@ -68,7 +68,7 @@ func TestLifecycleDeliveryLogFields(t *testing.T) {
 			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting contract or lifecycle violation to DLQ",
 			wantError: credit.ErrRequesterMismatch.Error() + ": " + sanitizedLeak},
 		{name: "a flagged account is dead-lettered immediately", routingKey: messaging.RoutingCancelled,
-			serviceErr:  fmt.Errorf("%w: %v", credit.ErrAccountIntegrityFlagged, leakyErr), attempt: 1,
+			serviceErr: fmt.Errorf("%w: %v", credit.ErrAccountIntegrityFlagged, leakyErr), attempt: 1,
 			wantOutcome: "dead-letter", wantLevel: "WARN", wantMsg: "rejecting contract or lifecycle violation to DLQ",
 			wantError: credit.ErrAccountIntegrityFlagged.Error() + ": " + sanitizedLeak},
 		// Transport validation precedes any decoding of the body, so this line
@@ -88,7 +88,7 @@ func TestLifecycleDeliveryLogFields(t *testing.T) {
 				payoutFn: func(context.Context, uuid.UUID, *uuid.UUID, uuid.UUID, uuid.UUID, *int64, time.Time) error {
 					return fail()
 				},
-				rewardSetFn: func(context.Context, uuid.UUID, uuid.UUID, int64, int64, time.Time) error { return fail() },
+				rewardSetFn: func(context.Context, uuid.UUID, *uuid.UUID, uuid.UUID, int64, int64, time.Time) error { return fail() },
 			}
 			noWait := messaging.WithLifecycleBackoff(func(context.Context, int) bool { return true })
 			h := messaging.NewLifecycleHandler(svc, slog.New(slog.NewJSONHandler(&logs, nil)), noWait)
@@ -213,7 +213,7 @@ func TestErrandHandlerLogFields(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var logs bytes.Buffer
 			svc := &mockLifecycleService{
-				rewardSetFn: func(context.Context, uuid.UUID, uuid.UUID, int64, int64, time.Time) error { return tc.rewardErr },
+				rewardSetFn: func(context.Context, uuid.UUID, *uuid.UUID, uuid.UUID, int64, int64, time.Time) error { return tc.rewardErr },
 			}
 			h := messaging.NewLifecycleHandler(svc, slog.New(slog.NewJSONHandler(&logs, nil)))
 			occurredAt := tc.occurredAt

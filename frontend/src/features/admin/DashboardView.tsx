@@ -10,19 +10,22 @@ import { MockBadge } from "../../components/MockBadge";
 import { NeedsService } from "../../components/NeedsService";
 import type { ToastMessage } from "../../components/Toast";
 import { AllErrandsView } from "../errands/AllErrandsView";
+import type { CreditAdminApi } from "../credits/creditAdminApi";
 import type { OrdersApi } from "../errands/ordersApi";
 import type { UsersApi } from "../profile/usersApi";
 import type { SuppliersApi } from "../suppliers/suppliersApi";
 import { AccountsPanel } from "./AccountsPanel";
 import { AuditLogView } from "./AuditLogView";
+import { FlaggedWalletsView } from "./FlaggedWalletsView";
 import { PastErrandsView } from "./PastErrandsView";
 
-export type DashboardTab = "active" | "past" | "accounts" | "audit";
+export type DashboardTab = "active" | "past" | "accounts" | "flagged" | "audit";
 
 export const DASHBOARD_TABS: { id: DashboardTab; label: string }[] = [
   { id: "active", label: "Active errands" },
   { id: "past", label: "Past errands" },
   { id: "accounts", label: "Accounts" },
+  { id: "flagged", label: "Flagged wallets" },
   { id: "audit", label: "Audit log" },
 ];
 
@@ -53,6 +56,9 @@ interface DashboardViewProps {
   /** Null in a fixture build, which has no order-service to call. */
   ordersApi: OrdersApi | null;
   suppliersApi: SuppliersApi;
+  // AI-generated (edited by Claude Code, 2026-11-09): the credit admin routes (D-150).
+  /** Null in a fixture build, which has no credit-service to call. */
+  creditAdminApi: CreditAdminApi | null;
   /** The signed-in admin. */
   userId: string;
   onNotify: (message: ToastMessage) => void;
@@ -64,7 +70,7 @@ interface DashboardViewProps {
  * App renders this for ADMIN sessions only, which is an affordance: each
  * service answers the admin reads and actions for ADMIN tokens alone.
  */
-export function DashboardView({ usersApi, ordersApi, suppliersApi, userId, onNotify, initialAccountId }: DashboardViewProps) {
+export function DashboardView({ usersApi, ordersApi, suppliersApi, creditAdminApi, userId, onNotify, initialAccountId }: DashboardViewProps) {
   const [tab, setTab] = useState<DashboardTab>(initialAccountId ? "accounts" : "active");
   const [account, setAccount] = useState<string | null>(initialAccountId);
   const tabRefs = useRef<Partial<Record<DashboardTab, HTMLButtonElement | null>>>({});
@@ -146,6 +152,7 @@ export function DashboardView({ usersApi, ordersApi, suppliersApi, userId, onNot
               key={account ?? ""}
               usersApi={usersApi}
               ordersApi={ordersApi}
+              creditAdminApi={creditAdminApi}
               currentUserId={userId}
               initialAccountId={account}
               onNotify={onNotify}
@@ -157,8 +164,27 @@ export function DashboardView({ usersApi, ordersApi, suppliersApi, userId, onNot
             </>
           ))}
 
+        {tab === "flagged" &&
+          (creditAdminApi ? (
+            <FlaggedWalletsView
+              creditAdminApi={creditAdminApi}
+              usersApi={usersApi}
+              ordersApi={ordersApi}
+              currentUserId={userId}
+              onNotify={onNotify}
+            />
+          ) : (
+            <NeedsService title="Flagged wallets" service="credit-service" />
+          ))}
+
         {tab === "audit" && (
-          <AuditLogView usersApi={usersApi} ordersApi={ordersApi} suppliersApi={suppliersApi} onOpenAccount={openAccount} />
+          <AuditLogView
+            usersApi={usersApi}
+            ordersApi={ordersApi}
+            suppliersApi={suppliersApi}
+            creditAdminApi={creditAdminApi}
+            onOpenAccount={openAccount}
+          />
         )}
       </div>
     </section>

@@ -209,7 +209,7 @@ func (h *RewardSetHandler) Handle(ctx context.Context, routingKey string, body [
 	if h.service == nil {
 		return errors.New("lifecycle service is required")
 	}
-	err := h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
+	err := h.service.ApplyRewardSet(ctx, ev.ErrandID, ev.RequesterID, ev.EventID, ev.Amount, *ev.Version, ev.OccurredAt)
 	if errors.Is(err, credit.ErrRewardSetStale) {
 		log.Info("errand.reward_set ignored as stale",
 			"routingKey", routingKey,

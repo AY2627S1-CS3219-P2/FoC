@@ -18,6 +18,7 @@ import (
 type adjustmentRepositoryStub struct {
 	called      bool
 	errandID    uuid.UUID
+	requesterID *uuid.UUID
 	newReward   int64
 	currVersion int64
 	operationID uuid.UUID
@@ -39,9 +40,10 @@ func (s *adjustmentRepositoryStub) AdjustReservationReward(_ context.Context, er
 	return s.opResult, s.reservation, s.err
 }
 
-func (s *adjustmentRepositoryStub) ApplyRewardSet(_ context.Context, errandID uuid.UUID, _ uuid.UUID, newReward int64, _ int64, _ time.Time) error {
+func (s *adjustmentRepositoryStub) ApplyRewardSet(_ context.Context, errandID uuid.UUID, requesterID *uuid.UUID, _ uuid.UUID, newReward int64, _ int64, _ time.Time) error {
 	s.called = true
 	s.errandID = errandID
+	s.requesterID = requesterID
 	s.newReward = newReward
 	return s.err
 }
@@ -189,39 +191,40 @@ func TestApplyRewardSetValidations(t *testing.T) {
 	service := NewService(nil, WithReservationRepository(repo))
 
 	errandID := uuid.New()
+	requesterID := uuid.New()
 	eventID := uuid.New()
 	now := time.Now().UTC()
 
 	t.Run("rejects nil errand ID", func(t *testing.T) {
-		err := service.ApplyRewardSet(context.Background(), uuid.Nil, eventID, 50, 2, now)
+		err := service.ApplyRewardSet(context.Background(), uuid.Nil, &requesterID, eventID, 50, 2, now)
 		if !errors.Is(err, ErrInvalidErrandID) {
 			t.Fatalf("expected ErrInvalidErrandID, got %v", err)
 		}
 	})
 
 	t.Run("rejects nil event ID", func(t *testing.T) {
-		err := service.ApplyRewardSet(context.Background(), errandID, uuid.Nil, 50, 2, now)
+		err := service.ApplyRewardSet(context.Background(), errandID, &requesterID, uuid.Nil, 50, 2, now)
 		if !errors.Is(err, ErrInvalidOperationID) {
 			t.Fatalf("expected ErrInvalidOperationID, got %v", err)
 		}
 	})
 
 	t.Run("rejects invalid reward amount", func(t *testing.T) {
-		err := service.ApplyRewardSet(context.Background(), errandID, eventID, 0, 2, now)
+		err := service.ApplyRewardSet(context.Background(), errandID, &requesterID, eventID, 0, 2, now)
 		if !errors.Is(err, ErrInvalidRewardAmount) {
 			t.Fatalf("expected ErrInvalidRewardAmount, got %v", err)
 		}
 	})
 
 	t.Run("rejects invalid version", func(t *testing.T) {
-		err := service.ApplyRewardSet(context.Background(), errandID, eventID, 50, 0, now)
+		err := service.ApplyRewardSet(context.Background(), errandID, &requesterID, eventID, 50, 0, now)
 		if err == nil {
 			t.Fatal("expected error for non-positive version")
 		}
 	})
 
 	t.Run("rejects zero occurredAt", func(t *testing.T) {
-		err := service.ApplyRewardSet(context.Background(), errandID, eventID, 50, 2, time.Time{})
+		err := service.ApplyRewardSet(context.Background(), errandID, &requesterID, eventID, 50, 2, time.Time{})
 		if err == nil {
 			t.Fatal("expected error for zero occurredAt")
 		}
@@ -229,11 +232,11 @@ func TestApplyRewardSetValidations(t *testing.T) {
 
 	t.Run("delegates to repository on valid inputs", func(t *testing.T) {
 		repo.called = false
-		err := service.ApplyRewardSet(context.Background(), errandID, eventID, 50, 2, now)
+		err := service.ApplyRewardSet(context.Background(), errandID, &requesterID, eventID, 50, 2, now)
 		if err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
-		if !repo.called || repo.errandID != errandID || repo.newReward != 50 {
+		if !repo.called || repo.errandID != errandID || repo.requesterID != &requesterID || repo.newReward != 50 {
 			t.Fatalf("repository not called with expected parameters")
 		}
 	})
