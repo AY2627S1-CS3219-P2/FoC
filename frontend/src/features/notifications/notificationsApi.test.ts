@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Tests for the notification-service client against a stubbed authorized
 //   transport: paths, the paging query, failures and the response checks.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 import { describe, expect, it, vi } from "vitest";
 import type { AuthorizedSend } from "../auth/session";

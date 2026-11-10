@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Copied from order-service/internal/auth/revocation_test.go, duplicated
 //   rather than shared (root AGENTS.md §4 rule 2), and adapted for this service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package auth
 

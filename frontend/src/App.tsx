@@ -50,7 +50,7 @@ import { createCreditAccountsApi } from "./features/credits/creditAccountsApi";
 import { createCreditAdminApi } from "./features/credits/creditAdminApi";
 import { createOrdersApi } from "./features/errands/ordersApi";
 import { createChatApi } from "./features/chat/chatApi";
-// AI-generated (edited by PENDING): the Notifications screen (D-145).
+// AI-generated (edited by nigeltzy): the Notifications screen (D-145).
 import { pollOutcome } from "./features/notifications/newNotifications";
 import { createNotificationsApi } from "./features/notifications/notificationsApi";
 import {
@@ -253,7 +253,7 @@ export function App({ tokens }: AppProps) {
   // at once after the user's own errand actions. An ADMIN session has no
   // credit account and polls nothing. "No account yet" keeps polling, so a
   // new student's account appears without a reload.
-  // AI-generated (edited by PENDING): tells the user when a poll finds a new
+  // AI-generated (edited by nigeltzy): tells the user when a poll finds a new
   // notification, on whichever screen they are (F7.6.1). A failed poll says
   // nothing here: notifications are an add-on, and their screen shows failures.
   const seenNotifications = useRef<Set<string> | null>(null);
@@ -543,7 +543,7 @@ export function App({ tokens }: AppProps) {
           />
         )}
 
-        {/* AI-generated (edited by PENDING): the empty state's button goes to
+        {/* AI-generated (edited by nigeltzy): the empty state's button goes to
             where this session follows its errands (F7.3.1). */}
         {shownView === "notifications" &&
           (notifications ? (

@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Reads notification-service's environment once (root AGENTS.md §4
 //   rule 4).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 // Package config reads notification-service's environment.
 package config
@@ -60,7 +60,7 @@ func Load() (Config, error) {
 	if err := errors.Join(missing...); err != nil {
 		return Config{}, err
 	}
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// The broker URL carries its password, so this error is fixed text and never
 	// wraps or quotes the value: net/url's error quotes the whole URL, and even
 	// its inner error (invalid port ":<password>" after host) can quote the

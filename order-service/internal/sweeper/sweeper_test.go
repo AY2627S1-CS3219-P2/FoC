@@ -182,7 +182,7 @@ func TestSweepOnceAutoConfirmsDueDeliveredErrands(t *testing.T) {
 	assert.Equal(t, courier.UserID, *got.CourierID)
 
 	events := e.repo.EventsFor(o.ID)
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// errand.picked_up and errand.delivered are staged too (D-142).
 	require.Len(t, events, 4)
 	assert.Equal(t, order.RoutingAccepted, events[0].RoutingKey)

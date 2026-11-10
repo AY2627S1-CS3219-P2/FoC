@@ -3,7 +3,7 @@
 // Scope: Wires notification-service: database, migrations, the consumer on its
 //   own queue (D-140), token checks and the HTTP server. Follows
 //   order-service/cmd/api/main.go.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 // Command api runs notification-service.
 package main
@@ -94,7 +94,7 @@ func run(log *slog.Logger) error {
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      15 * time.Second,
-		// AI-generated (edited by PENDING).
+		// AI-generated (edited by nigeltzy).
 		// net/http's own errors, such as a panic outside the router's
 		// recovery, would otherwise go to stderr as plain text (D-135).
 		ErrorLog: slog.NewLogLogger(log.Handler(), slog.LevelError),

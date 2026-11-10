@@ -2,7 +2,7 @@
 -- Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 -- Scope: Transcribes the stored notification (backlog F5.1.1, D-146), with the
 --   event id, message and current courier D-146 adds.
--- Author review: PENDING — <reviewer to complete>
+-- Author review: nigeltzy - checked the migration sequence and commands, expected.
 
 CREATE TABLE notifications (
     id           uuid PRIMARY KEY,

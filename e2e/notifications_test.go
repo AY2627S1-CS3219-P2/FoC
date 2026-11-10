@@ -7,7 +7,7 @@
 //   is named TestNotification*, so a run with the service stopped can leave them
 //   out with `-skip TestNotification`; preflight does not need the service,
 //   because nothing else does (D-140).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the end-to-end test implementation seems correct and as expected according to requirements.
 
 package e2e
 

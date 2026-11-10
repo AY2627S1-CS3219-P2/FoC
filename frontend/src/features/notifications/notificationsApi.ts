@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Client for notification-service through the gateway, hand-written by
 //   transcribing notification-service/api/openapi.yaml (D-144).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 import type { AuthorizedSend } from "../auth/session";
 import { config } from "../../lib/config";

@@ -17,7 +17,7 @@ import (
 // queue (D-142), and errand.reward_set (D-057).
 const (
 	RoutingAccepted = "errand.accepted"
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	RoutingPickedUp  = "errand.picked_up"
 	RoutingDelivered = "errand.delivered"
 	RoutingWithdrawn = "errand.withdrawn"

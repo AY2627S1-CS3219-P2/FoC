@@ -285,4 +285,4 @@ the login screen is credit-service's figure, copied by hand.
 - **Both roles must be complete.** M1 covers requester *and* courier
   workflows; building only the requester side is the easy failure here.
 
-<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout and the hand-written client exception (D-140 to D-146). -->
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout and the hand-written client exception (D-140 to D-146). -->

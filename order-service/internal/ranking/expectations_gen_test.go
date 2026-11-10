@@ -5,7 +5,7 @@
 //   took, and probe lists naming the errand such a courier would take. The
 //   rules were written by the tool from the owner's instruction to use
 //   "typical common sensical expectations of what a courier would prefer".
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package ranking
 

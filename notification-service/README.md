@@ -2,7 +2,7 @@
 AI Assistance Disclosure:
 Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 Scope: How to run notification-service.
-Author review: PENDING — <reviewer to complete>
+Author review: nigeltzy - checked readme is as expected
 -->
 
 # notification-service

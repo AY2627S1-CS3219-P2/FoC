@@ -237,7 +237,7 @@ func TestEventPayloadUsesCreditServiceFieldNames(t *testing.T) {
 func TestOnlySettlementsEmitEvents(t *testing.T) {
 	// D-048: the steps between posting and settling write no settlement event.
 	// The reward amend writes only its reward_set (D-102).
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// errand.picked_up and errand.delivered settle nothing (D-142).
 	f := newFixture(t)
 	settlements := func() []order.OutboxEvent {

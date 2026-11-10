@@ -6,7 +6,7 @@ Scope: This file and the four CSV files beside it, which CSV cannot mark
   owner's instruction to use "typical common sensical expectations of what a
   courier would prefer"; the CSV files are written by
   ../../expectations_gen_test.go.
-Author review: PENDING — <reviewer to complete>
+Author review: nigeltzy - checked file was written as expected, readme accurately reflected
 -->
 
 # Expectations dataset for errand ranking

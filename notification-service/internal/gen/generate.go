@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Package doc and the go:generate directive, as in order-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct. Simple short file.
 
 // Package gen holds the Go types and chi server interface generated from
 // api/openapi.yaml. Never edit notification.gen.go by hand: change the spec and

@@ -122,7 +122,7 @@ func TestAnUnratedErrandBlocksPostingAndAccepting(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// AI-generated (edited by PENDING): the gate covers scheduling an errand, which
+// AI-generated (edited by nigeltzy): the gate covers scheduling an errand, which
 // takes the same create path (D-093).
 // TestAnUnratedErrandBlocksScheduling refuses a scheduled post until its
 // requester has rated their completed errand.

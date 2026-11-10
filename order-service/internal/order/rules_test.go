@@ -139,7 +139,7 @@ func effectOf(a order.APIAction, p party) effect {
 		return effect{order.StateAccepted, order.ActionAccept, order.ActorCourier, order.RoutingAccepted}
 	case order.APIWithdraw:
 		return effect{order.StateOpen, order.ActionWithdraw, order.ActorCourier, order.RoutingWithdrawn}
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// D-142: these two emit events for notification-service.
 	case order.APIPickUp:
 		return effect{order.StatePickedUp, order.ActionPickUp, order.ActorCourier, order.RoutingPickedUp}

@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Works out what to tell the user when a poll finds notifications they
 //   have not seen, for the message F7.6.1 asks for.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 import type { Notification } from "./notificationsApi";
 

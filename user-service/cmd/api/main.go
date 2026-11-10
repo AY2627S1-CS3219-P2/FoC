@@ -61,7 +61,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		(!strings.HasPrefix(cfg.UserDBURL, "postgres://") && !strings.HasPrefix(cfg.UserDBURL, "postgresql://")) {
 		return errors.New("USER_DB_URL must be a postgres:// or postgresql:// URL with reserved characters in the user and password percent-encoded")
 	}
-	// AI-generated (edited by PENDING): transcribed from James Teo's PR #70
+	// AI-generated (edited by nigeltzy): transcribed from James Teo's PR #70
 	// comment of 2026-11-05. An unset USER_RANKING_DB_URL is reported where
 	// its database is opened.
 	if cfg.RankingDBURL != "" {

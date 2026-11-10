@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Tests for the Notifications screen's list logic and for what a poll
 //   announces (F5.1, F7.6.1).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 import { describe, expect, it } from "vitest";
 import { pollOutcome } from "./newNotifications";

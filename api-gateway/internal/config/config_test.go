@@ -31,7 +31,7 @@ func all() map[string]string {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // NOTIFICATION_BASE_URL is in validEnv and in the list below (D-144).
 func setEnv(t *testing.T, vars map[string]string) {
 	t.Helper()

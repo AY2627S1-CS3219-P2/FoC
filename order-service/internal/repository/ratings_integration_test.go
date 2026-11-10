@@ -210,7 +210,7 @@ func (e *env) testSupplierCopy(t *testing.T) {
 		assert.Nil(t, got.Supplier.Point, "no position: both columns NULL")
 	})
 
-	// AI-generated (edited by PENDING): AmendScheduled writes its own UPDATE, which
+	// AI-generated (edited by nigeltzy): AmendScheduled writes its own UPDATE, which
 	// must keep them as Amend's does.
 	t.Run("type and position follow a scheduled errand's new supplier", func(t *testing.T) {
 		e.reset(t)

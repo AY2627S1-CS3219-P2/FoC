@@ -3,7 +3,7 @@
 // Scope: Tests of D-135's logging rules on the HTTP surface: the access line's
 //   level and fields, one cause line for each 503, none for a client that hung
 //   up, and panic recovery, read back from the JSON lines the router logs.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package httpapi
 

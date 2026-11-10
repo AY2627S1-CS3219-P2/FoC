@@ -2,7 +2,7 @@
 AI Assistance Disclosure:
 Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 Scope: Service rules, transcribed from the owner's decisions D-140 to D-146.
-Author review: PENDING — <reviewer to complete>
+Author review: nigeltzy - generated document was checked and as expected.
 -->
 
 # Notification Service

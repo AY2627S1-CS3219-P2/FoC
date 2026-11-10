@@ -1,7 +1,7 @@
 # AI Assistance Disclosure:
 # Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 # Scope: Image for notification-service, as for order-service.
-# Author review: PENDING — <reviewer to complete>
+# Author review: nigeltzy - checked that the changes made sense and were consistent with the rest of the file.
 
 # Build context is notification-service/ itself (see compose.yaml).
 

@@ -352,4 +352,4 @@ Refreshed 2026-10-20.
 - **AWS deployment is undecided** (D-009). The private VPC this trust model
   assumes has no decision and no code behind it.
 
-<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service status row updated (D-140 to D-146). -->
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5), 2026-11-05 — notification-service status row updated (D-140 to D-146). -->

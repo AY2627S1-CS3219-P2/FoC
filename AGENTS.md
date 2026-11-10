@@ -343,4 +343,4 @@ If your database already has an admin account or a `student2` row from
 earlier, these steps are no-ops (register replies `409` on the duplicate,
 and the bootstrap skips itself) — nothing to clean up first.
 
-<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout, port table and commands (D-140 to D-146). -->
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5), 2026-11-05 — notification-service added to the layout, port table and commands (D-140 to D-146). -->

@@ -83,7 +83,7 @@ export const NAV_ITEMS: NavItem[] = [
   { view: "suppliers", label: "Suppliers", enabled: true },
   { view: "credits", label: "Credits", enabled: true, audience: "STUDENT" },
   { view: "profile", label: "Profile", enabled: true },
-  // AI-generated (edited by PENDING): notification-service serves it (D-145).
+  // AI-generated (edited by nigeltzy): notification-service serves it (D-145).
   { view: "notifications", label: "Notifications", enabled: true },
 ];
 

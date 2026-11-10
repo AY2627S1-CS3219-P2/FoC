@@ -457,7 +457,7 @@ func (e *env) testMigrate(t *testing.T) {
 		)
 		require.NoError(t, e.pool.QueryRow(t.Context(), `SELECT version, dirty FROM schema_migrations`).Scan(&version, &dirty))
 		// 000004 creates the admin audit table (D-106 to D-115).
-		// AI-generated (edited by PENDING): 000005 adds ratings and Find errands' records; 000006 the supplier's type and position.
+		// AI-generated (edited by nigeltzy): 000005 adds ratings and Find errands' records; 000006 the supplier's type and position.
 		require.Equal(t, 6, version)
 		require.False(t, dirty)
 	})
