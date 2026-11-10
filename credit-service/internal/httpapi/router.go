@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Mounted generated OpenAPI read and reservation handlers with mandatory Bearer token authentication and public health endpoints per D-041/D-056.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package httpapi
 

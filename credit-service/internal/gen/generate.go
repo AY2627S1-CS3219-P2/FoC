@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Codex (model: GPT-5), date: 2026-10-19
 // Scope: Added the recorded OpenAPI generation command for the Credit Service.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package gen
 

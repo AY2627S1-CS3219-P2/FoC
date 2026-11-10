@@ -4,7 +4,7 @@
 //   list, an account's wallet, Re-verify and the audit log. Each checks for the
 //   ADMIN role itself (D-151), so a student's token is refused with 403 even if
 //   the gateway were bypassed.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Reviewed by Seth
 
 package httpapi
 

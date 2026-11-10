@@ -2,7 +2,7 @@
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Redis access-token and user-suspension revocation checks (D-014, D-054).
 //   Adapted from order-service/internal/auth per D-041/D-056.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package auth
 

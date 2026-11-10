@@ -1,6 +1,6 @@
 // Package main provides the entrypoint for the credit-service daemon.
 //
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package main
 

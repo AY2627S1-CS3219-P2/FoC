@@ -4,7 +4,7 @@
 --   and immutability trigger as the other services' (D-106 to D-115), copied
 --   from order-service's migration 000004. One row per Re-verify that clears a
 --   flag or is refused, immutable in the database, kept for 6 months.
--- Author review: PENDING — <reviewer to complete>
+-- Author review: Reviewed by Seth
 
 CREATE TABLE IF NOT EXISTS admin_audit (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),

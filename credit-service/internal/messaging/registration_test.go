@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Updated unit tests for user.registered event handling to remove Direct Reply-to and verify clean unidirectional event consumption.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package messaging
 

@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Antigravity, date: 2026-10-20
 // Scope: Bearer-token authentication middleware verifying RS256 JWTs against JWKS and checking Redis revocation keys per D-041/D-054/D-056.
-// Author review: PENDING - reviewer to complete
+// Author review: Reviewed by Seth
 
 package httpapi
 

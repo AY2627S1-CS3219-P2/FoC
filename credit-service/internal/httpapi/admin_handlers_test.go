@@ -3,7 +3,7 @@
 // Scope: Tests of credit-service's admin routes (D-150 to D-153) through the
 //   router: only an ADMIN token passes, each Re-verify outcome answers as it
 //   should and is logged (or not) as D-152 says, and bad input is a 400.
-// Author review: PENDING — <reviewer to complete>
+// Author review: Reviewed by Seth
 
 package httpapi_test
 
