@@ -175,6 +175,17 @@ describe("wording", () => {
     expect(auditDetails(edit)).toEqual([{ label: "Fields changed", value: "username, phone_num" }]);
   });
 
+  it("words a role change and shows the role it changed", () => {
+    expect(actionLabel("account.change_role")).toBe("Changed an account's role");
+    const change = entry({
+      action: "account.change_role",
+      beforeState: { account_role: "STUDENT" },
+      afterState: { account_role: "ADMIN" },
+    });
+    expect(auditDetails(change)).toEqual([{ label: "Changed", value: "STUDENT → ADMIN" }]);
+    expect(AUDIT_ACTIONS.accounts).toContain("account.change_role");
+  });
+
   it("words a Re-verify and shows the status it changed", () => {
     expect(actionLabel("credit.reverify")).toBe("Re-verified a wallet");
     expect(AUDIT_ACTIONS.credits).toEqual(["credit.reverify"]);

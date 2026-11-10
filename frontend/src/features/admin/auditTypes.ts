@@ -74,6 +74,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   "account.reactivate": "Reactivated an account",
   "account.password_reset": "Reset an account's password",
   "account.update": "Edited an account",
+  "account.change_role": "Changed an account's role",
   "errand.cancel": "Cancelled an errand",
   "errand.complete": "Completed an errand",
   "supplier.create": "Created a supplier",
@@ -83,7 +84,7 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
 };
 
 export const AUDIT_ACTIONS: Record<AuditSource, readonly string[]> = {
-  accounts: ["account.suspend", "account.reactivate", "account.password_reset", "account.update"],
+  accounts: ["account.suspend", "account.reactivate", "account.password_reset", "account.update", "account.change_role"],
   errands: ["errand.cancel", "errand.complete"],
   suppliers: ["supplier.create", "supplier.update", "supplier.delete"],
   credits: ["credit.reverify"],
