@@ -225,6 +225,29 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.Equal(t, int64(90), amount)
 	})
 
+	t.Run("AdjustReservationReward rejects zero-delta adjustment as invalid request", func(t *testing.T) {
+		userID := uuid.New()
+		errandID := uuid.New()
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, userID, 100, time.Now().UTC()))
+		_, _, err := env.repo.CreateReservation(ctx, errandID, userID, 50)
+		require.NoError(t, err)
+
+		opID := uuid.New()
+		_, _, err = env.repo.AdjustReservationReward(ctx, errandID, userID, 50, 1, opID)
+		require.ErrorIs(t, err, credit.ErrInvalidRequest)
+
+		// Verify reservation version and amount remain completely untouched
+		var amount, version int64
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT amount, version FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&amount, &version))
+		require.Equal(t, int64(50), amount)
+		require.Equal(t, int64(1), version)
+
+		// Verify no transaction ledger row was inserted
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, opID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+
 	t.Run("ApplyRewardSet releases only and ignores replayed PATCH operations", func(t *testing.T) {
 		userID, errandID := uuid.New(), uuid.New()
 		now := time.Now().UTC()
@@ -561,5 +584,95 @@ func TestPostgresRepository_Integration(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, int64(70), acc.AvailableCredits)
 		require.Equal(t, int64(30), acc.ReservedCredits)
+	})
+
+	t.Run("RefundReservation fails and rolls back cleanly when requester account is FLAGGED", func(t *testing.T) {
+		requesterID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		res, created, err := env.repo.CreateReservation(ctx, errandID, requesterID, 30)
+		require.NoError(t, err)
+		require.True(t, created)
+		require.Equal(t, credit.ReservationStatusReserved, res.Status)
+
+		// Flag the requester account
+		_, err = env.pool.Exec(ctx, `
+			UPDATE credit_accounts 
+			SET integrity_status = 'FLAGGED', 
+			    integrity_flagged_at = NOW(), 
+			    integrity_reason_code = 'MANUAL_AUDIT'
+			WHERE user_id = $1`, requesterID)
+		require.NoError(t, err)
+
+		// Attempt refund on flagged account
+		eventID := uuid.New()
+		err = env.repo.RefundReservation(ctx, errandID, nil, eventID, credit.TransactionReasonErrandCancelled, now)
+		require.ErrorIs(t, err, credit.ErrAccountIntegrityFlagged)
+
+		// Crucial assertion: Reservation status MUST remain RESERVED (NOT falsely marked REFUNDED)
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusReserved, status)
+
+		// Balances must not have been modified by the failed refund
+		acc, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), acc.AvailableCredits)
+		require.Equal(t, int64(30), acc.ReservedCredits)
+
+		// No refund transactions should exist in the ledger
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, eventID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
+	})
+
+	t.Run("PayoutReservation fails and rolls back cleanly when courier account is FLAGGED", func(t *testing.T) {
+		requesterID := uuid.New()
+		courierID := uuid.New()
+		errandID := uuid.New()
+		now := time.Now().UTC()
+
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, requesterID, 100, now))
+		require.NoError(t, env.repo.AllocateInitialCredits(ctx, courierID, 100, now))
+
+		_, _, err := env.repo.CreateReservation(ctx, errandID, requesterID, 30)
+		require.NoError(t, err)
+
+		// Flag the courier account
+		_, err = env.pool.Exec(ctx, `
+			UPDATE credit_accounts 
+			SET integrity_status = 'FLAGGED', 
+			    integrity_flagged_at = NOW(), 
+			    integrity_reason_code = 'MANUAL_AUDIT'
+			WHERE user_id = $1`, courierID)
+		require.NoError(t, err)
+
+		// Attempt payout to flagged courier
+		eventID := uuid.New()
+		amount := int64(30)
+		err = env.repo.PayoutReservation(ctx, errandID, nil, courierID, eventID, &amount, now)
+		require.ErrorIs(t, err, credit.ErrAccountIntegrityFlagged)
+
+		// Crucial assertion: Reservation status MUST remain RESERVED (NOT falsely marked PAID_OUT)
+		var status credit.ReservationStatus
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT status FROM credit_reservations WHERE errand_id = $1`, errandID).Scan(&status))
+		require.Equal(t, credit.ReservationStatusReserved, status)
+
+		// Balances must remain untouched
+		reqAcc, err := env.repo.GetAccount(ctx, requesterID)
+		require.NoError(t, err)
+		require.Equal(t, int64(70), reqAcc.AvailableCredits)
+		require.Equal(t, int64(30), reqAcc.ReservedCredits)
+
+		courierAcc, err := env.repo.GetAccount(ctx, courierID)
+		require.NoError(t, err)
+		require.Equal(t, int64(100), courierAcc.AvailableCredits)
+
+		// No payout transactions should exist in the ledger
+		var txCount int
+		require.NoError(t, env.pool.QueryRow(ctx, `SELECT COUNT(*) FROM credit_transactions WHERE operation_id = $1`, eventID).Scan(&txCount))
+		require.Equal(t, 0, txCount)
 	})
 }

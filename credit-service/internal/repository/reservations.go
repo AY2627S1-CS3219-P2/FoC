@@ -234,14 +234,9 @@ func (r *PostgresRepository) AdjustReservationReward(ctx context.Context, errand
 			return credit.ErrReservationConflict
 		}
 
-		// 5. If currentAmount == newAmount, update version and return unchanged reservation (validated idempotent no-op).
+		// 5. Reject zero-delta adjustments: credit ledger operations require non-zero deltas.
 		if currentAmount == newAmount {
-			if _, err := tx.Exec(txCtx, `UPDATE credit_reservations SET version = $1, updated_at = NOW() WHERE id = $2`, targetVersion, reservation.ID); err != nil {
-				return fmt.Errorf("update reservation version: %w", err)
-			}
-			reservation.Version = targetVersion
-			resRev = &reservation
-			return nil
+			return fmt.Errorf("%w: newReward matches current reward; no adjustment needed", credit.ErrInvalidRequest)
 		}
 
 		// 6. Otherwise, lock and verify the requester account.
