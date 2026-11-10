@@ -43,10 +43,10 @@ func flagAs(t *testing.T, env *testEnv, id uuid.UUID, at time.Time, code string)
 	require.NoError(t, err)
 }
 
-func reverifyEntry(actor uuid.UUID, target uuid.UUID) *credit.AuditEntry {
+func reverifyEntry(admin, target uuid.UUID) *credit.AuditEntry {
 	return &credit.AuditEntry{
 		OccurredAt:    time.Now().UTC(),
-		ActorID:       actor.String(),
+		ActorID:       admin.String(),
 		ActorRole:     "ADMIN",
 		Action:        credit.AuditReverify,
 		TargetType:    credit.AuditTargetType,
@@ -152,6 +152,51 @@ func TestAdminReverify_Integration(t *testing.T) {
 		_, err := env.repo.ReverifyAccount(ctx, uuid.New(), reverifyEntry(admin, uuid.New()))
 		require.ErrorIs(t, err, credit.ErrWalletNotReady)
 	})
+
+	t.Run("reconciliation and scan idempotency on already flagged account", func(t *testing.T) {
+		id := newWallet(t, env)
+
+		// 1. Scan finds newly created consistent account
+		scanned, _, err := env.repo.ScanAccountsForReconciliation(ctx, 100, nil)
+		require.NoError(t, err)
+		var found bool
+		for _, s := range scanned {
+			if s == id {
+				found = true
+				break
+			}
+		}
+		require.True(t, found, "consistent account must appear in reconciliation scan")
+
+		// 2. Corrupt account projection and reconcile
+		_, err = env.pool.Exec(ctx, `UPDATE credit_accounts SET available_credits = 150 WHERE user_id = $1`, id)
+		require.NoError(t, err)
+
+		flagged, err := env.repo.ReconcileAccount(ctx, id)
+		require.NoError(t, err)
+		require.True(t, flagged)
+
+		accBefore, err := env.repo.GetAdminAccount(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, credit.IntegrityFlagged, accBefore.IntegrityStatus)
+
+		// 3. Repeat reconciliation must be idempotent: returns false, version not incremented, updated_at untouched
+		flaggedRepeat, err := env.repo.ReconcileAccount(ctx, id)
+		require.NoError(t, err)
+		require.False(t, flaggedRepeat, "already flagged account must not report flagged on repeat")
+
+		accRepeat, err := env.repo.GetAdminAccount(ctx, id)
+		require.NoError(t, err)
+		require.Equal(t, accBefore.Version, accRepeat.Version, "version must not inflate")
+		require.Equal(t, accBefore.UpdatedAt, accRepeat.UpdatedAt, "updated_at must remain untouched")
+
+		// 4. ScanAccountsForReconciliation must filter out the flagged account
+		scannedAfter, _, err := env.repo.ScanAccountsForReconciliation(ctx, 100, nil)
+		require.NoError(t, err)
+		for _, s := range scannedAfter {
+			require.NotEqual(t, id, s, "ScanAccountsForReconciliation must not return FLAGGED accounts")
+		}
+	})
 }
 
 func TestAdminReads_Integration(t *testing.T) {
@@ -171,7 +216,6 @@ func TestAdminReads_Integration(t *testing.T) {
 		_, err = env.repo.GetAdminAccount(ctx, uuid.New())
 		require.ErrorIs(t, err, credit.ErrWalletNotReady)
 	})
-
 }
 
 // TestAdminFlaggedList_Integration has its own database, so no other test's

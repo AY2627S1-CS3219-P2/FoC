@@ -55,6 +55,7 @@ func (r *PostgresRepository) AcquireReconciliationLock(ctx context.Context) (fun
 }
 
 // ScanAccountsForReconciliation returns a batch of user IDs ordered by user_id ASC with keyset cursor advancement.
+// Only CONSISTENT accounts are returned to prevent redundant audits and churn on already quarantined accounts.
 func (r *PostgresRepository) ScanAccountsForReconciliation(ctx context.Context, batchSize int, lastSeenUserID *uuid.UUID) ([]uuid.UUID, *uuid.UUID, error) {
 	if batchSize <= 0 {
 		batchSize = 500
@@ -64,6 +65,7 @@ func (r *PostgresRepository) ScanAccountsForReconciliation(ctx context.Context, 
 		SELECT user_id
 		FROM credit_accounts
 		WHERE ($1::UUID IS NULL OR user_id > $1)
+		  AND integrity_status = 'CONSISTENT'
 		ORDER BY user_id ASC
 		LIMIT $2`,
 		lastSeenUserID, batchSize,
@@ -122,14 +124,13 @@ func (r *PostgresRepository) auditAccountSnapshot(ctx context.Context, userID uu
 		version          int64
 		availableCredits int64
 		reservedCredits  int64
-		integrityStatus  credit.AccountIntegrityStatus
 	)
 	err = tx.QueryRow(ctx, `
-		SELECT version, available_credits, reserved_credits, integrity_status
+		SELECT version, available_credits, reserved_credits
 		FROM credit_accounts
 		WHERE user_id = $1`,
 		userID,
-	).Scan(&version, &availableCredits, &reservedCredits, &integrityStatus)
+	).Scan(&version, &availableCredits, &reservedCredits)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, 0, nil
@@ -579,14 +580,14 @@ func (r *PostgresRepository) applyIntegrityFlag(ctx context.Context, userID uuid
 	tag, err := r.pool.Exec(ctx, `
 		UPDATE credit_accounts
 		SET integrity_status = 'FLAGGED',
-		    integrity_flagged_at = COALESCE(integrity_flagged_at, NOW()),
-		    integrity_reason_code = COALESCE(integrity_reason_code, $2),
-		    integrity_detail = COALESCE(integrity_detail, $3),
-		    integrity_expected = COALESCE(integrity_expected, $4),
-		    integrity_observed = COALESCE(integrity_observed, $5),
+		    integrity_flagged_at = NOW(),
+		    integrity_reason_code = $2,
+		    integrity_detail = $3,
+		    integrity_expected = $4,
+		    integrity_observed = $5,
 		    version = version + 1,
 		    updated_at = NOW()
-		WHERE user_id = $1 AND version = $6`,
+		WHERE user_id = $1 AND version = $6 AND integrity_status = 'CONSISTENT'`,
 		userID, finding.reasonCode, finding.detail, finding.expected, finding.observed, observedVersion,
 	)
 	if err != nil {

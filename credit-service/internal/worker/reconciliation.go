@@ -76,7 +76,7 @@ func (w *ReconciliationWorker) RunOnce(ctx context.Context) error {
 	var (
 		lastSeenUserID *uuid.UUID
 		totalChecked   int
-		totalFlagged   int
+		newlyFlagged   int
 	)
 
 	for {
@@ -103,7 +103,7 @@ func (w *ReconciliationWorker) RunOnce(ctx context.Context) error {
 			}
 			totalChecked++
 			if flagged {
-				totalFlagged++
+				newlyFlagged++
 				w.logger.Error("account flagged for financial integrity violation", "userId", userID)
 			}
 		}
@@ -114,6 +114,6 @@ func (w *ReconciliationWorker) RunOnce(ctx context.Context) error {
 		lastSeenUserID = nextCursor
 	}
 
-	w.logger.Info("reconciliation cycle completed", "checked", totalChecked, "flagged", totalFlagged)
+	w.logger.Info("reconciliation cycle completed", "checked", totalChecked, "newlyFlagged", newlyFlagged)
 	return nil
 }
