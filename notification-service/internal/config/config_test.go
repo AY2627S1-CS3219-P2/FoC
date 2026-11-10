@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Unit tests for config.Load.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package config
 
@@ -64,7 +64,7 @@ func TestLoadRefusesABadWindow(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // TestLoadRefusesABrokerURLItCannotParse: the error is fixed text, because the
 // URL carries the broker's password and net/url's own error quotes it.
 func TestLoadRefusesABrokerURLItCannotParse(t *testing.T) {
@@ -84,7 +84,7 @@ func TestLoadRefusesABrokerURLItCannotParse(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func TestLoadAcceptsAnEncodedBrokerPassword(t *testing.T) {
 	setRequired(t)
 	t.Setenv("RABBITMQ_URL", "amqps://foc:s3cr%2Fet@broker:5671/foc")

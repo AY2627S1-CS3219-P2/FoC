@@ -757,7 +757,7 @@ func TestPickUpKeepsTheCourier(t *testing.T) {
 	assert.Nil(t, got.ExpiresAt, "no timer runs in PICKED_UP")
 	assert.Nil(t, got.ConfirmBy)
 	assert.Equal(t, now, got.StateChangedAt)
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	events := f.repo.EventsFor(o.ID)
 	require.Len(t, events, 1, "errand.picked_up, for notification-service (D-142)")
 	assert.Equal(t, order.RoutingPickedUp, events[0].RoutingKey)
@@ -780,7 +780,7 @@ func TestDeliverStartsTheConfirmationWindow(t *testing.T) {
 	assert.Equal(t, ptr(now.Add(confirmWindow)), got.ConfirmBy, "C starts on delivery")
 	assert.Nil(t, got.ExpiresAt)
 	assert.Equal(t, ptr(f.courier.UserID), got.CourierID)
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	events := f.repo.EventsFor(o.ID)
 	require.Len(t, events, 1, "errand.delivered, for notification-service (D-142); the courier is paid on confirmation, not delivery")
 	assert.Equal(t, order.RoutingDelivered, events[0].RoutingKey)

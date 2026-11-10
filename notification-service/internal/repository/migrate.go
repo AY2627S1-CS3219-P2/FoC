@@ -1,7 +1,7 @@
 // AI Assistance Disclosure:
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Applies the migrations at startup, as in chat-service and order-service.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 package repository
 

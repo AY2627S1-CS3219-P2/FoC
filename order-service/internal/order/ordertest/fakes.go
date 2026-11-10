@@ -203,7 +203,7 @@ func (c *Credit) Adjusts() []AdjustCall {
 type outboxRow struct {
 	event     order.OutboxEvent
 	published bool
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// seq keeps events staged at the same instant in the order they were
 	// staged, since the outbox is a map and the test clock can stand still.
 	seq int
@@ -297,7 +297,7 @@ func (r *Repository) Events() []order.OutboxEvent {
 	return out
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // stage adds e to the outbox. The caller holds r.mu.
 func (r *Repository) stage(e order.OutboxEvent) {
 	r.nextSeq++

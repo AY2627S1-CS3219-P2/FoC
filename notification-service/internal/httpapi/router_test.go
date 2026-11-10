@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Unit tests of the HTTP surface: authentication, status codes, paging
 //   defaults and the response body (api/openapi.yaml, D-144).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package httpapi
 

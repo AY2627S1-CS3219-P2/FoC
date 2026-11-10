@@ -5,7 +5,7 @@
 //   2026-11-10 (model: Fable 5): request_id, eventId and errandId on every
 //   event line, an INFO line after each ack and an ERROR line when an event is
 //   dead-lettered (D-135).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 // Package consumer reads order lifecycle events from notification-service's own
 // queue. It only ever reads: nothing here publishes, and no other service knows

@@ -4,7 +4,7 @@
 //   recommender on each made-up courier's history, and reports how often it
 //   recommends the errand that courier would take. It reports and sets no pass
 //   mark.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package ranking
 

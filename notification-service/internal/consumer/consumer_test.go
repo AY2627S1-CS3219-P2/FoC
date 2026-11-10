@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Unit tests of how a delivery is answered, and a check that the queue in
 //   rabbitmq/definitions.json keeps D-143's settings and D-141's bindings.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package consumer
 
@@ -99,7 +99,7 @@ func TestSettle(t *testing.T) {
 	})
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // loggedConsumer returns a consumer whose JSON log lines land in the buffer.
 func loggedConsumer(h EventHandler) (*Consumer, *bytes.Buffer) {
 	var buf bytes.Buffer
@@ -108,7 +108,7 @@ func loggedConsumer(h EventHandler) (*Consumer, *bytes.Buffer) {
 	return c, &buf
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // eventLines parses every line the consumer logged.
 func eventLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
@@ -123,7 +123,7 @@ func eventLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	return lines
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // TestSettleLogsEachEvent covers D-135's consumer lines: each carries the
 // request id from the AMQP CorrelationId, the routing key, and the eventId and
 // errandId; INFO once acknowledged, WARN while it will be retried, ERROR when it
@@ -239,7 +239,7 @@ func TestTheQueueCannotPushBackOnPublishers(t *testing.T) {
 	assert.Equal(t, "drop-head", args["x-overflow"])
 	assert.Equal(t, "at-most-once", args["x-dead-letter-strategy"])
 	assert.Equal(t, "foc.dlx", args["x-dead-letter-exchange"])
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	assert.EqualValues(t, deliveryLimit, args["x-delivery-limit"],
 		"deliveryLimit decides which failure is logged as the last one")
 

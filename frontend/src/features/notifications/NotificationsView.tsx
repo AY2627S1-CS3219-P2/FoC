@@ -3,7 +3,7 @@
 // Scope: The Notifications screen (F5.1, F7.3.1, D-145): the user's list, newest
 //   first, refreshed every 30 seconds, with read status, mark as read, Load
 //   more and an empty state, in the style of the Credits screen.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 import { useState } from "react";
 import { usePolling } from "../../lib/polling";

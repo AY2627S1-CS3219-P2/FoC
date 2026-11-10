@@ -938,7 +938,7 @@ func (e *env) testServiceLifecycle(t *testing.T) {
 	delivered := step("deliver", order.StateDelivered, func() (order.Order, error) { return svc.Deliver(ctx, other, first.ID, "corr-deliver") })
 	require.Equal(t, clock.Now().Add(24*time.Hour), *delivered.ConfirmBy)
 	step("confirm", order.StateCompleted, func() (order.Order, error) { return svc.Confirm(ctx, requester, first.ID, "corr-confirm") })
-	// AI-generated (edited by PENDING): picking up and delivering publish their own events (D-142).
+	// AI-generated (edited by nigeltzy): picking up and delivering publish their own events (D-142).
 	require.Equal(t, []string{
 		order.RoutingAccepted, order.RoutingWithdrawn, order.RoutingAccepted,
 		order.RoutingPickedUp, order.RoutingDelivered, order.RoutingCompleted,

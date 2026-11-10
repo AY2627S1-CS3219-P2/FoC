@@ -4,7 +4,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Integration tests of the migrations, the repository, and the service
 //   and HTTP surface on a real PostgreSQL (root AGENTS.md §7).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the full integration test implementation seems correct and as expected according to requirements.
 
 package repository_test
 

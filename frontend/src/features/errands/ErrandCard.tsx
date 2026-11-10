@@ -79,7 +79,7 @@ export function ErrandCard({
   const hasUnread = unreadErrandIds.has(errand.id);
 
   return (
-    // AI-generated (edited by PENDING): the suggestion's class and main's
+    // AI-generated (edited by nigeltzy): the suggestion's class and main's
     // selected class together, from merging the two.
     <article
       ref={cardRef}

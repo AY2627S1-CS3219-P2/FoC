@@ -118,7 +118,7 @@ const (
 		WHERE id = $1
 		RETURNING ` + orderSelect
 
-	// AI-generated (edited by PENDING): keeps the supplier's type and position,
+	// AI-generated (edited by nigeltzy): keeps the supplier's type and position,
 	// as amendSQL does, when a scheduled errand moves to another supplier (D-089).
 	amendScheduledSQL = `UPDATE orders
 		SET supplier_id = $2, supplier_name = $3, supplier_location = $4,

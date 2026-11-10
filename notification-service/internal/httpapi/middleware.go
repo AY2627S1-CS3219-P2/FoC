@@ -4,7 +4,7 @@
 //   order-service/internal/httpapi/middleware.go (D-041, D-054, D-056).
 //   2026-11-10 (model: Fable 5): the access line's level, request_id and
 //   user_id, and request_id on the cause and panic lines (D-135).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 package httpapi
 

@@ -3,7 +3,7 @@
 # Scope: Wrote notification-service's HTTP contract from the owner's choices
 #   (D-144) and backlog F5.1. Claude Code filled in the maximum limit, the
 #   `total` field, the 204 and the 404, as D-144 records.
-# Author review: PENDING — <reviewer to complete>
+# Author review: nigeltzy - checked file was implemented and written as expected and according to requirements
 
 openapi: 3.1.0
 info:

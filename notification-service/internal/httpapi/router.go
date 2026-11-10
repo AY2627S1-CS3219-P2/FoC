@@ -4,7 +4,7 @@
 //   (api/openapi.yaml, D-144). Handlers do transport only (root AGENTS.md §6).
 //   2026-11-10 (model: Fable 5): the request id, and one cause line for each
 //   503 (D-135).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 // Package httpapi is notification-service's HTTP transport. It implements the
 // generated gen.ServerInterface on top of notification.Service.
@@ -59,7 +59,7 @@ type server struct {
 // NewRouter returns notification-service's HTTP handler.
 func NewRouter(svc Service, db Pinger, tokens TokenVerifier, revocations RevocationChecker, log *slog.Logger) http.Handler {
 	r := chi.NewRouter()
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// The request id is outermost so every line about the request carries it
 	// (D-135); the access log wraps the recoverer so it records the 500 a panic
 	// becomes.
@@ -83,7 +83,7 @@ func (s *server) GetHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), healthTimeout)
 	defer cancel()
 	if err := s.db.Ping(ctx); err != nil {
-		// AI-generated (edited by PENDING).
+		// AI-generated (edited by nigeltzy).
 		// Why the probe failed, unless the prober itself went away (D-135).
 		if !clientHungUp(r.Context()) {
 			s.log.ErrorContext(r.Context(), "health check: database did not answer",
@@ -148,7 +148,7 @@ func (s *server) MarkNotificationRead(w http.ResponseWriter, r *http.Request, id
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // unavailable answers 503 and logs err as its cause, once, with the request id
 // (D-135). Once the client has hung up nothing is logged here: that is no fault
 // of this service, and the access line records it at WARN.

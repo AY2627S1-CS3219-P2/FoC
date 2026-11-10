@@ -289,7 +289,7 @@ func (s *Service) buildTransition(o Order, a Action, by actor, now time.Time, co
 	}
 
 	switch r.to {
-	// AI-generated (edited by PENDING).
+	// AI-generated (edited by nigeltzy).
 	// Only notification-service reads these two (D-142).
 	case StatePickedUp:
 		t.Event = newEvent(uuid.New(), RoutingPickedUp, o, o.CourierID, now, correlationID)

@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: The domain types: a stored notification (F5.1.1, D-146), the lifecycle
 //   event it comes from (D-051, D-142) and the errors callers distinguish.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 // Package notification decides who hears about each order lifecycle event and
 // serves a user's own notifications. It imports no HTTP, no SQL and no broker

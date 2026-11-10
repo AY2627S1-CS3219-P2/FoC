@@ -280,7 +280,7 @@ export function FindErrandsView({
       <Workspace
         list={
           <>
-      {/* AI-generated (edited by PENDING): the location notes, filters and
+      {/* AI-generated (edited by nigeltzy): the location notes, filters and
           suggested cards (D-092, D-094, D-098) sit inside the Workspace's list,
           from merging the two. */}
       {/* AI-generated (edited by nigeltzy): asking for the courier's location

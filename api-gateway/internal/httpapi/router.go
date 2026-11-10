@@ -58,7 +58,7 @@ const creditServiceAccountsPrefix = "/api/v1/credits/accounts"
 // credit-service checks for the ADMIN role itself on every one of them.
 const creditServiceAdminPrefix = "/api/v1/credits/admin"
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 // notificationServicePrefix is where notification-service mounts its routes;
 // the public /api/notifications path is rewritten onto it (D-144).
 const notificationServicePrefix = "/notifications"
@@ -174,7 +174,7 @@ func NewRouter(downstream config.Downstream, verifier *auth.Verifier, revocation
 		{"/api/credits/accounts", downstream.Credit, creditServiceAccountsPrefix, proxy.NewRetainingToken},
 		{"/api/credits/admin", downstream.Credit, creditServiceAdminPrefix, proxy.NewRetainingToken},
 		{"/api/chat", downstream.Chat, "", proxy.NewRetainingToken},
-		// AI-generated (edited by PENDING).
+		// AI-generated (edited by nigeltzy).
 		// notification-service verifies the token itself and serves its routes
 		// under /notifications (D-144).
 		{"/api/notifications", downstream.Notification, notificationServicePrefix, proxy.NewRetainingToken},

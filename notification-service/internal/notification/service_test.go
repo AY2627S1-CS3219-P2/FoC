@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Unit tests of who is told what (D-141, F5.2 to F5.5) and of the user's
 //   own list (F5.1), against an in-memory repository.
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the unit test implementation seems correct and as expected according to requirements.
 
 package notification_test
 

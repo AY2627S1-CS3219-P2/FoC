@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: Who is told about which event (D-141), and listing and marking a
 //   user's own notifications (F5.1).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 package notification
 

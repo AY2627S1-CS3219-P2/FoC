@@ -148,4 +148,4 @@ The whole-stack suite lives in the root `e2e/` module.
   forward the token the request arrived with; only the requester reserves or
   amends, so it is always the requester's.
 
-<!-- AI-generated (edited by PENDING): Claude Code (Opus 5.5), 2026-11-05 — notification-service and errand.picked_up/errand.delivered noted (D-140 to D-146). -->
+<!-- AI-generated (edited by nigeltzy): Claude Code (Opus 5.5), 2026-11-05 — notification-service and errand.picked_up/errand.delivered noted (D-140 to D-146). -->

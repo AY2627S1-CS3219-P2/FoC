@@ -145,7 +145,7 @@ func newLoggedGateway(t *testing.T, s gatewaySetup) *loggedGateway {
 		s.revocations = &fakeRevocations{}
 	}
 	logs := &logBuffer{}
-	// AI-generated (edited by PENDING): the Notification downstream (D-140).
+	// AI-generated (edited by nigeltzy): the Notification downstream (D-140).
 	router, err := httpapi.NewRouter(config.Downstream{
 		User: s.upstream, Supplier: s.upstream, Order: s.upstream, Credit: s.upstream, Chat: s.upstream, Notification: s.upstream,
 	}, auth.NewVerifier(s.jwks, nil), s.revocations, testRefreshTTL, logs.logger())
@@ -783,7 +783,7 @@ func TestLogLinesLeaveOutTokensCookiesQueriesAndBodies(t *testing.T) {
 }
 
 func TestNewRouterNeedsALogger(t *testing.T) {
-	// AI-generated (edited by PENDING): the Notification downstream (D-140).
+	// AI-generated (edited by nigeltzy): the Notification downstream (D-140).
 	_, err := httpapi.NewRouter(config.Downstream{
 		User: "http://user", Supplier: "http://supplier", Order: "http://order", Credit: "http://credit", Chat: "http://chat", Notification: "http://notification",
 	}, auth.NewVerifier("http://jwks", nil), &fakeRevocations{}, testRefreshTTL, nil)

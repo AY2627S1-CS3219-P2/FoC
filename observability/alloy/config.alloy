@@ -165,7 +165,7 @@ prometheus.exporter.blackbox "health" {
 		labels  = {service = "chat-service"}
 	}
 
-	// AI-generated (edited by PENDING): notification-service, here and in the
+	// AI-generated (edited by nigeltzy): notification-service, here and in the
 	// two selectors above that name the Go services and their /health lines.
 	target {
 		name    = "notification-service"

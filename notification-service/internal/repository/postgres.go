@@ -2,7 +2,7 @@
 // Tool: Claude Code (model: Opus 5.5), date: 2026-11-05
 // Scope: The PostgreSQL adapter for notification.Repository (F5.1, F5.5.2,
 //   D-146).
-// Author review: PENDING — <reviewer to complete>
+// Author review: nigeltzy - Checked that the implementation is as expected and seems to be correct.
 
 // Package repository is the PostgreSQL adapter for notification.Repository.
 package repository

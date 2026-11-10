@@ -1086,7 +1086,7 @@ func TestNewRouterNeedsARevocationChecker(t *testing.T) {
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func TestNotificationRoutesReachNotificationServiceAndRetainToken(t *testing.T) {
 	for _, tc := range []struct {
 		method, public, want string
@@ -1114,7 +1114,7 @@ func TestNotificationRoutesReachNotificationServiceAndRetainToken(t *testing.T) 
 	}
 }
 
-// AI-generated (edited by PENDING).
+// AI-generated (edited by nigeltzy).
 func TestNotificationRouteNeedsAToken(t *testing.T) {
 	h := newHarness(t)
 	res := h.do(httptest.NewRequest(http.MethodGet, "/api/notifications", nil))
