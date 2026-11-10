@@ -27,6 +27,11 @@ may have changed. Most of the run is spent waiting out T and C, which is why the
 stack runs with them in seconds; the tests run in parallel, so the waits
 overlap.
 
+If the build stops with `signal: killed`, Docker's virtual machine ran out of
+memory building the Go services side by side (Colima's default is small). Give it
+more memory, or build one at a time first:
+`COMPOSE_PARALLEL_LIMIT=1 docker compose build`.
+
 The stack keeps those timers afterwards. To put the default timers back,
 recreate order-service without them: `docker compose up -d order-service`.
 
@@ -121,6 +126,10 @@ instead of every test timing out on its own.
 | `TestSupplierWritesAreAudited` | an ADMIN's supplier create, update and delete each leave a row in `GET /api/suppliers/audit-log?target_id=`, newest first, with the admin's id from the token and a correlation id |
 | `TestRefusedSupplierDeleteIsAudited` | a delete the unfinished-errand rule refuses (409) is logged as `refused` with a reason, beside the `succeeded` create |
 | `TestAccountStatusChangesAreAudited` | an ADMIN's suspend and reactivate of a student appear in `GET /api/users/audit-log`; the admin suspending themself is 403, logged as `refused`, and leaves the admin active |
+| `TestAdminPromotesAndDemotesAStudent` | an ADMIN promotes a student: the old token gets 401, a new token carries `ADMIN` and reaches the admin routes, the new admin demoting themself is 403, the ADMIN demotes them back and the token ends again; the log has both changes and the refusal |
+| `TestRoleChangeRefusals` | a student changing a role is 403 and no token 401; promoting a suspended student is 409, an unknown role 400, an unknown account 404, a malformed id 400; none of them changes an account |
+| `TestChatFollowsAnAcceptedErrand` | accepting an errand opens one conversation both sides see; a message is stored once even when sent twice; the other side sees it unread until they read it; over 250 characters is 400; a stranger and a signed-out caller are refused |
+| `TestChatGoesReadOnlyWhenTheCourierWithdraws` | a courier's withdrawal freezes the conversation: sending is 423, and what was said stays readable |
 | `TestAdminErrandCancelIsAudited` | an ADMIN's cancel of an accepted errand appears in `GET /api/orders/audit-log` as `errand.cancel` |
 | `TestOnlyAnAdminReadsTheAuditLog` | each of the three audit logs answers a student 403 and a request with no token 401 |
 <!-- AI Assistance Disclosure: Codex (GPT-5), date: 2026-10-19 — documents issue #32's user-service route checks. -->
